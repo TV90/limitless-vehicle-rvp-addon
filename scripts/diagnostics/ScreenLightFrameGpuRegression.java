@@ -4,6 +4,7 @@ import com.mojang.blaze3d.platform.GlStateManager;
 import com.mojang.blaze3d.systems.RenderSystem;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.opengl.*;
+import org.ywzj.rvp.light.RVP_BloomParameters;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -88,6 +89,40 @@ public final class ScreenLightFrameGpuRegression {
             assertExternalState();
             System.out.println("PASS production single-pixel emitter visibility target, reuse and external GL state preservation");
 
+            List<Integer> bloomObjects = new ArrayList<>();
+            try (RVP_ScreenFrameResources.State ignored = new RVP_ScreenFrameResources.State()) {
+                // 调用生产多尺度资源分配，逐层验证尺寸、独立附件、复用和外部状态恢复。
+                frame.ensureBloom();
+                for (int level = 0; level < RVP_BloomParameters.LEVELS; level++) {
+                    for (int index = 0; index < 2; index++) {
+                        int object = frame.bloom(level, index);
+                        require(!bloomObjects.contains(object), "bloom levels share a write texture");
+                        bloomObjects.add(object);
+                        RenderSystem.activeTexture(GL13.GL_TEXTURE0); RenderSystem.bindTexture(object);
+                        require(GL11.glGetTexLevelParameteri(GL11.GL_TEXTURE_2D, 0, GL11.GL_TEXTURE_WIDTH) == 8 >> level,
+                                "production bloom width at level " + level);
+                        require(GL11.glGetTexLevelParameteri(GL11.GL_TEXTURE_2D, 0, GL11.GL_TEXTURE_HEIGHT) == 8 >> level,
+                                "production bloom height at level " + level);
+                        frame.bind(frame.bloomTarget(level, index), frame.bloomWidth(level), frame.bloomHeight(level));
+                        require(GL30.glCheckFramebufferStatus(GL30.GL_DRAW_FRAMEBUFFER) == GL30.GL_FRAMEBUFFER_COMPLETE,
+                                "production bloom FBO incomplete");
+                    }
+                }
+                frame.ensureBloom();
+                require(frame.bloom(0, 0) == bloomObjects.get(0), "bloom allocated a new pyramid per frame");
+                // 调用独立光晕来源并分别写入，验证它不会覆盖真实表面光。
+                require(frame.glow() != frame.light(), "halo source aliases surface lighting");
+                bloomObjects.add(frame.glow());
+                frame.bind(frame.lightTarget(), 16, 16);
+                GL11.glClearColor(.1F, .2F, .3F, .4F); GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);
+                frame.bind(frame.glowTarget(), 16, 16);
+                GL11.glClearColor(8, 4, 1, 8); GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);
+                near(.1F, read(frame.light(), 16, 16, false)[0], "halo write changed lighting buffer");
+                near(8, read(frame.glow(), 16, 16, false)[0], "independent halo source lost HDR");
+            }
+            assertExternalState();
+            System.out.println("PASS production four-scale independent HDR targets, exact sizes, reuse and external GL state preservation");
+
             try (RVP_ScreenFrameResources.State ignored = new RVP_ScreenFrameResources.State()) {
                 frame.bind(frame.lightTarget(), 16, 16);
                 require(!GL11.glIsEnabled(GL11.GL_STENCIL_TEST), "stencil was not isolated");
@@ -141,6 +176,26 @@ public final class ScreenLightFrameGpuRegression {
             frame.release();
             require(frame.plumeVisibility() == 0 && frame.plumeVisibilityTarget() == 0, "world/resource release retained plume visibility state");
             require(!GL11.glIsTexture(plumeVisibility), "plume visibility texture leaked after release");
+            for (int object : bloomObjects) { require(!GL11.glIsTexture(object), "bloom level leaked after release"); }
+            for (int[] dimensions : new int[][] {{17, 9}, {1, 1}}) {
+                try (RVP_ScreenFrameResources.State ignored = new RVP_ScreenFrameResources.State()) {
+                    int tinyDepth = texture(dimensions[0], dimensions[1], true, .75F);
+                    int tinyColor = texture(dimensions[0], dimensions[1], false, 0);
+                    int tinyWorld = framebuffer(tinyColor, tinyDepth);
+                    require(frame.captureDepth(tinyWorld, tinyDepth, dimensions[0], dimensions[1]), "odd/tiny depth capture");
+                    frame.ensureBloom();
+                    for (int level = 0; level < RVP_BloomParameters.LEVELS; level++) {
+                        RenderSystem.activeTexture(GL13.GL_TEXTURE0); RenderSystem.bindTexture(frame.bloom(level, 0));
+                        require(GL11.glGetTexLevelParameteri(GL11.GL_TEXTURE_2D, 0, GL11.GL_TEXTURE_WIDTH) == frame.bloomWidth(level),
+                                "odd/tiny pyramid width mismatch");
+                        require(GL11.glGetTexLevelParameteri(GL11.GL_TEXTURE_2D, 0, GL11.GL_TEXTURE_HEIGHT) == frame.bloomHeight(level),
+                                "odd/tiny pyramid height mismatch");
+                    }
+                    frame.release();
+                }
+                assertExternalState();
+            }
+            System.out.println("PASS production pyramid release, odd-window resize and one-pixel minimum");
             require(GL11.glGetError() == GL11.GL_NO_ERROR, "OpenGL error at completion");
             System.out.println("PASS all production screen-frame GPU regressions; OpenGL error=0");
         } finally {

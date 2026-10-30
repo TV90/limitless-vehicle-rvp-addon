@@ -9,7 +9,8 @@ import java.util.UUID;
  * @param red 红色
  * @param green 绿色
  * @param blue 蓝色
- * @param radius 半径，单位格
+ * @param radius 照亮半径，单位格；0 表示不照亮环境
+ * @param haloRadius 独立光晕半径，单位格；不由已调参的照亮半径推导
  * @param intensity 已应用年龄衰减的强度
  * @param remainingTicks 剩余 tick
  * @param type 来源类型
@@ -18,6 +19,6 @@ import java.util.UUID;
  * @param bloom 是否进入光晕提取
  * @param volumetricStrength 空气散射强度
  */
-public record RVP_ScreenLight(Vec3 position, float red, float green, float blue, float radius,
+public record RVP_ScreenLight(Vec3 position, float red, float green, float blue, float radius, float haloRadius,
         float intensity, float remainingTicks, RVP_LightSourceType type, UUID persistentKey,
         float surfaceWeight, boolean bloom, float volumetricStrength) { }

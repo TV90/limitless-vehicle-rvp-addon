@@ -17,6 +17,7 @@ import org.slf4j.Logger;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.config.RVP_LightingConfig;
 import org.ywzj.rvp.light.RVP_LightParameters;
+import org.ywzj.rvp.light.RVP_BloomParameters;
 import org.ywzj.rvp.light.RVP_RocketPlumeParameters;
 import org.ywzj.rvp.light.RVP_LightRuntimeTuning;
 import org.ywzj.rvp.weapon.visual.RVP_PressureWaveGeometry;
@@ -24,7 +25,7 @@ import org.ywzj.rvp.client.compat.distanthorizons.RVP_DhProjectionMath;
 import org.ywzj.rvp.client.compat.distanthorizons.RVP_DistantHorizonsCompatBootstrap;
 import java.util.List;
 
-/** 世界颜色/深度→统一八盏光→可选半分辨率光晕；总在 CRT/TV/HUD 之前完成。 */
+/** 世界颜色/深度→统一八盏光→四尺度光晕；总在 CRT/TV/HUD 之前完成。 */
 public final class RVP_ScreenLightPass {
     /** 限频兼容性日志。 */
     private static final Logger LOGGER = LogUtils.getLogger();
@@ -110,13 +111,15 @@ public final class RVP_ScreenLightPass {
         // 调用统一释放入口，资源重载时不能让旧场景和旧 Shader 配对。
         clear();
         try {
-            event.registerShader(new ShaderInstance(event.getResourceProvider(), RVP_MOD.modLocation("screen_light"),
+            // 调用另名的双范围程序，原有屏幕光资源完整保留。
+            event.registerShader(new ShaderInstance(event.getResourceProvider(), RVP_MOD.modLocation("screen_light_ranges"),
                     DefaultVertexFormat.POSITION), loaded -> lightShader = loaded);
         } catch (Exception exception) {
             LOGGER.warn("RVP 屏幕光程序加载失败，已关闭屏幕光，保留现有爆炸和尾焰", exception);
         }
         try {
-            event.registerShader(new ShaderInstance(event.getResourceProvider(), RVP_MOD.modLocation("screen_light_bloom"),
+            // 调用已获确认的另名多尺度资源，原光晕程序完整保留。
+            event.registerShader(new ShaderInstance(event.getResourceProvider(), RVP_MOD.modLocation("screen_light_bloom_multiscale"),
                     DefaultVertexFormat.POSITION), loaded -> bloomShader = loaded);
         } catch (Exception exception) {
             LOGGER.warn("RVP 光晕程序加载失败，回退基础屏幕光", exception);
@@ -125,7 +128,7 @@ public final class RVP_ScreenLightPass {
             // 调用独立程序喷焰注册，旧模型及圆形核心资源不做删除或覆盖。
             RVP_RocketPlumePass.register(event);
         } catch (Exception exception) {
-            LOGGER.warn("RVP 程序喷焰加载失败，请检查 rocket_plume 资源", exception);
+            LOGGER.warn("RVP 程序喷焰加载失败，请检查 rocket_plume_ranges 资源", exception);
         }
         try {
             // 调用烟雾独立受光材质注册，复用已有贴图，不新增粒子资源。
@@ -178,7 +181,8 @@ public final class RVP_ScreenLightPass {
                 ? List.of() : RVP_ScreenLightManager.INSTANCE.collectVisible(camera, event.getPartialTick(),
                 RVP_LightingConfig.maxDistance(), RVP_LightingConfig.maxLights(), light -> {
                     Vector3f center = viewPosition(light.position());
-                    return RVP_PressureWaveGeometry.screenBounds(PROJECTION, center.x, center.y, center.z, light.radius()) != null;
+                    return RVP_PressureWaveGeometry.screenBounds(PROJECTION, center.x, center.y, center.z,
+                            Math.max(light.radius(), light.haloRadius())) != null;
                 });
         // 调用世界碰撞查询补足屏幕外遮挡：被墙完全藏住的灯不照亮墙的正面。
         lights = candidates.stream().filter(light -> visibleFromCamera(mc, light)).toList();
@@ -236,7 +240,8 @@ public final class RVP_ScreenLightPass {
             // 调用统一参数上传；世界位置先用 double 减相机，远坐标不会抖动。
             uploadLights();
             boolean useBloom = RVP_LightingConfig.bloomEnabled() && bloomShader != null && bloomAvailable
-                    && (!plumes.isEmpty() || lights.stream().anyMatch(RVP_ScreenLight::bloom));
+                    && (plumes.stream().anyMatch(plume -> plume.haloRadius() > 0)
+                    || lights.stream().anyMatch(light -> light.bloom() && light.haloRadius() > 0));
             if (useBloom) {
                 try { FRAME.ensureBloom(); }
                 catch (RuntimeException exception) {
@@ -263,26 +268,28 @@ public final class RVP_ScreenLightPass {
             lightShader.safeGetUniform("OutputMode").set(1);
             FRAME.bind(FRAME.lightTarget(), FRAME.width(), FRAME.height());
             FRAME.draw(lightShader);
-            // 调用定向喷焰 HDR 合并；之后只执行一套统一提取/模糊，不为每枚导弹重复复制背景。
+            // 调用独立光晕来源：只读取每盏光的光晕范围，不把照亮结果送进模糊。
+            lightShader.safeGetUniform("OutputMode").set(3);
+            FRAME.bind(FRAME.glowTarget(), FRAME.width(), FRAME.height());
+            FRAME.draw(lightShader);
+            // 调用定向喷焰合入独立光晕来源；最终白热核心仍单独显示。
             RVP_RocketPlumePass.render(FRAME, plumes, VIEW, PROJECTION, camera, plumeTime, 1);
-            // 调用半分辨率提取、横向模糊和纵向模糊；全部只读取灯光贡献，不把 HUD 或整片白天纳入光晕。
-            bloomPass(0, FRAME.light(), FRAME.bloomTarget(0), 0, 0);
-            // 调用范围倍率，只改变原高斯核的采样间距，提取阈值、核权重和采样次数保持不变。
+            // 调用各层共同的模糊范围倍率；真实亮焰先通过连续过滤逐层缩小，不用稀疏大步长伪造远层。
             float blurStep = (plumes.isEmpty() ? 2F : RVP_RocketPlumeParameters.BLOOM_BLUR_STEP)
                     * RVP_LightRuntimeTuning.get(RVP_LightRuntimeTuning.Group.bloom,
                             RVP_LightRuntimeTuning.Parameter.blurScale);
-            bloomPass(1, FRAME.bloom(0), FRAME.bloomTarget(1), blurStep / FRAME.bloomWidth(), 0);
-            bloomPass(1, FRAME.bloom(1), FRAME.bloomTarget(0), 0, blurStep / FRAME.bloomHeight());
+            // 调用统一多尺度提取、柔化和加权回升，光晕输入始终只有 RVP 的光贡献。
+            renderBloom(blurStep);
             // 调用最终合成，不再复制背景，保留场景 Alpha。
             bloomShader.setSampler("InputTexture", FRAME.light());
             bloomShader.setSampler("SceneColor", FRAME.color());
-            bloomShader.setSampler("BloomTexture", FRAME.bloom(0));
+            bloomShader.setSampler("BloomTexture", FRAME.bloom(0, 1));
             bloomShader.safeGetUniform("Mode").set(2);
             FRAME.bind(FRAME.mainTarget(), FRAME.width(), FRAME.height());
             FRAME.draw(bloomShader);
             // 调用只增强喷口的显示峰值，不提高普通爆炸/炮口光的曝光上限。
             renderEmission();
-            // 调用半径至少二十格的独立光晕，再叠加真实细长核心，保持白热形状清晰。
+            // 调用独立光晕范围，再叠加真实细长核心；范围缩到零也不会取消喷焰本身。
             RVP_RocketPlumePass.renderHalos(FRAME, plumes, VIEW, PROJECTION, camera, plumeTime);
             RVP_RocketPlumePass.render(FRAME, plumes, VIEW, PROJECTION, camera, plumeTime, 2);
             RVP_SmokeLightPass.render(FRAME, event.getCamera(), event.getPartialTick());
@@ -352,7 +359,8 @@ public final class RVP_ScreenLightPass {
                     light.intensity() * RVP_LightingConfig.intensity());
             lightShader.safeGetUniform("LightShape" + index).set(light.surfaceWeight(),
                     RVP_LightingConfig.volumetricEnabled() ? light.volumetricStrength() : 0,
-                    light.bloom() ? 1F : 0F, 0F);
+                    light.bloom() ? 1F : 0F,
+                    light.type() == RVP_LightSourceType.ROCKET_ENGINE ? 0F : light.haloRadius());
             if (RVP_RocketPlumeParameters.ROUND_SOURCE_ENABLED && light.type() == RVP_LightSourceType.ROCKET_ENGINE) {
                 // 调用统一代码预设；已采样的强度包含二脉冲、燃尽和预览年龄，不能重复乘阶段。
                 RVP_LightParameters.EngineEmission emission = RVP_LightParameters.engineEmission(light.radius(), light.intensity());
@@ -373,15 +381,43 @@ public final class RVP_ScreenLightPass {
         FRAME.drawEmission(lightShader);
     }
 
-    /** 执行一轮提取或模糊；半分辨率目标相互独立，绝不同时读写同一附件。 */
-    private static void bloomPass(int mode, int input, int target, float dx, float dy) {
+    /** 四层依次缩小并柔化，再从最小层回升；固定基础权重总和为一，强度调节不相互补偿。 */
+    private static void renderBloom(float blurStep) {
+        for (int level = 0; level < RVP_BloomParameters.LEVELS; level++) {
+            // 调用独立读写目标：首层提取亮部，后续层只缩小上一层，避免反复扣除亮部门槛。
+            bloomPass(level == 0 ? 0 : 3, level == 0 ? FRAME.glow() : FRAME.bloom(level - 1, 0),
+                    FRAME.color(), level, 0, 0, 0, 0, 0);
+            // 调用横纵连续高斯过滤，每层使用自己的像素尺寸。
+            bloomPass(1, FRAME.bloom(level, 0), FRAME.color(), level, 1,
+                    blurStep / FRAME.bloomWidth(level), 0, 0, 0);
+            bloomPass(1, FRAME.bloom(level, 1), FRAME.color(), level, 0,
+                    0, blurStep / FRAME.bloomHeight(level), 0, 0);
+        }
+        // 调用会话参数一次取快照；近层和远层各自乘固定权重，关闭一组不让另一组突然变亮。
+        float nearStrength = RVP_LightRuntimeTuning.get(RVP_LightRuntimeTuning.Group.bloom,
+                RVP_LightRuntimeTuning.Parameter.nearStrength);
+        float farStrength = RVP_LightRuntimeTuning.get(RVP_LightRuntimeTuning.Group.bloom,
+                RVP_LightRuntimeTuning.Parameter.farStrength);
+        for (int level = RVP_BloomParameters.LEVELS - 1; level >= 0; level--) {
+            boolean hasCoarser = level + 1 < RVP_BloomParameters.LEVELS;
+            // 调用加权回升；最小层的无用采样器仍绑定有效且非写入附件，禁止显卡读写反馈。
+            bloomPass(4, FRAME.bloom(level, 0), hasCoarser ? FRAME.bloom(level + 1, 1) : FRAME.color(),
+                    level, 1, 0, 0, RVP_BloomParameters.weight(level, nearStrength, farStrength), hasCoarser ? 1 : 0);
+        }
+    }
+
+    /** 执行一轮提取、缩小、模糊或回升；三个采样器均不指向本轮写入附件。 */
+    private static void bloomPass(int mode, int input, int coarser, int level, int targetIndex,
+            float dx, float dy, float layerWeight, float coarserWeight) {
         bloomShader.setSampler("InputTexture", input);
         // 即使该模式未使用，三个采样器也保持完整有效的纹理绑定。
         bloomShader.setSampler("SceneColor", FRAME.color());
-        bloomShader.setSampler("BloomTexture", FRAME.light());
+        bloomShader.setSampler("BloomTexture", coarser);
         bloomShader.safeGetUniform("Mode").set(mode);
         bloomShader.safeGetUniform("Direction").set(dx, dy);
-        FRAME.bind(target, FRAME.bloomWidth(), FRAME.bloomHeight());
+        bloomShader.safeGetUniform("LayerWeights").set(layerWeight, coarserWeight);
+        // 调用指定层目标与实际尺寸；每轮完整覆盖，窗口重建后不会读到旧光晕。
+        FRAME.bind(FRAME.bloomTarget(level, targetIndex), FRAME.bloomWidth(level), FRAME.bloomHeight(level));
         FRAME.draw(bloomShader);
     }
 

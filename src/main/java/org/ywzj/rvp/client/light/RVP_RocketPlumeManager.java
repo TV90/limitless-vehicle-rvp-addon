@@ -58,10 +58,10 @@ public final class RVP_RocketPlumeManager {
         for (Tracked entry : entries.values()) {
             if (entry.expires <= now) { continue; }
             float fade = entry.preview ? (float) Math.max(0, 1 - (now - entry.start) / 40.0) : 1;
-            // 调用共享半径调参，已有预览和真实喷焰都立即响应，且不会影响喷焰长宽。
+            // 调用独立光晕半径调参，照亮范围改动不会影响已有预览、真实喷焰或几何长宽。
             RVP_RocketPlume base = entry.plume;
             RVP_RocketPlume sample = new RVP_RocketPlume(base.position(), base.direction(), base.length(), base.radius(),
-                    RVP_LightRuntimeTuning.radius(RVP_LightRuntimeTuning.Group.engine, base.haloRadius()),
+                    RVP_LightRuntimeTuning.haloRadius(RVP_LightRuntimeTuning.Group.engine, base.haloRadius()),
                     base.strength() * fade, base.seed());
             if (sample.strength() > 0 && visible.test(sample)) { result.add(sample); }
         }

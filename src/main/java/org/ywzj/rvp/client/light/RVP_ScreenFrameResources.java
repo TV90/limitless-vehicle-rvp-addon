@@ -14,6 +14,7 @@ import org.lwjgl.opengl.GL30;
 import org.lwjgl.opengl.GL33;
 import org.ywzj.rvp.client.render.RVP_GlStateSync;
 import org.ywzj.rvp.client.render.RVP_BlendModeState;
+import org.ywzj.rvp.light.RVP_BloomParameters;
 import java.util.Arrays;
 
 /**
@@ -37,14 +38,18 @@ final class RVP_ScreenFrameResources {
     private int lightTexture;
     /** 光照贡献帧缓冲，只写自身附件。 */
     private int lightFramebuffer;
+    /** 独立光晕来源，使用光晕半径生成，绝不读取照亮半径产生的颜色。 */
+    private int glowTexture;
+    /** 独立光晕来源绘制目标，仅在需要光晕时申请。 */
+    private int glowFramebuffer;
     /** 单条喷焰可见发光比例，使用一像素缓冲，避免广域光晕每个像素重复检查整个尾焰。 */
     private int plumeVisibilityTexture;
     /** 一像素可见度绘制目标；逐条喷焰覆盖复用，不分配每弹体纹理。 */
     private int plumeVisibilityFramebuffer;
-    /** 半分辨率光晕纹理，两次模糊交替使用。 */
-    private final int[] bloomTextures = new int[2];
-    /** 半分辨率光晕目标。 */
-    private final int[] bloomFramebuffers = new int[2];
+    /** 四种尺寸的光晕纹理，每层两张交替读写；第二张最后保存该层及更远层的加权结果。 */
+    private final int[][] bloomTextures = new int[RVP_BloomParameters.LEVELS][2];
+    /** 与各层纹理一一对应的绘制目标；不逐光源申请显存。 */
+    private final int[][] bloomFramebuffers = new int[RVP_BloomParameters.LEVELS][2];
     /** 独立全屏三角形，避免碰原版 BufferUploader 的缓存。 */
     private int vertexArray;
     /** 全屏三角形顶点缓冲。 */
@@ -177,10 +182,23 @@ final class RVP_ScreenFrameResources {
 
     /** 光晕单独延迟分配，失败时仍能直接合成基础屏幕光。 */
     void ensureBloom() {
-        if (bloomTextures[0] != 0 && bloomTextures[1] != 0) { return; }
-        for (int index = 0; index < 2; index++) {
-            bloomTextures[index] = texture(bloomWidth(), bloomHeight(), GL30.GL_RGBA16F, GL11.GL_RGBA, GL11.GL_LINEAR);
-            bloomFramebuffers[index] = framebuffer(bloomTextures[index]);
+        if (glowTexture == 0) {
+            // 调用独立全尺寸光晕来源，照地画面仍保存在 lightTexture，二者不相互覆盖。
+            glowTexture = texture(width, height, GL30.GL_RGBA16F, GL11.GL_RGBA, GL11.GL_LINEAR);
+        }
+        if (glowFramebuffer == 0) { glowFramebuffer = framebuffer(glowTexture); }
+        for (int level = 0; level < RVP_BloomParameters.LEVELS; level++) {
+            for (int index = 0; index < 2; index++) {
+                if (bloomTextures[level][index] == 0) {
+                    // 调用独立尺寸和纹理分配，极小窗口仍有有效附件。
+                    bloomTextures[level][index] = texture(bloomWidth(level), bloomHeight(level),
+                            GL30.GL_RGBA16F, GL11.GL_RGBA, GL11.GL_LINEAR);
+                }
+                if (bloomFramebuffers[level][index] == 0) {
+                    // 调用完整性检查，半途失败时纹理仍由统一释放入口回收。
+                    bloomFramebuffers[level][index] = framebuffer(bloomTextures[level][index]);
+                }
+            }
         }
     }
 
@@ -313,11 +331,19 @@ final class RVP_ScreenFrameResources {
         if (depthReadFramebuffer != 0) { GL30.glDeleteFramebuffers(depthReadFramebuffer); depthReadFramebuffer = 0; }
         if (lightTexture != 0) { RenderSystem.deleteTexture(lightTexture); lightTexture = 0; }
         if (lightFramebuffer != 0) { GL30.glDeleteFramebuffers(lightFramebuffer); lightFramebuffer = 0; }
+        if (glowTexture != 0) { RenderSystem.deleteTexture(glowTexture); glowTexture = 0; }
+        if (glowFramebuffer != 0) { GL30.glDeleteFramebuffers(glowFramebuffer); glowFramebuffer = 0; }
         if (plumeVisibilityTexture != 0) { RenderSystem.deleteTexture(plumeVisibilityTexture); plumeVisibilityTexture = 0; }
         if (plumeVisibilityFramebuffer != 0) { GL30.glDeleteFramebuffers(plumeVisibilityFramebuffer); plumeVisibilityFramebuffer = 0; }
-        for (int i = 0; i < 2; i++) {
-            if (bloomTextures[i] != 0) { RenderSystem.deleteTexture(bloomTextures[i]); bloomTextures[i] = 0; }
-            if (bloomFramebuffers[i] != 0) { GL30.glDeleteFramebuffers(bloomFramebuffers[i]); bloomFramebuffers[i] = 0; }
+        for (int level = 0; level < RVP_BloomParameters.LEVELS; level++) {
+            for (int index = 0; index < 2; index++) {
+                if (bloomTextures[level][index] != 0) {
+                    RenderSystem.deleteTexture(bloomTextures[level][index]); bloomTextures[level][index] = 0;
+                }
+                if (bloomFramebuffers[level][index] != 0) {
+                    GL30.glDeleteFramebuffers(bloomFramebuffers[level][index]); bloomFramebuffers[level][index] = 0;
+                }
+            }
         }
         if (vertexBuffer != 0) { GL15.glDeleteBuffers(vertexBuffer); vertexBuffer = 0; }
         if (vertexArray != 0) { GL30.glDeleteVertexArrays(vertexArray); vertexArray = 0; }
@@ -336,24 +362,28 @@ final class RVP_ScreenFrameResources {
     int light() { return lightTexture; }
     /** 光贡献目标。 */
     int lightTarget() { return lightFramebuffer; }
+    /** 只供光晕提取的独立输入，不作为最终表面照明贡献。 */
+    int glow() { return glowTexture; }
+    /** 光晕来源目标，写入时不能采样 glowTexture 自身。 */
+    int glowTarget() { return glowFramebuffer; }
     /** 只读一像素尾焰可见发光比例；不得在写入该目标时同时采样。 */
     int plumeVisibility() { return plumeVisibilityTexture; }
     /** 一像素可见度目标。 */
     int plumeVisibilityTarget() { return plumeVisibilityFramebuffer; }
-    /** 半分辨率纹理。 */
-    int bloom(int index) { return bloomTextures[index]; }
-    /** 半分辨率目标。 */
-    int bloomTarget(int index) { return bloomFramebuffers[index]; }
+    /** 指定层的只读纹理，调用方不得同时绑定其对应写入目标。 */
+    int bloom(int level, int index) { return bloomTextures[level][index]; }
+    /** 指定层的绘制目标。 */
+    int bloomTarget(int level, int index) { return bloomFramebuffers[level][index]; }
     /** 主目标标识。 */
     int mainTarget() { return sourceFramebuffer; }
     /** 场景宽度。 */
     int width() { return width; }
     /** 场景高度。 */
     int height() { return height; }
-    /** 向上取整的半宽。 */
-    int bloomWidth() { return Math.max(1, (width + 1) / 2); }
-    /** 向上取整的半高。 */
-    int bloomHeight() { return Math.max(1, (height + 1) / 2); }
+    /** 指定层的向上取整宽度；调用统一尺寸计算，防止奇数窗口漏掉边缘。 */
+    int bloomWidth(int level) { return RVP_BloomParameters.size(width, level); }
+    /** 指定层的向上取整高度；调用统一尺寸计算，至少一个像素。 */
+    int bloomHeight(int level) { return RVP_BloomParameters.size(height, level); }
 
     /** 仅保存本管线会改动的 GL 状态，包含原版缓存、外部采样器和非默认读取目标。 */
     static final class State implements AutoCloseable {

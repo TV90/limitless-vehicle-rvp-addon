@@ -68,8 +68,8 @@ public final class RVP_LightingConfig {
     public static int maxLights() { return CLIENT_SPEC.isLoaded() ? MAX_LIGHTS.get() : 8; }
     /** 返回客户端距离预算。 */
     public static double maxDistance() {
-        // 调用距离倍率；仍受既有16～1024格预算约束，不影响喷焰独立的远距可见性。
-        return Math.max(16, Math.min(1024, (CLIENT_SPEC.isLoaded() ? MAX_DISTANCE.get() : 256)
+        // 调用放宽后的距离倍率，允许1～32768格，不影响喷焰独立的远距可见性。
+        return Math.max(1, Math.min(RVP_LightRuntimeTuning.MAX_TUNED_DISTANCE, (CLIENT_SPEC.isLoaded() ? MAX_DISTANCE.get() : 256)
                 * RVP_LightRuntimeTuning.get(Group.global, Parameter.distanceScale)));
     }
     /** 返回客户端亮度倍率。 */

@@ -47,10 +47,10 @@ public final class RVP_ScreenLightDebugCommands {
                     return 1;
                 }))
                 .then(Commands.literal("preview").executes(context -> preview(8))
-                        .then(Commands.argument("radius", FloatArgumentType.floatArg(0.5F, 48))
+                        .then(Commands.argument("radius", FloatArgumentType.floatArg(0.01F, RVP_LightRuntimeTuning.MAX_TUNED_RADIUS))
                                 .executes(context -> preview(FloatArgumentType.getFloat(context, "radius")))))
                 .then(Commands.literal("engine").executes(context -> preview(0, true))
-                        .then(Commands.argument("scale", FloatArgumentType.floatArg(0.01F, 16F))
+                        .then(Commands.argument("scale", FloatArgumentType.floatArg(0.001F, 256F))
                                 .executes(context -> preview(0, true,
                                         FloatArgumentType.getFloat(context, "scale")))
                                 .then(Commands.argument("caliber", FloatArgumentType.floatArg(0, 1000000F))
@@ -115,10 +115,12 @@ public final class RVP_ScreenLightDebugCommands {
         send(source, "global=环境光总设置，explosion=爆炸，muzzle=炮口，engine=发动机，bloom=模糊光晕。");
         send(source, "/rvplight set <组> <参数> <值>；status <组> [参数] 查看数值、默认值及中文含义，支持Tab补全。");
         send(source, "/rvplight reset [组] [参数] 恢复默认；copy 将本次全部修改复制成可重放指令。");
-        send(source, "例：set engine haloIntensity 8 调橙色外晕；set engine radiusScale 2 调共同半径；set bloom blurScale 2 调模糊范围。");
-        send(source, "brightness 只调环境受光；coreIntensity 调白热核心，haloIntensity 调橙焰/广域光晕，inputPeak 调喷焰送入模糊的亮度。");
+        send(source, "explosion/muzzle/engine 均支持 radiusScale 调照亮半径、haloRadiusScale 调光晕半径；两者分开，0可单独关闭。");
+        send(source, "例：set explosion radiusScale 4；set explosion haloRadiusScale 0.5；set engine worldHaloIntensity 8 调广域橙晕亮度。");
+        send(source, "bloom nearStrength 调贴近亮焰的两层光晕，farStrength 调向周围消散的两层辉光；两者互不补偿。");
+        send(source, "brightness 调环境光强，爆炸/炮口光晕也随光强变化；coreIntensity 调白热核心，inputPeak 调模糊输入亮度。");
         send(source, "/rvplight preview [半径] 预览爆炸类短光；engine [喷焰缩放] [毫米口径] 预览真实发动机算法。");
-        send(source, "半径单位为格；发动机环境光和广域橙晕共用20～500格边界，喷焰长宽仍由原有缩放决定。");
+        send(source, "两种半径均允许0～8192格；爆炸光默认32刻即1.6秒，衰减系数0.3；喷焰长宽仍由原有缩放决定。");
         send(source, "所有修改下一帧生效，仅本机；重连/换维度保留，重启游戏恢复默认。不会写配置或载具包。");
         return 1;
     }
@@ -188,7 +190,7 @@ public final class RVP_ScreenLightDebugCommands {
         return 1;
     }
 
-    /** 在准星表面外侧生成一秒无伤害橙光，便于观察地面、墙面和遮挡。 */
+    /** 在准星表面外侧生成1.6秒无伤害爆炸类橙光，便于观察地面、墙面和独立光晕。 */
     private static int preview(float radius) {
         // 调用共享预览入口，原有命令继续验证普通表面光。
         return preview(radius, false);
@@ -206,7 +208,7 @@ public final class RVP_ScreenLightDebugCommands {
         return preview(radius, engine, scale, 0F);
     }
 
-    /** 口径只改变共同光晕/环境照明范围，缩放仍只改变喷焰本身长宽，方便分别验收。 */
+    /** 口径提供两种范围的基础值，各自倍率独立应用；缩放仍只改变喷焰本身长宽。 */
     private static int preview(float radius, boolean engine, float scale, float caliber) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null || mc.player == null) { return 0; }
@@ -218,12 +220,13 @@ public final class RVP_ScreenLightDebugCommands {
         }
         // 调用统一管理器，普通光与发动机自发光均使用真实渲染管线，不创建额外粒子或方块。
         RVP_ScreenLightManager.INSTANCE.beginWorld(mc.level, mc.level.getGameTime());
-        // 调用真实发动机预设，只把预览寿命延长到两秒，亮度/颜色/半径与正式光源一致。
-        RVP_LightParameters preset = RVP_LightParameters.engine(caliber);
+        // 调用真实代码预设：发动机只把预览延长到两秒，爆炸沿用正式1.6秒和0.3衰减。
+        RVP_LightParameters preset = engine ? RVP_LightParameters.engine(caliber) : RVP_LightParameters.explosion(4);
         RVP_LightParameters parameters = engine
                 ? new RVP_LightParameters(true, preset.red(), preset.green(), preset.blue(), preset.radius(),
                         preset.intensity(), 40, 0, preset.surfaceWeight(), preset.decay(), preset.bloom(), 0, 0)
-                : new RVP_LightParameters(true, 1, 0.8F, 0.5F, radius, 1.3F, 20, 0, 1, 1, true, 0.2F, 0);
+                : new RVP_LightParameters(true, preset.red(), preset.green(), preset.blue(), radius, preset.intensity(),
+                        preset.durationTicks(), 0, preset.surfaceWeight(), preset.decay(), preset.bloom(), 0, 0);
         RVP_ScreenLightManager.INSTANCE.addTransient(position,
                 engine ? RVP_LightSourceType.ROCKET_ENGINE : RVP_LightSourceType.EXPLOSION, null,
                 parameters, mc.level.getGameTime());
@@ -233,9 +236,10 @@ public final class RVP_ScreenLightDebugCommands {
             if (direction.lengthSqr() < 0.01) { direction = new Vec3(1, 0, 0); }
             RVP_RocketPlumeManager.INSTANCE.beginWorld(mc.level, mc.level.getGameTime());
             RVP_RocketPlumeManager.INSTANCE.upsert(java.util.UUID.randomUUID(), position, direction, scale, caliber, 1, true);
-            // 调用正式半径调参规则，提示中的数值与实际环境照明和广域光晕一致。
+            // 调用两种独立范围规则，提示照亮半径和光晕半径，避免把分离后的结果说成同一个值。
             mc.player.displayClientMessage(Component.literal("[RVP Light] 发动机预览：口径 " + caliber
-                    + " mm，光晕/环境照明半径 " + RVP_LightRuntimeTuning.radius(Group.engine, preset.radius())
+                    + " mm，照亮半径 " + RVP_LightRuntimeTuning.radius(Group.engine, preset.radius())
+                    + " 格，光晕半径 " + RVP_LightRuntimeTuning.haloRadius(Group.engine, preset.radius())
                     + " 格，喷焰缩放 " + scale), false);
         }
         return 1;

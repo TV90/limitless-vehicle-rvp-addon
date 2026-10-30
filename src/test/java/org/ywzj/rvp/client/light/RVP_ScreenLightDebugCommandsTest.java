@@ -35,6 +35,14 @@ class RVP_ScreenLightDebugCommandsTest {
         for (String command : new String[] {"rvplight preview", "rvplight preview 8", "rvplight engine",
                 "rvplight engine 0.3 300", "rvplight clear", "rvplight help", "rvplight copy",
                 "rvplight set engine haloIntensity 8", "rvplight status engine coreIntensity",
+                "rvplight set engine worldHaloIntensity 4", "rvplight set bloom nearStrength 0",
+                "rvplight set bloom farStrength 2", "rvplight reset bloom farStrength",
+                "rvplight set explosion haloRadiusScale 1024", "rvplight set muzzle radiusScale 0",
+                "rvplight set engine haloRadiusScale 0", "rvplight set engine radiusScale 1024",
+                "rvplight set engine worldHaloIntensity 60000", "rvplight set bloom nearStrength 256",
+                "rvplight set bloom farStrength 256", "rvplight set global brightness 256",
+                "rvplight set global distanceScale 128", "rvplight set explosion decayScale 0",
+                "rvplight preview 8192", "rvplight engine 256 300",
                 "rvplight reset engine radiusScale", "rvplight reset"}) {
             var parsed = dispatcher.parse(command, null);
             assertFalse(parsed.getReader().canRead(), command);
@@ -42,6 +50,9 @@ class RVP_ScreenLightDebugCommandsTest {
             assertNotNull(parsed.getContext().getCommand(), command);
         }
         for (String command : new String[] {"rvplight set engine coreIntensity 60001",
+                "rvplight set engine worldHaloIntensity 60001", "rvplight set bloom nearStrength -1",
+                "rvplight set bloom farStrength 257", "rvplight set engine nearStrength 1",
+                "rvplight set explosion haloRadiusScale -1", "rvplight set muzzle haloRadiusScale 1025",
                 "rvplight set engine radiusScale -1", "rvplight set explosion coreIntensity 2"}) {
             var parsed = dispatcher.parse(command, null);
             assertTrue(parsed.getReader().canRead(), command);

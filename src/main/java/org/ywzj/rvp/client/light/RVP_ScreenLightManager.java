@@ -155,12 +155,13 @@ public final class RVP_ScreenLightManager {
 
         /** 爆炸从白热过渡到橙红；持续光只受燃烧事实和预算影响。 */
         private RVP_ScreenLight sample(double now, UUID key) {
-            // 调用采样时调参，使已有光源下一帧也能响应；不修改存储的原始预设或重置年龄。
-            RVP_LightParameters tuned = RVP_LightRuntimeTuning.apply(switch (type) {
+            RVP_LightRuntimeTuning.Group group = switch (type) {
                 case EXPLOSION -> RVP_LightRuntimeTuning.Group.explosion;
                 case MUZZLE -> RVP_LightRuntimeTuning.Group.muzzle;
                 case ROCKET_ENGINE -> RVP_LightRuntimeTuning.Group.engine;
-            }, parameters);
+            };
+            // 调用采样时调参，使已有光源下一帧也能响应；不修改存储的原始预设或重置年龄。
+            RVP_LightParameters tuned = RVP_LightRuntimeTuning.apply(group, parameters);
             float progress = (float) Math.max(0, Math.min(1, (now - start) / parameters.durationTicks()));
             float fade = key == null ? (float) Math.pow(1 - progress, tuned.decay()) : 1;
             float green = tuned.green();
@@ -170,6 +171,7 @@ public final class RVP_ScreenLightManager {
                 blue *= 1 - progress * 0.9F;
             }
             return new RVP_ScreenLight(position, tuned.red(), green, blue, tuned.radius(),
+                    tuned.bloom() ? RVP_LightRuntimeTuning.haloRadius(group, parameters.radius()) : 0,
                     now >= expires ? 0 : tuned.intensity() * fade,
                     (float) Math.max(0, expires - now), type, key, tuned.surfaceWeight(),
                     tuned.bloom(), tuned.volumetricStrength());

@@ -6,12 +6,12 @@ package org.ywzj.rvp.light;
  * @param red 红色，0～1
  * @param green 绿色，0～1
  * @param blue 蓝色，0～1
- * @param radius 影响半径，单位格；发动机按口径计算为 20～500，爆炸/炮口沿用各自上限
- * @param intensity 亮度倍率，0～4
+ * @param radius 未调参的照亮基础半径，单位格；光晕用同一基础值独立缩放，发动机基础为 20～500
+ * @param intensity 代码预设亮度倍率为 0～4；游戏内调参允许额外放大
  * @param durationTicks 闪光寿命，单位 tick，1～40
  * @param mergeWindowTicks 同源短光合并窗口，单位 tick，0～10
- * @param surfaceWeight 表面受光倍率，0～1
- * @param decay 衰减指数，0.25～8
+ * @param surfaceWeight 代码预设表面受光倍率为 0～1；游戏内调参允许额外放大
+ * @param decay 剩余寿命的幂指数，爆炸默认 0.3；越小越晚变暗，0 表示到期前不衰减
  * @param bloom 是否允许亮部形成光晕
  * @param volumetricStrength 空气散射强度，0～1，0 关闭可选雾光
  * @param blockLightLevel P5 预留字段；当前只验证屏幕空间光，所有代码预设固定为 0
@@ -25,11 +25,11 @@ public record RVP_LightParameters(boolean enabled, float red, float green, float
     public static final float ENGINE_CORE_INTENSITY = 60000F;
     /** 喷口周围橙色发光气团的 HDR 峰值，不依赖可选空气散射开关。 */
     public static final float ENGINE_HALO_INTENSITY = 16F;
-    /** 发动机广域光晕与环境照明的共同最小半径，单位格，缺失口径时采用此值。 */
+    /** 发动机未调参基础半径下限，单位格，缺失口径时采用此值。 */
     public static final float ENGINE_MIN_RADIUS = 20F;
-    /** 每毫米弹体口径增加的共同半径，单位格/mm；100 mm 对应总半径 30 格。 */
+    /** 每毫米弹体口径增加的基础半径，单位格/mm；两种范围分别在此基础上调参。 */
     public static final float ENGINE_RADIUS_PER_MM = 0.1F;
-    /** 发动机广域光晕与环境照明的共同半径硬上限，单位格。 */
+    /** 发动机未调参基础半径上限，单位格；调参后的独立范围另有较宽上限。 */
     public static final float ENGINE_MAX_RADIUS = 500F;
     /** 一级喷口核心的物理半径，单位格。 */
     private static final float ENGINE_CORE_RADIUS = 0.28F;
@@ -38,8 +38,9 @@ public record RVP_LightParameters(boolean enabled, float red, float green, float
     /** 爆炸半径只用作视觉输入，不允许核爆把屏幕光半径扩大到整张地图。 */
     public static RVP_LightParameters explosion(float explosionRadius) {
         float safeRadius = Float.isFinite(explosionRadius) ? Math.max(0, explosionRadius) : 4;
+        // 正常20刻/秒时32刻为1.6秒；亮度按剩余寿命比例的0.3次幂衰减。
         return new RVP_LightParameters(true, 1, 0.82F, 0.48F,
-                Math.min(32, 4 + safeRadius * 2), 1.25F, 8, 1, 0.85F, 2.2F, true, 0, 0);
+                Math.min(32, 4 + safeRadius * 2), 1.25F, 32, 1, 0.85F, 0.3F, true, 0, 0);
     }
 
     /** 口径单位毫米；机枪弱短、重炮白亮，投放炸弹等无炮口火焰的武器由调用方排除。 */
@@ -58,9 +59,9 @@ public record RVP_LightParameters(boolean enabled, float red, float green, float
         return engine(0);
     }
 
-    /** 既有 effects_data.caliber 单位为毫米；只控制共同照明/光晕半径，不改变喷焰模型尺寸。 */
+    /** 既有 effects_data.caliber 单位为毫米；提供照亮/光晕基础半径，二者分别调参，不改变喷焰尺寸。 */
     public static RVP_LightParameters engine(float caliber) {
-        // 调用唯一半径计算入口，环境光与程序光晕不会分别硬编码一套范围。
+        // 调用唯一口径基础半径入口，环境光和光晕各自的倍率由采样阶段独立应用。
         return new RVP_LightParameters(true, 1, 0.48F, 0.12F, engineRadius(caliber), ENGINE_SURFACE_INTENSITY,
                 3, 0, 0.8F, 1, true, 0, 0);
     }

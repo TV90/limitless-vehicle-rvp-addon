@@ -140,7 +140,7 @@ class RVP_SmokeLightGeometryTest {
 
     /** 普通表面光快照，烟雾不能因光源类型不同而失去受光。 */
     private static RVP_ScreenLight light(Vec3 position) {
-        return new RVP_ScreenLight(position, 1, 0.5F, 0.1F, 7, 4, 1,
+        return new RVP_ScreenLight(position, 1, 0.5F, 0.1F, 7, 7, 4, 1,
                 RVP_LightSourceType.ROCKET_ENGINE, null, 0.8F, true, 0);
     }
 }

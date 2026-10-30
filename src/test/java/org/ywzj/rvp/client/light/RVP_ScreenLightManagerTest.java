@@ -79,17 +79,17 @@ class RVP_ScreenLightManagerTest {
         assertTrue(middle.green() < first.green());
         assertTrue(middle.blue() < first.blue());
         for (int i = 0; i < 240; i++) { assertEquals(middle, sample(0.5F).get(0)); }
-        manager.tick(world, 108);
+        manager.tick(world, 132);
         assertFalse(manager.hasActiveLights());
     }
 
     @Test
     void delayedEventsCatchUpAndAlreadyExpiredEventsAreRejected() {
         RVP_LightParameters parameters = RVP_LightParameters.explosion(4);
-        assertEquals(0, manager.addTransient(Vec3.ZERO, RVP_LightSourceType.EXPLOSION, null, parameters, 90));
+        assertEquals(0, manager.addTransient(Vec3.ZERO, RVP_LightSourceType.EXPLOSION, null, parameters, 60));
         manager.addTransient(Vec3.ZERO, RVP_LightSourceType.EXPLOSION, null, parameters, 96);
         assertTrue(sample(0).get(0).intensity() < parameters.intensity());
-        assertEquals(4, sample(0).get(0).remainingTicks());
+        assertEquals(28, sample(0).get(0).remainingTicks());
     }
 
     @Test
@@ -97,7 +97,25 @@ class RVP_ScreenLightManagerTest {
         RVP_LightParameters parameters = RVP_LightParameters.explosion(4);
         assertNotEquals(0, manager.addTransient(Vec3.ZERO, RVP_LightSourceType.EXPLOSION, null, parameters, 105));
         assertEquals(parameters.durationTicks(), sample(0).get(0).remainingTicks());
-        manager.tick(world, 108);
+        manager.tick(world, 132);
+        assertTrue(sample(0).isEmpty());
+    }
+
+    @Test
+    void explosionLivesExactlyThirtyTwoTicksWithPointThreeDecayAndRenderRateCannotExtendIt() {
+        // 调用真实爆炸预设与管理器，覆盖1.6秒中点、最后半刻和精确过期边界。
+        RVP_LightParameters parameters = RVP_LightParameters.explosion(4);
+        manager.addTransient(Vec3.ZERO, RVP_LightSourceType.EXPLOSION, null, parameters, 100);
+        manager.tick(world, 116);
+        RVP_ScreenLight middle = sample(0).get(0);
+        assertEquals(parameters.intensity() * Math.pow(.5, .3), middle.intensity(), .00001);
+        assertEquals(16, middle.remainingTicks());
+        manager.tick(world, 131);
+        RVP_ScreenLight last = sample(.5F).get(0);
+        assertTrue(last.intensity() > 0);
+        assertEquals(.5F, last.remainingTicks());
+        for (int i = 0; i < 240; i++) { assertEquals(last, sample(.5F).get(0)); }
+        manager.tick(world, 132);
         assertTrue(sample(0).isEmpty());
     }
 

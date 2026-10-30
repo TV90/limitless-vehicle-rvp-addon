@@ -27,7 +27,8 @@ final class RVP_RocketPlumePass {
     /** 在现有 Forge 着色器注册事件中加入 RVP 自有程序，不添加 Mixin。 */
     static void register(RegisterShadersEvent event) throws IOException {
         shader = null;
-        event.registerShader(new ShaderInstance(event.getResourceProvider(), RVP_MOD.modLocation("rocket_plume"),
+        // 调用另名的独立橙晕程序，保留旧版资源，喷流几何和深度来源继续共用。
+        event.registerShader(new ShaderInstance(event.getResourceProvider(), RVP_MOD.modLocation("rocket_plume_ranges"),
                 DefaultVertexFormat.POSITION), loaded -> shader = loaded);
     }
 
@@ -60,7 +61,7 @@ final class RVP_RocketPlumePass {
     static RVP_PressureWaveGeometry.Bounds haloBounds(RVP_RocketPlume plume, Matrix4f view,
             Matrix4f projection, Vec3 camera) {
         Vector3f center = viewPosition(plume.position(), view, camera);
-        if (center.z >= -0.0001F) { return null; }
+        if (center.z >= -0.0001F || plume.haloRadius() <= 0) { return null; }
         return RVP_PressureWaveGeometry.screenBounds(projection, center.x, center.y, center.z, plume.haloRadius());
     }
 
@@ -73,6 +74,8 @@ final class RVP_RocketPlumePass {
         shader.safeGetUniform("OutputMode").set(mode);
         shader.safeGetUniform("Time").set(time);
         for (RVP_RocketPlume plume : plumes) {
+            // 光晕范围为零时仅取消模糊来源，显示模式仍保留真实白热喷焰。
+            if (mode == 1 && plume.haloRadius() <= 0) { continue; }
             // 调用整条喷流的包围框，不要求喷口本身在屏幕内。
             RVP_PressureWaveGeometry.Bounds bounds = shapeBounds(plume, view, projection, camera, frame.height());
             if (bounds == null) { continue; }
@@ -80,7 +83,7 @@ final class RVP_RocketPlumePass {
             uploadPlume(plume, view, camera);
             // 未使用可见度采样的模式也绑定有效外部输入，避免采样器别名指向正在写入的附件。
             shader.setSampler("PlumeVisibility", frame.depth());
-            frame.bind(mode == 1 ? frame.lightTarget() : frame.mainTarget(), frame.width(), frame.height());
+            frame.bind(mode == 1 ? frame.glowTarget() : frame.mainTarget(), frame.width(), frame.height());
             // 调用实际包围框裁剪，不额外执行离屏片元的二十次采样。
             scissor(frame, bounds);
             // 调用有限峰值合并或显示叠加，保持原世界 Alpha，不写深度，不读写同一颜色纹理。
@@ -101,7 +104,7 @@ final class RVP_RocketPlumePass {
         for (RVP_RocketPlume plume : plumes) {
             var bounds = haloBounds(plume, view, projection, camera);
             if (bounds == null) { continue; }
-            // 调用同一亮度/口径快照，阶段仅改亮度，光晕和环境照明半径始终保持同一口径规则。
+            // 调用独立光晕快照；照亮范围和光晕范围分别调参，阶段仍仅改变亮度。
             uploadPlume(plume, view, camera);
             // 可见度模式只写一像素；此时采样器指向近景深度，绝不读写自己的同一附件。
             shader.setSampler("PlumeVisibility", frame.depth());
@@ -131,6 +134,9 @@ final class RVP_RocketPlumePass {
                 RVP_LightRuntimeTuning.get(Group.engine, Parameter.coreIntensity) * plume.strength(),
                 RVP_LightRuntimeTuning.get(Group.engine, Parameter.haloIntensity) * plume.strength(), plume.seed(),
                 RVP_LightRuntimeTuning.get(Group.bloom, Parameter.inputPeak));
+        // 调用独立广域亮度；只乘一次推进阶段，不再借用外围橙焰的亮度。
+        shader.safeGetUniform("PlumeHaloIntensity").set(
+                RVP_LightRuntimeTuning.get(Group.engine, Parameter.worldHaloIntensity) * plume.strength());
     }
 
     /** 所有局部绘制共用保守矩形，视口仍为完整世界画面。 */

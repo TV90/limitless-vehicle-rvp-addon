@@ -3,6 +3,7 @@ package org.ywzj.rvp.client.light;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.opengl.*;
 import org.ywzj.rvp.light.RVP_LightParameters;
+import org.ywzj.rvp.light.RVP_BloomParameters;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -45,8 +46,8 @@ public final class ScreenLightGpuRegression {
             System.out.println("GPU=" + GL11.glGetString(GL11.GL_RENDERER));
             Path shaders = Path.of(args[0]).resolve("src/main/resources/assets/ywzj_rvp/shaders/core");
             // 编译真实生产文件，不能用测试内的简化 Shader 替代。
-            light = program(shaders, "screen_light");
-            bloom = program(shaders, "screen_light_bloom");
+            light = program(shaders, "screen_light_ranges");
+            bloom = program(shaders, "screen_light_bloom_multiscale");
             System.out.println("PASS both production GLSL programs compile and link");
             setupTriangle();
             testSurfaceLight(light);
@@ -55,9 +56,13 @@ public final class ScreenLightGpuRegression {
             testEngineEmission(light, bloom);
             testBloom(light, bloom);
             // 调用 RVP 新喷流程序专项回读，旧圆形喷口测试继续保留用于防止误删旧实现。
-            plume = program(shaders, "rocket_plume");
+            plume = program(shaders, "rocket_plume_ranges");
             testRocketPlume(Path.of(args[0]), plume, bloom);
             testWorldEngineHalo(Path.of(args[0]), plume);
+            // 调用新版多尺度和独立广域亮度专项回读，验证实际输出而非仅检查参数数值。
+            testMultiscaleBloom(Path.of(args[0]), bloom, plume);
+            testIndependentPlumeGlow(plume);
+            testSeparatedLightHalo(light);
             testExtendedEngineSurface(light);
             smoke = program(shaders, "smoke_light");
             testSmokeLighting(smoke);
@@ -86,7 +91,7 @@ public final class ScreenLightGpuRegression {
     static void testMotorFlameDepthCapture(Path root, Runnable oldMask, Runnable fixedMask, Runnable fixedDepthTest)
             throws Exception {
         Path shaders = root.resolve("src/main/resources/assets/ywzj_rvp/shaders/core");
-        int light = program(shaders, "screen_light");
+        int light = program(shaders, "screen_light_ranges");
         int flame = GL20.glCreateProgram();
         int vertex = compile(GL20.GL_VERTEX_SHADER,
                 "#version 150\nin vec3 Position; void main(){gl_Position=vec4(Position,1.0);}");
@@ -158,7 +163,7 @@ public final class ScreenLightGpuRegression {
     static void testExplosionSmokeDepthCapture(Path root, Runnable smokeDepth,
             java.util.function.IntBinaryOperator captureDepth) throws Exception {
         Path shaders = root.resolve("src/main/resources/assets/ywzj_rvp/shaders/core");
-        int light = program(shaders, "screen_light");
+        int light = program(shaders, "screen_light_ranges");
         int smoke = program(shaders, "smoke_light");
         int baseSmoke = GL20.glCreateProgram();
         int vertex = compile(GL20.GL_VERTEX_SHADER,
@@ -504,6 +509,8 @@ public final class ScreenLightGpuRegression {
         GL20.glUniform1f(GL20.glGetUniformLocation(program, "NearEmptyDepth"), 1);
         GL20.glUniform1f(GL20.glGetUniformLocation(program, "DistantEmptyDepth"), 1);
         GL20.glUniform1f(GL20.glGetUniformLocation(program, "HandDepthLimit"), 0);
+        // 原生 GLSL 编译不读取描述 JSON，显式还原喷焰资源的默认光晕范围。
+        GL20.glUniform1f(GL20.glGetUniformLocation(program, "PlumeHaloRadius"), 20);
         for (int index = 0; index < 8; index++) {
             GL20.glUniform4f(GL20.glGetUniformLocation(program, "LightEmission" + index), 0, 0, 0, 0);
         }
@@ -778,6 +785,7 @@ public final class ScreenLightGpuRegression {
         GL20.glUseProgram(shader); uniforms(shader);
         GL20.glUniform2f(GL20.glGetUniformLocation(shader, "ScreenSize"), size, size);
         GL20.glUniform4f(GL20.glGetUniformLocation(shader, "PlumeEmission"), 60000, 16, 0.2F, 12);
+        GL20.glUniform1f(GL20.glGetUniformLocation(shader, "PlumeHaloIntensity"), 16);
         GL20.glUniform1f(GL20.glGetUniformLocation(shader, "Time"), 0.7F);
         sampler(shader, "SceneDepth", 1, sky); sampler(shader, "DistantDepth", 2, sky);
         plumeGeometry(shader, 0, 0, -80, 1, 0, 0, 3, .45F);
@@ -820,9 +828,13 @@ public final class ScreenLightGpuRegression {
         float cap = pixel(output[0], 172, 128)[0];
         require(cap > .02F, "five-hundred-block halo disappeared beyond the near far plane");
         zero(pixel(output[0], 193, 128), "five-hundred-block halo exceeded its boundary");
+        GL20.glUniform1f(GL20.glGetUniformLocation(shader, "PlumeHaloRadius"), 8192);
+        worldHaloDraw(shader, visible, output, sky, size);
+        float expanded = pixel(output[0], 172, 128)[0];
+        require(expanded > cap + .1F, "expanded halo radius still obeys the former 500-block cap");
         GL20.glUniform1f(GL20.glGetUniformLocation(shader, "PlumeHaloRadius"), 10000);
         worldHaloDraw(shader, visible, output, sky, size);
-        near(cap, pixel(output[0], 172, 128)[0], "shader radius cap failed");
+        near(expanded, pixel(output[0], 172, 128)[0], "expanded shader radius cap failed");
 
         plumeGeometry(shader, 0, 0, -80, 1, 0, 0, 3, .45F);
         GL20.glUniform1f(GL20.glGetUniformLocation(shader, "PlumeHaloRadius"), 30);
@@ -905,6 +917,262 @@ public final class ScreenLightGpuRegression {
         sampler(shader, "PlumeVisibility", 0, visibility[1]);
         GL20.glUniform1i(GL20.glGetUniformLocation(shader, "OutputMode"), 4); render(output, size, size);
         return result;
+    }
+
+    /** 在真实高亮喷流上检查远近层、能量、透明度、极小窗口和高亮上限，并输出对照图。 */
+    private static void testMultiscaleBloom(Path root, int bloom, int plume) throws Exception {
+        int size = 256;
+        int sky = depth(size, size, 0, false);
+        int scene = color(size, size, new float[] {.025F, .035F, .055F, .42F});
+        int[] hdr = target(size, size), display = target(size, size);
+        int[][][] levels = bloomTargets(size, size);
+        GL20.glUseProgram(plume); uniforms(plume);
+        GL20.glUniform2f(GL20.glGetUniformLocation(plume, "ScreenSize"), size, size);
+        GL20.glUniform4f(GL20.glGetUniformLocation(plume, "PlumeEmission"), 60000, 16, .2F, 12);
+        GL20.glUniform1f(GL20.glGetUniformLocation(plume, "Time"), .7F);
+        sampler(plume, "SceneDepth", 1, sky); sampler(plume, "DistantDepth", 2, sky);
+        plumeGeometry(plume, 0, -2.5F, -8, 0, 1, 0, 5, .35F);
+        GL20.glUniform1i(GL20.glGetUniformLocation(plume, "OutputMode"), 1); render(hdr, size, size);
+
+        // 关闭一组后读原始光晕能量，独立测试不会被最终颜色饱和掩盖。
+        multiscaleBloom(bloom, hdr[1], scene, levels, size, size, 1, 0);
+        float[] nearOnly = pixels(levels[0][1][0], size / 2, size / 2);
+        multiscaleBloom(bloom, hdr[1], scene, levels, size, size, 0, 1);
+        float[] farOnly = pixels(levels[0][1][0], size / 2, size / 2);
+        multiscaleBloom(bloom, hdr[1], scene, levels, size, size, 1, 1);
+        float[] together = pixels(levels[0][1][0], size / 2, size / 2);
+        for (int at = 0; at < together.length; at += 4) {
+            require(Math.abs(together[at] - nearOnly[at] - farOnly[at]) < .025F,
+                    "near/far energy was redistributed when one group was disabled");
+        }
+        int edge = ((size / 4) * (size / 2) + size / 4 + 16) * 4;
+        require(farOnly[edge] > nearOnly[edge] + .0001F, "far bloom did not extend beyond the near glow");
+        for (int y : new int[] {52, 64, 76}) {
+            require(together[(y * (size / 2) + 67) * 4] > .01F, "glow failed to follow the whole luminous plume");
+        }
+        multiscaleBloom(bloom, hdr[1], scene, levels, size, size, 0, 0);
+        zero(pixel(levels[0][1][0], size / 4, size / 4), "both bloom groups disabled");
+
+        // 常量图四层叠加仍保留一次提取的能量，避免“多四层就亮四倍”。
+        int uniform = color(size, size, new float[] {8, 4, 1, 8});
+        multiscaleBloom(bloom, uniform, scene, levels, size, size, 1, 1);
+        float extracted = pixel(levels[0][0][0], 20, 20)[0];
+        float combined = pixel(levels[0][1][0], 20, 20)[0];
+        require(Math.abs(extracted - combined) < .04F, "four layers multiplied constant-field bloom energy");
+        // 世界颜色即使是纯白也不会成为光晕来源；不允许进入 Bloom 的光保持零扩散。
+        int brightWorld = color(size, size, new float[] {1, 1, 1, .42F});
+        int ineligible = color(size, size, new float[] {60000, 30000, 10000, 0});
+        multiscaleBloom(bloom, ineligible, brightWorld, levels, size, size, 1, 1);
+        zero(pixel(levels[0][1][0], 20, 20), "world or ineligible light leaked into bloom");
+        // 手动最大增强也不能把中间半精度纹理写成无穷大。
+        int maximum = color(size, size, new float[] {60000, 60000, 60000, 60000});
+        multiscaleBloom(bloom, maximum, scene, levels, size, size, 256, 256);
+        float[] safe = pixel(levels[0][1][0], 20, 20);
+        require(safe[0] > 50000 && safe[0] <= 60000, "manual boost escaped the HDR safety limit");
+        for (int[] dimensions : new int[][] {{257, 129}, {1, 1}}) {
+            int[][][] tiny = bloomTargets(dimensions[0], dimensions[1]);
+            multiscaleBloom(bloom, uniform, scene, tiny, dimensions[0], dimensions[1], 1, 1);
+            require(pixel(tiny[0][1][0], 0, 0)[0] > 0, "odd or one-pixel bloom lost all energy");
+        }
+
+        // 对照旧单尺度、近层、远层、合成；仅写测试图片，不触碰资源源文件。
+        var preview = new java.awt.image.BufferedImage(size * 2, size * 2, java.awt.image.BufferedImage.TYPE_INT_RGB);
+        int previousBloom = program(root.resolve("src/main/resources/assets/ywzj_rvp/shaders/core"), "screen_light_bloom");
+        try {
+            String[] labels = {"Previous single scale", "Near layers only", "Far layers only", "New four-scale bloom"};
+            for (int panel = 0; panel < labels.length; panel++) {
+                int selected = bloom;
+                if (panel == 0) {
+                    selected = previousBloom; GL20.glUseProgram(selected);
+                    sampler(selected, "InputTexture", 0, hdr[1]); sampler(selected, "SceneColor", 1, scene);
+                    sampler(selected, "BloomTexture", 2, hdr[1]);
+                    GL20.glUniform1i(GL20.glGetUniformLocation(selected, "Mode"), 0); render(levels[0][0], size / 2, size / 2);
+                    GL20.glUniform1i(GL20.glGetUniformLocation(selected, "Mode"), 1);
+                    sampler(selected, "InputTexture", 0, levels[0][0][1]);
+                    GL20.glUniform2f(GL20.glGetUniformLocation(selected, "Direction"), 2F / size, 0);
+                    render(levels[0][1], size / 2, size / 2);
+                    sampler(selected, "InputTexture", 0, levels[0][1][1]);
+                    GL20.glUniform2f(GL20.glGetUniformLocation(selected, "Direction"), 0, 2F / size);
+                    render(levels[0][0], size / 2, size / 2);
+                } else {
+                    multiscaleBloom(bloom, hdr[1], scene, levels, size, size, panel == 2 ? 0 : 1, panel == 1 ? 0 : 1);
+                }
+                GL20.glUseProgram(selected);
+                sampler(selected, "InputTexture", 0, hdr[1]); sampler(selected, "SceneColor", 1, scene);
+                sampler(selected, "BloomTexture", 2, levels[0][panel == 0 ? 0 : 1][1]);
+                GL20.glUniform1i(GL20.glGetUniformLocation(selected, "Mode"), 2); render(display, size, size);
+                GL20.glUseProgram(plume);
+                // 光晕已复用纹理单元；切回喷焰时必须恢复真实深度，不能把场景颜色误当近景遮挡。
+                sampler(plume, "SceneDepth", 1, sky); sampler(plume, "DistantDepth", 2, sky);
+                GL20.glUniform1i(GL20.glGetUniformLocation(plume, "OutputMode"), 2);
+                GL11.glEnable(GL11.GL_BLEND); GL20.glBlendEquationSeparate(GL14.GL_FUNC_ADD, GL14.GL_FUNC_ADD);
+                GL14.glBlendFuncSeparate(GL11.GL_ONE_MINUS_DST_COLOR, GL11.GL_ONE, GL11.GL_ZERO, GL11.GL_ONE);
+                render(display, size, size); GL11.glDisable(GL11.GL_BLEND);
+                float[] image = pixels(display[0], size, size);
+                boolean white = false;
+                for (int y = 0; y < size; y++) { for (int x = 0; x < size; x++) {
+                    int at = (y * size + x) * 4;
+                    near(.42F, image[at + 3], "multiscale display alpha");
+                    white |= image[at] > .99F && image[at + 1] > .99F && image[at + 2] > .99F;
+                    int red = Math.round(Math.min(1, image[at]) * 255), green = Math.round(Math.min(1, image[at + 1]) * 255);
+                    int blue = Math.round(Math.min(1, image[at + 2]) * 255);
+                    preview.setRGB(panel % 2 * size + x, panel / 2 * size + size - 1 - y, red << 16 | green << 8 | blue);
+                } }
+                require(white, "glow tuning removed the independent white-hot core");
+                var graphics = preview.createGraphics(); graphics.setColor(java.awt.Color.WHITE);
+                graphics.drawString(labels[panel], panel % 2 * size + 8, panel / 2 * size + 20); graphics.dispose();
+            }
+        } finally { GL20.glDeleteProgram(previousBloom); }
+        Path directory = root.resolve("build/multiscale-glow-gpu-regression"); Files.createDirectories(directory);
+        javax.imageio.ImageIO.write(preview, "png", directory.resolve("preview.png").toFile());
+        System.out.println("PASS four-scale bloom: whole plume, independent near/far, conserved default energy, eligibility, odd/1px windows, safe HDR, white core, Alpha; preview=" + directory.resolve("preview.png"));
+    }
+
+    /** 与生产相同的四层独立纹理，所有中间结果都允许在显卡上回读。 */
+    private static int[][][] bloomTargets(int width, int height) {
+        int[][][] result = new int[RVP_BloomParameters.LEVELS][2][];
+        for (int level = 0; level < result.length; level++) {
+            for (int index = 0; index < 2; index++) {
+                // 调用生产尺寸规则，覆盖非整除窗口和一像素层。
+                result[level][index] = target(RVP_BloomParameters.size(width, level), RVP_BloomParameters.size(height, level));
+            }
+        }
+        return result;
+    }
+
+    /** 执行正式 GLSL 的四层缩小/柔化/回升，逐轮检查采样器与写入附件不存在反馈。 */
+    private static void multiscaleBloom(int shader, int source, int scene, int[][][] levels,
+            int width, int height, float nearStrength, float farStrength) {
+        GL20.glUseProgram(shader);
+        for (int level = 0; level < levels.length; level++) {
+            int w = RVP_BloomParameters.size(width, level), h = RVP_BloomParameters.size(height, level);
+            bloomStage(shader, level == 0 ? 0 : 3, level == 0 ? source : levels[level - 1][0][1],
+                    scene, scene, levels[level][0], w, h, 0, 0, 0, 0);
+            bloomStage(shader, 1, levels[level][0][1], scene, scene, levels[level][1], w, h, 1F / w, 0, 0, 0);
+            bloomStage(shader, 1, levels[level][1][1], scene, scene, levels[level][0], w, h, 0, 1F / h, 0, 0);
+        }
+        for (int level = levels.length - 1; level >= 0; level--) {
+            boolean hasCoarser = level + 1 < levels.length;
+            bloomStage(shader, 4, levels[level][0][1], scene, hasCoarser ? levels[level + 1][1][1] : scene,
+                    levels[level][1], RVP_BloomParameters.size(width, level), RVP_BloomParameters.size(height, level),
+                    0, 0, RVP_BloomParameters.weight(level, nearStrength, farStrength), hasCoarser ? 1 : 0);
+        }
+    }
+
+    /** 一轮真实程序绘制，保证未使用的采样器也不绑定当前写入纹理。 */
+    private static void bloomStage(int shader, int mode, int input, int scene, int coarser, int[] output,
+            int width, int height, float dx, float dy, float weight, float coarseWeight) {
+        require(input != output[1] && scene != output[1] && coarser != output[1], "bloom texture feedback");
+        sampler(shader, "InputTexture", 0, input); sampler(shader, "SceneColor", 1, scene);
+        sampler(shader, "BloomTexture", 2, coarser);
+        GL20.glUniform1i(GL20.glGetUniformLocation(shader, "Mode"), mode);
+        GL20.glUniform2f(GL20.glGetUniformLocation(shader, "Direction"), dx, dy);
+        GL20.glUniform2f(GL20.glGetUniformLocation(shader, "LayerWeights"), weight, coarseWeight);
+        render(output, width, height);
+    }
+
+    /** 独立调外围橙焰/广域橙晕，不得互改实际显示；部分遮挡测试另由世界光晕回归覆盖。 */
+    private static void testIndependentPlumeGlow(int shader) {
+        int size = 128;
+        int sky = depth(size, size, 0, false);
+        int[] visible = target(1, 1), output = target(size, size), emission = target(size, size);
+        GL20.glUseProgram(shader); uniforms(shader);
+        GL20.glUniform2f(GL20.glGetUniformLocation(shader, "ScreenSize"), size, size);
+        sampler(shader, "SceneDepth", 1, sky); sampler(shader, "DistantDepth", 2, sky);
+        plumeGeometry(shader, 0, 0, -8, 1, 0, 0, 3, .45F);
+        GL20.glUniform1f(GL20.glGetUniformLocation(shader, "PlumeHaloRadius"), 20);
+        GL20.glUniform1f(GL20.glGetUniformLocation(shader, "PlumeHaloIntensity"), 4);
+        GL20.glUniform4f(GL20.glGetUniformLocation(shader, "PlumeEmission"), 60000, 16, .2F, 12);
+        float coverage = worldHaloDraw(shader, visible, output, sky, size);
+        float[] reference = pixels(output[0], size, size);
+        for (float outer : new float[] {0, 256}) {
+            GL20.glUniform4f(GL20.glGetUniformLocation(shader, "PlumeEmission"), 60000, outer, .2F, 12);
+            near(coverage, worldHaloDraw(shader, visible, output, sky, size), "outer intensity changed visible coverage");
+            float[] actual = pixels(output[0], size, size);
+            for (int at = 0; at < actual.length; at++) { near(reference[at], actual[at], "outer intensity changed world halo"); }
+        }
+        GL20.glUniform1i(GL20.glGetUniformLocation(shader, "OutputMode"), 0); render(emission, size, size);
+        float[] before = pixels(emission[0], size, size);
+        GL20.glUniform1f(GL20.glGetUniformLocation(shader, "PlumeHaloIntensity"), 0);
+        require(worldHaloDraw(shader, visible, output, sky, size) > 0, "zero world halo erased plume coverage");
+        zero(pixel(output[0], 64, 64), "disabled independent world halo");
+        GL20.glUniform1i(GL20.glGetUniformLocation(shader, "OutputMode"), 0); render(emission, size, size);
+        float[] after = pixels(emission[0], size, size);
+        for (int at = 0; at < after.length; at++) { near(before[at], after[at], "world halo intensity changed plume"); }
+        GL20.glUniform1f(GL20.glGetUniformLocation(shader, "PlumeHaloRadius"), 0);
+        GL20.glUniform1f(GL20.glGetUniformLocation(shader, "PlumeHaloIntensity"), 4);
+        worldHaloDraw(shader, visible, output, sky, size);
+        zero(pixel(output[0], 64, 64), "zero halo radius retained world halo");
+        GL20.glUniform1i(GL20.glGetUniformLocation(shader, "OutputMode"), 1); render(emission, size, size);
+        zero(pixel(emission[0], 64, 64), "zero halo radius retained bloom input");
+        GL20.glUniform1i(GL20.glGetUniformLocation(shader, "OutputMode"), 0); render(emission, size, size);
+        float[] coreOnly = pixels(emission[0], size, size);
+        for (int at = 0; at < coreOnly.length; at++) { near(before[at], coreOnly[at], "zero halo radius removed emissive plume"); }
+        System.out.println("PASS outer flame, world halo and visible source coverage are independent; zero world halo preserves emissive plume");
+    }
+
+    /** 用爆炸/炮口正式颜色验证照亮范围和光晕来源互不影响，支持纯光晕、纯照亮及近景/DH遮挡。 */
+    private static void testSeparatedLightHalo(int shader) {
+        int size = 128;
+        int sky = depth(size, size, 0, false), surface = depth(size, size, 5, false);
+        int scene = color(size, size, BACKGROUND);
+        int[] lit = target(size, size), glow = target(size, size);
+        GL20.glUseProgram(shader); uniforms(shader);
+        GL20.glUniform2f(GL20.glGetUniformLocation(shader, "ScreenSize"), size, size);
+        sampler(shader, "SceneColor", 0, scene); sampler(shader, "DistantDepth", 2, sky);
+        for (RVP_LightParameters preset : new RVP_LightParameters[] {
+                RVP_LightParameters.explosion(4), RVP_LightParameters.muzzle(125, false)}) {
+            sampler(shader, "SceneDepth", 1, surface);
+            lights(shader, 1, 0, 0, -3, 4, preset.intensity(), preset.surfaceWeight(), 0);
+            GL20.glUniform4f(GL20.glGetUniformLocation(shader, "LightColorIntensity0"),
+                    preset.red(), preset.green(), preset.blue(), preset.intensity());
+            GL20.glUniform4f(GL20.glGetUniformLocation(shader, "LightShape0"), preset.surfaceWeight(), 0, 1, 1);
+            GL20.glUniform1i(GL20.glGetUniformLocation(shader, "OutputMode"), 1); render(lit, size, size);
+            float[] originalLight = pixels(lit[0], size, size);
+            require(pixel(lit[0], 64, 64)[0] > 0, "reference surface light is missing");
+            GL20.glUniform1i(GL20.glGetUniformLocation(shader, "OutputMode"), 3); render(glow, size, size);
+            float[] originalGlow = pixels(glow[0], size, size);
+            int[] narrow = brightBounds(originalGlow, size);
+            for (float radius : new float[] {0, 8, 8192}) {
+                GL20.glUniform4f(GL20.glGetUniformLocation(shader, "LightPositionRadius0"), 0, 0, -3, radius);
+                render(glow, size, size);
+                float[] actual = pixels(glow[0], size, size);
+                for (int at = 0; at < actual.length; at++) { near(originalGlow[at], actual[at], "lighting radius changed halo source"); }
+            }
+            GL20.glUniform4f(GL20.glGetUniformLocation(shader, "LightPositionRadius0"), 0, 0, -3, 4);
+            GL20.glUniform4f(GL20.glGetUniformLocation(shader, "LightShape0"), preset.surfaceWeight(), 0, 1, 3);
+            GL20.glUniform1i(GL20.glGetUniformLocation(shader, "OutputMode"), 1); render(lit, size, size);
+            float[] actualLight = pixels(lit[0], size, size);
+            for (int at = 0; at < actualLight.length; at++) { near(originalLight[at], actualLight[at], "halo radius changed surface lighting"); }
+            GL20.glUniform1i(GL20.glGetUniformLocation(shader, "OutputMode"), 3); render(glow, size, size);
+            int[] wide = brightBounds(pixels(glow[0], size, size), size);
+            require(wide[2] - wide[0] > 2 * (narrow[2] - narrow[0]), "independent halo radius failed to expand");
+            GL20.glUniform4f(GL20.glGetUniformLocation(shader, "LightShape0"), preset.surfaceWeight(), 0, 1, 0);
+            render(glow, size, size); zero(pixel(glow[0], 64, 64), "zero halo radius");
+            GL20.glUniform4f(GL20.glGetUniformLocation(shader, "LightShape0"), preset.surfaceWeight(), 0, 1, 3);
+            GL20.glUniform4f(GL20.glGetUniformLocation(shader, "LightPositionRadius0"), 0, 0, -3, 0);
+            sampler(shader, "SceneDepth", 1, sky); render(glow, size, size);
+            require(pixel(glow[0], 64, 64)[0] > 0, "halo-only source disappeared against empty sky");
+            sampler(shader, "SceneDepth", 1, depth(size, size, 2, false)); render(glow, size, size);
+            zero(pixel(glow[0], 64, 64), "solid wall failed to hide halo source");
+            sampler(shader, "SceneDepth", 1, sky);
+            for (boolean reverse : new boolean[] {false, true}) {
+                sampler(shader, "DistantDepth", 2, projectedDepth(size / 2, size / 2, 2, .1F, 100, reverse, false));
+                distantProjection(shader, .1F, 100, reverse, 1); render(glow, size, size);
+                zero(pixel(glow[0], 64, 64), "DH foreground failed to hide independent halo");
+                GL20.glUniform1i(GL20.glGetUniformLocation(shader, "HasDistantDepth"), 0);
+            }
+        }
+        // 放宽到最大环境亮度/半径后，八灯输出仍必须留在半精度安全范围。
+        sampler(shader, "SceneDepth", 1, sky); sampler(shader, "DistantDepth", 2, sky);
+        lights(shader, 8, 0, 0, -3, 8192, 524288, 16, 0);
+        for (int index = 0; index < 8; index++) {
+            GL20.glUniform4f(GL20.glGetUniformLocation(shader, "LightShape" + index), 16, 0, 1, 8192);
+        }
+        GL20.glUniform1i(GL20.glGetUniformLocation(shader, "OutputMode"), 3); render(glow, size, size);
+        float[] maximum = pixel(glow[0], 64, 64);
+        require(maximum[0] >= 50000 && maximum[0] <= 60000, "expanded eight-light halo range overflowed HDR");
+        System.out.println("PASS explosion/muzzle independent lighting and halo radii, halo-only sky, zero range, normal/reverse DH walls and expanded eight-light HDR bounds");
     }
 
     /** 真正 500 格照明：距发动机 450 格的 DH 表面仍受光，窄口径范围不能冒充同样远距照明。 */

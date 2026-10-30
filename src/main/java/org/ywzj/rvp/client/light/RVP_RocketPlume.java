@@ -8,7 +8,7 @@ import net.minecraft.world.phys.Vec3;
  * @param direction 从喷口向弹尾喷出的单位方向
  * @param length 喷流长度，单位格，只按既有 flame_scale 缩放
  * @param radius 喷流最大半径，单位格，只按既有 flame_scale 缩放
- * @param haloRadius 广域光晕半径，单位格，由毫米口径计算，与环境照明共同限制为 20～500
+ * @param haloRadius 独立光晕半径，单位格；由口径基础半径乘光晕倍率，范围 0～8192
  * @param strength 已包含推进阶段/燃尽包络的亮度倍率，不改变形状大小
  * @param seed 每枚弹体稳定的动画相位，避免齐射时所有喷流同步闪动
  */

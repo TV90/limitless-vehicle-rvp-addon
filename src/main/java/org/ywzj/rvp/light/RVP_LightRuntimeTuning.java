@@ -5,6 +5,10 @@ import java.util.Map;
 
 /** 光照与光晕的本机会话调参；只改变既有算法的输入，不写配置、资源或载具包。 */
 public final class RVP_LightRuntimeTuning {
+    /** 游戏内两种范围各自的上限，单位格；仅约束调参，不改变原有代码基础半径。 */
+    public static final float MAX_TUNED_RADIUS = 8192F;
+    /** 调参后环境光的最远观察距离，单位格；光源影响范围仍会加入距离预算。 */
+    public static final double MAX_TUNED_DISTANCE = 32768D;
     /** 不可变覆盖表；写入时整表替换，渲染读取不会看到修改了一半的数据。 */
     private static volatile Map<Group, Map<Parameter, Float>> overrides = Map.of();
 
@@ -14,7 +18,7 @@ public final class RVP_LightRuntimeTuning {
         /** 爆炸短光。 */ explosion,
         /** 炮口短光。 */ muzzle,
         /** 发动机环境照明、程序喷焰和广域橙色光晕。 */ engine,
-        /** 现有亮部提取和模糊。 */ bloom
+        /** 多尺度亮部提取、近层与远层光晕。 */ bloom
     }
 
     /** 参数元数据；不适用的分组以 NaN 标记，命令不会注册对应节点。 */
@@ -22,36 +26,48 @@ public final class RVP_LightRuntimeTuning {
         /** 总开关覆盖，未设置时沿用 TOML；不开放真实方块光。 */
         enabled("开关：0关闭、1开启；未覆盖时沿用客户端配置", 0, 1, 1, Float.NaN, Float.NaN, Float.NaN, 1),
         /** 环境照明亮度倍率；发动机自发光使用独立的 coreIntensity/haloIntensity。 */
-        brightness("环境照明亮度倍率；0关闭受光，不改变发动机喷焰", 0, 8, 1, 1, 1, 1, Float.NaN),
-        /** 既有半径公式的倍率，发动机环境光与广域光晕始终同步。 */
-        radiusScale("半径倍率；发动机环境光/广域光晕共同限制为20～500格", 0.05F, 16, Float.NaN, 1, 1, 1, Float.NaN),
+        brightness("环境光亮度倍率；0关闭该类环境光及爆炸/炮口光晕，不改变发动机喷焰", 0, 256, 1, 1, 1, 1, Float.NaN),
+        /** 只缩放照亮范围，和光晕分别控制；0 关闭表面/烟雾受光范围。 */
+        radiusScale("照亮半径倍率；0关闭照亮，最大8192格，不改变光晕范围", 0, 1024, Float.NaN, 1, 1, 1, Float.NaN),
+        /** 三类光源的独立光晕范围；使用未调参的基础半径，不受照亮半径反向影响。 */
+        haloRadiusScale("光晕半径倍率；0关闭该类光晕，最大8192格，不改变照亮范围或喷焰尺寸", 0, 1024,
+                Float.NaN, 1, 1, 1, Float.NaN),
         /** 在原有色彩与爆炸变色曲线之上乘红色。 */
-        red("环境光红色倍率；最终颜色限制为0～1", 0, 4, Float.NaN, 1, 1, 1, Float.NaN),
+        red("环境光红色倍率；最终颜色限制为0～1", 0, 16, Float.NaN, 1, 1, 1, Float.NaN),
         /** 在原有色彩与爆炸变色曲线之上乘绿色。 */
-        green("环境光绿色倍率；最终颜色限制为0～1", 0, 4, Float.NaN, 1, 1, 1, Float.NaN),
+        green("环境光绿色倍率；最终颜色限制为0～1", 0, 16, Float.NaN, 1, 1, 1, Float.NaN),
         /** 在原有色彩与爆炸变色曲线之上乘蓝色。 */
-        blue("环境光蓝色倍率；最终颜色限制为0～1", 0, 4, Float.NaN, 1, 1, 1, Float.NaN),
+        blue("环境光蓝色倍率；最终颜色限制为0～1", 0, 16, Float.NaN, 1, 1, 1, Float.NaN),
         /** 表面受光输入的倍率；保留既有距离与遮挡算法。 */
-        surface("表面受光倍率；最终权重限制为0～1", 0, 4, Float.NaN, 1, 1, 1, Float.NaN),
+        surface("表面受光倍率；0关闭表面和烟雾受光，不改变光晕", 0, 16, Float.NaN, 1, 1, 1, Float.NaN),
         /** 仅调节既有短光衰减指数，不改寿命与合并窗口。 */
-        decayScale("短光衰减指数倍率；越大越快变暗，寿命不变", 0.1F, 8, Float.NaN, 1, 1, Float.NaN, Float.NaN),
+        decayScale("短光衰减指数倍率；越大越快变暗，0在到期前不衰减，寿命不变", 0, 64, Float.NaN, 1, 1, Float.NaN, Float.NaN),
         /** 沿用当前浮点纹理安全峰值，不允许调参超过上限。 */
         coreIntensity("喷焰白热核心亮度；HDR是显示前高亮数值，0会关闭整条喷焰及其光晕", 0, RVP_LightParameters.ENGINE_CORE_INTENSITY,
                 Float.NaN, Float.NaN, Float.NaN, RVP_LightParameters.ENGINE_CORE_INTENSITY, Float.NaN),
-        /** 同时供现有橙焰与广域橙色光晕使用的独立亮度。 */
-        haloIntensity("发动机橙焰及广域橙色光晕亮度；0关闭橙色分量", 0, 256,
+        /** 喷焰外围橙焰亮度，和喷口周围的广域橙晕分别控制。 */
+        haloIntensity("喷焰外围橙焰亮度；0关闭外围橙焰，不改变广域橙晕", 0, 60000,
+                Float.NaN, Float.NaN, Float.NaN, RVP_LightParameters.ENGINE_HALO_INTENSITY, Float.NaN),
+        /** 广域橙晕独立亮度；沿用共同世界半径和推进阶段，不改变喷焰自身。 */
+        worldHaloIntensity("喷口广域橙晕亮度；0关闭这层橙晕，不改变喷焰和模糊光晕", 0, 60000,
                 Float.NaN, Float.NaN, Float.NaN, RVP_LightParameters.ENGINE_HALO_INTENSITY, Float.NaN),
         /** 光晕提取前的既有软压缩峰值，不改变核心显示亮度。 */
-        inputPeak("喷焰进入模糊光晕的亮度上限；不改变白热核心与广域橙晕", 0.001F, 64,
+        inputPeak("喷焰进入模糊光晕的亮度上限；不改变白热核心与广域橙晕", 0.00001F, 60000,
                 Float.NaN, Float.NaN, Float.NaN, Float.NaN, RVP_RocketPlumeParameters.BLOOM_INPUT_PEAK),
-        /** 原高斯模糊采样间距倍率，不增加采样次数。 */
-        blurScale("屏幕模糊范围倍率；1保留当前范围，0不向周围扩散", 0, 8,
+        /** 各层高斯模糊采样间距倍率，缩小和回升所需的连续过滤始终保留。 */
+        blurScale("各层柔化范围倍率；0关闭额外高斯模糊，仍保留缩放过滤", 0, 32,
+                Float.NaN, Float.NaN, Float.NaN, Float.NaN, 1),
+        /** 二分之一和四分之一尺寸两层的能量倍率；不改变远层和核心。 */
+        nearStrength("近层光晕强度倍率；0关闭贴近亮焰的两层扩散，不改变远层", 0, 256,
+                Float.NaN, Float.NaN, Float.NaN, Float.NaN, 1),
+        /** 八分之一和十六分之一尺寸两层的能量倍率；不改变近层和核心。 */
+        farStrength("远层光晕强度倍率；0关闭向周围消散的两层辉光，不改变近层", 0, 256,
                 Float.NaN, Float.NaN, Float.NaN, Float.NaN, 1),
         /** 环境光距离预算倍率，喷焰的独立远距可见性不受影响。 */
-        distanceScale("环境光观察距离倍率；最终限制为16～1024格，喷焰不受此预算限制", 0.0625F, 4,
+        distanceScale("环境光观察距离倍率；最终限制为1～32768格，喷焰不受此预算限制", 0.0001F, 128,
                 1, Float.NaN, Float.NaN, Float.NaN, Float.NaN),
         /** 烟雾额外受光亮度，可独立于墙面/地面调节。 */
-        smokeBrightness("烟雾及炮口特殊贴图的受光倍率；0关闭这层受光", 0, 8,
+        smokeBrightness("烟雾及炮口特殊贴图的受光倍率；0关闭这层受光", 0, 256,
                 1, Float.NaN, Float.NaN, Float.NaN, Float.NaN);
 
         /** 中文含义、单位及生效边界。 */
@@ -129,12 +145,16 @@ public final class RVP_LightRuntimeTuning {
     /** 供状态查询与复制命令读取一致且不可变的覆盖清单。 */
     public static Map<Group, Map<Parameter, Float>> overrides() { return overrides; }
 
-    /** 半径只在采样时乘一次，避免持续光逐帧累计放大；发动机保持原20～500格边界。 */
+    /** 照亮半径只乘一次，三类光源都允许缩到零或扩大到8192格，光晕另行采样。 */
     public static float radius(Group group, float baseRadius) {
-        // 调用同一倍率入口，发动机环境光与程序光晕不能分别维护一套调参结果。
-        float result = baseRadius * get(group, Parameter.radiusScale);
-        return group == Group.engine ? Math.max(RVP_LightParameters.ENGINE_MIN_RADIUS,
-                Math.min(RVP_LightParameters.ENGINE_MAX_RADIUS, result)) : result;
+        // 调用独立照亮倍率，不读取光晕参数，防止两种范围重新耦合。
+        return Math.min(MAX_TUNED_RADIUS, Math.max(0, baseRadius * get(group, Parameter.radiusScale)));
+    }
+
+    /** 光晕始终从原始基础半径计算；改照亮半径不会改变此结果。 */
+    public static float haloRadius(Group group, float baseRadius) {
+        // 调用独立光晕倍率，0 也会关闭发动机的模糊来源和广域橙晕，核心继续显示。
+        return Math.min(MAX_TUNED_RADIUS, Math.max(0, baseRadius * get(group, Parameter.haloRadiusScale)));
     }
 
     /** 每帧从原始预设生成调参输入；年龄、颜色过渡、遮挡与预算仍交给现有管理器。 */
@@ -147,7 +167,7 @@ public final class RVP_LightRuntimeTuning {
                 Math.min(1, base.green() * get(group, Parameter.green)),
                 Math.min(1, base.blue() * get(group, Parameter.blue)), radius(group, base.radius()),
                 base.intensity() * get(group, Parameter.brightness), base.durationTicks(), base.mergeWindowTicks(),
-                Math.min(1, base.surfaceWeight() * get(group, Parameter.surface)),
+                base.surfaceWeight() * get(group, Parameter.surface),
                 base.decay() * (group == Group.engine ? 1 : get(group, Parameter.decayScale)),
                 base.bloom(), base.volumetricStrength(), base.blockLightLevel());
     }
