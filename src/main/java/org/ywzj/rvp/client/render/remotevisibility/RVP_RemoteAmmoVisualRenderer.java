@@ -78,7 +78,7 @@ public final class RVP_RemoteAmmoVisualRenderer {
     private static final Map<Integer, TrailState> TRAIL_STATES = new HashMap<>();
     /** 当前尾迹状态所属维度。 */
     private static ResourceLocation trailDimension;
-    /** 粒子阶段临时使用的远平面作用域，跨 AFTER_BLOCK_ENTITIES 到 AFTER_PARTICLES 保持有效。 */
+    /** 粒子阶段临时使用的远平面作用域，跨 AFTER_TRIPWIRE_BLOCKS 到 AFTER_PARTICLES 保持有效。 */
     @Nullable
     private static RVP_RemoteVehicleRenderScope particleProjectionScope;
     /** 本帧是否存在需要让粒子阶段使用远平面的远程弹药或尾迹状态。 */
@@ -94,7 +94,8 @@ public final class RVP_RemoteAmmoVisualRenderer {
             closeParticleProjectionScope();
             return;
         }
-        if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_BLOCK_ENTITIES) {
+        if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_TRIPWIRE_BLOCKS) {
+            // 屏幕光在本阶段 HIGHEST 先保存世界深度；随后才扩展粒子远平面，避免污染透明地形和手持物投影。
             openParticleProjectionScope(event);
             return;
         }

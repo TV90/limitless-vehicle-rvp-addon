@@ -33,8 +33,10 @@ public final class RVP_ScreenLightPass {
     private static ShaderInstance lightShader;
     /** 可选光晕 Shader；失败时回退基础光直接合成。 */
     private static ShaderInstance bloomShader;
-    /** 天气阶段保存的完整世界观察矩阵。 */
+    /** 世界透明方块完成、粒子烟开始前保存的完整观察矩阵。 */
     private static final Matrix4f VIEW = new Matrix4f();
+    /** 已在观察空间的模型面片不再乘第二次观察变换。 */
+    private static final Matrix4f IDENTITY_VIEW = new Matrix4f();
     /** 与深度配对的世界投影。 */
     private static final Matrix4f PROJECTION = new Matrix4f();
     /** 已筛选的本帧光源，不在后处理时重新推进生命周期。 */
@@ -69,6 +71,8 @@ public final class RVP_ScreenLightPass {
         Minecraft mc = Minecraft.getInstance();
         // 调用独立喷焰世界检查，早期 DH 回调到来之前先淘汰旧世界/过期状态。
         RVP_RocketPlumeManager.INSTANCE.beginWorld(mc.level, mc.level == null ? 0 : mc.level.getGameTime());
+        // 调用当帧烟雾几何清空，暂停及同一 tick 的多帧也不重复累加光照。
+        RVP_SmokeLightPass.beginFrame();
         // 调用两份帧状态清空；游戏暂停或没有 DH 回调时也不会复用旧深度。
         FRAME.discard();
         RVP_LightDepthFrame.INSTANCE.beginFrame(Minecraft.getInstance().level);
@@ -117,6 +121,10 @@ public final class RVP_ScreenLightPass {
         } catch (Exception exception) {
             LOGGER.warn("RVP 程序喷焰加载失败，请检查 rocket_plume 资源", exception);
         }
+        try {
+            // 调用烟雾独立受光材质注册，复用已有贴图，不新增粒子资源。
+            RVP_SmokeLightPass.register(event);
+        } catch (Exception exception) { LOGGER.warn("RVP 烟雾受光程序加载失败", exception); }
     }
 
     /** 尾焰是弹体视觉；关闭环境光或八灯预算为零时，仍要保留喷焰所需 DH 当帧输入。 */
@@ -125,9 +133,11 @@ public final class RVP_ScreenLightPass {
                 || RVP_LightingConfig.screenEnabled() && RVP_ScreenLightManager.INSTANCE.hasActiveLights();
     }
 
-    /** 只有可见活动光才保存一次场景深度；这里的事件矩阵仍是真实观察矩阵。 */
+    /** 透明方块/绊线完成后、粒子烟之前保存深度；保留实体、方块和光影不透明手持物，不读取烟深度。 */
     public static void capture(RenderLevelStageEvent event) {
-        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_WEATHER) { return; }
+        // 调用模型顶点采集窗口：只在世界实体阶段记录炮口，早于粒子和最终屏幕合成关闭。
+        RVP_SmokeLightPass.worldStage(event.getStage());
+        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_TRIPWIRE_BLOCKS) { return; }
         lights = List.of(); plumes = List.of(); frameLevel = null;
         // 调用帧输入失效，暂停、窗口变化和无光帧均不复用旧深度。
         FRAME.discard();
@@ -222,6 +232,8 @@ public final class RVP_ScreenLightPass {
                 renderEmission();
                 // 调用真实喷流的独立显示叠加；关闭 Bloom 或环境照明不取消发动机视觉。
                 RVP_RocketPlumePass.render(FRAME, plumes, VIEW, PROJECTION, camera, plumeTime, 2);
+                // 调用独立烟雾受光，纯天空背景也按烟雾自己的几何位置计算，不拿背景墙代替它。
+                RVP_SmokeLightPass.render(FRAME, event.getCamera(), event.getPartialTick());
                 return;
             }
             lightShader.safeGetUniform("OutputMode").set(1);
@@ -244,6 +256,7 @@ public final class RVP_ScreenLightPass {
             // 调用只增强喷口的显示峰值，不提高普通爆炸/炮口光的曝光上限。
             renderEmission();
             RVP_RocketPlumePass.render(FRAME, plumes, VIEW, PROJECTION, camera, plumeTime, 2);
+            RVP_SmokeLightPass.render(FRAME, event.getCamera(), event.getPartialTick());
         } catch (RuntimeException exception) { diagnostic("灯光合成失败，保留世界画面", exception); }
         finally { lights = List.of(); plumes = List.of(); FRAME.discard(); }
     }
@@ -278,7 +291,17 @@ public final class RVP_ScreenLightPass {
         target.safeGetUniform("DistantToView").set(distantToView);
         target.safeGetUniform("ViewToDistant").set(new Matrix4f(distantToView).invert());
         target.safeGetUniform("ScreenSize").set((float) FRAME.width(), (float) FRAME.height());
+        // 调用普通粒子默认变换；模型炮口在提交各自贴图批时单独切换单位矩阵。
+        uploadGeometryView(target, false);
     }
+
+    /** 同一受光程序分别接受相机相对粒子与已变换模型，避免相机转动造成光照错位。 */
+    static void uploadGeometryView(ShaderInstance target, boolean viewSpace) {
+        target.safeGetUniform("SmokeView").set(viewSpace ? IDENTITY_VIEW : VIEW);
+    }
+
+    /** 烟雾受光复用完全相同的预算和已采样灯光，不重置闪光年龄或发动机阶段。 */
+    static List<RVP_ScreenLight> currentLights() { return lights; }
 
     /** 上传环境光槽位；旧圆形喷口自发光由代码开关暂停，旧 Shader 实现仍保留。 */
     private static void uploadLightSlots() {
@@ -332,7 +355,7 @@ public final class RVP_ScreenLightPass {
     }
 
     /** 还原观察空间光位置；与深度重建使用完全相同的观察矩阵。 */
-    private static Vector3f viewPosition(Vec3 position) {
+    static Vector3f viewPosition(Vec3 position) {
         return VIEW.transformPosition(new Vector3f((float) (position.x - camera.x),
                 (float) (position.y - camera.y), (float) (position.z - camera.z)));
     }
@@ -368,7 +391,11 @@ public final class RVP_ScreenLightPass {
         lastFrameStatus = "资源已清理，等待活动光源";
         // 调用借用引用清理，卸载后不触碰 DH 或光影拥有的纹理。
         RVP_LightDepthFrame.INSTANCE.clear();
-        if (RenderSystem.isOnRenderThread()) { FRAME.release(); }
-        else { RenderSystem.recordRenderCall(FRAME::release); }
+        Runnable release = () -> {
+            // 调用两套自有显存释放，不接触其它模组或玩家的资源。
+            FRAME.release(); RVP_SmokeLightPass.release();
+        };
+        if (RenderSystem.isOnRenderThread()) { release.run(); }
+        else { RenderSystem.recordRenderCall(release::run); }
     }
 }

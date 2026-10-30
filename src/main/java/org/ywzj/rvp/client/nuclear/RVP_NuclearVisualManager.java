@@ -249,8 +249,11 @@ public final class RVP_NuclearVisualManager {
         RenderSystem.setShaderTexture(0, CLOUD_TEXTURE);
         RenderSystem.setShader(GameRenderer::getPositionTexColorShader);
         builder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX_COLOR);
+        // 调用共用烟雾受光记录器，核爆云也接受炮口/发动机等其它光源，不改变核爆自身颜色动画。
+        com.mojang.blaze3d.vertex.VertexConsumer smokeBuffer =
+                org.ywzj.rvp.client.light.RVP_SmokeLightPass.capture(builder, CLOUD_TEXTURE);
         for (RenderCloud renderCloud : RENDER_CLOUDS) {
-            renderCloudTess(builder, renderCloud, cameraPos, event.getPartialTick());
+            renderCloudTess(smokeBuffer, renderCloud, cameraPos, event.getPartialTick());
         }
         BufferUploader.drawWithShader(builder.end());
 
@@ -325,7 +328,7 @@ public final class RVP_NuclearVisualManager {
         }
     }
 
-    private static void renderCloudTess(BufferBuilder builder, RenderCloud renderCloud,
+    private static void renderCloudTess(com.mojang.blaze3d.vertex.VertexConsumer builder, RenderCloud renderCloud,
             Vec3 cameraPos, float partialTick) {
         Effect effect = renderCloud.effect();
         Cloud cloud = renderCloud.cloud();
@@ -374,7 +377,7 @@ public final class RVP_NuclearVisualManager {
      * This prevents the flat-looking artifacts that occur when a fixed XY-plane
      * quad is viewed from oblique angles.
      */
-    private static void billboardTess(BufferBuilder builder,
+    private static void billboardTess(com.mojang.blaze3d.vertex.VertexConsumer builder,
             float x, float y, float z, float halfSize,
             float red, float green, float blue, float alpha) {
         // Look direction from billboard center toward camera (origin in camera-relative space).

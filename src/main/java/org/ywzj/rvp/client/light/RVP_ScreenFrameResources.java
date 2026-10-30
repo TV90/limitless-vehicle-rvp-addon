@@ -388,8 +388,14 @@ final class RVP_ScreenFrameResources {
             // 经过引擎入口恢复 FBO/程序，使 Oculus 的状态缓存与真实 GL 保持一致。
             RenderSystem.setShader(() -> shader); GlStateManager._glUseProgram(program);
             // 调用原始能力恢复；这些状态未经过 RenderSystem 改写，其 Java 缓存无需额外改动。
-            enabled(GL11.GL_DEPTH_TEST, depth); GL11.glDepthMask(depthMask);
-            enabled(GL11.GL_CULL_FACE, cull); enabled(GL11.GL_SCISSOR_TEST, scissorEnabled);
+            // 原粒子材质 begin 可能通过 RenderSystem 改写深度/剔除缓存；强制同步后恢复真实状态，
+            // 防止原生 GL 恢复了开关、引擎却仍记着烟雾材质的旧值。
+            RenderSystem.depthMask(!depthMask); RenderSystem.depthMask(depthMask);
+            if (depth) { RenderSystem.disableDepthTest(); RenderSystem.enableDepthTest(); }
+            else { RenderSystem.enableDepthTest(); RenderSystem.disableDepthTest(); }
+            if (cull) { RenderSystem.disableCull(); RenderSystem.enableCull(); }
+            else { RenderSystem.enableCull(); RenderSystem.disableCull(); }
+            enabled(GL11.GL_SCISSOR_TEST, scissorEnabled);
             enabled(GL11.GL_STENCIL_TEST, stencil);
             RenderSystem.colorMask(colorMask[0], colorMask[1], colorMask[2], colorMask[3]);
             RenderSystem.blendFuncSeparate(blendFactors[0], blendFactors[1], blendFactors[2], blendFactors[3]);

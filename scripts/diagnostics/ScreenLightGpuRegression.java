@@ -38,6 +38,7 @@ public final class ScreenLightGpuRegression {
         int light = 0;
         int bloom = 0;
         int plume = 0;
+        int smoke = 0;
         try {
             GLFW.glfwMakeContextCurrent(window);
             GL.createCapabilities();
@@ -56,6 +57,9 @@ public final class ScreenLightGpuRegression {
             // 调用 RVP 新喷流程序专项回读，旧圆形喷口测试继续保留用于防止误删旧实现。
             plume = program(shaders, "rocket_plume");
             testRocketPlume(Path.of(args[0]), plume, bloom);
+            smoke = program(shaders, "smoke_light");
+            testSmokeLighting(smoke);
+            testMuzzleLighting(Path.of(args[0]), smoke);
             if (GL11.glGetError() != GL11.GL_NO_ERROR) { throw new AssertionError("OpenGL error at completion"); }
             System.out.println("PASS all RVP screen light GPU regressions; OpenGL error=0");
         } finally {
@@ -65,6 +69,7 @@ public final class ScreenLightGpuRegression {
             if (light != 0) { GL20.glDeleteProgram(light); }
             if (bloom != 0) { GL20.glDeleteProgram(bloom); }
             if (plume != 0) { GL20.glDeleteProgram(plume); }
+            if (smoke != 0) { GL20.glDeleteProgram(smoke); }
             if (vbo != 0) { GL15.glDeleteBuffers(vbo); }
             if (vao != 0) { GL30.glDeleteVertexArrays(vao); }
             GLFW.glfwDestroyWindow(window);
@@ -689,6 +694,163 @@ public final class ScreenLightGpuRegression {
         return bounds;
     }
 
+    /** 真实烟雾材质程序回读，覆盖三类光、天空、Alpha、方块/实体/DH 遮挡和八灯上限。 */
+    private static void testSmokeLighting(int smoke) {
+        int smokeVao = GL30.glGenVertexArrays();
+        int smokeVbo = GL15.glGenBuffers();
+        try {
+            GL30.glBindVertexArray(smokeVao); GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, smokeVbo);
+            // Position + UV0，顶点 Color 用常量；画面整片烟位于相机前 3 格，背景可为纯天空。
+            float[] quad = {-3,-3,-3,0,0, 3,-3,-3,1,0, 3,3,-3,1,1, -3,-3,-3,0,0, 3,3,-3,1,1, -3,3,-3,0,1};
+            GL15.glBufferData(GL15.GL_ARRAY_BUFFER, quad, GL15.GL_STATIC_DRAW);
+            GL20.glEnableVertexAttribArray(0); GL20.glVertexAttribPointer(0, 3, GL11.GL_FLOAT, false, 20, 0);
+            GL20.glEnableVertexAttribArray(1); GL20.glVertexAttribPointer(1, 2, GL11.GL_FLOAT, false, 20, 12);
+            GL20.glDisableVertexAttribArray(2); GL20.glVertexAttrib4f(2, 0.1F, 0.1F, 0.1F, 1);
+            int[] output = target(SIZE, SIZE);
+            int sky = depth(SIZE, SIZE, 0, false);
+            int texture = color(SIZE, SIZE, new float[] {1, 1, 1, 0.5F});
+            GL20.glUseProgram(smoke); uniforms(smoke);
+            matrix(smoke, "SmokeView", new float[] {1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1});
+            sampler(smoke, "Sampler0", 0, texture); sampler(smoke, "SceneDepth", 1, sky); sampler(smoke, "DistantDepth", 2, sky);
+            RVP_LightParameters[] sources = {RVP_LightParameters.explosion(4), RVP_LightParameters.muzzle(7.62F, false),
+                    RVP_LightParameters.muzzle(125, false), RVP_LightParameters.muzzle(130, true), RVP_LightParameters.engine()};
+            for (RVP_LightParameters source : sources) {
+                smokeLight(smoke, source, 1);
+                smokeDraw(output);
+                float[] lit = pixel(output[0], 8, 8);
+                require(lit[0] > 0.05F && lit[0] > lit[2], "smoke not lit against empty sky");
+                near(0, lit[3], "smoke layer must not replace scene alpha");
+            }
+            System.out.println("PASS smoke texture is lit against sky by production explosion, cannon muzzle and rocket engine presets");
+            int opaque = depth(SIZE, SIZE, 1, false);
+            sampler(smoke, "SceneDepth", 1, opaque); smokeDraw(output);
+            zero(pixel(output[0], 8, 8), "solid foreground must still hide smoke lighting");
+            sampler(smoke, "SceneDepth", 1, sky);
+            for (boolean reverse : new boolean[] {false, true}) {
+                int dh = projectedDepth(SIZE / 2, SIZE / 2, 1, 0.5F, 512, reverse, false);
+                sampler(smoke, "DistantDepth", 2, dh); distantProjection(smoke, 0.5F, 512, reverse, 1);
+                smokeDraw(output); zero(pixel(output[0], 8, 8), "DH foreground must hide smoke light");
+            }
+            GL20.glUniform1i(GL20.glGetUniformLocation(smoke, "HasDistantDepth"), 0);
+            sampler(smoke, "DistantDepth", 2, sky);
+            float[] handDepth = new float[SIZE * SIZE]; java.util.Arrays.fill(handDepth, 0.55F);
+            int hand = texture(SIZE, SIZE, GL30.GL_DEPTH_COMPONENT32F, GL11.GL_DEPTH_COMPONENT, handDepth);
+            sampler(smoke, "SceneDepth", 1, hand);
+            GL20.glUniform1f(GL20.glGetUniformLocation(smoke, "HandDepthLimit"), 0.5625F);
+            smokeDraw(output); zero(pixel(output[0], 8, 8), "shader hand must not receive smoke overlay");
+            GL20.glUniform1f(GL20.glGetUniformLocation(smoke, "HandDepthLimit"), 0);
+            // 烟在墙前但光在墙后：烟面仍可见，来自墙后的光不能穿墙照到烟。
+            int separatingWall = depth(SIZE, SIZE, 4, false);
+            sampler(smoke, "SceneDepth", 1, separatingWall);
+            GL20.glUniform4f(GL20.glGetUniformLocation(smoke, "LightPositionRadius0"), 0, 0, -6, 7);
+            smokeDraw(output); zero(pixel(output[0], 8, 8), "wall between smoke and source must block illumination");
+            sampler(smoke, "SceneDepth", 1, sky); smokeLight(smoke, RVP_LightParameters.engine(), 1);
+            int clear = color(SIZE, SIZE, new float[] {1, 1, 1, 0});
+            sampler(smoke, "Sampler0", 0, clear); smokeDraw(output);
+            zero(pixel(output[0], 8, 8), "transparent smoke texture texel must not add a rectangle of light");
+            sampler(smoke, "Sampler0", 0, texture); smokeDraw(output);
+            float first = pixel(output[0], 8, 8)[0];
+            int dense = color(SIZE, SIZE, new float[] {1, 1, 1, 1});
+            sampler(smoke, "Sampler0", 0, dense); smokeDraw(output);
+            near(first * 2, pixel(output[0], 8, 8)[0], "actual smoke opacity must scale lighting");
+            smokeLight(smoke, RVP_LightParameters.engine(), 8); smokeDraw(output);
+            float[] maximum = pixel(output[0], 8, 8);
+            require(maximum[0] <= 1 && maximum[0] > first, "eight-light smoke output not bounded");
+            GL20.glUniform1i(GL20.glGetUniformLocation(smoke, "LightCount"), 0); smokeDraw(output);
+            zero(pixel(output[0], 8, 8), "no-light smoke must preserve normal appearance");
+            smokeLight(smoke, RVP_LightParameters.engine(), 1);
+            GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, output[0]);
+            GL11.glClearColor(BACKGROUND[0], BACKGROUND[1], BACKGROUND[2], BACKGROUND[3]);
+            GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);
+            GL11.glEnable(GL11.GL_BLEND); GL20.glBlendEquationSeparate(GL14.GL_FUNC_ADD, GL14.GL_FUNC_ADD);
+            GL14.glBlendFuncSeparate(GL11.GL_ONE_MINUS_DST_COLOR, GL11.GL_ONE, GL11.GL_ZERO, GL11.GL_ONE);
+            GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 6);
+            float[] composite = pixel(output[0], 8, 8);
+            require(composite[0] > BACKGROUND[0], "smoke lighting not added over scene");
+            near(BACKGROUND[3], composite[3], "smoke additive overlay changed world alpha");
+            GL11.glDisable(GL11.GL_BLEND);
+            System.out.println("PASS smoke Alpha holes/density and scene alpha, zero/eight lights, solid/DH walls, hand mask and source-to-smoke occlusion");
+        } finally {
+            GL30.glBindVertexArray(vao); GL15.glDeleteBuffers(smokeVbo); GL30.glDeleteVertexArrays(smokeVao);
+        }
+    }
+
+    /** 只读本体真实炮口图集，验证已经在观察空间的模型面片也能用同一生产程序受光。 */
+    private static void testMuzzleLighting(Path root, int shader) throws Exception {
+        Path file = root.getParent().resolve("ywzj_vehicle_fish/src/main/resources/assets/ywzj_vehicle/textures/bedrock/effect/muzzle_flash_1.png");
+        if (!Files.isRegularFile(file)) {
+            System.out.println("SKIP actual muzzle atlas: base source is unavailable; smoke/material GLSL regressions still run");
+            return;
+        }
+        java.awt.image.BufferedImage image = javax.imageio.ImageIO.read(file.toFile());
+        float[] rgba = new float[image.getWidth() * image.getHeight() * 4];
+        for (int y = 0; y < image.getHeight(); y++) { for (int x = 0; x < image.getWidth(); x++) {
+            int value = image.getRGB(x, y), at = (y * image.getWidth() + x) * 4;
+            rgba[at] = ((value >>> 16) & 255) / 255F;
+            rgba[at + 1] = ((value >>> 8) & 255) / 255F;
+            rgba[at + 2] = (value & 255) / 255F;
+            rgba[at + 3] = ((value >>> 24) & 255) / 255F;
+        } }
+        int atlas = texture(image.getWidth(), image.getHeight(), GL30.GL_RGBA16F, GL11.GL_RGBA, rgba);
+        int modelVao = GL30.glGenVertexArrays(), modelVbo = GL15.glGenBuffers();
+        try {
+            GL30.glBindVertexArray(modelVao); GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, modelVbo);
+            // 采用真实图集右上区域；位置已经由模型/骨骼/相机变换到观察空间，不再乘相机旋转。
+            float[] quad = {-3,-3,-3,.5F,0, 3,-3,-3,1,0, 3,3,-3,1,.5F,
+                    -3,-3,-3,.5F,0, 3,3,-3,1,.5F, -3,3,-3,.5F,.5F};
+            GL15.glBufferData(GL15.GL_ARRAY_BUFFER, quad, GL15.GL_STATIC_DRAW);
+            GL20.glEnableVertexAttribArray(0); GL20.glVertexAttribPointer(0, 3, GL11.GL_FLOAT, false, 20, 0);
+            GL20.glEnableVertexAttribArray(1); GL20.glVertexAttribPointer(1, 2, GL11.GL_FLOAT, false, 20, 12);
+            GL20.glDisableVertexAttribArray(2); GL20.glVertexAttrib4f(2, 1, 1, 1, 1);
+            GL20.glUseProgram(shader); uniforms(shader);
+            matrix(shader, "SmokeView", new float[] {1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1});
+            int sky = depth(SIZE, SIZE, 0, false);
+            sampler(shader, "Sampler0", 0, atlas); sampler(shader, "SceneDepth", 1, sky); sampler(shader, "DistantDepth", 2, sky);
+            int[] output = target(SIZE, SIZE);
+            for (RVP_LightParameters source : new RVP_LightParameters[] {
+                    RVP_LightParameters.explosion(4), RVP_LightParameters.muzzle(7.62F, false),
+                    RVP_LightParameters.muzzle(125, false), RVP_LightParameters.muzzle(130, true), RVP_LightParameters.engine()}) {
+                smokeLight(shader, source, 1); smokeDraw(output);
+                require(pixel(output[0], 8, 8)[0] > 0.05F, "actual muzzle texture did not receive light against sky");
+                zero(pixel(output[0], 15, 15), "actual transparent muzzle atlas edge became a bright rectangle");
+            }
+            float full = pixel(output[0], 8, 8)[0];
+            GL20.glVertexAttrib4f(2, 1, 1, 1, .25F); smokeDraw(output);
+            near(full * .25F, pixel(output[0], 8, 8)[0], "muzzle animation alpha was not retained");
+            GL20.glVertexAttrib4f(2, 1, 1, 1, 1);
+            sampler(shader, "SceneDepth", 1, depth(SIZE, SIZE, 1, false)); smokeDraw(output);
+            zero(pixel(output[0], 8, 8), "foreground solid must still hide muzzle illumination");
+            sampler(shader, "SceneDepth", 1, sky);
+            for (boolean reverse : new boolean[] {false, true}) {
+                sampler(shader, "DistantDepth", 2, projectedDepth(SIZE / 2, SIZE / 2, 1, .5F, 512, reverse, false));
+                distantProjection(shader, .5F, 512, reverse, 1); smokeDraw(output);
+                zero(pixel(output[0], 8, 8), "DH foreground must still hide muzzle illumination");
+            }
+            GL20.glUniform1i(GL20.glGetUniformLocation(shader, "HasDistantDepth"), 0);
+            GL20.glUniform1i(GL20.glGetUniformLocation(shader, "LightCount"), 0); smokeDraw(output);
+            zero(pixel(output[0], 8, 8), "disabled illumination must preserve the original muzzle draw");
+            System.out.println("PASS actual muzzle atlas receives all light presets; model-space path, atlas holes/fade, solid and normal/reversed DH occlusion");
+        } finally {
+            GL30.glBindVertexArray(vao); GL15.glDeleteBuffers(modelVbo); GL30.glDeleteVertexArrays(modelVao);
+        }
+    }
+
+    /** 烟雾同源参数和生产上传一致，不依赖 JSON 光配置。 */
+    private static void smokeLight(int program, RVP_LightParameters source, int count) {
+        GL20.glUniform1i(GL20.glGetUniformLocation(program, "LightCount"), count);
+        for (int index = 0; index < 8; index++) {
+            GL20.glUniform4f(GL20.glGetUniformLocation(program, "LightPositionRadius" + index), 0, 0, -2, source.radius());
+            GL20.glUniform4f(GL20.glGetUniformLocation(program, "LightColorIntensity" + index),
+                    source.red(), source.green(), source.blue(), source.intensity() * source.surfaceWeight());
+        }
+    }
+
+    /** 烟雾面片是六顶点三角形，原屏幕程序仍使用其自己的三顶点全屏三角形。 */
+    private static void smokeDraw(int[] target) {
+        GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, target[0]); GL11.glViewport(0, 0, SIZE, SIZE);
+        GL11.glDisable(GL11.GL_BLEND); GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 6);
+    }
+
     /** 上传真实发动机的表面与自发光参数，位置对准中央像素，便于回读峰值。 */
     private static void engineLights(int shader, RVP_LightParameters engine, int count, float global) {
         // 调用实际源参数生成，阶段和年龄与生产 uniform 上传一致。
@@ -735,7 +897,9 @@ public final class ScreenLightGpuRegression {
         int fragment = compile(GL20.GL_FRAGMENT_SHADER, Files.readString(directory.resolve(name + ".fsh")));
         int program = GL20.glCreateProgram();
         GL20.glAttachShader(program, vertex); GL20.glAttachShader(program, fragment);
-        GL20.glBindAttribLocation(program, 0, "Position"); GL20.glLinkProgram(program);
+        GL20.glBindAttribLocation(program, 0, "Position");
+        GL20.glBindAttribLocation(program, 1, "UV0"); GL20.glBindAttribLocation(program, 2, "Color");
+        GL20.glLinkProgram(program);
         require(GL20.glGetProgrami(program, GL20.GL_LINK_STATUS) != 0, GL20.glGetProgramInfoLog(program));
         GL20.glDeleteShader(vertex); GL20.glDeleteShader(fragment);
         return program;

@@ -37,7 +37,7 @@ public final class RVP_ClientLightEvents {
     /** 在所有 NORMAL 优先级的 CRT/TV/过载后处理前合成，HUD 仍未绘制。 */
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void onRenderLevel(RenderLevelStageEvent event) {
-        if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_WEATHER) {
+        if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_BLOCK_ENTITIES) {
             for (org.ywzj.rvp.entity.projectile.RVP_BaseBullet bullet : LOCAL_ENGINES) {
                 // 调用和实体渲染一致的部分 tick 插值，快速飞行时环境光不能超前整整一 tick。
                 if (bullet.level() == Minecraft.getInstance().level) {
@@ -45,7 +45,7 @@ public final class RVP_ClientLightEvents {
                 }
             }
         }
-        // 调用场景输入捕获与末端合成；两入口自行筛选天气后/世界结束阶段。
+        // 调用粒子前的实体/方块深度捕获与末端合成；烟雾随后即使写深度也不能成为屏幕光遮挡物。
         RVP_ScreenLightPass.capture(event);
         RVP_ScreenLightPass.render(event);
     }

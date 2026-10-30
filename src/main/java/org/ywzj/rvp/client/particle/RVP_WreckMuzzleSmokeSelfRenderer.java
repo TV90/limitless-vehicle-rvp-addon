@@ -151,6 +151,8 @@ public final class RVP_WreckMuzzleSmokeSelfRenderer {
         try {
             for (int textureIndex = 0; textureIndex < textureCount; textureIndex++) {
                 boolean batchOpen = false;
+                // 此烟不属于 ParticleEngine；正常绘制时记录其原始面片供统一受光层使用。
+                com.mojang.blaze3d.vertex.VertexConsumer smokeBuffer = builder;
                 for (RVP_WreckMuzzleSmokeParticle particle : sorted) {
                     if (particle.textureIndex() != textureIndex) {
                         continue;
@@ -158,10 +160,12 @@ public final class RVP_WreckMuzzleSmokeSelfRenderer {
                     if (!batchOpen) {
                         RenderSystem.setShaderTexture(0, RVP_WreckFlameParticle.textureLocation(textureIndex));
                         builder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.PARTICLE);
+                        smokeBuffer = org.ywzj.rvp.client.light.RVP_SmokeLightPass.capture(builder,
+                                RVP_WreckFlameParticle.textureLocation(textureIndex));
                         batchOpen = true;
                     }
                     // 调用基类 billboard 绘制：相机相对坐标 + 面片尺寸/roll 旋转/光照由基类统一处理。
-                    particle.render(builder, camera, partialTick);
+                    particle.render(smokeBuffer, camera, partialTick);
                 }
                 if (batchOpen) {
                     tesselator.end();

@@ -52,6 +52,15 @@ public final class ScreenLightFrameGpuRegression {
             require(frame.captureDepth(world, worldDepth, 16, 16), "near scene copy failed under external MRT");
             assertExternalState();
             near(0.75F, read(frame.depth(), 16, 16, true)[0], "production near-depth copy");
+            try (RVP_ScreenFrameResources.State ignored = new RVP_ScreenFrameResources.State()) {
+                // 模拟捕获实体/方块后，普通烟雾随后写入主深度；屏幕光只能继续读之前的干净副本。
+                RenderSystem.activeTexture(GL13.GL_TEXTURE0); RenderSystem.bindTexture(worldDepth);
+                float[] smokeDepth = new float[16 * 16]; Arrays.fill(smokeDepth, 0.25F);
+                GL11.glTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, 16, 16, GL11.GL_DEPTH_COMPONENT, GL11.GL_FLOAT, smokeDepth);
+            }
+            near(0.75F, read(frame.depth(), 16, 16, true)[0], "later smoke cannot alter lighting occlusion snapshot");
+            assertExternalState();
+            System.out.println("PASS production opaque snapshot ignores later smoke depth writes");
             require(frame.captureDistantDepth(distant), "DH depth copy failed");
             assertExternalState();
             near(0.25F, read(frame.distantDepth(), 8, 8, true)[0], "production DH-depth copy");

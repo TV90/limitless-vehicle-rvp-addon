@@ -364,10 +364,13 @@ public final class RVP_ThermobaricRenderer {
             RenderSystem.setShaderTexture(0, WHITE_TEXTURE);
             RenderSystem.setShader(GameRenderer::getPositionTexColorShader);
             builder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX_COLOR);
+            // 调用统一烟雾几何记录，凝结云壳只接受光，不进入屏幕光遮挡深度。
+            com.mojang.blaze3d.vertex.VertexConsumer smokeBuffer =
+                    org.ywzj.rvp.client.light.RVP_SmokeLightPass.capture(builder, WHITE_TEXTURE);
             for (int layer = 0; layer < PRESSURE_SHELL_LAYERS; layer++) {
                 float shellRadius = Math.max(0.01F,
                         radius + PRESSURE_SHELL_OFFSETS[layer] * wallThickness);
-                writeTexturedSphereBelow(builder, cx, cy, cz, shellRadius,
+                writeTexturedSphereBelow(smokeBuffer, cx, cy, cz, shellRadius,
                         maximumVisibleY - (float) camera.y, cloudColor,
                         PRESSURE_SHELL_ALPHAS[layer] * fadeAlpha,
                         effect.preset().pressureRings(),
@@ -873,8 +876,11 @@ public final class RVP_ThermobaricRenderer {
         RenderSystem.setShaderTexture(0, RVP_ThermobaricParticleCoverage.PARTICLE_TEXTURE);
         RenderSystem.setShader(GameRenderer::getPositionTexColorShader);
         builder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX_COLOR);
+        // 调用烟雾受光记录，温压自绘贴图与粒子引擎烟使用相同光源、Alpha 与真实面片位置。
+        com.mojang.blaze3d.vertex.VertexConsumer smokeBuffer =
+                org.ywzj.rvp.client.light.RVP_SmokeLightPass.capture(builder, RVP_ThermobaricParticleCoverage.PARTICLE_TEXTURE);
         for (RenderCloud cloud : SORTED_CLOUDS) {
-            writeParticleBillboard(builder,
+            writeParticleBillboard(smokeBuffer,
                     (float) (cloud.x() - camera.x),
                     (float) (cloud.y() - camera.y),
                     (float) (cloud.z() - camera.z),
@@ -928,7 +934,7 @@ public final class RVP_ThermobaricRenderer {
      * 使用球面 UV 写入裁切线以下的一层四边形球壳。
      * 裁切线从球顶向球底下降时，剩余几何会连续缩短，避免用整圈跳变模拟凝结云消失。
      */
-    private static void writeTexturedSphereBelow(BufferBuilder builder, float centerX, float centerY,
+    private static void writeTexturedSphereBelow(com.mojang.blaze3d.vertex.VertexConsumer builder, float centerX, float centerY,
             float centerZ, float radius, float maximumVisibleY, int color, float alpha,
             int ringCount, int segmentCount) {
         if (radius <= 0.0F || ringCount <= 0 || segmentCount <= 0) {
@@ -959,7 +965,7 @@ public final class RVP_ThermobaricRenderer {
     }
 
     /** 按球面坐标和 UV 坐标写入一个纹理球壳顶点。 */
-    private static void writeTexturedSphereVertex(BufferBuilder builder, float centerX,
+    private static void writeTexturedSphereVertex(com.mojang.blaze3d.vertex.VertexConsumer builder, float centerX,
             float centerY, float centerZ, float radius, float theta, float phi,
             float u, float v, int color, float alpha) {
         float sinTheta = Mth.sin(theta);
@@ -973,7 +979,7 @@ public final class RVP_ThermobaricRenderer {
     }
 
     /** 写入一个始终面向相机、可在相机平面内旋转的方块团粒子。 */
-    private static void writeParticleBillboard(BufferBuilder builder, float x, float y, float z,
+    private static void writeParticleBillboard(com.mojang.blaze3d.vertex.VertexConsumer builder, float x, float y, float z,
             float halfSize, float rotation, int color, float alpha) {
         float lookX = -x;
         float lookY = -y;
