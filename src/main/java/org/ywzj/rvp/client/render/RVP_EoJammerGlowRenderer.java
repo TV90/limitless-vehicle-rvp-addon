@@ -1,0 +1,291 @@
+package org.ywzj.rvp.client.render;
+
+import com.github.mcmodderanchor.simplebedrockmodel.v1.client.renderer.BedrockModelRenderTypes;
+import com.github.mcmodderanchor.simplebedrockmodel.v2.common.model.runtime.BakedModelInstance;
+import com.github.mcmodderanchor.simplebedrockmodel.v2.common.model.runtime.BoneState;
+import com.mojang.blaze3d.vertex.PoseStack;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.util.Mth;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.Vec3;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.api.distmarker.OnlyIn;
+import org.joml.Quaternionf;
+import org.joml.Vector3f;
+import org.ywzj.rvp.client.light.RVP_LightSourceType;
+import org.ywzj.rvp.client.light.RVP_ScreenLightManager;
+import org.ywzj.rvp.client.resource.RVP_EoJammerGlowManager;
+import org.ywzj.rvp.client.state.RVP_ClientBoneModuleState;
+import org.ywzj.rvp.config.RVP_LightingConfig;
+import org.ywzj.rvp.light.RVP_LightParameters;
+import org.ywzj.rvp.vehicle.BoneModuleType;
+import org.ywzj.vehicle.client.render.entity.vehicle.VehicleRender;
+import org.ywzj.vehicle.client.resource.ClientAssetsManager;
+import org.ywzj.vehicle.client.resource.vehicle.VehicleBedrockModel;
+import org.ywzj.vehicle.client.resource.vehicle.VehicleDisplay;
+import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
+import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * 光电干扰机玻片夜间红光：在载具本体渲染完成后，对 display JSON {@code eo_jammer_glow}
+ * 指定的玻片骨再画一遍，用顶点色乘红色并强制满亮度，同时注册一盏红色屏幕光。
+ *
+ * <p>只追加不改写：本体渲染仍是常规 cutout 通道，白天、残骸、干扰模块失效时不画第二遍，
+ * 玻片保持原样。第二遍复用同一 {@link BakedModelInstance}，动画姿态由本体渲染器本帧写入，
+ * 因此不能再次 tick 动画。</p>
+ *
+ * <p>发光分两遍：红色 cutout 定义形状，再按叠加混合画一遍形成自发光亮感。</p>
+ *
+ * <p>屏幕光锚点直接取玻片骨的枢轴（模型已把 {@code jammer*} 的枢轴改到真正的镜片位置）：
+ * 枢轴经 {@code getGlobalTransform} 带着炮塔动画回到模型空间，再按载具朝向落到世界坐标。</p>
+ *
+ * <p>屏幕光是<b>半球光</b>：半球轴取载具前进方向，只照亮镜片前方，
+ * 背面看不到溢出的红光。</p>
+ */
+@OnlyIn(Dist.CLIENT)
+public final class RVP_EoJammerGlowRenderer {
+
+    /** 夜间时段（世界时间）：0 为清晨 6 点，13000～23000 为原版夜晚。 */
+    private static final long NIGHT_START = 13000L;
+    private static final long NIGHT_END = 23000L;
+    private static final long DAY_LENGTH = 24000L;
+    /** 红光顶点色：乘在原贴图上，保留纹理明暗细节。 */
+    private static final float GLOW_RED = 1.0F;
+    private static final float GLOW_GREEN = 0.20F;
+    private static final float GLOW_BLUE = 0.14F;
+    /** 叠加自发光：在红色底上再加几层，让玻片像通电的镜片而不是一块深红塑料。 */
+    private static final float GLOW_ADD_RED = 0.90F;
+    private static final float GLOW_ADD_GREEN = 0.22F;
+    private static final float GLOW_ADD_BLUE = 0.15F;
+    /** 叠加层数：玻片贴图本身偏暗，单层叠加亮度不够。 */
+    private static final int GLOW_ADDITIVE_LAYERS = 3;
+    /** 屏幕光只在相机附近注册，避免远处载具挤占八盏灯预算。 */
+    private static final double MAX_LIGHT_DISTANCE_SQR = 128.0 * 128.0;
+    /** 灯从枢轴沿载具前方外移的距离，单位格；避免灯陷在镜片/外壳内部。 */
+    private static final double ANCHOR_FORWARD_OFFSET = 0.35;
+
+    private RVP_EoJammerGlowRenderer() {
+    }
+
+    /**
+     * 在 {@code super.render} 之后调用：姿势栈已回到实体原点（本体渲染器已 popPose）。
+     * 本方法自行 push/pop，并在其中套用与本体一致的载具朝向。
+     */
+    public static void render(AbstractVehicle vehicle, float partialTick, PoseStack poseStack,
+                              MultiBufferSource bufferSource, int packedLight) {
+        if (!RVP_LightingConfig.eoJammerGlowEnabled()) {
+            RVP_ScreenLightManager.INSTANCE.removePersistent(vehicle.getUUID());
+            return;
+        }
+        // 残骸与已移除实体不发光：干扰机随车体一起熄灭。
+        if (vehicle.isRemoved() || !vehicle.isAlive() || vehicle.isDestroyed()) {
+            RVP_ScreenLightManager.INSTANCE.removePersistent(vehicle.getUUID());
+            return;
+        }
+        VehicleDisplay<?, ?> display = ClientAssetsManager.INSTANCE
+                .getVehicleDisplay(vehicle.getDisplayId()).orElse(null);
+        if (display == null) {
+            RVP_ScreenLightManager.INSTANCE.removePersistent(vehicle.getUUID());
+            return;
+        }
+        // 座舱视角渲染的是座舱 display，玻片在外部机体上，跳过避免画进驾驶舱。
+        boolean isCabinView = LocalVehiclePlayer.instance.vehicle == vehicle
+                && LocalVehiclePlayer.instance.viewType == LocalVehiclePlayer.ViewType.OPERATOR
+                && display.getCabinDisplay() != null;
+        if (isCabinView) {
+            RVP_ScreenLightManager.INSTANCE.removePersistent(vehicle.getUUID());
+            return;
+        }
+        List<RVP_EoJammerGlowManager.Rule> rules = RVP_EoJammerGlowManager.INSTANCE.rulesFor(vehicle.getDisplayId());
+        if (rules.isEmpty()) {
+            RVP_ScreenLightManager.INSTANCE.removePersistent(vehicle.getUUID());
+            return;
+        }
+        VehicleBedrockModel model = display.getModel();
+        ResourceLocation texture = display.getTexture();
+        if (model == null || texture == null || !model.hasBakedModel()) {
+            RVP_ScreenLightManager.INSTANCE.removePersistent(vehicle.getUUID());
+            return;
+        }
+        // 与本体渲染器同源：优先载具当前实例，缺失时退回模型默认实例（姿态同样已由本体写入）。
+        BakedModelInstance modelInstance = vehicle.getVehicleModelInstance();
+        if (modelInstance == null) {
+            modelInstance = model.getDefaultModelInstance();
+        }
+        if (modelInstance == null) {
+            RVP_ScreenLightManager.INSTANCE.removePersistent(vehicle.getUUID());
+            return;
+        }
+
+        // 筛出本帧要发红的玻片骨，并用枢轴求屏幕光锚点：模型已把 jammer* 的枢轴改到镜片位置，
+        // 不再从网格几何反推中心。左右各有一块时只取离相机最近的一块，两块中间点会落在炮塔内部。
+        List<Integer> glowBones = new ArrayList<>(rules.size());
+        Vec3 cameraPosition = Minecraft.getInstance().gameRenderer.getMainCamera().getPosition();
+        Vec3 anchorBase = null;
+        double nearestAnchor = Double.MAX_VALUE;
+        for (RVP_EoJammerGlowManager.Rule rule : rules) {
+            int boneIndex = modelInstance.getIndex(rule.glassBone());
+            if (boneIndex < 0) {
+                continue;
+            }
+            // 干扰模块被摧毁的玻片不再发红；未配置 module_bone 时只受整机状态约束。
+            if (rule.moduleBone() != null && !RVP_ClientBoneModuleState.isModuleActive(
+                    vehicle.getId(), rule.moduleBone(), BoneModuleType.JAMMER)) {
+                continue;
+            }
+            BoneState bone = modelInstance.getBone(boneIndex);
+            // 父级被隐藏（部件脱落、模块骨失效动画）时玻片本身也不可见，不能凭空发光。
+            if (bone == null || !isTreeVisible(modelInstance, bone)) {
+                continue;
+            }
+            glowBones.add(boneIndex);
+            Vec3 pivot = boneOrigin(vehicle, modelInstance, boneIndex, partialTick);
+            double distance = cameraPosition.distanceToSqr(pivot);
+            if (distance < nearestAnchor) {
+                nearestAnchor = distance;
+                anchorBase = pivot;
+            }
+        }
+        if (glowBones.isEmpty()) {
+            RVP_ScreenLightManager.INSTANCE.removePersistent(vehicle.getUUID());
+            return;
+        }
+
+        // 半球光：灯沿载具前进方向从枢轴外移，半球轴同为前进方向，只照车头一侧，背面不受光。
+        Vec3 forward = vehicleForward(vehicle, partialTick);
+        Vec3 anchor = anchorBase.add(forward.scale(ANCHOR_FORWARD_OFFSET));
+        if (!isNight(vehicle.level())) {
+            RVP_ScreenLightManager.INSTANCE.removePersistent(vehicle.getUUID());
+            return;
+        }
+
+        poseStack.pushPose();
+        try {
+            // 调用本体同款载具朝向：绕 centerOffset 旋转，第二遍与第一遍完全重合。
+            VehicleRender.applyVehicleRotation(vehicle, partialTick, poseStack);
+            for (int boneIndex : glowBones) {
+                BoneState bone = modelInstance.getBone(boneIndex);
+                if (bone == null) {
+                    continue;
+                }
+                // 只在本遍临时切换满亮度，finally 恢复，避免影响其它渲染通道。
+                boolean illuminated = bone.illuminated;
+                bone.illuminated = true;
+                try {
+                    // 第一遍：不透明红片，负责形状与深度，纹理细节保留。
+                    modelInstance.renderSingleBone(poseStack, boneIndex, bufferSource,
+                            RenderType.entityCutout(texture), BedrockModelRenderTypes.polyMeshCutout(texture),
+                            packedLight, OverlayTexture.NO_OVERLAY,
+                            GLOW_RED, GLOW_GREEN, GLOW_BLUE, 1.0F, false);
+                    // 后续各遍：叠加混合直接加到画面上。贴图本身偏暗，单层叠加不够亮，
+                    // 重复叠加把红光堆到接近饱和，玻片才会像通电的镜片。
+                    for (int layer = 0; layer < GLOW_ADDITIVE_LAYERS; layer++) {
+                        modelInstance.renderSingleBone(poseStack, boneIndex, bufferSource,
+                                RVP_RenderTypes.texturedAdditiveNoDepthWrite(texture),
+                                RVP_RenderTypes.polyMeshAdditiveNoDepthWrite(texture),
+                                packedLight, OverlayTexture.NO_OVERLAY,
+                                GLOW_ADD_RED, GLOW_ADD_GREEN, GLOW_ADD_BLUE, 1.0F, false);
+                    }
+                } finally {
+                    bone.illuminated = illuminated;
+                }
+            }
+        } finally {
+            poseStack.popPose();
+        }
+
+        // 屏幕光只补环境受光与光晕，顶点红光是主体；关闭屏幕光或预算为零时仍保留红光。
+        if (!RVP_LightingConfig.screenEnabled() || RVP_LightingConfig.maxLights() <= 0) {
+            RVP_ScreenLightManager.INSTANCE.removePersistent(vehicle.getUUID());
+            return;
+        }
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null
+                || minecraft.player.position().distanceToSqr(anchor) > MAX_LIGHT_DISTANCE_SQR) {
+            RVP_ScreenLightManager.INSTANCE.removePersistent(vehicle.getUUID());
+            return;
+        }
+        // 调用持续光统一入口：每帧心跳续期，条件失效时立即删除；半球轴随车体朝向。
+        RVP_ScreenLightManager.INSTANCE.upsertPersistent(vehicle.getUUID(), anchor,
+                RVP_LightSourceType.EO_JAMMER, RVP_LightParameters.eoJammer(), forward);
+    }
+
+    /** 载具前进方向（模型 +Z），经载具朝向旋转后作为半球光的轴向。 */
+    private static Vec3 vehicleForward(AbstractVehicle vehicle, float partialTick) {
+        Vector3f forward = new Vector3f(0.0F, 0.0F, 1.0F);
+        vehicle.rotYXZ(partialTick).transform(forward);
+        if (forward.lengthSquared() < 1.0E-8F) {
+            return new Vec3(0.0, 0.0, 1.0);
+        }
+        forward.normalize();
+        return new Vec3(forward.x, forward.y, forward.z);
+    }
+
+    /**
+     * 夜间判定只看世界时间，不用光照引擎：客户端 {@code Level.skyDarken} 只在进世界时计算一次，
+     * {@code getMaxLocalRawBrightness} 在夜里仍按天光 15 算，会把整夜判成白天；
+     * 同时方块光（玩家基地照明）也不该决定拟真设备是否工作。屏幕光是渲染阶段的附加光，
+     * 不写入光照引擎，因此自身发光不会反过来把自己判成"不暗"。
+     */
+    private static boolean isNight(Level level) {
+        if (level == null) {
+            return false;
+        }
+        // 无天光的维度（下界、末地）没有昼夜，按常暗处理。
+        if (!level.dimensionType().hasSkyLight()) {
+            return true;
+        }
+        long time = Math.floorMod(level.getDayTime(), DAY_LENGTH);
+        return time >= NIGHT_START && time < NIGHT_END;
+    }
+
+    /** 玻片骨枢轴的世界坐标：全局变换带着炮塔动画，再按载具朝向落到世界空间。 */
+    private static Vec3 boneOrigin(AbstractVehicle vehicle, BakedModelInstance instance,
+                                   int boneIndex, float partialTick) {
+        Vector3f pivot = instance.getGlobalTransform(boneIndex).transformPosition(new Vector3f());
+        Vec3 centerOffset = vehicle.centerOffset == null ? Vec3.ZERO : vehicle.centerOffset;
+        return toWorld(entityPosition(vehicle, partialTick), vehicle.rotYXZ(partialTick), centerOffset, pivot);
+    }
+
+    /** 实体插值位置，与本体渲染器同帧一致。 */
+    private static Vec3 entityPosition(AbstractVehicle vehicle, float partialTick) {
+        return new Vec3(
+                Mth.lerp(partialTick, vehicle.xo, vehicle.getX()),
+                Mth.lerp(partialTick, vehicle.yo, vehicle.getY()),
+                Mth.lerp(partialTick, vehicle.zo, vehicle.getZ()));
+    }
+
+    /** 骨骼自身及全部祖先都可见时才允许叠加；与本体 renderBone 的父链语义一致。 */
+    private static boolean isTreeVisible(BakedModelInstance instance, BoneState bone) {
+        for (BoneState current = bone; current != null; ) {
+            if (!current.visible) {
+                return false;
+            }
+            int parentIndex = current.parentIndex();
+            current = parentIndex < 0 ? null : instance.getBone(parentIndex);
+        }
+        return true;
+    }
+
+    /**
+     * 模型空间点还原到世界坐标：实体插值位置 + 绕 centerOffset 的载具旋转，
+     * 与 {@link VehicleRender#applyVehicleRotation} 的 rotateAround 完全一致。
+     */
+    private static Vec3 toWorld(Vec3 entityPos, Quaternionf rotation, Vec3 centerOffset, Vector3f pivot) {
+        Vector3f relative = new Vector3f(
+                pivot.x - (float) centerOffset.x,
+                pivot.y - (float) centerOffset.y,
+                pivot.z - (float) centerOffset.z);
+        rotation.transform(relative);
+        return entityPos.add(relative.x + centerOffset.x,
+                relative.y + centerOffset.y,
+                relative.z + centerOffset.z);
+    }
+}

@@ -40,7 +40,8 @@ final class RVP_RocketPlumePass {
             Matrix4f projection, Vec3 camera, int height) {
         // 调用几何和广域光晕两种包围框并取并集，光晕还在画面内时不能按细尾焰剔除整条输入。
         var shape = shapeBounds(plume, view, projection, camera, height);
-        if (!RVP_LightingConfig.bloomEnabled()) { return shape; }
+        // 调用光晕开关：关闭时只按真实喷流范围裁剪，不再为不可见的外圈扩大作用域。
+        if (!RVP_LightingConfig.bloomEnabled() || !RVP_LightingConfig.missileHaloEnabled()) { return shape; }
         var halo = haloBounds(plume, view, projection, camera);
         if (shape == null) { return halo; }
         if (halo == null) { return shape; }
@@ -73,6 +74,8 @@ final class RVP_RocketPlumePass {
         RVP_ScreenLightPass.uploadScene(shader);
         shader.safeGetUniform("OutputMode").set(mode);
         shader.safeGetUniform("Time").set(time);
+        // 调用光晕开关：关闭时远距喷流按真实尺寸缩小消失，不再保留固定像素亮斑。
+        shader.safeGetUniform("HaloEnabled").set(RVP_LightingConfig.missileHaloEnabled() ? 1 : 0);
         for (RVP_RocketPlume plume : plumes) {
             // 光晕范围为零时仅取消模糊来源，显示模式仍保留真实白热喷焰。
             if (mode == 1 && plume.haloRadius() <= 0) { continue; }
@@ -96,11 +99,15 @@ final class RVP_RocketPlumePass {
     /** 先以一像素求可见发光比例，再绘制世界尺寸光晕；所有喷流共用一份小目标，不新增数量上限。 */
     static void renderHalos(RVP_ScreenFrameResources frame, List<RVP_RocketPlume> plumes,
             Matrix4f view, Matrix4f projection, Vec3 camera, float time) {
-        if (!available() || !RVP_LightingConfig.bloomEnabled() || plumes.isEmpty()) { return; }
+        // 调用客户端画质配置：导弹广域光圈默认关闭，关闭时保留喷焰核心与世界受光。
+        if (!available() || !RVP_LightingConfig.bloomEnabled()
+                || !RVP_LightingConfig.missileHaloEnabled() || plumes.isEmpty()) { return; }
         // 调用共享目标与矩阵输入，支持原版、DH、光影及组合路径。
         frame.ensurePlumeVisibility();
         RVP_ScreenLightPass.uploadScene(shader);
         shader.safeGetUniform("Time").set(time);
+        // 本方法只在光晕开关打开时进入，可见度采样仍按完整喷流计算。
+        shader.safeGetUniform("HaloEnabled").set(1);
         for (RVP_RocketPlume plume : plumes) {
             var bounds = haloBounds(plume, view, projection, camera);
             if (bounds == null) { continue; }

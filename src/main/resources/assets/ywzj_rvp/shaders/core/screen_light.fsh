@@ -32,27 +32,35 @@ uniform vec4 LightEmission7;
 uniform vec4 LightPositionRadius0;
 uniform vec4 LightColorIntensity0;
 uniform vec4 LightShape0;
+uniform vec4 LightDirection0;
 uniform vec4 LightPositionRadius1;
 uniform vec4 LightColorIntensity1;
 uniform vec4 LightShape1;
+uniform vec4 LightDirection1;
 uniform vec4 LightPositionRadius2;
 uniform vec4 LightColorIntensity2;
 uniform vec4 LightShape2;
+uniform vec4 LightDirection2;
 uniform vec4 LightPositionRadius3;
 uniform vec4 LightColorIntensity3;
 uniform vec4 LightShape3;
+uniform vec4 LightDirection3;
 uniform vec4 LightPositionRadius4;
 uniform vec4 LightColorIntensity4;
 uniform vec4 LightShape4;
+uniform vec4 LightDirection4;
 uniform vec4 LightPositionRadius5;
 uniform vec4 LightColorIntensity5;
 uniform vec4 LightShape5;
+uniform vec4 LightDirection5;
 uniform vec4 LightPositionRadius6;
 uniform vec4 LightColorIntensity6;
 uniform vec4 LightShape6;
+uniform vec4 LightDirection6;
 uniform vec4 LightPositionRadius7;
 uniform vec4 LightColorIntensity7;
 uniform vec4 LightShape7;
+uniform vec4 LightDirection7;
 in vec2 screenUV;
 out vec4 fragColor;
 
@@ -198,6 +206,7 @@ void main() {
     vec4 positions[8] = vec4[8](LightPositionRadius0, LightPositionRadius1, LightPositionRadius2, LightPositionRadius3, LightPositionRadius4, LightPositionRadius5, LightPositionRadius6, LightPositionRadius7);
     vec4 colors[8] = vec4[8](LightColorIntensity0, LightColorIntensity1, LightColorIntensity2, LightColorIntensity3, LightColorIntensity4, LightColorIntensity5, LightColorIntensity6, LightColorIntensity7);
     vec4 shapes[8] = vec4[8](LightShape0, LightShape1, LightShape2, LightShape3, LightShape4, LightShape5, LightShape6, LightShape7);
+    vec4 directions[8] = vec4[8](LightDirection0, LightDirection1, LightDirection2, LightDirection3, LightDirection4, LightDirection5, LightDirection6, LightDirection7);
     vec4 emissions[8] = vec4[8](LightEmission0, LightEmission1, LightEmission2, LightEmission3, LightEmission4, LightEmission5, LightEmission6, LightEmission7);
     vec4 background = texture(SceneColor, screenUV);
     vec4 sampled = scenePosition(screenUV);
@@ -231,12 +240,18 @@ void main() {
         float surface = 0.0;
         vec3 delta = light.xyz - position;
         float distanceToLight = length(delta);
+        // 半球光：directions[index].w > 0.5 时只照亮光源前方半球。
+        // 判据是"从光源指向表面"的方向与半球轴的夹角，背面片元直接不受光。
+        float hemisphere = 1.0;
+        if (directions[index].w > 0.5 && distanceToLight > 0.0001) {
+            hemisphere = smoothstep(-0.12, 0.12, dot(-delta / distanceToLight, directions[index].xyz));
+        }
         if (hasSurface && distanceToLight < light.w && shape.x > 0.0) {
             float radial = distanceToLight / light.w;
             float facing = distanceToLight < 0.0001 ? 1.0 : max(0.0, dot(normal, delta / distanceToLight));
             if (facing > 0.0) {
                 surface = pow(max(0.0, 1.0 - radial * radial), 2.0)
-                        * facing * shape.x * visibility(position, normal, light.xyz);
+                        * facing * shape.x * hemisphere * visibility(position, normal, light.xyz);
             }
         }
         float volume = shape.y > 0.0

@@ -7,8 +7,11 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.data.RVP_FireData;
+import org.ywzj.rvp.weapon.data.RVP_GuidanceData;
+import org.ywzj.rvp.weapon.data.RVP_GuidanceDataGPS;
 import org.ywzj.rvp.weapon.data.RVP_GuidanceDataIR;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
+import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.pojo.AimContext;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
@@ -43,6 +46,45 @@ class RVP_ProjectileWeaponLaunchTest {
         assertEquals(20, weapon.getChargeTickValue());
         assertEquals(0, weapon.spawnCalls);
         assertEquals(0, weapon.chargeConsumes);
+    }
+
+    @Test
+    void gpsWeaponWithTerminalRadarSeekerStillLaunchesWithoutEntityLock() throws Exception {
+        // 复现 YJ-20 的数据形状：GPS 主段 + 末端 ARH。末端阶段令 isRadarHoming() 为真，
+        // 但发射段是 GPS 装订点，发射前不需要实体锁；服务端与客户端必须同口径。
+        Gson gson = new Gson();
+        RVP_WeaponData gpsData = allocate(RVP_WeaponData.class);
+        set(RVP_WeaponData.class, gpsData, "guidanceData",
+                gson.fromJson("{\"guidance_type\":\"GPS\",\"terminal_guidance\":{\"guidance_type\":\"ARH\"}}",
+                        RVP_GuidanceDataGPS.class));
+        set(RVP_WeaponData.class, gpsData, "fireData",
+                gson.fromJson("{\"require_lock\":true}", RVP_FireData.class));
+        assertTrue(gpsData.isGpsMissile());
+        assertTrue(gpsData.isRadarHoming(), "末端 ARH 会让 GPS 弹也被判为雷达制导");
+        assertFalse(gpsData.launchPhaseRequiresSeekerLock(), "只按发射段制导判定，末端 ARH 不改变发射门");
+        assertFalse(RVP_ProjectileWeapon.requiresServerSeekerLock(gpsData, null,
+                        WeaponUnitData.FireControlSensorType.RF),
+                "GPS 发射段使用装订点，不依赖实体锁，服务端必须放行");
+
+        // 对比用例：主段 ARH 且 require_lock 的弹无锁仍拒射，本次修复不能放宽真雷达制导。
+        RVP_WeaponData radarData = allocate(RVP_WeaponData.class);
+        set(RVP_WeaponData.class, radarData, "guidanceData",
+                gson.fromJson("{\"guidance_type\":\"ARH\"}", RVP_GuidanceData.class));
+        set(RVP_WeaponData.class, radarData, "fireData",
+                gson.fromJson("{\"require_lock\":true}", RVP_FireData.class));
+        assertTrue(radarData.launchPhaseRequiresSeekerLock());
+        assertTrue(RVP_ProjectileWeapon.requiresServerSeekerLock(radarData, null,
+                WeaponUnitData.FireControlSensorType.RF));
+        assertFalse(RVP_ProjectileWeapon.requiresServerSeekerLock(radarData, null,
+                WeaponUnitData.FireControlSensorType.EO), "EO 直瞄豁免保持不变");
+
+        // 反辐射（ARM）走预选通道，不属于实体锁定门；激光/指令发射段同样不要求实体锁。
+        RVP_WeaponData armData = allocate(RVP_WeaponData.class);
+        set(RVP_WeaponData.class, armData, "guidanceData",
+                gson.fromJson("{\"guidance_type\":\"ARM\"}", RVP_GuidanceData.class));
+        set(RVP_WeaponData.class, armData, "fireData",
+                gson.fromJson("{\"require_lock\":true}", RVP_FireData.class));
+        assertFalse(armData.launchPhaseRequiresSeekerLock());
     }
 
     @Test

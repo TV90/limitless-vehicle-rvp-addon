@@ -7,6 +7,7 @@ import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.client.resource.RVP_CustomMountReloadListener;
 import org.ywzj.rvp.client.resource.RVP_DisplayTransparentModeManager;
+import org.ywzj.rvp.client.resource.RVP_EoJammerGlowManager;
 import org.ywzj.rvp.client.resource.pylon.RVP_PylonDisplayReloadListener;
 import org.ywzj.rvp.client.resource.remotevisibility.RVP_RemoteVehicleVisualReloadListener;
 import org.ywzj.rvp.client.visual.thermobaric.RVP_ThermobaricParticleCoverage;
@@ -24,6 +25,8 @@ public final class RVP_ClientReloadListeners {
         // 注册本项目殉燃资源检查：重载时清理自动挂点并检查火柱贴图。
         event.registerReloadListener(org.ywzj.rvp.client.visual.cookoff.RVP_WreckCookoffRenderer.INSTANCE);
         event.registerReloadListener(RVP_DisplayTransparentModeManager.INSTANCE);
+        // 注册光电干扰机玻片发光配置，F3+T 后 display JSON 的 eo_jammer_glow 立即生效。
+        event.registerReloadListener(RVP_EoJammerGlowManager.INSTANCE);
         event.registerReloadListener(RVP_CustomMountReloadListener.INSTANCE);
         // 注册 RVP 自有挂架 display 目录，避免挂架模型被注册成本体饰品。
         event.registerReloadListener(RVP_PylonDisplayReloadListener.INSTANCE);

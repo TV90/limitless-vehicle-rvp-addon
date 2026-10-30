@@ -19,6 +19,7 @@ import org.ywzj.rvp.client.nuclear.RVP_ExplosionVisualManager;
 import org.ywzj.rvp.client.nuclear.RVP_NuclearVisualManager;
 import org.ywzj.rvp.client.render.GunnerRenderer;
 import org.ywzj.rvp.client.render.RVP_VehiclePartRender;
+import org.ywzj.rvp.client.render.RVP_VehicleRender;
 import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteAmmoVisualState;
 import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteVehicleVisualState;
 import org.ywzj.rvp.client.visual.RVP_ClientVisualEffectDispatcher;
@@ -34,7 +35,6 @@ import org.ywzj.rvp.network.remotevisibility.RVP_RemoteAmmoVisualEndpoint;
 import org.ywzj.rvp.network.remotevisibility.RVP_RemoteVehicleVisualEndpoint;
 import org.ywzj.rvp.weapon.visual.api.RVP_VisualEffectEndpoint;
 import org.ywzj.vehicle.all.AllEntities;
-import org.ywzj.vehicle.client.render.entity.vehicle.VehicleRender;
 
 /**
  * Client-only setup; keep out of {@link org.ywzj.rvp.RVP_MOD} so dedicated servers do not load renderer classes.
@@ -112,20 +112,25 @@ public final class RVP_ClientBootstrap {
     }
 
     private static void registerVehicleRenderers() {
-        EntityRenderers.register(AllEntities.NONE_VEHICLE.get(), VehicleRender::new);
-        EntityRenderers.register(AllEntities.WHEELED_VEHICLE.get(), VehicleRender::new);
-        EntityRenderers.register(AllEntities.TRACKED_VEHICLE.get(), VehicleRender::new);
-        EntityRenderers.register(AllEntities.ROTARY_WING_VEHICLE.get(), VehicleRender::new);
-        EntityRenderers.register(AllEntities.FIXED_WING_VEHICLE.get(), VehicleRender::new);
-        EntityRenderers.register(AllEntities.ZTZ99A.get(), VehicleRender::new);
-        EntityRenderers.register(AllEntities.Z10.get(), VehicleRender::new);
-        EntityRenderers.register(AllEntities.MOTORCYCLE.get(), VehicleRender::new);
-        EntityRenderers.register(AllEntities.HIACE.get(), VehicleRender::new);
-        EntityRenderers.register(AllEntities.M1A2.get(), VehicleRender::new);
-        EntityRenderers.register(AllEntities.CSSA5.get(), VehicleRender::new);
-        EntityRenderers.register(AllEntities.AH64D.get(), VehicleRender::new);
-        EntityRenderers.register(AllEntities.LAV_AD.get(), VehicleRender::new);
-        EntityRenderers.register(AllEntities.BGM_71_TOW.get(), VehicleRender::new);
+        // 统一换成 RVP 渲染器：仅在本体渲染后追加光电干扰机玻片红光，未配置 display 时行为完全一致。
+        EntityRenderers.register(AllEntities.NONE_VEHICLE.get(), RVP_VehicleRender::new);
+        EntityRenderers.register(AllEntities.WHEELED_VEHICLE.get(), RVP_VehicleRender::new);
+        EntityRenderers.register(AllEntities.TRACKED_VEHICLE.get(), RVP_VehicleRender::new);
+        EntityRenderers.register(AllEntities.VESSEL_VEHICLE.get(), RVP_VehicleRender::new);
+        EntityRenderers.register(AllEntities.LAV150.get(), RVP_VehicleRender::new);
+        EntityRenderers.register(AllEntities.ROTARY_WING_VEHICLE.get(), RVP_VehicleRender::new);
+        EntityRenderers.register(AllEntities.FIXED_WING_VEHICLE.get(), RVP_VehicleRender::new);
+        EntityRenderers.register(AllEntities.ZTZ99A.get(), RVP_VehicleRender::new);
+        EntityRenderers.register(AllEntities.Z10.get(), RVP_VehicleRender::new);
+        EntityRenderers.register(AllEntities.MOTORCYCLE.get(), RVP_VehicleRender::new);
+        EntityRenderers.register(AllEntities.HIACE.get(), RVP_VehicleRender::new);
+        EntityRenderers.register(AllEntities.QUADCOPTER.get(), RVP_VehicleRender::new);
+        EntityRenderers.register(AllEntities.M1A2.get(), RVP_VehicleRender::new);
+        EntityRenderers.register(AllEntities.CSSA5.get(), RVP_VehicleRender::new);
+        EntityRenderers.register(AllEntities.AH64D.get(), RVP_VehicleRender::new);
+        EntityRenderers.register(AllEntities.LAV_AD.get(), RVP_VehicleRender::new);
+        EntityRenderers.register(AllEntities.BGM_71_TOW.get(), RVP_VehicleRender::new);
+        EntityRenderers.register(AllEntities.HTF5980.get(), RVP_VehicleRender::new);
         // 残件渲染器覆盖注册：必须晚于本体 ClientSetupHandler 的注册（FMLClientSetupEvent）；
         // 本方法在 FMLLoadCompleteEvent 的 onLoadComplete() 里会被再调一次，覆盖注册顺序有保证。
         EntityRenderers.register(AllEntities.VEHICLE_PART.get(), RVP_VehiclePartRender::new);

@@ -21,6 +21,10 @@ public final class RVP_LightingConfig {
     private static final ForgeConfigSpec.BooleanValue SCREEN_LIGHT;
     /** 光晕总开关。 */
     private static final ForgeConfigSpec.BooleanValue BLOOM;
+    /** 导弹发动机广域光晕；默认关闭，关闭后保留喷焰本体和表面受光。 */
+    private static final ForgeConfigSpec.BooleanValue MISSILE_HALO;
+    /** 光电干扰机玻片夜间红光总开关；关闭后玻片完全保持原贴图。 */
+    private static final ForgeConfigSpec.BooleanValue EO_JAMMER_GLOW;
     /** 可选空气散射总开关，默认关闭。 */
     private static final ForgeConfigSpec.BooleanValue VOLUMETRIC;
     /** 每帧允许提交的光源数，最大八盏。 */
@@ -35,6 +39,12 @@ public final class RVP_LightingConfig {
         SCREEN_LIGHT = client.comment("世界画面表面受光；支持 DH 与 Iris/Oculus 光影，不改变原版方块光照值。")
                 .define("screenLight", true);
         BLOOM = client.comment("半分辨率亮部光晕；关闭不影响基础受光。") .define("bloom", true);
+        MISSILE_HALO = client.comment("导弹发动机的广域外圈光晕；默认关闭（2026-10-31 暂时停用）。",
+                        "关闭只保留核心喷焰，同时停用发动机对周围墙面和烟雾的光照，避免残留尾迹被重新点亮。")
+                .define("missileHalo", false);
+        EO_JAMMER_GLOW = client.comment("光电干扰机玻片在夜间/暗处乘红色并发光；关闭后玻片完全保持原贴图。",
+                        "玻片骨骼与对应干扰模块由 display JSON 的 eo_jammer_glow 指定。")
+                .define("eoJammerGlow", true);
         VOLUMETRIC = client.comment("允许代码预设中的球形空气散射，默认关闭；不读取武器 JSON 光源配置。")
                 .define("volumetric", false);
         MAX_LIGHTS = client.comment("每帧光源上限，0 关闭。默认 8。") .defineInRange("maxLights", 8, 0, 8);
@@ -61,6 +71,15 @@ public final class RVP_LightingConfig {
         // 调用光晕临时开关；reset 后重新尊重 TOML，不改写磁盘文件。
         return RVP_LightRuntimeTuning.getOrDefault(Group.bloom, Parameter.enabled,
                 !CLIENT_SPEC.isLoaded() || BLOOM.get() ? 1 : 0) == 1;
+    }
+    /** 导弹发动机广域光晕；默认关闭，关闭后只去掉喷焰外圈。 */
+    public static boolean missileHaloEnabled() {
+        // 配置未加载时按关闭处理，与 TOML 默认值一致。
+        return CLIENT_SPEC.isLoaded() && MISSILE_HALO.get();
+    }
+    /** 光电干扰机玻片夜间红光；配置未加载时按开启处理，与 TOML 默认值一致。 */
+    public static boolean eoJammerGlowEnabled() {
+        return !CLIENT_SPEC.isLoaded() || EO_JAMMER_GLOW.get();
     }
     /** 默认关闭实验性空气散射。 */
     public static boolean volumetricEnabled() { return CLIENT_SPEC.isLoaded() && VOLUMETRIC.get(); }

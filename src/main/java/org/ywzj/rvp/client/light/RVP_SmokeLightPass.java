@@ -154,7 +154,10 @@ public final class RVP_SmokeLightPass {
 
     /** 世界光照完成后增加烟雾受光；只使用不含粒子烟的方块/实体深度作为遮挡。 */
     static void render(RVP_ScreenFrameResources frame, Camera camera, float partialTick) {
-        List<RVP_ScreenLight> lights = RVP_ScreenLightPass.currentLights();
+        // 发动机光只照墙体和地面：移动中的发动机光若重新点亮旧尾迹烟，会沿旧尾迹出现
+        // 第二团火球（看起来像旧导弹被重画），因此烟雾层不接收发动机光。
+        List<RVP_ScreenLight> lights = RVP_ScreenLightPass.currentLights().stream()
+                .filter(light -> light.type() != RVP_LightSourceType.ROCKET_ENGINE).toList();
         if (!wanted() || lights.isEmpty()) { return; }
         // 调用引擎收集，覆盖本体/原版粒子和所有已知 RVP 粒子烟；自绘烟已由正常绘制记录。
         collectParticles(camera, partialTick);

@@ -127,7 +127,7 @@ public final class RVP_ClientActions implements RVP_IClientActions {
                                             int holdTicks, int holdMinTicks, int fadeTicks,
                                             int fadeRandomTicks, float alphaHoldRatio) {
         // 调用代码总开关停用旧贴图尾迹；下面的原始构造和寿命实现完整保留。
-        if (!org.ywzj.rvp.weapon.visual.RVP_RocketTrailParameters.ORIGINAL_PARTICLES_ENABLED) { return; }
+        if (!org.ywzj.rvp.weapon.visual.RVP_RocketTrailParameters.originalParticlesEnabled()) { return; }
         net.minecraft.client.multiplayer.ClientLevel level = Minecraft.getInstance().level;
         if (level == null) {
             return;

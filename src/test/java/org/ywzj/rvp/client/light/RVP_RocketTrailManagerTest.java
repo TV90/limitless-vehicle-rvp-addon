@@ -17,9 +17,10 @@ class RVP_RocketTrailManagerTest {
             new RVP_RocketTrailManager.Profile(1, 1, 20, 20, 1, 0.65F, 8, 4, false);
 
     @Test
-    void codeSwitchKeepsOldParticlesOffAndVolumeOn() {
-        assertTrue(RVP_RocketTrailParameters.VOLUME_ENABLED);
-        assertFalse(RVP_RocketTrailParameters.ORIGINAL_PARTICLES_ENABLED);
+    void defaultSwitchUsesOriginalParticles() {
+        // 2026-10-31 用户要求：默认恢复旧贴图尾迹，新体积烟仅在配置开启时使用。
+        assertFalse(RVP_RocketTrailParameters.volumeEnabled());
+        assertTrue(RVP_RocketTrailParameters.originalParticlesEnabled());
     }
 
     @Test

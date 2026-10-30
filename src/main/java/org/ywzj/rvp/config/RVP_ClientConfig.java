@@ -62,6 +62,8 @@ public class RVP_ClientConfig {
 
     /** 已注册的客户端配置实例。 */
     private static RVP_ClientConfig INSTANCE;
+    /** 已注册的客户端配置规格；用于判断配置是否已加载，避免服务端读到未加载的值。 */
+    private static ForgeConfigSpec CLIENT_SPEC;
 
     /** 缩放观察时是否延后载具 LOD 切换。 */
     private final ForgeConfigSpec.BooleanValue lodZoomEnabled;
@@ -79,6 +81,8 @@ public class RVP_ClientConfig {
     private final ForgeConfigSpec.DoubleValue thermobaricShakeIntensity;
 
     private final ForgeConfigSpec.DoubleValue explosionShakeIntensity;
+    /** 是否启用新的世界轨迹逐像素体积尾烟；默认 false 使用旧贴图尾迹。 */
+    private final ForgeConfigSpec.BooleanValue rocketTrailVolume;
     /** 客户端每帧允许绘制的最大远距载具数。 */
     private final ForgeConfigSpec.IntValue remoteVehicleMaxRenderedVehicles;
     /** 客户端每帧允许绘制的最大无 LOD 高模载具数。 */
@@ -173,6 +177,16 @@ public class RVP_ClientConfig {
                         "Default: 1.0"
                 )
                 .defineInRange("explosionShakeIntensity", 1.0D, 0.0D, 1.0D);
+
+        builder.pop();
+
+        builder.push("rocketTrail");
+
+        // [RVP] 2026-10-31 用户要求：默认恢复旧版贴图尾迹，新的屏幕空间体积烟改为可选。
+        rocketTrailVolume = builder
+                .comment("启用新的世界轨迹逐像素体积尾烟（替代旧贴图尾迹与贴地烟浪）。",
+                        "默认 false（旧版）；改为 true 后新起飞的 rvp_rocket_flame 弹体走新通道。")
+                .define("newVolumeTrail", false);
 
         builder.pop();
 
@@ -361,11 +375,18 @@ public class RVP_ClientConfig {
         return INSTANCE != null && INSTANCE.distantHorizonsDiagnosticLayerColors.get();
     }
 
+    /** 返回是否启用新的世界轨迹体积尾烟；配置未注册或未加载时使用旧版。 */
+    public static boolean isRocketTrailVolumeEnabled() {
+        return INSTANCE != null && CLIENT_SPEC != null && CLIENT_SPEC.isLoaded()
+                && INSTANCE.rocketTrailVolume.get();
+    }
+
     /** Register the client config. Must be called from mod constructor. */
     public static void register(ModLoadingContext context) {
         Pair<RVP_ClientConfig, ForgeConfigSpec> specPair =
                 new ForgeConfigSpec.Builder().configure(RVP_ClientConfig::new);
         INSTANCE = specPair.getLeft();
+        CLIENT_SPEC = specPair.getRight();
         context.registerConfig(ModConfig.Type.CLIENT, specPair.getRight(), "ywzj_rvp-client.toml");
     }
 }

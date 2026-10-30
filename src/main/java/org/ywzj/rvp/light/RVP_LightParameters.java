@@ -72,6 +72,11 @@ public record RVP_LightParameters(boolean enabled, float red, float green, float
         return Math.min(ENGINE_MAX_RADIUS, ENGINE_MIN_RADIUS + safeCaliber * ENGINE_RADIUS_PER_MM);
     }
 
+    /** 光电干扰机玻片：小半径红光，照亮镜片周围一小圈，不做整车泛光。 */
+    public static RVP_LightParameters eoJammer() {
+        return new RVP_LightParameters(true, 1, 0.12F, 0.08F, 2.4F, 1.2F, 3, 0, 0.18F, 1.8F, true, 0, 0);
+    }
+
     /** 按真实阶段/年龄生成独立喷口自发光；所有数值由代码控制，不加入武器 JSON。 */
     public static EngineEmission engineEmission(float radius, float intensity) {
         if (!Float.isFinite(radius) || radius <= 0 || !Float.isFinite(intensity) || intensity <= 0) {

@@ -341,7 +341,7 @@ public final class RVP_RemoteAmmoVisualRenderer {
             return;
         }
 
-        if (rocketFlameStyle && org.ywzj.rvp.weapon.visual.RVP_RocketTrailParameters.VOLUME_ENABLED
+        if (rocketFlameStyle && org.ywzj.rvp.weapon.visual.RVP_RocketTrailParameters.volumeEnabled()
                 && entity instanceof RVP_BaseBullet bullet) {
             // 调用同一个世界烟段入口，跳过旧远距粒子补点队列；同步实体编号让近远接管不会重复出烟。
             int remaining = RVP_ClientRemoteAmmoVisualState.getMotorBurnRemainingTicks(dimension, entity.getId());
@@ -353,7 +353,7 @@ public final class RVP_RemoteAmmoVisualRenderer {
             TRAIL_STATES.remove(entity.getId());
             return;
         }
-        if (rocketFlameStyle && !org.ywzj.rvp.weapon.visual.RVP_RocketTrailParameters.ORIGINAL_PARTICLES_ENABLED) { return; }
+        if (rocketFlameStyle && !org.ywzj.rvp.weapon.visual.RVP_RocketTrailParameters.originalParticlesEnabled()) { return; }
         double horizontalDistance = Math.sqrt(horizontalDistanceSqr(renderPos, cameraPos));
         int lodInterval = horizontalDistance < 768.0D ? 1 : horizontalDistance < 1152.0D ? 2 : 3;
         double lodSpacing = horizontalDistance < 768.0D ? 2.0D : horizontalDistance < 1152.0D ? 4.0D : 8.0D;
