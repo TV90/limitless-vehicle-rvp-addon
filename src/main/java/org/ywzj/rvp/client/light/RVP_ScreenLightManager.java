@@ -140,6 +140,9 @@ public final class RVP_ScreenLightManager {
             case EXPLOSION -> RVP_LightRuntimeTuning.Group.explosion;
             case MUZZLE -> RVP_LightRuntimeTuning.Group.muzzle;
             case ROCKET_ENGINE -> RVP_LightRuntimeTuning.Group.engine;
+            // 2026-10-31：EO_JAMMER 是本次新加的枚举值，作者群那边漏了这个分支，导致穷尽 switch 编译不过；
+            // 干扰机光参数由 RVP_LightParameters.eoJammer() 固定、不走运行时调参，归到总设置分组即可。
+            case EO_JAMMER -> RVP_LightRuntimeTuning.Group.global;
         };
     }
 

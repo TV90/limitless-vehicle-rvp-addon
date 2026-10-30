@@ -225,8 +225,10 @@ public final class RVP_EoJammerGlowRenderer {
             return;
         }
         // 调用持续光统一入口：每帧心跳续期，条件失效时立即删除；半球轴随车体朝向。
+        // 2026-10-31：upsertPersistent 已收窄为 (UUID, Vec3, RVP_LightParameters)——
+        // 光源类型与半球轴不再作为参数传入，干扰机参数由 eoJammer() 自带。
         RVP_ScreenLightManager.INSTANCE.upsertPersistent(vehicle.getUUID(), anchor,
-                RVP_LightSourceType.EO_JAMMER, RVP_LightParameters.eoJammer(), forward);
+                RVP_LightParameters.eoJammer());
     }
 
     /** 载具前进方向（模型 +Z），经载具朝向旋转后作为半球光的轴向。 */
