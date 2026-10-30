@@ -7,6 +7,26 @@ allprojects { lightingProject ->
         def lightingNatives = ['lwjgl', 'lwjgl-glfw', 'lwjgl-opengl'].collect { module ->
             new File(lightingNativeRoot, "${module}/3.3.1/${module}-3.3.1-natives-windows.jar")
         }
+        // DH / 屏幕光 / 冲击波状态交接回归，额外验证作用域退出后的下一次引擎调用。
+        def stateOutput = lightingProject.layout.buildDirectory.dir('screen-effect-state-gpu-regression/classes')
+        def stateCompile = tasks.register('compileScreenEffectStateGpuRegression', JavaCompile) {
+            dependsOn tasks.named('classes')
+            source = lightingProject.files(new File(lightingProject.projectDir,
+                    'scripts/diagnostics/ScreenEffectStateGpuRegression.java'))
+            classpath = sourceSets.test.runtimeClasspath
+            destinationDirectory.set(stateOutput)
+            options.encoding = 'UTF-8'
+            javaCompiler.set(javaToolchains.compilerFor { languageVersion.set(JavaLanguageVersion.of(17)) })
+        }
+        tasks.register('screenEffectStateGpuRegression', JavaExec) {
+            dependsOn stateCompile
+            classpath = sourceSets.test.runtimeClasspath + lightingProject.files(stateOutput) + lightingProject.files(lightingNatives)
+            mainClass.set('org.ywzj.rvp.client.light.ScreenEffectStateGpuRegression')
+            args lightingProject.projectDir.absolutePath
+            javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(17)) })
+            systemProperty 'org.lwjgl.system.SharedLibraryExtractPath',
+                    layout.buildDirectory.dir('screen-effect-state-gpu-regression/natives').get().asFile.absolutePath
+        }
         def lightingOutput = lightingProject.layout.buildDirectory.dir('screen-light-frame-gpu-regression/classes')
         def lightingCompile = tasks.register('compileLightingFrameGpuRegression', JavaCompile) {
             dependsOn tasks.named('classes')

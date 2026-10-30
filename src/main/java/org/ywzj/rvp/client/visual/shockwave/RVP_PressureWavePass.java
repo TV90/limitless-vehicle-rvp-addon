@@ -19,6 +19,7 @@ import org.lwjgl.opengl.GL30;
 import org.lwjgl.opengl.GL33;
 import org.slf4j.Logger;
 import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.client.render.RVP_GlStateSync;
 import org.ywzj.rvp.weapon.visual.RVP_PressureWaveGeometry;
 import org.ywzj.rvp.weapon.visual.RVP_ShockwaveRuntimeTuning;
 
@@ -147,10 +148,17 @@ final class RVP_PressureWavePass {
             shader.safeGetUniform("ProjectionScale").set(projection.m00(), projection.m11());
             shader.safeGetUniform("ScreenSize").set((float) width, (float) height);
             GL30.glBindVertexArray(vertexArray);
-            GL11.glDisable(GL11.GL_DEPTH_TEST);
-            GL11.glDepthMask(false);
-            GL11.glDisable(GL11.GL_CULL_FACE);
-            GL11.glEnable(GL11.GL_SCISSOR_TEST);
+            // 调用双向状态同步，不能继承 DH 回调留下的错误引擎缓存。
+            RVP_GlStateSync.depthTest(false);
+            RVP_GlStateSync.depthMask(false);
+            RVP_GlStateSync.cull(false);
+            RVP_GlStateSync.scissor(true);
+            GL11.glDisable(GL11.GL_STENCIL_TEST);
+            RVP_GlStateSync.colorMask(true, true, true, true);
+            // 场景与深度使用各自纹理参数，不能沿用外部阴影比较或要求 mipmap 的采样器。
+            if (state.samplerSupported) {
+                GL33.glBindSampler(0, 0); GL33.glBindSampler(1, 0);
+            }
             // 只写调用方正在显示的第一个颜色附件，不能污染光影的其它材质缓冲。
             GL11.glDrawBuffer(state.drawBuffers[0]);
             for (Wave wave : waves) {
@@ -169,7 +177,8 @@ final class RVP_PressureWavePass {
                 shader.apply();
                 try {
                     // 输出的是已包含原背景的最终颜色，关闭混合，避免把背景重复叠亮。
-                    RenderSystem.disableBlend();
+                    // 调用强制同步，确保完整背景不会在残留减法混合下被减成黑色。
+                    RVP_GlStateSync.blend(false);
                     GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 3);
                 } finally {
                     shader.clear();
@@ -200,8 +209,9 @@ final class RVP_PressureWavePass {
     /** 创建只属于本合成器的二维纹理，不改变调用方场景纹理的采样参数。 */
     private int createTexture(int internalFormat, int format, int filter) {
         int texture = GL11.glGenTextures();
-        RenderSystem.activeTexture(GL13.GL_TEXTURE0);
-        RenderSystem.bindTexture(texture);
+        // 调用双向纹理同步，新建显存不允许写到外部原生恢复后的错误绑定上。
+        RVP_GlStateSync.activeTexture(GL13.GL_TEXTURE0);
+        RVP_GlStateSync.bindTexture2D(texture);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, filter);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, filter);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
@@ -212,8 +222,9 @@ final class RVP_PressureWavePass {
 
     /** 从实际绘制缓冲的当前视口复制；深度复制允许原场景使用不同精度的深度格式。 */
     private static void copyScene(int texture, int[] viewport) {
-        RenderSystem.activeTexture(GL13.GL_TEXTURE0);
-        RenderSystem.bindTexture(texture);
+        // 调用双向纹理同步，颜色和深度副本始终写入指定的自有对象。
+        RVP_GlStateSync.activeTexture(GL13.GL_TEXTURE0);
+        RVP_GlStateSync.bindTexture2D(texture);
         GL11.glCopyTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, viewport[0], viewport[1], viewport[2], viewport[3]);
     }
 
@@ -257,6 +268,14 @@ final class RVP_PressureWavePass {
         private final int activeTexture = GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);
         /** 本程序使用的两个纹理单元的原绑定。 */
         private final int[] textures = new int[2];
+        /** 两个输入单元原有的独立采样器；没有独立采样器支持时不查询、不调用。 */
+        private final int[] samplers = new int[2];
+        /** 保持原版允许的 OpenGL 3.2 下限，不能无条件调用 GL 3.3 采样器入口。 */
+        private final boolean samplerSupported = GL.getCapabilities().OpenGL33 || GL.getCapabilities().GL_ARB_sampler_objects;
+        /** 原模板测试开关，特效只在自己的作用域内关闭。 */
+        private final boolean stencil = GL11.glIsEnabled(GL11.GL_STENCIL_TEST);
+        /** 原颜色写掩码，防止合成被外部遮罩截成缺色画面。 */
+        private final boolean[] colorMask = new boolean[4];
         /** 原深度测试开关。 */
         private final boolean depthTest = GL11.glIsEnabled(GL11.GL_DEPTH_TEST);
         /** 原深度写掩码。 */
@@ -273,10 +292,17 @@ final class RVP_PressureWavePass {
         private final int blendSourceAlpha = GL11.glGetInteger(GL14.GL_BLEND_SRC_ALPHA);
         /** 原 Alpha 目标混合因子。 */
         private final int blendDestinationAlpha = GL11.glGetInteger(GL14.GL_BLEND_DST_ALPHA);
+        /** 原 RGB 混合方程；仅恢复因子并不能撤销 GL_MAX、减法等方程。 */
+        private final int blendEquationRgb = GL11.glGetInteger(GL20.GL_BLEND_EQUATION_RGB);
+        /** 原 Alpha 混合方程，允许与 RGB 不同。 */
+        private final int blendEquationAlpha = GL11.glGetInteger(GL20.GL_BLEND_EQUATION_ALPHA);
 
         private State() {
             GL11.glGetIntegerv(GL11.GL_VIEWPORT, viewport);
             GL11.glGetIntegerv(GL11.GL_SCISSOR_BOX, scissorBox);
+            java.nio.ByteBuffer mask = org.lwjgl.BufferUtils.createByteBuffer(4);
+            GL11.glGetBooleanv(GL11.GL_COLOR_WRITEMASK, mask);
+            for (int channel = 0; channel < colorMask.length; channel++) { colorMask[channel] = mask.get(channel) != 0; }
             int[] attachments = new int[GL11.glGetInteger(GL20.GL_MAX_DRAW_BUFFERS)];
             int count = 1;
             for (int index = 0; index < attachments.length; index++) {
@@ -287,9 +313,11 @@ final class RVP_PressureWavePass {
             for (int unit = 0; unit < textures.length; unit++) {
                 GL13.glActiveTexture(GL13.GL_TEXTURE0 + unit);
                 textures[unit] = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
+                if (samplerSupported) { samplers[unit] = GL30.glGetIntegeri(GL33.GL_SAMPLER_BINDING, unit); }
             }
             GL13.glActiveTexture(activeTexture);
-            GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, drawFramebuffer);
+            // 调用双向 FBO 同步，读取目标与当前绘制目标配对，兼容已安装 Oculus 的无光影路径。
+            RVP_GlStateSync.bindFramebuffer(GL30.GL_READ_FRAMEBUFFER, drawFramebuffer);
             sourceReadBuffer = GL11.glGetInteger(GL11.GL_READ_BUFFER);
             GL11.glReadBuffer(drawBuffers[0]);
         }
@@ -322,29 +350,32 @@ final class RVP_PressureWavePass {
 
         @Override
         public void close() {
-            GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, drawFramebuffer);
+            // 调用双向状态恢复，不能只恢复显卡而把引擎或 Oculus 的缓存留在特效状态。
+            RVP_GlStateSync.bindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, drawFramebuffer);
             GL20.glDrawBuffers(drawBuffers);
-            GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, drawFramebuffer);
+            RVP_GlStateSync.bindFramebuffer(GL30.GL_READ_FRAMEBUFFER, drawFramebuffer);
             GL11.glReadBuffer(sourceReadBuffer);
-            GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, readFramebuffer);
+            RVP_GlStateSync.bindFramebuffer(GL30.GL_READ_FRAMEBUFFER, readFramebuffer);
             GL30.glBindVertexArray(vertexArray);
             GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, arrayBuffer);
             for (int unit = 0; unit < textures.length; unit++) {
-                RenderSystem.activeTexture(GL13.GL_TEXTURE0 + unit);
-                RenderSystem.bindTexture(textures[unit]);
+                RVP_GlStateSync.activeTexture(GL13.GL_TEXTURE0 + unit);
+                RVP_GlStateSync.bindTexture2D(textures[unit]);
+                if (samplerSupported) { GL33.glBindSampler(unit, samplers[unit]); }
             }
-            RenderSystem.activeTexture(activeTexture);
+            RVP_GlStateSync.activeTexture(activeTexture);
             RenderSystem.setShader(() -> previousShader);
-            GL20.glUseProgram(program);
-            // 调用开关恢复工具；这些状态未经过 RenderSystem 改写，其 Java 缓存仍保持原值。
-            restoreEnabled(GL11.GL_DEPTH_TEST, depthTest);
-            GL11.glDepthMask(depthMask);
-            restoreEnabled(GL11.GL_CULL_FACE, cull);
-            restoreEnabled(GL11.GL_SCISSOR_TEST, scissorEnabled);
+            RVP_GlStateSync.useProgram(program);
+            RVP_GlStateSync.depthTest(depthTest);
+            RVP_GlStateSync.depthMask(depthMask);
+            RVP_GlStateSync.cull(cull);
+            RVP_GlStateSync.scissor(scissorEnabled);
+            restoreEnabled(GL11.GL_STENCIL_TEST, stencil);
+            RVP_GlStateSync.colorMask(colorMask[0], colorMask[1], colorMask[2], colorMask[3]);
             GL11.glScissor(scissorBox[0], scissorBox[1], scissorBox[2], scissorBox[3]);
-            // 着色器绑定可能改过混合状态，恢复时同时更新 RenderSystem 缓存。
-            RenderSystem.blendFuncSeparate(blendSourceRgb, blendDestinationRgb, blendSourceAlpha, blendDestinationAlpha);
-            if (blend) { RenderSystem.enableBlend(); } else { RenderSystem.disableBlend(); }
+            // 调用完整混合恢复，因子、RGB/Alpha 方程、实际开关与 Shader 的 BlendMode 缓存一同恢复。
+            RVP_GlStateSync.restoreBlend(blend, blendSourceRgb, blendDestinationRgb,
+                    blendSourceAlpha, blendDestinationAlpha, blendEquationRgb, blendEquationAlpha);
         }
 
         /** 恢复未经过 RenderSystem 缓存修改的能力开关。 */

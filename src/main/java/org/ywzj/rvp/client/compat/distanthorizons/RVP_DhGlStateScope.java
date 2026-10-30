@@ -1,13 +1,16 @@
 package org.ywzj.rvp.client.compat.distanthorizons;
 
 import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.vertex.BufferUploader;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL13;
 import org.lwjgl.opengl.GL14;
+import org.lwjgl.opengl.GL15;
 import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL30;
 import org.lwjgl.BufferUtils;
 import net.minecraft.client.renderer.ShaderInstance;
+import org.ywzj.rvp.client.render.RVP_GlStateSync;
 
 import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
@@ -33,6 +36,8 @@ final class RVP_DhGlStateScope implements AutoCloseable {
     private final ShaderInstance renderSystemShader;
     /** 进入作用域前的 VAO。 */
     private final int vertexArray;
+    /** 模型上传可能改写当前顶点缓冲；恢复 VAO 并不会恢复这个全局绑定。 */
+    private final int arrayBuffer;
     /** 进入作用域前的活动纹理单元。 */
     private final int activeTexture;
     /** 从纹理单元零开始的二维纹理绑定。 */
@@ -78,6 +83,7 @@ final class RVP_DhGlStateScope implements AutoCloseable {
         program = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
         renderSystemShader = RenderSystem.getShader();
         vertexArray = GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING);
+        arrayBuffer = GL11.glGetInteger(GL15.GL_ARRAY_BUFFER_BINDING);
         activeTexture = GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);
         texture2dBindings = new int[TRACKED_TEXTURE_UNITS];
         for (int unit = 0; unit < TRACKED_TEXTURE_UNITS; unit++) {
@@ -113,32 +119,32 @@ final class RVP_DhGlStateScope implements AutoCloseable {
             return;
         }
         closed = true;
-        GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, drawFramebuffer);
-        GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, readFramebuffer);
+        // 调用双向状态同步入口，恢复真实 GL 的同时更新 Minecraft/Oculus 的缓存。
+        RVP_GlStateSync.bindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, drawFramebuffer);
+        RVP_GlStateSync.bindFramebuffer(GL30.GL_READ_FRAMEBUFFER, readFramebuffer);
         GL11.glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
-        setEnabled(GL11.GL_SCISSOR_TEST, scissorEnabled);
+        RVP_GlStateSync.scissor(scissorEnabled);
         GL11.glScissor(scissorBox[0], scissorBox[1], scissorBox[2], scissorBox[3]);
-        if (renderSystemShader != null) {
-            // 调用 RenderSystem 恢复其 Java 侧 shader 指针，避免只恢复 GL program 后缓存失配。
-            RenderSystem.setShader(() -> renderSystemShader);
-        }
-        GL20.glUseProgram(program);
+        // 调用 RenderSystem 恢复其 Java 侧 Shader 指针，原指针为 null 时也要清除作用域内的程序。
+        RenderSystem.setShader(() -> renderSystemShader);
+        RVP_GlStateSync.useProgram(program);
+        // 清除原版立即绘制缓存；作用域内的载具模型可能通过 BufferUploader 换过 VAO。
+        BufferUploader.invalidate();
         GL30.glBindVertexArray(vertexArray);
+        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, arrayBuffer);
         for (int unit = 0; unit < TRACKED_TEXTURE_UNITS; unit++) {
-            GL13.glActiveTexture(GL13.GL_TEXTURE0 + unit);
-            GL11.glBindTexture(GL11.GL_TEXTURE_2D, texture2dBindings[unit]);
+            RVP_GlStateSync.activeTexture(GL13.GL_TEXTURE0 + unit);
+            RVP_GlStateSync.bindTexture2D(texture2dBindings[unit]);
         }
-        GL13.glActiveTexture(activeTexture);
-        setEnabled(GL11.GL_DEPTH_TEST, depthTestEnabled);
-        GL11.glDepthFunc(depthFunction);
-        GL11.glDepthMask(depthMask);
+        RVP_GlStateSync.activeTexture(activeTexture);
+        RVP_GlStateSync.depthTest(depthTestEnabled);
+        RVP_GlStateSync.depthFunction(depthFunction);
+        RVP_GlStateSync.depthMask(depthMask);
         GL11.glClearDepth(clearDepth);
-        setEnabled(GL11.GL_BLEND, blendEnabled);
-        GL14.glBlendFuncSeparate(blendSourceRgb, blendDestinationRgb,
-                blendSourceAlpha, blendDestinationAlpha);
-        GL20.glBlendEquationSeparate(blendEquationRgb, blendEquationAlpha);
-        setEnabled(GL11.GL_CULL_FACE, cullEnabled);
-        GL11.glColorMask(colorMask[0], colorMask[1], colorMask[2], colorMask[3]);
+        RVP_GlStateSync.restoreBlend(blendEnabled, blendSourceRgb, blendDestinationRgb,
+                blendSourceAlpha, blendDestinationAlpha, blendEquationRgb, blendEquationAlpha);
+        RVP_GlStateSync.cull(cullEnabled);
+        RVP_GlStateSync.colorMask(colorMask[0], colorMask[1], colorMask[2], colorMask[3]);
         GL11.glClearColor(clearColor[0], clearColor[1], clearColor[2], clearColor[3]);
     }
 
@@ -171,12 +177,4 @@ final class RVP_DhGlStateScope implements AutoCloseable {
         return values;
     }
 
-    /** 按捕获值启用或关闭一个 OpenGL capability。 */
-    private static void setEnabled(int capability, boolean enabled) {
-        if (enabled) {
-            GL11.glEnable(capability);
-        } else {
-            GL11.glDisable(capability);
-        }
-    }
 }

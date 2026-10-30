@@ -1,7 +1,6 @@
 package org.ywzj.rvp.client.light;
 
 import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.platform.GlStateManager;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.ShaderInstance;
 import org.lwjgl.opengl.GL;
@@ -13,6 +12,7 @@ import org.lwjgl.opengl.GL15;
 import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL30;
 import org.lwjgl.opengl.GL33;
+import org.ywzj.rvp.client.render.RVP_GlStateSync;
 import java.util.Arrays;
 
 /**
@@ -84,8 +84,9 @@ final class RVP_ScreenFrameResources {
     boolean captureDistantDepth(int sourceTexture) {
         try (State ignored = new State()) {
             if (sourceTexture <= 0 || !GL11.glIsTexture(sourceTexture)) { return false; }
-            RenderSystem.activeTexture(GL13.GL_TEXTURE0);
-            RenderSystem.bindTexture(sourceTexture);
+            // 调用双向纹理同步，防止 DH 原生恢复之后缓存命中到错误的真实纹理。
+            RVP_GlStateSync.activeTexture(GL13.GL_TEXTURE0);
+            RVP_GlStateSync.bindTexture2D(sourceTexture);
             int actualWidth = GL11.glGetTexLevelParameteri(GL11.GL_TEXTURE_2D, 0, GL11.GL_TEXTURE_WIDTH);
             int actualHeight = GL11.glGetTexLevelParameteri(GL11.GL_TEXTURE_2D, 0, GL11.GL_TEXTURE_HEIGHT);
             if (actualWidth <= 0 || actualHeight <= 0) { return false; }
@@ -103,20 +104,21 @@ final class RVP_ScreenFrameResources {
     /** 从借用深度复制到自有 DEPTH32F；CopyTex 支持来源为 DEPTH24_STENCIL8，不要求 blit 格式相同。 */
     private boolean copyDepth(int sourceTexture, int destination, int expectedWidth, int expectedHeight) {
         if (!GL11.glIsTexture(sourceTexture)) { return false; }
-        RenderSystem.activeTexture(GL13.GL_TEXTURE0);
-        RenderSystem.bindTexture(sourceTexture);
+        // 调用双向纹理同步，复制来源不能依赖调用方的缓存一致性。
+        RVP_GlStateSync.activeTexture(GL13.GL_TEXTURE0);
+        RVP_GlStateSync.bindTexture2D(sourceTexture);
         if (GL11.glGetTexLevelParameteri(GL11.GL_TEXTURE_2D, 0, GL11.GL_TEXTURE_WIDTH) != expectedWidth
                 || GL11.glGetTexLevelParameteri(GL11.GL_TEXTURE_2D, 0, GL11.GL_TEXTURE_HEIGHT) != expectedHeight) { return false; }
         if (depthReadFramebuffer == 0) {
             depthReadFramebuffer = GL30.glGenFramebuffers();
-            GlStateManager._glBindFramebuffer(GL30.GL_FRAMEBUFFER, depthReadFramebuffer);
+            RVP_GlStateSync.bindFramebuffer(GL30.GL_FRAMEBUFFER, depthReadFramebuffer);
             GL11.glDrawBuffer(GL11.GL_NONE); GL11.glReadBuffer(GL11.GL_NONE);
-        } else { GlStateManager._glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, depthReadFramebuffer); }
+        } else { RVP_GlStateSync.bindFramebuffer(GL30.GL_READ_FRAMEBUFFER, depthReadFramebuffer); }
         GL30.glFramebufferTexture2D(GL30.GL_READ_FRAMEBUFFER, GL30.GL_DEPTH_ATTACHMENT, GL11.GL_TEXTURE_2D, 0, 0);
         GL30.glFramebufferTexture2D(GL30.GL_READ_FRAMEBUFFER, GL30.GL_DEPTH_ATTACHMENT, GL11.GL_TEXTURE_2D, sourceTexture, 0);
         try {
             if (GL30.glCheckFramebufferStatus(GL30.GL_READ_FRAMEBUFFER) != GL30.GL_FRAMEBUFFER_COMPLETE) { return false; }
-            RenderSystem.bindTexture(destination);
+            RVP_GlStateSync.bindTexture2D(destination);
             GL11.glCopyTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, 0, 0, expectedWidth, expectedHeight);
             return true;
         } finally {
@@ -139,13 +141,15 @@ final class RVP_ScreenFrameResources {
         depthReady = false;
         if (!ready || sourceFramebuffer != main || currentWidth != width || currentHeight != height) { return false; }
         // Iris/Oculus 的 final pass 可能绑定一个共用主颜色的自有 FBO；只从明确的主目标读最终颜色。
-        GlStateManager._glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, sourceFramebuffer);
+        // 调用双向 FBO 同步，已安装 Oculus 但关闭光影时也不能只相信其缓存。
+        RVP_GlStateSync.bindFramebuffer(GL30.GL_READ_FRAMEBUFFER, sourceFramebuffer);
         if (GL30.glCheckFramebufferStatus(GL30.GL_READ_FRAMEBUFFER) != GL30.GL_FRAMEBUFFER_COMPLETE) { return false; }
         int previousRead = GL11.glGetInteger(GL11.GL_READ_BUFFER);
         GL11.glReadBuffer(GL30.GL_COLOR_ATTACHMENT0);
         try {
-            RenderSystem.activeTexture(GL13.GL_TEXTURE0);
-            RenderSystem.bindTexture(sceneColor);
+            // 调用双向纹理同步，背景副本只能写入自有纹理。
+            RVP_GlStateSync.activeTexture(GL13.GL_TEXTURE0);
+            RVP_GlStateSync.bindTexture2D(sceneColor);
             GL11.glCopyTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, 0, 0, width, height);
         } finally { GL11.glReadBuffer(previousRead); }
         return true;
@@ -189,8 +193,9 @@ final class RVP_ScreenFrameResources {
     /** 申请自己的纹理，不修改其它模组附件上的过滤/比较模式。 */
     private static int texture(int width, int height, int internal, int format, int filter) {
         int texture = GL11.glGenTextures();
-        RenderSystem.activeTexture(GL13.GL_TEXTURE0);
-        RenderSystem.bindTexture(texture);
+        // 调用双向纹理同步，新建对象不能因外部缓存失配而分配到借用纹理上。
+        RVP_GlStateSync.activeTexture(GL13.GL_TEXTURE0);
+        RVP_GlStateSync.bindTexture2D(texture);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, filter);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, filter);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
@@ -203,7 +208,8 @@ final class RVP_ScreenFrameResources {
     /** 检查自身离屏附件完整性，异常由外层合成器限频记录并跳过本帧。 */
     private static int framebuffer(int color) {
         int framebuffer = GL30.glGenFramebuffers();
-        GlStateManager._glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, framebuffer);
+        // 调用双向 FBO 同步，只挂接本系统新建的目标。
+        RVP_GlStateSync.bindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, framebuffer);
         GL30.glFramebufferTexture2D(GL30.GL_DRAW_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0, GL11.GL_TEXTURE_2D, color, 0);
         GL11.glDrawBuffer(GL30.GL_COLOR_ATTACHMENT0);
         if (GL30.glCheckFramebufferStatus(GL30.GL_DRAW_FRAMEBUFFER) != GL30.GL_FRAMEBUFFER_COMPLETE) {
@@ -215,16 +221,18 @@ final class RVP_ScreenFrameResources {
 
     /** 设置离屏目标或主画面目标；仅允许写入第一个颜色附件。 */
     void bind(int framebuffer, int width, int height) {
-        GlStateManager._glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, framebuffer);
+        // 调用双向 FBO 同步，目标切换在真实 GL 与引擎缓存两侧同时生效。
+        RVP_GlStateSync.bindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, framebuffer);
         GL11.glDrawBuffer(GL30.GL_COLOR_ATTACHMENT0);
         GL11.glViewport(0, 0, width, height);
         GL30.glBindVertexArray(vertexArray);
-        GL11.glDisable(GL11.GL_DEPTH_TEST);
-        GL11.glDepthMask(false);
-        GL11.glDisable(GL11.GL_CULL_FACE);
-        GL11.glDisable(GL11.GL_SCISSOR_TEST);
+        // 调用双向状态同步，外部原生 GL 与引擎缓存不一致时也必须确实禁写世界深度。
+        RVP_GlStateSync.depthTest(false);
+        RVP_GlStateSync.depthMask(false);
+        RVP_GlStateSync.cull(false);
+        RVP_GlStateSync.scissor(false);
         GL11.glDisable(GL11.GL_STENCIL_TEST);
-        RenderSystem.colorMask(true, true, true, true);
+        RVP_GlStateSync.colorMask(true, true, true, true);
         // 自有采样器为空，防止其它模组绑定的阴影比较采样器污染深度读取。
         if (GL.getCapabilities().OpenGL33 || GL.getCapabilities().GL_ARB_sampler_objects) {
             GL33.glBindSampler(0, 0); GL33.glBindSampler(1, 0); GL33.glBindSampler(2, 0);
@@ -235,7 +243,8 @@ final class RVP_ScreenFrameResources {
     void draw(ShaderInstance shader) {
         shader.apply();
         try {
-            RenderSystem.disableBlend();
+            // 调用强制同步：背景已经包含原图，残留混合或减法方程会把天空相减成黑色。
+            RVP_GlStateSync.blend(false);
             GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 3);
         } finally { shader.clear(); }
     }
@@ -252,9 +261,10 @@ final class RVP_ScreenFrameResources {
 
     /** 单独设置喷口混合，也供真实 GL 状态回归验证，调用方须处在 State 作用域内。 */
     void beginEmissionBlend() {
-        RenderSystem.enableBlend();
+        // 调用真实开关与缓存同步，不能继承其它 pass 的错误开关记录。
+        RVP_GlStateSync.blend(true);
         RenderSystem.blendEquation(GL14.GL_FUNC_ADD);
-        RenderSystem.blendFuncSeparate(GL11.GL_ONE_MINUS_DST_COLOR, GL11.GL_ONE, GL11.GL_ZERO, GL11.GL_ONE);
+        RVP_GlStateSync.blendFunction(GL11.GL_ONE_MINUS_DST_COLOR, GL11.GL_ONE, GL11.GL_ZERO, GL11.GL_ONE);
     }
 
     /** 多条喷焰以最大值合入 HDR，避免每条 60000 相加导致半精度纹理溢出；场景 Alpha 不在此目标中。 */
@@ -269,9 +279,10 @@ final class RVP_ScreenFrameResources {
 
     /** HDR 贡献最大值混合，调用方必须处于 State 作用域内，退出恢复外部混合方程。 */
     void beginContributionBlend() {
-        RenderSystem.enableBlend();
+        // 调用真实开关与缓存同步，保证峰值合并的两个输入都会参与计算。
+        RVP_GlStateSync.blend(true);
         RenderSystem.blendEquation(GL14.GL_MAX);
-        RenderSystem.blendFuncSeparate(GL11.GL_ONE, GL11.GL_ONE, GL11.GL_ONE, GL11.GL_ONE);
+        RVP_GlStateSync.blendFunction(GL11.GL_ONE, GL11.GL_ONE, GL11.GL_ONE, GL11.GL_ONE);
     }
 
     /** 释放显存；着色器本身由资源重载管理。 */
@@ -391,33 +402,29 @@ final class RVP_ScreenFrameResources {
 
         @Override
         public void close() {
-            GlStateManager._glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, drawFramebuffer);
+            // 调用双向状态同步，将外部 FBO、纹理和程序完整交回原版/DH/Oculus。
+            RVP_GlStateSync.bindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, drawFramebuffer);
             GL20.glDrawBuffers(Arrays.copyOf(drawBuffers, drawFramebuffer == 0 ? 1 : drawBuffers.length));
-            GlStateManager._glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, readFramebuffer);
+            RVP_GlStateSync.bindFramebuffer(GL30.GL_READ_FRAMEBUFFER, readFramebuffer);
             GL11.glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
             GL11.glScissor(scissor[0], scissor[1], scissor[2], scissor[3]);
             GL30.glBindVertexArray(vao); GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, buffer);
             for (int i = 0; i < textures.length; i++) {
-                RenderSystem.activeTexture(GL13.GL_TEXTURE0 + i); RenderSystem.bindTexture(textures[i]);
+                RVP_GlStateSync.activeTexture(GL13.GL_TEXTURE0 + i); RVP_GlStateSync.bindTexture2D(textures[i]);
                 if (samplerSupported) { GL33.glBindSampler(i, samplers[i]); }
             }
-            RenderSystem.activeTexture(activeTexture);
+            RVP_GlStateSync.activeTexture(activeTexture);
             // 经过引擎入口恢复 FBO/程序，使 Oculus 的状态缓存与真实 GL 保持一致。
-            RenderSystem.setShader(() -> shader); GlStateManager._glUseProgram(program);
-            // 调用原始能力恢复；这些状态未经过 RenderSystem 改写，其 Java 缓存无需额外改动。
-            // 原粒子材质 begin 可能通过 RenderSystem 改写深度/剔除缓存；强制同步后恢复真实状态，
-            // 防止原生 GL 恢复了开关、引擎却仍记着烟雾材质的旧值。
-            RenderSystem.depthMask(!depthMask); RenderSystem.depthMask(depthMask);
-            if (depth) { RenderSystem.disableDepthTest(); RenderSystem.enableDepthTest(); }
-            else { RenderSystem.enableDepthTest(); RenderSystem.disableDepthTest(); }
-            if (cull) { RenderSystem.disableCull(); RenderSystem.enableCull(); }
-            else { RenderSystem.enableCull(); RenderSystem.disableCull(); }
-            enabled(GL11.GL_SCISSOR_TEST, scissorEnabled);
+            RenderSystem.setShader(() -> shader); RVP_GlStateSync.useProgram(program);
+            // 调用双向状态恢复；烟雾材质和 DH 可能分别改变缓存与原生 GL，不能只相信其中一侧。
+            RVP_GlStateSync.depthMask(depthMask);
+            RVP_GlStateSync.depthTest(depth);
+            RVP_GlStateSync.cull(cull);
+            RVP_GlStateSync.scissor(scissorEnabled);
             enabled(GL11.GL_STENCIL_TEST, stencil);
-            RenderSystem.colorMask(colorMask[0], colorMask[1], colorMask[2], colorMask[3]);
-            RenderSystem.blendFuncSeparate(blendFactors[0], blendFactors[1], blendFactors[2], blendFactors[3]);
-            GL20.glBlendEquationSeparate(blendEquations[0], blendEquations[1]);
-            if (blend) { RenderSystem.enableBlend(); } else { RenderSystem.disableBlend(); }
+            RVP_GlStateSync.colorMask(colorMask[0], colorMask[1], colorMask[2], colorMask[3]);
+            RVP_GlStateSync.restoreBlend(blend, blendFactors[0], blendFactors[1], blendFactors[2], blendFactors[3],
+                    blendEquations[0], blendEquations[1]);
         }
 
         /** 恢复一个未经过缓存改写的 GL 能力开关。 */
