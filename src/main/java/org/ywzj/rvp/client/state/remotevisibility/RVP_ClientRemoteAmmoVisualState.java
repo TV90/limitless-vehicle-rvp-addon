@@ -78,6 +78,15 @@ public final class RVP_ClientRemoteAmmoVisualState {
                 && motorBurnRemainingTicksByEntityId.containsKey(entityId);
     }
 
+    /** 灯光和模型尾焰使用严格的新鲜快照；不把旧集合存在误当作发动机永久燃烧。 */
+    public static boolean isMotorBurningFresh(ResourceLocation currentDimension, int entityId, long now) {
+        // 调用原授权判断，当前快照明确熄火时不使用历史宽限。
+        if (!isMotorBurning(currentDimension, entityId)) { return false; }
+        Long received = lastSeenMotorBurnGameTimeById.get(entityId);
+        if (received == null || now < received || now - received > 10) { return false; }
+        return now - received < motorBurnRemainingTicksByEntityId.getOrDefault(entityId, 0);
+    }
+
     /**
      * 判断尾迹发动机是否仍应视为燃烧；仅在实体连同完整快照一起暂时缺失时使用宽限。
      * 当前快照明确包含实体但燃烧映射已移除时，视为真实燃尽，不延长尾焰。

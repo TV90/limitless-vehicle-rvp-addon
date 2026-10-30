@@ -41,6 +41,8 @@ public class RVP_MOD {
         RVP_Config.register(context);
         RVP_CommonConfig.register(context);
         RVP_ClientConfig.register(context);
+        // 调用客户端屏幕光画质注册；具体光参数由 Java 控制，P5 服务端方块光固定关闭。
+        org.ywzj.rvp.config.RVP_LightingConfig.register(context);
         UIPresetManager.load();
         RVP_VehiclePackInstaller.ensureInstalled();
         IEventBus modBus = context.getModEventBus();

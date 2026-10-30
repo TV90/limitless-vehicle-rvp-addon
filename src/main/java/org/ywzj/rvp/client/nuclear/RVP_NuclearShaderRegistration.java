@@ -18,5 +18,7 @@ public final class RVP_NuclearShaderRegistration {
     public static void registerShaders(RegisterShadersEvent event) throws IOException {
         // 调用共享冲击波入口注册既有 warp_world 资源，核爆与新工厂共用同一着色器。
         RVP_ShockwaveRenderer.registerShaders(event);
+        // 调用客户端统一启动入口，注册基础光与可选光晕，不修改核爆原有资源。
+        org.ywzj.rvp.client.RVP_ClientBootstrap.onRegisterLightShaders(event);
     }
 }

@@ -65,10 +65,10 @@ public final class RVP_ClientVisualEffectDispatcher {
             ACTIVE_EFFECTS.remove(0).close();
         }
         if (created.get() instanceof RVP_WilsonMachEffectInstance) {
-            long count = ACTIVE_EFFECTS.stream().filter(effect -> effect instanceof RVP_WilsonMachEffectInstance).count();
+            long count = ACTIVE_EFFECTS.stream().filter(RVP_ClientVisualEffectDispatcher::isComplex).count();
             if (count >= MAX_COMPLEX_EFFECTS) {
                 for (int index = 0; index < ACTIVE_EFFECTS.size(); index++) {
-                    if (ACTIVE_EFFECTS.get(index) instanceof RVP_WilsonMachEffectInstance) {
+                    if (isComplex(ACTIVE_EFFECTS.get(index))) {
                         // 调用关闭入口，同时取消最旧复杂效果的云团、球壳与延迟音。
                         ACTIVE_EFFECTS.remove(index).close();
                         break;
@@ -76,7 +76,15 @@ public final class RVP_ClientVisualEffectDispatcher {
                 }
             }
         }
-        ACTIVE_EFFECTS.add(created.get());
+        // 默认工厂已在自身实例管理光；其它显式 flash 事件通过组合附加，自动压力波 flash=false 不重复点亮。
+        ACTIVE_EFFECTS.add(event.flash() && !RVP_DefaultExplosionEffectFactory.EFFECT_TYPE.equals(event.effectType())
+                ? new RVP_LitVisualEffect(level, event, created.get()) : created.get());
+    }
+
+    /** 包装后仍按原实例复杂度计数，不改变既有粒子/云团预算。 */
+    private static boolean isComplex(RVP_ClientVisualEffect effect) {
+        return effect instanceof RVP_WilsonMachEffectInstance
+                || effect instanceof RVP_LitVisualEffect lit && lit.isComplex();
     }
 
     /** 推进当前世界的全部视觉实例。 */

@@ -166,6 +166,7 @@ public class RVP_RenderTypes extends RenderType {
         );
     });
 
+    /** 半透明四边形只写颜色，保留真实前景遮挡；用于粒子和不能充当遮挡物的发动机尾焰。 */
     private static final Function<ResourceLocation, RenderType> TEXTURED_TRANSLUCENT_NO_DEPTH_WRITE = Util.memoize((location) -> {
         RenderType.CompositeState state = RenderType.CompositeState.builder()
                 .setTextureState(new RenderStateShard.TextureStateShard(location, false, false))
@@ -179,6 +180,23 @@ public class RVP_RenderTypes extends RenderType {
                 .createCompositeState(false);
         return create("ywzj_rvp:textured_translucent_no_depth_write_" + location.toString().replace(':', '_'),
                 DefaultVertexFormat.NEW_ENTITY, VertexFormat.Mode.QUADS, 1_048_576,
+                false, true, state);
+    });
+
+    /** 半透明三角网格尾焰的同等通道；避免模型改用 poly_mesh 后再次向场景深度写入自身。 */
+    private static final Function<ResourceLocation, RenderType> POLY_MESH_TRANSLUCENT_NO_DEPTH_WRITE = Util.memoize((location) -> {
+        RenderType.CompositeState state = RenderType.CompositeState.builder()
+                .setTextureState(new RenderStateShard.TextureStateShard(location, false, false))
+                .setShaderState(RENDERTYPE_ENTITY_TRANSLUCENT_SHADER)
+                .setTransparencyState(TRANSLUCENT_TRANSPARENCY)
+                .setDepthTestState(LEQUAL_DEPTH_TEST)
+                .setCullState(NO_CULL)
+                .setOverlayState(OVERLAY)
+                .setLightmapState(LIGHTMAP)
+                .setWriteMaskState(COLOR_WRITE)
+                .createCompositeState(false);
+        return create("ywzj_rvp:poly_mesh_translucent_no_depth_write_" + location.toString().replace(':', '_'),
+                DefaultVertexFormat.NEW_ENTITY, VertexFormat.Mode.TRIANGLES, 256,
                 false, true, state);
     });
 
@@ -272,8 +290,14 @@ public class RVP_RenderTypes extends RenderType {
         return POLY_MESH_COCKPIT_TRANSLUCENT_CULLED.apply(texture);
     }
 
+    /** 获取四边形半透明通道；只写颜色，仍受已绘制的地形和实体深度约束。 */
     public static RenderType texturedTranslucentNoDepthWrite(ResourceLocation texture) {
         return TEXTURED_TRANSLUCENT_NO_DEPTH_WRITE.apply(texture);
+    }
+
+    /** 获取三角网格半透明通道，保持与四边形尾焰相同的遮挡和不写深度语义。 */
+    public static RenderType polyMeshTranslucentNoDepthWrite(ResourceLocation texture) {
+        return POLY_MESH_TRANSLUCENT_NO_DEPTH_WRITE.apply(texture);
     }
 
     public static RenderType texturedAdditiveNoDepthWrite(ResourceLocation texture) {

@@ -5420,6 +5420,16 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         return isMotorBurning();
     }
 
+    /** 只读当前二脉冲燃烧阶段，复用已同步窗口，供灯光调整一级/二级强度；不新增网络字段。 */
+    public final boolean isSecondMotorPulseBurningNow() {
+        int start = rvpData == null ? entityData.get(DATA_SECOND_PULSE_START_TICK) : secondPulseStartTick;
+        float duration = rvpData == null ? entityData.get(DATA_SECOND_PULSE_BURN_TIME_TICK)
+                : rvpData.getProjectileData().getResolvedSecondPulseBurnTime();
+        // 调用本项目现有飞行时钟，客户端包含生成包到达前已飞过的时间，不能重播一级窗口。
+        int flight = rvpData == null ? clientVisualFlightTickCount() : getFlightTickCount();
+        return start >= 0 && duration > 0 && flight >= start && flight - start <= duration;
+    }
+
     /**
      * 距发动机最后一次燃烧结束还剩多少 tick（固体款凝结云保持期输入，2026-09-20）：
      * 取一级燃尽与二脉冲燃尽的最晚者减当前飞行 tick，钳 [0, 1200]——上限防

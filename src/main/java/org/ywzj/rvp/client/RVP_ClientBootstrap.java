@@ -43,6 +43,12 @@ public final class RVP_ClientBootstrap {
 
     private RVP_ClientBootstrap() {}
 
+    /** 沿用已有客户端 Shader 注册链，专服不会链接灯光渲染类型。 */
+    public static void onRegisterLightShaders(net.minecraftforge.client.event.RegisterShadersEvent event) {
+        // 调用独立灯光程序注册；加载失败时该层自行降级，不阻断已有特效。
+        org.ywzj.rvp.client.light.RVP_ScreenLightPass.registerShaders(event);
+    }
+
     public static void onClientSetup(FMLClientSetupEvent event) {
         event.enqueueWork(() -> {
             // 客户端初始化时安装通用视觉消费端，避免公共网络消息直接加载客户端渲染类。

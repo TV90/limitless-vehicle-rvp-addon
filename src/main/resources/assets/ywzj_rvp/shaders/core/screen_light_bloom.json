@@ -1,0 +1,37 @@
+{
+  "vertex": "ywzj_rvp:screen_light_bloom",
+  "fragment": "ywzj_rvp:screen_light_bloom",
+  "attributes": [
+    "Position"
+  ],
+  "samplers": [
+    {
+      "name": "InputTexture"
+    },
+    {
+      "name": "SceneColor"
+    },
+    {
+      "name": "BloomTexture"
+    }
+  ],
+  "uniforms": [
+    {
+      "name": "Mode",
+      "type": "int",
+      "count": 1,
+      "values": [
+        0
+      ]
+    },
+    {
+      "name": "Direction",
+      "type": "float",
+      "count": 2,
+      "values": [
+        0,
+        0
+      ]
+    }
+  ]
+}

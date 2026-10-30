@@ -15,6 +15,7 @@ import com.seibel.distanthorizons.api.objects.math.DhApiMat4f;
 import net.minecraft.client.Minecraft;
 import org.joml.Matrix4f;
 import org.ywzj.rvp.config.RVP_ClientConfig;
+import org.ywzj.rvp.client.light.RVP_ScreenLightPass;
 
 /**
  * Distant Horizons API 7 强类型桥。
@@ -121,6 +122,8 @@ public final class RVP_DhApi7Bridge {
     /** 在 apply 前查询本帧纹理并执行一次深度感知合成；任何失败均不取消 DH 事件。 */
     @SuppressWarnings("deprecation")
     private static void beforeApply(DhApiRenderParam parameter) {
+        // 调用独立灯光深度入口：没有远距载具、关闭载具兼容或延迟透明时仍需发布 DH 来源。
+        publishLightingDepth(parameter);
         RVP_DhVehicleFramePlan plan = RVP_DhVehicleFrameCoordinator.currentForDh();
         if (!RVP_DistantHorizonsCompatBootstrap.isDepthCompositeReady()
                 || plan == null || parameter == null) {
@@ -159,6 +162,26 @@ public final class RVP_DhApi7Bridge {
             }
         } catch (RuntimeException | LinkageError exception) {
             fail("FRAMEBUFFER_INCOMPLETE", exception.toString());
+        }
+    }
+
+    /** 只记录当帧公开纹理与配对矩阵，不修改 DH 颜色/深度，不受载具合成开关影响。 */
+    @SuppressWarnings("deprecation")
+    private static void publishLightingDepth(DhApiRenderParam parameter) {
+        if (parameter == null || parameter.dhProjectionMatrix == null || parameter.dhModelViewMatrix == null) { return; }
+        // 调用当前帧证明，即使光影覆盖了 API 纹理，也只允许读取确实画过地形的本帧结果。
+        RVP_ScreenLightPass.markDistantRendered();
+        if (DhApi.Delayed.renderProxy == null) { return; }
+        try {
+            // 调用 DH 官方深度 getter，逐次读取以应对重建后纹理编号复用。
+            DhApiResult<Integer> depth = DhApi.Delayed.renderProxy.getDhDepthTextureId();
+            if (validTexture(depth)) {
+                // 调用客户端灯光入口，过滤阴影视角并复制矩阵；实际 GL 读取留到天气之后。
+                RVP_ScreenLightPass.acceptDistantDepth(depth.payload,
+                        toJoml(parameter.dhProjectionMatrix), toJoml(parameter.dhModelViewMatrix));
+            }
+        } catch (RuntimeException | LinkageError exception) {
+            RVP_DhCompatDiagnostics.warnOnce("LIGHT_DEPTH_QUERY_FAILED", exception.toString());
         }
     }
 
@@ -229,6 +252,8 @@ public final class RVP_DhApi7Bridge {
     private static final class BeforeCleanupHandler extends DhApiBeforeRenderCleanupEvent {
         @Override
         public void beforeCleanup(DhApiEventParam<DhApiRenderParam> event) {
+            // 调用灯光独立入口，补齐延迟透明完成后的最终深度，仍不取消 DH 自身清理。
+            publishLightingDepth(event == null ? null : event.value);
             // 调用本项目像素取证，验证 DH apply 是否将载具颜色转入世界目标。
             RVP_DhPixelDiagnostics.afterWorldStage("DH_BEFORE_CLEANUP", false);
         }

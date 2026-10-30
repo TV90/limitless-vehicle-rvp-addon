@@ -13,18 +13,13 @@ import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.client.particle.RVP_MchrSmokeParticle;
 import org.ywzj.rvp.util.RVP_WeaponResolveHelper;
 import org.ywzj.rvp.weapon.core.RVP_AimContexts;
-import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
-import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.api.event.VehicleFireEvent;
-import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
-import org.ywzj.vehicle.custom.weapon.data.VehicleCannonWeaponData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.pojo.AimContext;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -153,24 +148,8 @@ public final class RVP_MuzzleSmokeEmitter {
      * VehicleCannonWeaponData，避免普通导弹/火箭基础数据中的 caliber 被误判为炮口。</p>
      */
     private static float resolveCaliber(AbstractVehicleWeapon<?> weapon) {
-        if (weapon == null) {
-            return Float.NaN;
-        }
-        // 调用本体武器数据接口：读取当前实际弹种的数据对象，而不是读取资源 ID。
-        Object rawData = weapon.getData();
-        if (rawData instanceof RVP_WeaponData rvpData) {
-            if (rvpData.getWeaponKind() != RVP_EnumWeaponKind.MACHINEGUN) {
-                return Float.NaN;
-            }
-            // 调用本项目 RVP 数据访问器：读取恢复为弹体口径语义的 effects_data.caliber，
-            // 非法值按统一默认值处理；45 mm 以上由延迟白烟路径负责，避免两条路径重复发烟。
-            return sanitizeCaliber(rvpData.getEffectsData().getCaliber());
-        }
-        if (rawData instanceof VehicleCannonWeaponData cannonData) {
-            // 调用本体炮数据访问器：兼容未迁移到 RVP 类型的本体火炮。
-            return sanitizeCaliber(cannonData.getCaliber());
-        }
-        return Float.NaN;
+        // 调用双端共用的口径解析，保留炮口烟仅支持机枪/机炮类的既有规则。
+        return org.ywzj.rvp.weapon.visual.RVP_FiringMuzzleResolver.resolveCaliber(weapon, true);
     }
 
     /** 清洗口径，保证尺寸公式不会接收 NaN、无穷或非正数。 */
@@ -196,39 +175,9 @@ public final class RVP_MuzzleSmokeEmitter {
 
     /** 按武器站轮射/齐射模式取得本次实际开火的炮口上下文及其稳定索引。 */
     private static List<MuzzleContext> resolveFiringMuzzleContexts(WeaponUnit weaponUnit) {
-        // 调用本体武器站接口：读取当前轮射或齐射模式，避免轮射时错误冒出全部炮口烟。
-        WeaponUnitData.FiringMode firingMode = weaponUnit.getFiringMode();
-        if (firingMode == null) {
-            return List.of();
-        }
-        return switch (firingMode) {
-            case RIPPLE -> {
-                // 调用本体武器站接口：当前炮闩索引用于区分同一武器站的不同炮口。
-                List<?> bolts = weaponUnit.getBolts();
-                int muzzleIndex = bolts.indexOf(weaponUnit.getCurrentBolt());
-                if (muzzleIndex < 0) {
-                    muzzleIndex = 0;
-                }
-                // 调用本体单炮口瞄准接口：轮射只使用当前炮口。
-                AimContext aim = weaponUnit.aimContext();
-                yield aim == null ? List.of() : List.of(new MuzzleContext(muzzleIndex, aim));
-            }
-            case SALVO, FULL_SALVO -> {
-                // 调用本体多炮口瞄准接口：齐射按炮口顺序保留所有有效炮口。
-                List<AimContext> aimContexts = weaponUnit.aimContexts();
-                if (aimContexts == null || aimContexts.isEmpty()) {
-                    yield List.of();
-                }
-                List<MuzzleContext> muzzleContexts = new ArrayList<>(aimContexts.size());
-                for (int i = 0; i < aimContexts.size(); i++) {
-                    AimContext aim = aimContexts.get(i);
-                    if (aim != null) {
-                        muzzleContexts.add(new MuzzleContext(i, aim));
-                    }
-                }
-                yield muzzleContexts;
-            }
-        };
+        // 调用灯光和烟雾共用的实际炮口解析，齐射/轮射的索引与坐标只维护一份规则。
+        return org.ywzj.rvp.weapon.visual.RVP_FiringMuzzleResolver.resolveFiringMuzzleContexts(weaponUnit)
+                .stream().map(muzzle -> new MuzzleContext(muzzle.muzzleIndex(), muzzle.aimContext())).toList();
     }
 
     /** 为指定载具的指定炮口预留当前客户端游戏 tick 的唯一炮口烟生成资格。 */

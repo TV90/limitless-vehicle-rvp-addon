@@ -1,6 +1,5 @@
 package org.ywzj.rvp.client.render;
 
-import com.github.mcmodderanchor.simplebedrockmodel.v1.client.renderer.BedrockModelRenderTypes;
 import com.github.mcmodderanchor.simplebedrockmodel.v1.common.animation.BedrockAnimation;
 import com.maydaymemory.mae.control.runner.AnimationContext;
 import com.maydaymemory.mae.control.runner.AnimationRunner;
@@ -11,7 +10,6 @@ import com.mojang.logging.LogUtils;
 import com.mojang.math.Axis;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.culling.Frustum;
 import net.minecraft.client.renderer.entity.EntityRenderer;
 import net.minecraft.client.renderer.entity.EntityRendererProvider;
@@ -78,11 +76,13 @@ public class RVP_BedrockProjectileEntityRenderer<T extends AmmoEntity> extends E
      * 任何粒子烟（发射段地面烟浪等）都画在尾焰之前、无法半透明衰减它，尾焰隔着浓浓烟浪
      * 仍然全亮可见（2026-09-19 实机反馈"透过地面气浪还能看到尾焰、不像经过半透明处理"）。
      * 改走本独立 source + {@link #renderMotorFlame} 当场 endBatch：尾焰顶点在实体阶段内
-     * 立即上屏（先于粒子阶段），后画的烟正常叠上来半透明衰减；entityTranslucent 写深度，
-     * 尾焰<b>后方</b>的烟仍被深度剔除——前后遮挡语义恢复。逐弹 getBuffer→endBatch、
-     * 渲染线程串行调用，无并发重入。
+     * 立即上屏（先于粒子阶段），后画的烟正常叠上来半透明衰减。
+     * 尾焰只写颜色、保留前景深度测试：半透明火焰不能写成实体表面，否则屏幕光在喷口前读到
+     * 火焰自己的深度，会把白热核心和橙色光晕当作被遮挡而裁掉。后画透明烟与火焰的混合
+     * 继续依赖绘制顺序，不再用尾焰深度剔除其后方的烟。逐弹 getBuffer→endBatch、渲染线程串行调用。
      */
     private static final BufferBuilder FLAME_IMMEDIATE_BUFFER = new BufferBuilder(256);
+    /** 尾焰专用立即提交源；与实体主缓冲隔离，防止延迟到粒子之后绘制。 */
     private static final MultiBufferSource.BufferSource FLAME_IMMEDIATE_SOURCE =
             MultiBufferSource.immediate(FLAME_IMMEDIATE_BUFFER);
 
@@ -132,12 +132,13 @@ public class RVP_BedrockProjectileEntityRenderer<T extends AmmoEntity> extends E
             return;
         }
         boolean remoteVisualClone = projectile.isRemoteVisualClone();
-        boolean localMotorBurning = !remoteVisualClone && projectile.isMotorBurningNow();
+        // 调用共享燃烧查询，让模型与新增环境光使用完全相同的点火/燃尽事实。
+        boolean localMotorBurning = !remoteVisualClone
+                && org.ywzj.rvp.client.light.RVP_RocketEngineLightQuery.isBurning(projectile);
         // 超视距克隆不推进自身飞行 Tick，必须使用服务端每 5 Tick 下发的权威燃烧集合；
         // 快照不存在时按熄火处理，防止远程克隆的默认发动机状态把尾焰永久点亮。
         boolean remoteSnapshotMotorBurning = remoteVisualClone
-                && RVP_ClientRemoteAmmoVisualState.isMotorBurning(
-                projectile.level().dimension().location(), projectile.getId());
+                && org.ywzj.rvp.client.light.RVP_RocketEngineLightQuery.isBurning(projectile);
         if (!RVP_MotorFlameRenderGate.shouldRender(remoteVisualClone,
                 localMotorBurning, remoteSnapshotMotorBurning)) {
             FLAME_RUNNERS.remove(projectile);
@@ -179,9 +180,12 @@ public class RVP_BedrockProjectileEntityRenderer<T extends AmmoEntity> extends E
             }
             float scale = flameScale != null && flameScale > 0f ? flameScale : DEFAULT_FLAME_SCALE;
             poseStack.scale(scale, scale, scale);
+            // 调用 RVP 的只写颜色半透明通道：方块面和三角网格都保留真实前景遮挡，
+            // 但不把尾焰当成挡在喷口前的实体表面，避免屏幕光核心和 Bloom 被自身深度裁掉。
+            // 调用本体模型出口继续复用现有尾焰资源、全亮照明和动画，不更改模型或贴图。
             flameModel.renderToBuffer(poseStack, FLAME_IMMEDIATE_SOURCE,
-                    RenderType.entityTranslucent(InternalAssets.ROCKET_MOTOR_FLAME_TEXTURE),
-                    BedrockModelRenderTypes.polyMeshCutout(InternalAssets.ROCKET_MOTOR_FLAME_TEXTURE),
+                    RVP_RenderTypes.texturedTranslucentNoDepthWrite(InternalAssets.ROCKET_MOTOR_FLAME_TEXTURE),
+                    RVP_RenderTypes.polyMeshTranslucentNoDepthWrite(InternalAssets.ROCKET_MOTOR_FLAME_TEXTURE),
                     LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY);
             // 当场 flush：尾焰顶点立即上屏（实体阶段内、先于粒子阶段），后画的烟浪等粒子
             // 才能正常半透明衰减尾焰；immediate source 的 endBatch 无遗留批时为空操作

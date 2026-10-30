@@ -1,0 +1,50 @@
+// 独立诊断入口：复用项目真实 Minecraft 类路径，不改正式构建任务或发布内容。
+allprojects { lightingProject ->
+    afterEvaluate {
+        if (lightingProject != lightingProject.rootProject) { return }
+        def lightingNativeRoot = new File(gradle.gradleUserHomeDir,
+                'caches/forge_gradle/maven_downloader/org/lwjgl')
+        def lightingNatives = ['lwjgl', 'lwjgl-glfw', 'lwjgl-opengl'].collect { module ->
+            new File(lightingNativeRoot, "${module}/3.3.1/${module}-3.3.1-natives-windows.jar")
+        }
+        def lightingOutput = lightingProject.layout.buildDirectory.dir('screen-light-frame-gpu-regression/classes')
+        def lightingCompile = tasks.register('compileLightingFrameGpuRegression', JavaCompile) {
+            dependsOn tasks.named('classes')
+            source = lightingProject.files(new File(lightingProject.projectDir,
+                    'scripts/diagnostics/ScreenLightFrameGpuRegression.java'))
+            classpath = sourceSets.test.runtimeClasspath
+            destinationDirectory.set(lightingOutput)
+            options.encoding = 'UTF-8'
+            javaCompiler.set(javaToolchains.compilerFor { languageVersion.set(JavaLanguageVersion.of(17)) })
+        }
+        tasks.register('lightingFrameGpuRegression', JavaExec) {
+            dependsOn lightingCompile
+            classpath = sourceSets.test.runtimeClasspath + lightingProject.files(lightingOutput) + lightingProject.files(lightingNatives)
+            mainClass.set('org.ywzj.rvp.client.light.ScreenLightFrameGpuRegression')
+            javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(17)) })
+            systemProperty 'org.lwjgl.system.SharedLibraryExtractPath',
+                    layout.buildDirectory.dir('screen-light-frame-gpu-regression/natives').get().asFile.absolutePath
+        }
+        // 尾焰深度复现与修复回归：真实 Minecraft 状态片段 + 正式 GLSL，不启动游戏世界。
+        def motorOutput = lightingProject.layout.buildDirectory.dir('motor-flame-depth-gpu-regression/classes')
+        def motorCompile = tasks.register('compileMotorFlameDepthGpuRegression', JavaCompile) {
+            dependsOn tasks.named('classes')
+            source = lightingProject.files(
+                    new File(lightingProject.projectDir, 'scripts/diagnostics/MotorFlameDepthGpuRegression.java'),
+                    new File(lightingProject.projectDir, 'scripts/diagnostics/ScreenLightGpuRegression.java'))
+            classpath = sourceSets.test.runtimeClasspath
+            destinationDirectory.set(motorOutput)
+            options.encoding = 'UTF-8'
+            javaCompiler.set(javaToolchains.compilerFor { languageVersion.set(JavaLanguageVersion.of(17)) })
+        }
+        tasks.register('motorFlameDepthGpuRegression', JavaExec) {
+            dependsOn motorCompile
+            classpath = sourceSets.test.runtimeClasspath + lightingProject.files(motorOutput) + lightingProject.files(lightingNatives)
+            mainClass.set('org.ywzj.rvp.client.light.MotorFlameDepthGpuRegression')
+            args lightingProject.projectDir.absolutePath
+            javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(17)) })
+            systemProperty 'org.lwjgl.system.SharedLibraryExtractPath',
+                    layout.buildDirectory.dir('motor-flame-depth-gpu-regression/natives').get().asFile.absolutePath
+        }
+    }
+}

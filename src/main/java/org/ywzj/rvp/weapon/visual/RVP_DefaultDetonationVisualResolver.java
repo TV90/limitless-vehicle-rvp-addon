@@ -25,6 +25,7 @@ public final class RVP_DefaultDetonationVisualResolver implements RVP_Detonation
                 || context.baseExplosionRadius() < 0.0F) {
             return Optional.empty();
         }
+        // 调用现有预设规范化器，灯光由客户端代码推导，不再向预设中追加光源配置。
         Optional<String> canonicalPresetData = RVP_VisualPresetDataCodec.canonicalize(data.copyPresetData());
         if (canonicalPresetData.isEmpty()) {
             return Optional.empty();
