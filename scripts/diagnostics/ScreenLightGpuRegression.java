@@ -151,6 +151,101 @@ public final class ScreenLightGpuRegression {
     /** 把观察空间正距离换成与测试生产程序配对的标准透视深度。 */
     private static float depthValue(float distance) { return ((-A * distance + B) / distance) * 0.5F + 0.5F; }
 
+    /**
+     * 复现 Oculus 在采集前画烟造成的表面假阴影；深度状态与快照均由真实生产 Java 回调提供。
+     * 薄片只在显存中模拟烟团，不创建或改写任何贴图资源。
+     */
+    static void testExplosionSmokeDepthCapture(Path root, Runnable smokeDepth,
+            java.util.function.IntBinaryOperator captureDepth) throws Exception {
+        Path shaders = root.resolve("src/main/resources/assets/ywzj_rvp/shaders/core");
+        int light = program(shaders, "screen_light");
+        int smoke = program(shaders, "smoke_light");
+        int baseSmoke = GL20.glCreateProgram();
+        int vertex = compile(GL20.GL_VERTEX_SHADER,
+                "#version 150\nin vec3 Position; void main(){gl_Position=vec4(Position,1.0);}");
+        int fragment = compile(GL20.GL_FRAGMENT_SHADER,
+                "#version 150\nuniform float SmokeDepth; out vec4 fragColor;"
+                        + "void main(){gl_FragDepth=SmokeDepth;fragColor=vec4(0.3,0.3,0.3,0.6);}");
+        GL20.glAttachShader(baseSmoke, vertex); GL20.glAttachShader(baseSmoke, fragment);
+        GL20.glBindAttribLocation(baseSmoke, 0, "Position"); GL20.glLinkProgram(baseSmoke);
+        require(GL20.glGetProgrami(baseSmoke, GL20.GL_LINK_STATUS) != 0, GL20.glGetProgramInfoLog(baseSmoke));
+        GL20.glDeleteShader(vertex); GL20.glDeleteShader(fragment);
+        setupTriangle();
+        try {
+            int[] scene = target(SIZE, SIZE);
+            int sceneDepth = depth(SIZE, SIZE, 5, false);
+            GL30.glFramebufferTexture2D(GL30.GL_DRAW_FRAMEBUFFER, GL30.GL_DEPTH_ATTACHMENT,
+                    GL11.GL_TEXTURE_2D, sceneDepth, 0);
+            int[] output = target(SIZE, SIZE);
+            float[] baseline = null;
+            for (int pass = 0; pass < 5; pass++) {
+                boolean legacy = pass == 1, late = pass == 3, wall = pass == 4;
+                GL30.glBindVertexArray(vao);
+                GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, scene[0]);
+                GL11.glViewport(0, 0, SIZE, SIZE); GL11.glDisable(GL11.GL_SCISSOR_TEST);
+                GL11.glDisable(GL11.GL_BLEND); GL11.glDepthMask(true);
+                GL11.glClearDepth(depthValue(wall ? 1 : 5));
+                GL11.glClearColor(BACKGROUND[0], BACKGROUND[1], BACKGROUND[2], BACKGROUND[3]);
+                GL11.glClear(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_DEPTH_BUFFER_BIT);
+                int snapshot = late ? captureDepth.applyAsInt(scene[0], sceneDepth) : 0;
+                if (pass != 0) {
+                    GL20.glUseProgram(baseSmoke);
+                    GL20.glUniform1f(GL20.glGetUniformLocation(baseSmoke, "SmokeDepth"), depthValue(3));
+                    GL11.glDepthFunc(GL11.GL_LEQUAL);
+                    if (legacy) { GL11.glEnable(GL11.GL_DEPTH_TEST); GL11.glDepthMask(true); }
+                    else {
+                        // 调用生产烟雾规则；外层刻意制造缓存与真实 GL 相反，不能只验证 Java 的预期值。
+                        smokeDepth.run();
+                        require(GL11.glIsEnabled(GL11.GL_DEPTH_TEST), "production smoke lost foreground depth test");
+                        require(!GL11.glGetBoolean(GL11.GL_DEPTH_WRITEMASK), "production smoke still writes occlusion depth");
+                    }
+                    GL11.glEnable(GL11.GL_SCISSOR_TEST); GL11.glScissor(6, 0, 4, SIZE);
+                    GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 3); GL11.glDisable(GL11.GL_SCISSOR_TEST);
+                    if (wall) { background(pixel(scene[0], 8, 8), "real foreground wall must still hide smoke"); }
+                }
+                if (!late) { snapshot = captureDepth.applyAsInt(scene[0], sceneDepth); }
+                GL11.glDisable(GL11.GL_DEPTH_TEST); GL11.glDepthMask(false);
+                GL20.glUseProgram(light); uniforms(light);
+                sampler(light, "SceneColor", 0, scene[1]); sampler(light, "SceneDepth", 1, snapshot);
+                sampler(light, "DistantDepth", 2, snapshot);
+                // 调用真实爆炸预设，灯在烟后、表面在五格处，回读烟轮廓外的周围方块/实体像素。
+                RVP_LightParameters source = RVP_LightParameters.explosion(4);
+                lights(light, 1, 0, 0, -4, source.radius(), source.intensity(), source.surfaceWeight(), 0);
+                GL20.glUniform4f(GL20.glGetUniformLocation(light, "LightColorIntensity0"),
+                        source.red(), source.green(), source.blue(), source.intensity());
+                GL20.glUniform1i(GL20.glGetUniformLocation(light, "OutputMode"), 1);
+                render(output, SIZE, SIZE);
+                float[] surface = pixel(output[0], 12, 8);
+                if (pass == 0) {
+                    baseline = surface;
+                    require(surface[0] > 0.05F, "reference surrounding surface did not receive explosion light");
+                } else if (legacy) {
+                    zero(surface, "legacy early smoke must reproduce shadow outside its own silhouette");
+                    System.out.println("REPRODUCED early depth-writing explosion smoke casts false surface shadow");
+                } else if (wall) {
+                    zero(surface, "real wall must still block explosion illumination");
+                    System.out.println("PASS real foreground wall still hides smoke and blocks light");
+                } else {
+                    for (int channel = 0; channel < 4; channel++) {
+                        near(baseline[channel], surface[channel], "smoke changed surrounding surface illumination");
+                    }
+                    System.out.println("PASS " + (late ? "late" : "early")
+                            + " no-depth explosion smoke preserves surrounding surface light=" + surface[0]);
+                    if (pass == 2) {
+                        // 调用真实烟雾程序，确认同一份干净快照可让烟接受其后方爆炸光，而不是只消除影子。
+                        testSmokeLighting(smoke, snapshot);
+                    }
+                }
+            }
+        } finally {
+            GL20.glUseProgram(0); GL20.glDeleteProgram(baseSmoke); GL20.glDeleteProgram(light); GL20.glDeleteProgram(smoke);
+            for (int fbo : TARGETS) { GL30.glDeleteFramebuffers(fbo); }
+            for (int texture : TEXTURES) { GL11.glDeleteTextures(texture); }
+            TARGETS.clear(); TEXTURES.clear();
+            GL15.glDeleteBuffers(vbo); GL30.glDeleteVertexArrays(vao); vbo = 0; vao = 0;
+        }
+    }
+
     /** 用真实生产程序验证 DH 独立投影、不同尺寸、正反深度、近景遮挡与光影手持物。 */
     private static void testDistantAndShaderDepth(int shader) {
         int scene = color(SIZE, SIZE, BACKGROUND);
@@ -853,6 +948,12 @@ public final class ScreenLightGpuRegression {
 
     /** 真实烟雾材质程序回读，覆盖三类光、天空、Alpha、方块/实体/DH 遮挡和八灯上限。 */
     private static void testSmokeLighting(int smoke) {
+        // 调用共用材质回归；普通入口没有生产帧资源快照，专项诊断额外传入实际采集结果。
+        testSmokeLighting(smoke, 0);
+    }
+
+    /** 可额外使用生产帧资源保存的干净深度，验证提前画出的烟仍可接受后方爆炸光。 */
+    private static void testSmokeLighting(int smoke, int opaqueSnapshot) {
         int smokeVao = GL30.glGenVertexArrays();
         int smokeVbo = GL15.glGenBuffers();
         try {
@@ -879,6 +980,15 @@ public final class ScreenLightGpuRegression {
                 near(0, lit[3], "smoke layer must not replace scene alpha");
             }
             System.out.println("PASS smoke texture is lit against sky by production explosion, cannon muzzle and rocket engine presets");
+            if (opaqueSnapshot != 0) {
+                sampler(smoke, "SceneDepth", 1, opaqueSnapshot);
+                smokeLight(smoke, RVP_LightParameters.explosion(4), 1);
+                GL20.glUniform4f(GL20.glGetUniformLocation(smoke, "LightPositionRadius0"),
+                        0, 0, -4, RVP_LightParameters.explosion(4).radius());
+                smokeDraw(output);
+                require(pixel(output[0], 8, 8)[0] > 0.05F, "early smoke snapshot prevented smoke illumination from behind");
+                System.out.println("PASS early smoke receives rear explosion light using production opaque-depth snapshot");
+            }
             int opaque = depth(SIZE, SIZE, 1, false);
             sampler(smoke, "SceneDepth", 1, opaque); smokeDraw(output);
             zero(pixel(output[0], 8, 8), "solid foreground must still hide smoke lighting");

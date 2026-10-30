@@ -30,11 +30,12 @@ public final class RVP_WhitePhosphorusParticle extends SingleQuadParticle {
     private static final ResourceLocation PARTICLE_TEXTURE =
             RVP_MOD.modLocation("textures/nuclear/particle_base.png");
 
-    /** 白磷粒子的独立半透明渲染类型，使用完整纹理 UV。 */
+    /** 白磷粒子的独立半透明渲染类型，使用完整纹理 UV，深度只测不写。 */
     private static final ParticleRenderType RENDER_TYPE = new ParticleRenderType() {
         @Override
         public void begin(BufferBuilder builder, TextureManager textureManager) {
-            RenderSystem.depthMask(true);
+            // 调用统一烟雾深度规则，白磷爆炸烟及尾迹受光，但不在周围方块/实体上投影。
+            RVP_SmokeRenderState.applyDepth();
             RenderSystem.setShaderTexture(0, PARTICLE_TEXTURE);
             RenderSystem.enableBlend();
             RenderSystem.defaultBlendFunc();

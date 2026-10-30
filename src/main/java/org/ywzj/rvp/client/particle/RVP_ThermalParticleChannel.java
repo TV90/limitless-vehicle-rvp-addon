@@ -273,8 +273,8 @@ public final class RVP_ThermalParticleChannel {
                 // ② alpha = src.a + dst.a×(1-src.a)（over 累积）——原先 SRC_ALPHA 同时当
                 //   alpha 方程源因子导致 dst.a=src.a² 平方衰减（烟 vertex alpha 0.3~0.7 写入
                 //   后只剩 0.09~0.49，显形强度减半以上），over 累积不衰减；
-                // ③ 深度只测不写——MCHR 烟 RenderType begin 自带 depthMask(true)，thermal_buffer
-                //   的深度是本体温道 copyDepthFrom 的主画面深度，写脏会让后画粒子被前画深度剔除。
+                // ③ 深度只测不写——MCHR/白磷烟本身已禁写，仍统一约束其它原版/本体粒子材质；
+                //   thermal_buffer 复制的是主画面深度，写脏会让后画粒子被前画深度剔除。
                 RenderSystem.depthMask(false);
                 RenderSystem.blendFuncSeparate(
                         GlStateManager.SourceFactor.SRC_ALPHA, GlStateManager.DestFactor.ONE,

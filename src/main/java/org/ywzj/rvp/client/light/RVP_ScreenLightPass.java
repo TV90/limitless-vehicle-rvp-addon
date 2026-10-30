@@ -144,7 +144,10 @@ public final class RVP_ScreenLightPass {
                 || RVP_LightingConfig.screenEnabled() && RVP_ScreenLightManager.INSTANCE.hasActiveLights();
     }
 
-    /** 透明方块/绊线完成后、粒子烟之前保存深度；保留实体、方块和光影不透明手持物，不读取烟深度。 */
+    /**
+     * 透明方块/绊线完成后、原版粒子窗口前保存深度，保留实体、方块和光影不透明手持物。
+     * Oculus 可在实体前提前画自定义粒子；RVP 烟材质自身禁写深度，不能只靠本事件保证排除烟。
+     */
     public static void capture(RenderLevelStageEvent event) {
         // 调用模型顶点采集窗口：只在世界实体阶段记录炮口，早于粒子和最终屏幕合成关闭。
         RVP_SmokeLightPass.worldStage(event.getStage());

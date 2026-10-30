@@ -5,7 +5,6 @@ import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.Tesselator;
 import com.mojang.blaze3d.vertex.VertexFormat;
-import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.particle.ParticleRenderType;
 import net.minecraft.client.renderer.texture.TextureManager;
 import net.minecraft.resources.ResourceLocation;
@@ -33,32 +32,28 @@ public final class RVP_MchrSmokeRenderType {
     /** 烟帧数（贴图横排 8 帧，8×8 每帧）。 */
     public static final int FRAME_COUNT = 8;
 
-    /** 独立半透明渲染类型：绑定 MCHR 烟贴图、标准 alpha 混合（GL_SRC_ALPHA / GL_ONE_MINUS_SRC_ALPHA）。 */
-    public static final ParticleRenderType RENDER_TYPE = forTexture(TEXTURE, true);
+    /** 独立半透明渲染类型：绑定 MCHR 烟贴图、标准 Alpha 混合，深度只测不写。 */
+    public static final ParticleRenderType RENDER_TYPE = forTexture(TEXTURE);
 
     /** 彩蛋渲染类型：绑定 114514.png（8 帧横排、分辨率不限——UV 归一化，512×64 或 64×8 均可）。 */
-    public static final ParticleRenderType EGG_RENDER_TYPE = forTexture(EGG_TEXTURE, true);
+    public static final ParticleRenderType EGG_RENDER_TYPE = forTexture(EGG_TEXTURE);
 
     /**
      * 损坏冒烟专用渲染类型（2026-09-28）：与 {@link #RENDER_TYPE} 同贴图，但<b>深度只测不写</b>
      * （{@code depthMask(false)}）——对齐火箭尾焰（{@code RVP_RocketFlameParticle}）、核爆云、
      * 冲击波、MchrFlare 的半透明约定：半透明烟写深度会把后续绘制的粒子/载具切片挡死，多层
-     * 叠加后透过烟雾看载具出现"实体被剔穿"（2026-09-15 实机同款问题）。MCHR 普通爆炸烟的
-     * {@link #RENDER_TYPE}/{@link #EGG_RENDER_TYPE} 保持原状不受影响。
+     * 叠加后透过烟雾看载具出现"实体被剔穿"（2026-09-15 实机同款问题）。普通爆炸烟与彩蛋烟
+     * 现在也遵守相同规则，避免 Oculus 提前画粒子时污染随后采集的屏幕光深度。
      */
-    public static final ParticleRenderType DAMAGED_SMOKE_RENDER_TYPE = forTexture(TEXTURE, false);
+    public static final ParticleRenderType DAMAGED_SMOKE_RENDER_TYPE = forTexture(TEXTURE);
 
-    /** 按贴图生成独立半透明渲染类型实例（默认写深度，爆炸烟历史行为保持）。 */
+    /** 按贴图生成独立半透明材质，烟只受实体遮挡、不成为其它光源的遮挡物。 */
     private static ParticleRenderType forTexture(ResourceLocation texture) {
-        return forTexture(texture, true);
-    }
-
-    /** 按贴图生成独立半透明渲染类型实例（标准 alpha 混合 GL_SRC_ALPHA / GL_ONE_MINUS_SRC_ALPHA）。 */
-    private static ParticleRenderType forTexture(ResourceLocation texture, boolean depthWrite) {
         return new ParticleRenderType() {
             @Override
             public void begin(BufferBuilder builder, TextureManager textureManager) {
-                RenderSystem.depthMask(depthWrite);
+                // 调用统一烟雾深度规则，提前粒子窗口也不能把爆炸烟写进场景遮挡图。
+                RVP_SmokeRenderState.applyDepth();
                 RenderSystem.setShaderTexture(0, texture);
                 RenderSystem.enableBlend();
                 RenderSystem.defaultBlendFunc();
