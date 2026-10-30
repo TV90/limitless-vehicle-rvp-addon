@@ -113,7 +113,7 @@ class RVP_RocketPlumeManagerTest {
             UUID key = UUID.randomUUID();
             manager.upsert(key, Vec3.ZERO, new Vec3(1, 0, 0), 0.3F, caliber, 1, true);
             var sample = manager.collect(Vec3.ZERO, 0, plume -> true).get(0);
-            assertEquals(RVP_LightParameters.engine(caliber).radius(), sample.haloRadius());
+            assertEquals(RVP_LightParameters.engine(caliber).radius() * 5, sample.haloRadius());
             assertEquals(sample.haloRadius(), sample.withStrength(0.5F).haloRadius());
             assertEquals(3, sample.length(), 0.00001F);
             assertEquals(0.45F, sample.radius(), 0.00001F);

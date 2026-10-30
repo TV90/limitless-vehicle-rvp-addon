@@ -6,8 +6,6 @@ import com.mojang.logging.LogUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.ShaderInstance;
-import net.minecraft.world.level.ClipContext;
-import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.client.event.RegisterShadersEvent;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
@@ -65,6 +63,8 @@ public final class RVP_ScreenLightPass {
     private static RVP_DhProjectionMath.ProjectionAnalysis distantAnalysis;
     /** 最近一次实际画面输入状态，供客户端命令查看。 */
     private static String lastFrameStatus = "尚未绘制活动光源";
+    /** 最近捕获时真正提交的灯数、来源及位置；与管理器中尚未通过预算的条目区分。 */
+    private static List<RVP_ScreenLight> lastSubmittedLights = List.of();
 
     private RVP_ScreenLightPass() { }
 
@@ -80,6 +80,11 @@ public final class RVP_ScreenLightPass {
         RVP_RocketTrailManager.INSTANCE.beginWorld(mc.level, mc.level == null ? 0 : mc.level.getGameTime());
         // 调用当帧烟雾几何清空，暂停及同一 tick 的多帧也不重复累加光照。
         RVP_SmokeLightPass.beginFrame();
+        // 调用历史深度输入失效；正式投影使用下方三维几何，诊断也不能误读上帧范围。
+        RVP_LightOcclusionPass.beginFrame();
+        // 调用三维几何帧重置；方块快照按逻辑刻复用，实体盒仍逐显示帧插值。
+        RVP_LightGeometryPass.beginFrame();
+        lastSubmittedLights = List.of();
         // 调用两份帧状态清空；游戏暂停或没有 DH 回调时也不会复用旧深度。
         FRAME.discard();
         RVP_LightDepthFrame.INSTANCE.beginFrame(Minecraft.getInstance().level);
@@ -105,14 +110,20 @@ public final class RVP_ScreenLightPass {
     /** 最近一次真正捕获的输入路径，不能把“模组已安装”当成远景已经参与计算。 */
     public static String frameStatus() { return lastFrameStatus; }
 
+    /** 命令只读显示真正提交的光源，方便排除正常多灯投影。 */
+    static String submittedLightsStatus() {
+        return "实际提交 " + lastSubmittedLights.size() + " 盏：" + lastSubmittedLights.stream()
+                .map(light -> light.type() + "@" + light.position()).collect(java.util.stream.Collectors.joining("；"));
+    }
+
     /** 在现有客户端注册链安装两个新程序，资源损坏时安全降级。 */
     public static void registerShaders(RegisterShadersEvent event) {
         lightShader = null; bloomShader = null; bloomAvailable = true;
         // 调用统一释放入口，资源重载时不能让旧场景和旧 Shader 配对。
         clear();
         try {
-            // 调用另名的双范围程序，原有屏幕光资源完整保留。
-            event.registerShader(new ShaderInstance(event.getResourceProvider(), RVP_MOD.modLocation("screen_light_halo_timeline"),
+            // 调用已获授权的另名有界遮挡程序，保留原资源与独立照亮/光晕时间线。
+            event.registerShader(new ShaderInstance(event.getResourceProvider(), RVP_MOD.modLocation("screen_light_occlusion"),
                     DefaultVertexFormat.POSITION), loaded -> lightShader = loaded);
         } catch (Exception exception) {
             LOGGER.warn("RVP 屏幕光程序加载失败，已关闭屏幕光，保留现有爆炸和尾焰", exception);
@@ -179,13 +190,17 @@ public final class RVP_ScreenLightPass {
         // 调用统一预算和球体投影裁剪，先剔除离屏光，最多只为八盏光查询实体/地形遮挡。
         List<RVP_ScreenLight> candidates = !RVP_LightingConfig.screenEnabled() || RVP_LightingConfig.intensity() <= 0
                 ? List.of() : RVP_ScreenLightManager.INSTANCE.collectVisible(camera, event.getPartialTick(),
-                RVP_LightingConfig.maxDistance(), RVP_LightingConfig.maxLights(), light -> {
+                RVP_LightingConfig.maxDistance(), RVP_ScreenLightDebugCommands.limitForDiagnostics(RVP_LightingConfig.maxLights()), light -> {
+                    // 调用显式单源诊断筛选；默认不影响正常灯数、颜色与生命周期。
+                    if (!RVP_ScreenLightDebugCommands.acceptsForDiagnostics(light)) { return false; }
                     Vector3f center = viewPosition(light.position());
                     return RVP_PressureWaveGeometry.screenBounds(PROJECTION, center.x, center.y, center.z,
                             light.visibleRadius()) != null;
                 });
-        // 调用世界碰撞查询补足屏幕外遮挡：被墙完全藏住的灯不照亮墙的正面。
-        lights = candidates.stream().filter(light -> visibleFromCamera(mc, light)).toList();
+        // 三维遮挡按每个受光点到光源的路径判断；相机看不见光心不能成为取消整盏环境光的理由。
+        // 喷口/光晕仍由各自的近景与 DH 可见性检查控制，不在这里把整盏灯误删。
+        lights = candidates;
+        lastSubmittedLights = lights;
         // 调用独立视锥预算，不按光心方块射线拒绝整条喷流：喷口被遮住时，露出的尾段仍应正确裁剪。
         if (RVP_RocketPlumePass.available()) {
             plumes = RVP_RocketPlumeManager.INSTANCE.collect(camera, event.getPartialTick(),
@@ -239,6 +254,12 @@ public final class RVP_ScreenLightPass {
             if (!FRAME.captureColor()) { diagnostic("场景目标或窗口发生变化，跳过本帧", null); return; }
             // 调用统一参数上传；世界位置先用 double 减相机，远坐标不会抖动。
             uploadLights();
+            if (lights.stream().anyMatch(light -> light.radius() > 0 && light.intensity() > 0 && light.surfaceWeight() > 0)) {
+                // 调用真实方块形状/实体盒采集，不再将缺失背面的相机深度用作投影几何。
+                RVP_LightGeometryPass.prepare(Minecraft.getInstance().level, lights, VIEW, camera, event.getPartialTick());
+            }
+            // 调用统一几何绑定；数据不可用时保留照亮，不重新启用旧的轮廓投影猜测。
+            RVP_LightGeometryPass.upload(lightShader);
             boolean useBloom = RVP_LightingConfig.bloomEnabled() && bloomShader != null && bloomAvailable
                     && (plumes.stream().anyMatch(plume -> plume.haloRadius() > 0)
                     || lights.stream().anyMatch(light -> light.bloom() && light.haloRadius() > 0));
@@ -263,6 +284,8 @@ public final class RVP_ScreenLightPass {
                 RVP_SmokeLightPass.render(FRAME, event.getCamera(), event.getPartialTick());
                 // 调用独立体积烟合成；无活动灯、关闭 Bloom 时也需要保留尾烟。
                 RVP_RocketTrailPass.render(FRAME, trails, VIEW, PROJECTION, camera);
+                // 调用用户显式请求的离屏诊断，已经合成完成的世界画面不受影响。
+                if (!lights.isEmpty()) { RVP_LightOcclusionPass.captureReport(FRAME, lightShader); }
                 return;
             }
             lightShader.safeGetUniform("OutputMode").set(1);
@@ -295,6 +318,8 @@ public final class RVP_ScreenLightPass {
             RVP_SmokeLightPass.render(FRAME, event.getCamera(), event.getPartialTick());
             // 调用烟的吸收/散射混合，不加入高亮提取，也不污染用于遮挡的场景深度。
             RVP_RocketTrailPass.render(FRAME, trails, VIEW, PROJECTION, camera);
+            // 调用可选单帧回读；正常绘制不会同步读取 GPU。
+            if (!lights.isEmpty()) { RVP_LightOcclusionPass.captureReport(FRAME, lightShader); }
         } catch (RuntimeException exception) { diagnostic("灯光合成失败，保留世界画面", exception); }
         finally { lights = List.of(); plumes = List.of(); trails = List.of(); FRAME.discard(); }
     }
@@ -303,6 +328,8 @@ public final class RVP_ScreenLightPass {
     private static void uploadLights() {
         // 调用近景/DH 共用输入上传，新旧程序使用完全相同的深度约定。
         uploadScene(lightShader);
+        // 调用显式遮挡绑定；构建新层级前 ready=false，会安全使用当帧原始深度。
+        RVP_LightOcclusionPass.upload(lightShader, FRAME.depth());
         lightShader.safeGetUniform("LightCount").set(lights.size());
         uploadLightSlots();
     }
@@ -431,14 +458,6 @@ public final class RVP_ScreenLightPass {
                 (float) (position.y - camera.y), (float) (position.z - camera.z)));
     }
 
-    /** 保守遮挡补充：不可见光源直接不提交，避免深度图没有记录的侧墙漏光。 */
-    private static boolean visibleFromCamera(Minecraft mc, RVP_ScreenLight light) {
-        if (camera.distanceToSqr(light.position()) < 0.04) { return true; }
-        HitResult hit = mc.level.clip(new ClipContext(camera, light.position(), ClipContext.Block.COLLIDER,
-                ClipContext.Fluid.NONE, mc.getCameraEntity()));
-        return hit.getType() == HitResult.Type.MISS || hit.getLocation().distanceToSqr(light.position()) < 0.04;
-    }
-
     /** 矩阵必须有限且可逆，不能把 NaN 送到整屏程序。 */
     static boolean validMatrix(Matrix4f matrix) {
         for (float value : matrix.get(new float[16])) { if (!Float.isFinite(value)) { return false; } }
@@ -458,6 +477,7 @@ public final class RVP_ScreenLightPass {
     /** 世界卸载和资源重载释放临时显存；非渲染线程只排队，不直接调用 GL。 */
     public static void clear() {
         lights = List.of(); frameLevel = null; distant = null; distantAnalysis = null; nearAnalysis = null;
+        lastSubmittedLights = List.of();
         plumes = List.of();
         trails = List.of();
         lastFrameStatus = "资源已清理，等待活动光源";
@@ -466,6 +486,10 @@ public final class RVP_ScreenLightPass {
         Runnable release = () -> {
             // 调用两套自有显存释放，不接触其它模组或玩家的资源。
             FRAME.release(); RVP_SmokeLightPass.release();
+            // 调用独立层级释放，窗口/世界/资源切换不泄漏遮挡纹理或等待中的诊断。
+            RVP_LightOcclusionPass.release();
+            // 调用三维几何资源释放，不将方块/实体缓存带到下一个世界。
+            RVP_LightGeometryPass.release();
         };
         if (RenderSystem.isOnRenderThread()) { release.run(); }
         else { RenderSystem.recordRenderCall(release::run); }

@@ -254,7 +254,8 @@ final class RVP_ScreenFrameResources {
         RVP_GlStateSync.colorMask(true, true, true, true);
         // 自有采样器为空，防止其它模组绑定的阴影比较采样器污染深度读取。
         if (GL.getCapabilities().OpenGL33 || GL.getCapabilities().GL_ARB_sampler_objects) {
-            GL33.glBindSampler(0, 0); GL33.glBindSampler(1, 0); GL33.glBindSampler(2, 0);
+            GL33.glBindSampler(0, 0); GL33.glBindSampler(1, 0); GL33.glBindSampler(2, 0); GL33.glBindSampler(3, 0);
+            GL33.glBindSampler(4, 0); GL33.glBindSampler(5, 0);
         }
     }
 
@@ -429,10 +430,10 @@ final class RVP_ScreenFrameResources {
         private final int buffer = GL11.glGetInteger(GL15.GL_ARRAY_BUFFER_BINDING);
         /** 原活动纹理单元。 */
         private final int activeTexture = GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);
-        /** 三个纹理单元的原绑定，包含最终光晕合成的第三张输入。 */
-        private final int[] textures = new int[3];
-        /** 三个纹理单元的原独立采样器。 */
-        private final int[] samplers = new int[3];
+        /** 六个纹理单元的原绑定，最后两个是三维方块形状编号和碰撞盒表。 */
+        private final int[] textures = new int[6];
+        /** 六个纹理单元的原独立采样器，不能把外部阴影比较模式带入几何查询。 */
+        private final int[] samplers = new int[6];
         /** 当前驱动是否支持独立采样器，兼容最低 OpenGL 3.2。 */
         private final boolean samplerSupported = GL.getCapabilities().OpenGL33 || GL.getCapabilities().GL_ARB_sampler_objects;
 

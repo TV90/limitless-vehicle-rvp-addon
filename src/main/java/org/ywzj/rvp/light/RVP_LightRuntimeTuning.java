@@ -25,15 +25,15 @@ public final class RVP_LightRuntimeTuning {
     public enum Parameter {
         /** 总开关覆盖，未设置时沿用 TOML；不开放真实方块光。 */
         enabled("开关：0关闭、1开启；未覆盖时沿用客户端配置", 0, 1, 1, Float.NaN, Float.NaN, Float.NaN, 1),
-        /** 环境照明亮度倍率；爆炸默认20倍，爆炸广域光晕另用独立亮度。 */
-        brightness("照亮亮度倍率；爆炸默认20，不改变其广域光晕或发动机喷焰，炮口光晕沿用炮口光强", 0, 256,
-                1, 20, 1, 1, Float.NaN),
+        /** 环境照明亮度倍率；爆炸默认20、炮口默认4、发动机默认2，爆炸广域光晕另用独立亮度。 */
+        brightness("照亮亮度倍率；爆炸默认20、炮口默认4、发动机默认2，不改变爆炸广域光晕或发动机喷焰，炮口光晕沿用炮口光强", 0, 256,
+                1, 20, 4, 2, Float.NaN),
         /** 只缩放照亮范围，和光晕分别控制；0 关闭表面/烟雾受光范围。 */
-        radiusScale("照亮半径倍率；爆炸默认5，0关闭照亮，最大8192格，不改变光晕范围", 0, 1024,
-                Float.NaN, 5, 1, 1, Float.NaN),
-        /** 三类光源的独立光晕范围；使用未调参的基础半径，不受照亮半径反向影响。 */
-        haloRadiusScale("光晕半径倍率；0关闭该类光晕，最大8192格，不改变照亮范围或喷焰尺寸", 0, 1024,
-                Float.NaN, 1, 1, 1, Float.NaN),
+        radiusScale("照亮半径倍率；爆炸和发动机默认5、炮口默认1.2，0关闭照亮，最大8192格，不改变光晕范围", 0, 1024,
+                Float.NaN, 5, 1.2F, 5, Float.NaN),
+        /** 三类光源的独立光晕范围；爆炸与炮口暂默认关闭，不影响照亮范围。 */
+        haloRadiusScale("光晕半径倍率；发动机默认5，爆炸和炮口暂默认0，0关闭该类光晕，最大8192格，不改变照亮范围或喷焰尺寸", 0, 1024,
+                Float.NaN, 0, 0, 5, Float.NaN),
         /** 在原有色彩与爆炸变色曲线之上乘红色。 */
         red("环境光红色倍率；最终颜色限制为0～1", 0, 16, Float.NaN, 1, 1, 1, Float.NaN),
         /** 在原有色彩与爆炸变色曲线之上乘绿色。 */
@@ -48,12 +48,12 @@ public final class RVP_LightRuntimeTuning {
         /** 沿用当前浮点纹理安全峰值，不允许调参超过上限。 */
         coreIntensity("喷焰白热核心亮度；HDR是显示前高亮数值，0会关闭整条喷焰及其光晕", 0, RVP_LightParameters.ENGINE_CORE_INTENSITY,
                 Float.NaN, Float.NaN, Float.NaN, RVP_LightParameters.ENGINE_CORE_INTENSITY, Float.NaN),
-        /** 喷焰外围橙焰亮度，和喷口周围的广域橙晕分别控制。 */
-        haloIntensity("喷焰外围橙焰亮度；0关闭外围橙焰，不改变广域橙晕", 0, 60000,
-                Float.NaN, Float.NaN, Float.NaN, RVP_LightParameters.ENGINE_HALO_INTENSITY, Float.NaN),
+        /** 喷焰外围橙焰亮度，默认5，和喷口周围的广域橙晕分别控制。 */
+        haloIntensity("喷焰外围橙焰亮度；默认5，0关闭外围橙焰，不改变广域橙晕", 0, 60000,
+                Float.NaN, Float.NaN, Float.NaN, 5, Float.NaN),
         /** 爆炸和发动机广域光晕的独立亮度；不随爆炸照亮亮度倍率放大。 */
-        worldHaloIntensity("广域光晕独立亮度，默认16；爆炸0关闭其光晕，发动机0只关闭广域橙晕，不改变照亮", 0, 60000,
-                Float.NaN, 16, Float.NaN, RVP_LightParameters.ENGINE_HALO_INTENSITY, Float.NaN),
+        worldHaloIntensity("广域光晕独立亮度；爆炸默认16、发动机默认0.4，爆炸0关闭其光晕，发动机0只关闭广域橙晕，不改变照亮", 0, 60000,
+                Float.NaN, 16, Float.NaN, 0.4F, Float.NaN),
         /** 光晕提取前的既有软压缩峰值，不改变核心显示亮度。 */
         inputPeak("喷焰进入模糊光晕的亮度上限；不改变白热核心与广域橙晕", 0.00001F, 60000,
                 Float.NaN, Float.NaN, Float.NaN, Float.NaN, RVP_RocketPlumeParameters.BLOOM_INPUT_PEAK),
@@ -98,7 +98,7 @@ public final class RVP_LightRuntimeTuning {
 
     private RVP_LightRuntimeTuning() { }
 
-    /** 读取当前值；没有覆盖时与原代码数值完全一致。 */
+    /** 读取当前值；没有临时覆盖时使用各分组的代码默认值。 */
     public static float get(Group group, Parameter parameter) {
         // 调用带回退值的读取入口，保持所有倍率的默认语义一致。
         return getOrDefault(group, parameter, parameter.defaultValue(group));
@@ -162,8 +162,7 @@ public final class RVP_LightRuntimeTuning {
 
     /** 每帧从原始预设生成调参输入；年龄、颜色过渡、遮挡与预算仍交给现有管理器。 */
     public static RVP_LightParameters apply(Group group, RVP_LightParameters base) {
-        // 爆炸必须应用默认20倍亮度和5倍照亮范围；其余无覆盖分组沿用原始预设。
-        if (group != Group.explosion && !overrides.containsKey(group)) { return base; }
+        // 三类光源都应用代码默认倍率，不能因没有临时覆盖而跳过炮口与发动机的新默认值。
         // 调用统一参数读取和半径入口；保留原始寿命、合并窗口和光晕标记，不反写已有预设。
         return new RVP_LightParameters(base.enabled(),
                 Math.min(1, base.red() * get(group, Parameter.red)),

@@ -56,7 +56,8 @@ public final class RVP_SmokeLightPass {
     /** 在现有注册事件中安装新程序，文件由用户授权新增。 */
     static void register(RegisterShadersEvent event) throws IOException {
         shader = null;
-        event.registerShader(new ShaderInstance(event.getResourceProvider(), RVP_MOD.modLocation("smoke_light"),
+        // 调用与表面光共用有界遮挡核心的另名程序，原烟雾资源保留。
+        event.registerShader(new ShaderInstance(event.getResourceProvider(), RVP_MOD.modLocation("smoke_light_occlusion"),
                 DefaultVertexFormat.POSITION_TEX_COLOR), loaded -> shader = loaded);
     }
 
@@ -158,6 +159,11 @@ public final class RVP_SmokeLightPass {
         // 调用引擎收集，覆盖本体/原版粒子和所有已知 RVP 粒子烟；自绘烟已由正常绘制记录。
         collectParticles(camera, partialTick);
         RVP_ScreenLightPass.uploadScene(shader);
+        // 调用同帧分层深度绑定；烟面片只接收光照，仍不会进入遮挡输入。
+        RVP_LightOcclusionPass.upload(shader, frame.depth());
+        // 调用表面光同一套三维碰撞几何，烟雾自身仍不成为遮挡物。
+        RVP_LightGeometryPass.upload(shader);
+        shader.safeGetUniform("OutputMode").set(0);
         shader.safeGetUniform("LightCount").set(lights.size());
         for (int index = 0; index < RVP_ScreenLightBudget.MAX_LIGHTS; index++) {
             if (index >= lights.size()) {

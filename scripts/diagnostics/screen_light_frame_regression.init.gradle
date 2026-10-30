@@ -12,7 +12,9 @@ allprojects { lightingProject ->
         def stateCompile = tasks.register('compileScreenEffectStateGpuRegression', JavaCompile) {
             dependsOn tasks.named('classes')
             source = lightingProject.files(new File(lightingProject.projectDir,
-                    'scripts/diagnostics/ScreenEffectStateGpuRegression.java'))
+                    'scripts/diagnostics/ScreenEffectStateGpuRegression.java'), new File(lightingProject.projectDir,
+                    'scripts/diagnostics/ScreenLightOcclusionGpuRegression.java'), new File(lightingProject.projectDir,
+                    'scripts/diagnostics/ScreenLightShaderSources.java'))
             classpath = sourceSets.test.runtimeClasspath
             destinationDirectory.set(stateOutput)
             options.encoding = 'UTF-8'
@@ -51,6 +53,7 @@ allprojects { lightingProject ->
             dependsOn tasks.named('classes')
             source = lightingProject.files(
                     new File(lightingProject.projectDir, 'scripts/diagnostics/MotorFlameDepthGpuRegression.java'),
+                    new File(lightingProject.projectDir, 'scripts/diagnostics/ScreenLightShaderSources.java'),
                     new File(lightingProject.projectDir, 'scripts/diagnostics/ScreenLightGpuRegression.java'))
             classpath = sourceSets.test.runtimeClasspath
             destinationDirectory.set(motorOutput)
@@ -72,6 +75,7 @@ allprojects { lightingProject ->
             dependsOn tasks.named('classes')
             source = lightingProject.files(
                     new File(lightingProject.projectDir, 'scripts/diagnostics/ExplosionSmokeDepthGpuRegression.java'),
+                    new File(lightingProject.projectDir, 'scripts/diagnostics/ScreenLightShaderSources.java'),
                     new File(lightingProject.projectDir, 'scripts/diagnostics/ScreenLightGpuRegression.java'))
             classpath = sourceSets.test.runtimeClasspath
             destinationDirectory.set(smokeOutput)

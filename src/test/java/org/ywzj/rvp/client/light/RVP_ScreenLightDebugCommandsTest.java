@@ -33,7 +33,8 @@ class RVP_ScreenLightDebugCommandsTest {
         CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
         dispatcher.register(RVP_ScreenLightDebugCommands.build());
         for (String command : new String[] {"rvplight preview", "rvplight preview 8", "rvplight engine",
-                "rvplight engine 0.3 300", "rvplight clear", "rvplight help", "rvplight copy",
+                "rvplight engine 0.3 300", "rvplight clear", "rvplight help", "rvplight copy", "rvplight occlusion",
+                "rvplight isolate explosion", "rvplight isolate muzzle", "rvplight isolate engine", "rvplight isolate off",
                 "rvplight set engine haloIntensity 8", "rvplight status engine coreIntensity",
                 "rvplight set engine worldHaloIntensity 4", "rvplight set bloom nearStrength 0",
                 "rvplight set explosion worldHaloIntensity 16", "rvplight set explosion worldHaloIntensity 0",

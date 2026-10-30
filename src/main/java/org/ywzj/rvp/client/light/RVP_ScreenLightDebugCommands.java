@@ -23,7 +23,15 @@ import java.util.Map;
 /** 光照与光晕本地调参、无伤害预览和兼容性诊断；不请求服务器放置方块。 */
 @Mod.EventBusSubscriber(modid = RVP_MOD.MOD_ID, value = Dist.CLIENT, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class RVP_ScreenLightDebugCommands {
+    /** 可选单光源诊断类型；null 为正常完整绘制，不修改服务器或原始光源队列。 */
+    private static RVP_LightSourceType isolatedSource;
     private RVP_ScreenLightDebugCommands() { }
+
+    /** 在八灯预算之前筛选诊断类型，避免所需炮口灯先被其它发动机挤掉。 */
+    static boolean acceptsForDiagnostics(RVP_ScreenLight light) { return isolatedSource == null || isolatedSource == light.type(); }
+
+    /** 单源诊断最多提交一盏光，但不能越过玩家显式关闭的零灯预算。 */
+    static int limitForDiagnostics(int configured) { return isolatedSource == null ? configured : Math.min(configured, 1); }
 
     @SubscribeEvent
     public static void register(RegisterClientCommandsEvent event) {
@@ -37,6 +45,12 @@ public final class RVP_ScreenLightDebugCommands {
                 .executes(context -> status())
                 .then(Commands.literal("help").executes(context -> help(context.getSource())))
                 .then(Commands.literal("copy").executes(context -> copy(context.getSource())))
+                .then(Commands.literal("occlusion").executes(context -> {
+                    // 调用请求登记，下一次表面光绘制才统计命中、离屏与预算耗尽，不在命令线程碰显卡。
+                    RVP_LightOcclusionPass.requestReport();
+                    send(context.getSource(), "已请求下一帧表面遮挡统计；会额外绘制/回读一次，随后用 /rvplight status 查看。");
+                    return 1;
+                }))
                 .then(Commands.literal("clear").executes(context -> {
                     // 调用光源取消入口，下一帧无活动灯即完全跳过场景复制。
                     RVP_ScreenLightManager.INSTANCE.clear();
@@ -58,10 +72,23 @@ public final class RVP_ScreenLightDebugCommands {
                                                 FloatArgumentType.getFloat(context, "scale"),
                                                 FloatArgumentType.getFloat(context, "caliber"))))));
         var status = Commands.literal("status").executes(context -> status());
+        var isolate = Commands.literal("isolate");
+        String[] names = {"explosion", "muzzle", "engine", "off"};
+        RVP_LightSourceType[] types = {RVP_LightSourceType.EXPLOSION, RVP_LightSourceType.MUZZLE, RVP_LightSourceType.ROCKET_ENGINE, null};
+        for (int index = 0; index < names.length; index++) {
+            RVP_LightSourceType selected = types[index];
+            isolate.then(Commands.literal(names[index]).executes(context -> {
+                isolatedSource = selected;
+                send(context.getSource(), selected == null ? "已恢复全部光源。" : "单源诊断：只绘制一盏 " + selected + " 环境光；isolate off 恢复全部。");
+                return 1;
+            }));
+        }
+        root.then(isolate);
         var set = Commands.literal("set");
         var reset = Commands.literal("reset").executes(context -> {
             // 调用会话重置，恢复现有算法的代码参数与用户原有画质配置。
             RVP_LightRuntimeTuning.reset();
+            isolatedSource = null;
             send(context.getSource(), "全部调参已恢复默认；下一帧生效。");
             return 1;
         });
@@ -120,6 +147,8 @@ public final class RVP_ScreenLightDebugCommands {
         send(source, "bloom nearStrength 调贴近亮焰的两层光晕，farStrength 调向周围消散的两层辉光；两者互不补偿。");
         send(source, "爆炸默认brightness=20、radiusScale=5；worldHaloIntensity默认16，独立于照亮亮度。发动机亮度继续分开调。");
         send(source, "/rvplight preview [半径] 预览爆炸类短光；engine [喷焰缩放] [毫米口径] 预览真实发动机算法。");
+        send(source, "/rvplight occlusion 采样下一帧表面遮挡；status 查看实际提交灯数/位置、离屏及预算耗尽计数。");
+        send(source, "/rvplight isolate explosion|muzzle|engine 只绘制该类的一盏环境光；isolate off 恢复全部，便于排除真实多灯投影。");
         send(source, "两种半径均允许0～8192格；爆炸光默认32刻即1.6秒，衰减系数0.3；喷焰长宽仍由原有缩放决定。");
         send(source, "explosion/muzzle的decayScale越小整盏光源越长，越大越短；爆炸0.5约3.2秒、2约0.8秒，照亮和光晕同步平滑淡出。");
         send(source, "所有修改下一帧生效，仅本机；重连/换维度保留，重启游戏恢复默认。不会写配置或载具包。");
@@ -188,6 +217,12 @@ public final class RVP_ScreenLightDebugCommands {
                 + "，调参覆盖组数=" + RVP_LightRuntimeTuning.overrides().size()
                 + "；" + (reason.isEmpty() ? RVP_ScreenLightPass.frameStatus() : reason)), false);
         mc.player.displayClientMessage(Component.literal("[RVP Light] /rvplight help 查看调参用法；status <组> 查看参数。"), false);
+        // 调用真正提交的光源快照和最近单帧显卡统计，不能用 tracked 条目数代替实际灯数。
+        mc.player.displayClientMessage(Component.literal("[RVP Light] " + RVP_ScreenLightPass.submittedLightsStatus()), false);
+        mc.player.displayClientMessage(Component.literal("[RVP Light] " + RVP_LightOcclusionPass.status()), false);
+        // 调用实际三维几何状态，避免把旧平面回归或单纯 tracked 灯数误报为现场投影有效。
+        mc.player.displayClientMessage(Component.literal("[RVP Light] " + RVP_LightGeometryPass.status()), false);
+        mc.player.displayClientMessage(Component.literal("[RVP Light] 单源诊断=" + (isolatedSource == null ? "关闭" : isolatedSource)), false);
         return 1;
     }
 

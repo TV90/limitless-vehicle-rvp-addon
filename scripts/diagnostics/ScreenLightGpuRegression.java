@@ -47,7 +47,7 @@ public final class ScreenLightGpuRegression {
             System.out.println("GPU=" + GL11.glGetString(GL11.GL_RENDERER));
             Path shaders = Path.of(args[0]).resolve("src/main/resources/assets/ywzj_rvp/shaders/core");
             // 编译真实生产文件，不能用测试内的简化 Shader 替代。
-            light = program(shaders, "screen_light_halo_timeline");
+            light = program(shaders, "screen_light_occlusion");
             bloom = program(shaders, "screen_light_bloom_multiscale");
             System.out.println("PASS both production GLSL programs compile and link");
             setupTriangle();
@@ -66,7 +66,7 @@ public final class ScreenLightGpuRegression {
             testSeparatedLightHalo(light);
             testTransientLightTimeline(light, bloom);
             testExtendedEngineSurface(light);
-            smoke = program(shaders, "smoke_light");
+            smoke = program(shaders, "smoke_light_occlusion");
             testSmokeLighting(smoke);
             testMuzzleLighting(Path.of(args[0]), smoke);
             if (GL11.glGetError() != GL11.GL_NO_ERROR) { throw new AssertionError("OpenGL error at completion"); }
@@ -93,7 +93,7 @@ public final class ScreenLightGpuRegression {
     static void testMotorFlameDepthCapture(Path root, Runnable oldMask, Runnable fixedMask, Runnable fixedDepthTest)
             throws Exception {
         Path shaders = root.resolve("src/main/resources/assets/ywzj_rvp/shaders/core");
-        int light = program(shaders, "screen_light_halo_timeline");
+        int light = program(shaders, "screen_light_occlusion");
         int flame = GL20.glCreateProgram();
         int vertex = compile(GL20.GL_VERTEX_SHADER,
                 "#version 150\nin vec3 Position; void main(){gl_Position=vec4(Position,1.0);}");
@@ -165,8 +165,10 @@ public final class ScreenLightGpuRegression {
     static void testExplosionSmokeDepthCapture(Path root, Runnable smokeDepth,
             java.util.function.IntBinaryOperator captureDepth) throws Exception {
         Path shaders = root.resolve("src/main/resources/assets/ywzj_rvp/shaders/core");
-        int light = program(shaders, "screen_light_halo_timeline");
-        int smoke = program(shaders, "smoke_light");
+        int light = program(shaders, "screen_light_occlusion");
+        // 调用保留的旧资源复现“烟深度＋无界检查”的历史假影；正式验证仍使用上面的新程序。
+        int originalLight = program(shaders, "screen_light_halo_timeline");
+        int smoke = program(shaders, "smoke_light_occlusion");
         int baseSmoke = GL20.glCreateProgram();
         int vertex = compile(GL20.GL_VERTEX_SHADER,
                 "#version 150\nin vec3 Position; void main(){gl_Position=vec4(Position,1.0);}");
@@ -212,15 +214,16 @@ public final class ScreenLightGpuRegression {
                 }
                 if (!late) { snapshot = captureDepth.applyAsInt(scene[0], sceneDepth); }
                 GL11.glDisable(GL11.GL_DEPTH_TEST); GL11.glDepthMask(false);
-                GL20.glUseProgram(light); uniforms(light);
-                sampler(light, "SceneColor", 0, scene[1]); sampler(light, "SceneDepth", 1, snapshot);
-                sampler(light, "DistantDepth", 2, snapshot);
+                int selectedLight = legacy ? originalLight : light;
+                GL20.glUseProgram(selectedLight); uniforms(selectedLight);
+                sampler(selectedLight, "SceneColor", 0, scene[1]); sampler(selectedLight, "SceneDepth", 1, snapshot);
+                sampler(selectedLight, "DistantDepth", 2, snapshot);
                 // 调用真实爆炸预设，灯在烟后、表面在五格处，回读烟轮廓外的周围方块/实体像素。
                 RVP_LightParameters source = RVP_LightParameters.explosion(4);
-                lights(light, 1, 0, 0, -4, source.radius(), source.intensity(), source.surfaceWeight(), 0);
-                GL20.glUniform4f(GL20.glGetUniformLocation(light, "LightColorIntensity0"),
+                lights(selectedLight, 1, 0, 0, -4, source.radius(), source.intensity(), source.surfaceWeight(), 0);
+                GL20.glUniform4f(GL20.glGetUniformLocation(selectedLight, "LightColorIntensity0"),
                         source.red(), source.green(), source.blue(), source.intensity());
-                GL20.glUniform1i(GL20.glGetUniformLocation(light, "OutputMode"), 1);
+                GL20.glUniform1i(GL20.glGetUniformLocation(selectedLight, "OutputMode"), 1);
                 render(output, SIZE, SIZE);
                 float[] surface = pixel(output[0], 12, 8);
                 if (pass == 0) {
@@ -229,6 +232,17 @@ public final class ScreenLightGpuRegression {
                 } else if (legacy) {
                     zero(surface, "legacy early smoke must reproduce shadow outside its own silhouette");
                     System.out.println("REPRODUCED early depth-writing explosion smoke casts false surface shadow");
+                    // 调用修复程序处理同一污染快照；烟在光路线段之外，不能再把它无限延伸成假遮挡。
+                    GL20.glUseProgram(light); uniforms(light);
+                    sampler(light, "SceneColor", 0, scene[1]); sampler(light, "SceneDepth", 1, snapshot);
+                    sampler(light, "DistantDepth", 2, snapshot);
+                    lights(light, 1, 0, 0, -4, source.radius(), source.intensity(), source.surfaceWeight(), 0);
+                    GL20.glUniform4f(GL20.glGetUniformLocation(light, "LightColorIntensity0"),
+                            source.red(), source.green(), source.blue(), source.intensity());
+                    GL20.glUniform1i(GL20.glGetUniformLocation(light, "OutputMode"), 1);
+                    render(output, SIZE, SIZE);
+                    near(baseline[0], pixel(output[0], 12, 8)[0], "bounded path retained old infinite smoke shadow");
+                    System.out.println("PASS repaired bounded path rejects false smoke shadow beyond the light segment");
                 } else if (wall) {
                     zero(surface, "real wall must still block explosion illumination");
                     System.out.println("PASS real foreground wall still hides smoke and blocks light");
@@ -245,7 +259,7 @@ public final class ScreenLightGpuRegression {
                 }
             }
         } finally {
-            GL20.glUseProgram(0); GL20.glDeleteProgram(baseSmoke); GL20.glDeleteProgram(light); GL20.glDeleteProgram(smoke);
+            GL20.glUseProgram(0); GL20.glDeleteProgram(baseSmoke); GL20.glDeleteProgram(light); GL20.glDeleteProgram(originalLight); GL20.glDeleteProgram(smoke);
             for (int fbo : TARGETS) { GL30.glDeleteFramebuffers(fbo); }
             for (int texture : TEXTURES) { GL11.glDeleteTextures(texture); }
             TARGETS.clear(); TEXTURES.clear();
@@ -310,7 +324,14 @@ public final class ScreenLightGpuRegression {
         sampler(shader, "DistantDepth", 2, plain);
         render(output, SIZE, SIZE);
         require(pixel(output[0], 8, 8)[0] > BACKGROUND[0], "unoccluded DH path missing");
-        int blocked = projectedDepth(SIZE, SIZE, 40, 7.5F, 512, false, true);
+        // 旧 z=-20 遮挡条不在 z=-40 到 z=-38 的光路上；改用确实相交的 z=-39 表面。
+        float[] dhCrossing = new float[SIZE * SIZE];
+        float dhA = -(512F + 7.5F) / (512F - 7.5F), dhB = -2 * 512F * 7.5F / (512F - 7.5F);
+        for (int y = 0; y < SIZE; y++) { for (int x = 0; x < SIZE; x++) {
+            float distance = x >= 10 ? 39 : 40;
+            dhCrossing[y * SIZE + x] = ((-dhA * distance + dhB) / distance) * .5F + .5F;
+        } }
+        int blocked = texture(SIZE, SIZE, GL30.GL_DEPTH_COMPONENT32F, GL11.GL_DEPTH_COMPONENT, dhCrossing);
         sampler(shader, "DistantDepth", 2, blocked);
         render(output, SIZE, SIZE);
         background(pixel(output[0], 8, 8), "DH foreground occluder");
@@ -413,8 +434,16 @@ public final class ScreenLightGpuRegression {
         sampler(shader, "SceneDepth", 1, occluded);
         lights(shader, 1, 2, 0, -3, 5, 1, 1, 0);
         render(output, SIZE, SIZE);
-        background(pixel(output[0], SIZE / 2, SIZE / 2), "screen-space occluder");
-        System.out.println("PASS foreground depth strip blocks light-to-surface path");
+        // 旧条带在 z=-2，受光点到 z=-3 的灯不会经过它；不能继续将这类假影验收为正确。
+        require(pixel(output[0], 8, 8)[0] > BACKGROUND[0], "geometry beyond the light cast a false shadow");
+        float[] crossingDepth = new float[SIZE * SIZE];
+        for (int y = 0; y < SIZE; y++) { for (int x = 0; x < SIZE; x++) {
+            crossingDepth[y * SIZE + x] = depthValue(x >= 10 ? 4 : 5);
+        } }
+        sampler(shader, "SceneDepth", 1, texture(SIZE, SIZE, GL30.GL_DEPTH_COMPONENT32F, GL11.GL_DEPTH_COMPONENT, crossingDepth));
+        render(output, SIZE, SIZE);
+        background(pixel(output[0], 8, 8), "physical light segment crosses z=-4 blocker");
+        System.out.println("PASS real light-segment occlusion; geometry beyond the light does not cast false shadows");
 
         int sky = depth(SIZE, SIZE, 0, false);
         sampler(shader, "SceneDepth", 1, sky);
@@ -500,6 +529,8 @@ public final class ScreenLightGpuRegression {
 
     /** 生产程序需要的固定矩阵与采样分辨率。 */
     private static void uniforms(int program) {
+        // 调用新增整数几何采样器的有效空输入；旧算法回归模式保持0，不读取空几何。
+        ScreenLightShaderSources.bindEmptyGeometry(program);
         float[] projection = {1,0,0,0, 0,1,0,0, 0,0,A,-1, 0,0,B,0};
         float[] inverse = {1,0,0,0, 0,1,0,0, 0,0,0,1/B, 0,0,-1,A/B};
         GL20.glUniformMatrix4fv(GL20.glGetUniformLocation(program, "Projection"), false, projection);
@@ -1499,8 +1530,9 @@ public final class ScreenLightGpuRegression {
 
     /** 链接实际 GLSL，并固定与 Java 全屏 VAO 一致的 Position 位置。 */
     private static int program(Path directory, String name) throws Exception {
-        int vertex = compile(GL20.GL_VERTEX_SHADER, Files.readString(directory.resolve(name + ".vsh")));
-        int fragment = compile(GL20.GL_FRAGMENT_SHADER, Files.readString(directory.resolve(name + ".fsh")));
+        // 调用生产包含展开，屏幕光和烟雾必须测试同一个公共遮挡核心。
+        int vertex = compile(GL20.GL_VERTEX_SHADER, ScreenLightShaderSources.read(directory.resolve(name + ".vsh")));
+        int fragment = compile(GL20.GL_FRAGMENT_SHADER, ScreenLightShaderSources.read(directory.resolve(name + ".fsh")));
         int program = GL20.glCreateProgram();
         GL20.glAttachShader(program, vertex); GL20.glAttachShader(program, fragment);
         GL20.glBindAttribLocation(program, 0, "Position");
@@ -1563,8 +1595,9 @@ public final class ScreenLightGpuRegression {
         int previous = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
         int texture = GL11.glGenTextures(); TEXTURES.add(texture);
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, texture);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+        int filter = format == GL11.GL_DEPTH_COMPONENT ? GL11.GL_NEAREST : GL11.GL_LINEAR;
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, filter);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, filter);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
         GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, internal, width, height, 0, format, GL11.GL_FLOAT, pixels);

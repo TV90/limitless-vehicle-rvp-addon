@@ -14,6 +14,7 @@ $outputDir = Join-Path $projectRoot 'build/screen-light-gpu-regression'
 New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
 & (Join-Path $jdkBin 'javac.exe') -encoding UTF-8 -cp $classpath -d $outputDir `
     (Join-Path $PSScriptRoot 'ScreenLightGpuRegression.java') `
+    (Join-Path $PSScriptRoot 'ScreenLightShaderSources.java') `
     (Join-Path $projectRoot 'src/main/java/org/ywzj/rvp/light/RVP_LightParameters.java') `
     (Join-Path $projectRoot 'src/main/java/org/ywzj/rvp/light/RVP_BloomParameters.java') `
     (Join-Path $projectRoot 'src/main/java/org/ywzj/rvp/light/RVP_TransientLightTimeline.java')

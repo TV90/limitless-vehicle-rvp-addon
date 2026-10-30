@@ -50,13 +50,15 @@ public final class ScreenEffectStateGpuRegression {
             GL.createCapabilities(); RenderSystem.initRenderThread();
             System.out.println("GPU=" + GL11.glGetString(GL11.GL_RENDERER));
             int failures = 0;
-            for (String test : List.of("DH", "lighting", "pressure", "pressure pixels", "vehicle overload", "blend history")) {
+            for (String test : List.of("DH", "lighting", "light occlusion", "pressure", "pressure pixels", "vehicle overload", "blend history")) {
                 try {
                     switch (test) {
                         // 调用真实 DH 作用域，检查恢复后的下一次引擎请求。
                         case "DH" -> testDhCacheRestoration();
                         // 调用真实 Shader 和帧资源，检查缓存失配下的像素与深度。
                         case "lighting" -> testLightingDraw(Path.of(args[0]));
+                        // 调用实际 Minecraft 加载器与生产分层遮挡，验证包含文件、几何、状态和 1080p 耗时。
+                        case "light occlusion" -> ScreenLightOcclusionGpuRegression.run(resources(Path.of(args[0])));
                         // 调用真实冲击波作用域，检查混合方程与引擎缓存。
                         case "pressure" -> testPressureWaveState();
                         // 调用完整生产冲击波，对抗残留减法混合与外部独立采样器。
@@ -259,6 +261,12 @@ public final class ScreenEffectStateGpuRegression {
         PathPackResources pack = new PathPackResources("rvp-screen-state-regression", root.resolve("src/main/resources"), false);
         return location -> {
             Path file = root.resolve("src/main/resources/assets").resolve(location.getNamespace()).resolve(location.getPath());
+            if (Files.isRegularFile(file) && file.toString().endsWith(".fsh")) {
+                // 独立 JavaExec 没有 Forge 字节码启动链；按其已核对的 namespaced 路径只读展开包含。
+                // 随后仍由真实 ShaderInstance 解析 JSON、链接程序和绑定 uniform，不替换生产算法。
+                return Optional.of(new Resource(pack, () -> new java.io.ByteArrayInputStream(
+                        ScreenLightShaderSources.read(file).getBytes(java.nio.charset.StandardCharsets.UTF_8))));
+            }
             if (Files.isRegularFile(file)) { return Optional.of(new Resource(pack, () -> Files.newInputStream(file))); }
             java.net.URL bundled = ScreenEffectStateGpuRegression.class.getResource(
                     "/assets/" + location.getNamespace() + "/" + location.getPath());

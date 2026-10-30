@@ -44,7 +44,7 @@ class RVP_ScreenLightManagerTest {
             manager.addTransient(new Vec3(1, 0, 0), RVP_LightSourceType.MUZZLE, "same muzzle", parameters, 100);
         }
         assertEquals(1, manager.size());
-        assertEquals(parameters.intensity(), sample(0).get(0).intensity());
+        assertEquals(parameters.intensity() * 4, sample(0).get(0).intensity());
         manager.tick(world, 101);
         manager.addTransient(new Vec3(1.5, 0, 0), RVP_LightSourceType.MUZZLE, "same muzzle", parameters, 101);
         assertEquals(1, manager.size());
@@ -272,13 +272,13 @@ class RVP_ScreenLightManagerTest {
     }
 
     @Test
-    void engineVolumeWithinFiveHundredBlocksSurvivesTheObserverDistanceBudget() {
+    void engineVolumeWithinScaledRangeSurvivesTheObserverDistanceBudget() {
         UUID key = UUID.randomUUID();
-        manager.upsertPersistent(key, new Vec3(0, 0, -500), RVP_LightParameters.engine(4800));
+        manager.upsertPersistent(key, new Vec3(0, 0, -2500), RVP_LightParameters.engine(4800));
         var selected = manager.collectVisible(Vec3.ZERO, 0, 256, 8, light -> true);
         assertEquals(1, selected.size());
-        assertEquals(500, selected.get(0).radius());
-        manager.upsertPersistent(key, new Vec3(0, 0, -800), RVP_LightParameters.engine(4800));
+        assertEquals(2500, selected.get(0).radius());
+        manager.upsertPersistent(key, new Vec3(0, 0, -2800), RVP_LightParameters.engine(4800));
         assertTrue(manager.collectVisible(Vec3.ZERO, 0, 256, 8, light -> true).isEmpty());
     }
 }
