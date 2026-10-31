@@ -65,7 +65,7 @@
     "enable_inertial_guidance": true,
     "lock_altitude_range": "[[5,inf]]",
     "guidance_altitude_range": "[[5,inf]]",
-    "enable_ir_hmd": false,
+    "enable_ir_hmd": true,
     "scan_interval_tick": 3,
     "ignore_flares": false,
     "off_axis_stacks_with_station_rotation": true
