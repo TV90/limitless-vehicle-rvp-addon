@@ -297,4 +297,92 @@ class RVP_LightRuntimeTuningTest {
                 () -> RVP_LightRuntimeTuning.set(Group.bloom, Parameter.enabled, 0.5F));
         assertTrue(RVP_LightRuntimeTuning.overrides().getOrDefault(Group.explosion, java.util.Map.of()).isEmpty());
     }
+
+    @Test
+    void eoJammerPersistentLightKeepsFiniteRangeHaloAxisAndSteadyBrightness() {
+        // 调用干扰机持续光的正式登记与采样：总设置分组没有半径/权重倍率，NaN 必须按 1 处理。
+        UUID key = UUID.randomUUID();
+        Vec3 axis = new Vec3(0, 0, 1);
+        RVP_ScreenLightManager manager = new RVP_ScreenLightManager();
+        Object world = new Object();
+        manager.beginWorld(world, 100);
+        manager.upsertPersistent(key, Vec3.ZERO, RVP_LightSourceType.EO_JAMMER, RVP_LightParameters.eoJammer(), axis);
+        var light = manager.collectVisible(Vec3.ZERO, 0, 256, 8, value -> true).get(0);
+        assertEquals(2.4F, light.radius());
+        assertEquals(2.4F, light.haloRadius());
+        assertEquals(1.2F, light.intensity(), .0001F);
+        // 光晕那一路单独按 0.4 折算：肉眼只看微弱红晕，表面受光不吃折扣。
+        assertEquals(0.48F, light.haloIntensity(), .0001F);
+        assertTrue(Float.isFinite(light.red()) && Float.isFinite(light.green()) && Float.isFinite(light.blue()));
+        assertEquals(axis, light.hemisphereAxis());
+        assertEquals(RVP_LightSourceType.EO_JAMMER, light.type());
+        // 调用逐刻心跳续期；持续光不吃短光的淡出包络，亮度不能每刻回弹造成闪烁。
+        manager.upsertPersistent(key, Vec3.ZERO, RVP_LightSourceType.EO_JAMMER, RVP_LightParameters.eoJammer(), axis);
+        manager.tick(world, 101);
+        manager.upsertPersistent(key, Vec3.ZERO, RVP_LightSourceType.EO_JAMMER, RVP_LightParameters.eoJammer(), axis);
+        assertEquals(light, manager.collectVisible(Vec3.ZERO, 0, 256, 8, value -> true).get(0));
+    }
+
+    @Test
+    void eoJammerOwnVehicleLightKeepsSurfaceIlluminationWithoutHalo() {
+        // 本车只摘光晕：照亮半径、亮度、表面权重必须逐项保持，否则观瞄里车体会跟着变暗。
+        UUID key = UUID.randomUUID();
+        Vec3 axis = new Vec3(0, 0, 1);
+        RVP_ScreenLightManager manager = new RVP_ScreenLightManager();
+        manager.beginWorld(new Object(), 100);
+        RVP_LightParameters full = RVP_LightParameters.eoJammer();
+        manager.upsertPersistent(key, Vec3.ZERO, RVP_LightSourceType.EO_JAMMER, full.withoutHalo(), axis);
+        var light = manager.collectVisible(Vec3.ZERO, 0, 256, 8, value -> true).get(0);
+        assertEquals(full.radius(), light.radius());
+        assertEquals(full.intensity(), light.intensity(), .0001F);
+        assertEquals(full.surfaceWeight(), light.surfaceWeight(), .0001F);
+        assertEquals(axis, light.hemisphereAxis());
+        assertEquals(0F, light.haloRadius());
+        assertEquals(0F, light.haloIntensity());
+        assertFalse(light.bloom());
+        // 下一帧下车（不再是本车）换回完整预设，光晕立刻回来。
+        manager.upsertPersistent(key, Vec3.ZERO, RVP_LightSourceType.EO_JAMMER, full, axis);
+        var restored = manager.collectVisible(Vec3.ZERO, 0, 256, 8, value -> true).get(0);
+        assertEquals(0.48F, restored.haloIntensity(), .0001F);
+        assertTrue(restored.haloRadius() > 0F);
+    }
+
+    @Test
+    void eoJammerPerPlateLightsShareOwnerAndClearTogether() {
+        // 一块玻片一盏灯：左右两块要同时可见，且各自有独立位置；按车的归属一次撤干净。
+        UUID vehicle = UUID.randomUUID();
+        UUID left = UUID.nameUUIDFromBytes("left".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        UUID right = UUID.nameUUIDFromBytes("right".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        RVP_ScreenLightManager manager = new RVP_ScreenLightManager();
+        manager.beginWorld(new Object(), 100);
+        Vec3 axis = new Vec3(0, 0, 1);
+        manager.upsertPersistent(left, vehicle, new Vec3(-1.44, 2.06, 2.54),
+                RVP_LightSourceType.EO_JAMMER, RVP_LightParameters.eoJammer(), axis);
+        manager.upsertPersistent(right, vehicle, new Vec3(1.50, 2.06, 2.54),
+                RVP_LightSourceType.EO_JAMMER, RVP_LightParameters.eoJammer(), axis);
+        var lights = manager.collectVisible(Vec3.ZERO, 0, 256, 8, value -> true);
+        assertEquals(2, lights.size());
+        // 对外报告的键是归属实体，本车遮挡自己灯的那条判断才认得出这是本车的灯。
+        assertEquals(vehicle, lights.get(0).persistentKey());
+        assertEquals(vehicle, lights.get(1).persistentKey());
+        manager.removePersistent(left);
+        assertEquals(1, manager.collectVisible(Vec3.ZERO, 0, 256, 8, value -> true).size());
+        manager.removePersistent(vehicle);
+        assertTrue(manager.collectVisible(Vec3.ZERO, 0, 256, 8, value -> true).isEmpty());
+    }
+
+    @Test
+    void eoJammerNightVisionPresetIsWiderAndBrighterThanNakedEye() {
+        // 红外干扰灯在像增强管里被放大：同一盏灯在夜视下半径更大、光晕更亮。
+        UUID key = UUID.randomUUID();
+        RVP_ScreenLightManager manager = new RVP_ScreenLightManager();
+        manager.beginWorld(new Object(), 100);
+        manager.upsertPersistent(key, Vec3.ZERO, RVP_LightSourceType.EO_JAMMER,
+                RVP_LightParameters.eoJammerNightVision(), new Vec3(0, 0, 1));
+        var nightVision = manager.collectVisible(Vec3.ZERO, 0, 256, 8, value -> true).get(0);
+        assertEquals(4.5F, nightVision.radius());
+        assertEquals(4.5F, nightVision.haloRadius());
+        // 3.0 × 0.4 = 1.2，相对肉眼那档的 0.48 是 2.5 倍。
+        assertEquals(1.2F, nightVision.haloIntensity(), .0001F);
+    }
 }

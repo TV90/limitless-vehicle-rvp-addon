@@ -74,7 +74,29 @@ public record RVP_LightParameters(boolean enabled, float red, float green, float
 
     /** 光电干扰机玻片：小半径红光，照亮镜片周围一小圈，不做整车泛光。 */
     public static RVP_LightParameters eoJammer() {
-        return new RVP_LightParameters(true, 1, 0.12F, 0.08F, 2.4F, 1.2F, 3, 0, 0.18F, 1.8F, true, 0, 0);
+        // 干扰机归入总设置分组，该分组不开放半径/权重倍率，因此下面每一项都是最终生效值。
+        // 2.4 格照亮兼作光晕半径（该分组没有独立的光晕倍率），从"泛光"收成"一盏灯"。
+        return new RVP_LightParameters(true, 1, 0.12F, 0.08F, 2.4F, 1.2F, 3, 0, 0.5F, 1.8F, true, 0, 0);
+    }
+
+    /**
+     * 夜视仪下的光电干扰机：窗帘式干扰灯绝大部分能量在红外波段，肉眼只看到微弱红晕，
+     * 像增强管却把它整片放大，所以同一盏灯在夜视下半径更大、亮度更高。
+     * 光晕那一路仍按 {@code RVP_ScreenLightManager.EO_JAMMER_HALO_SCALE} 折算，
+     * 3.0 × 0.4 = 1.2 相对肉眼那档 1.2 × 0.4 = 0.48 是 2.5 倍。
+     */
+    public static RVP_LightParameters eoJammerNightVision() {
+        return new RVP_LightParameters(true, 1, 0.12F, 0.08F, 4.5F, 3.0F, 3, 0, 0.5F, 1.8F, true, 0, 0);
+    }
+
+    /**
+     * 关掉这盏灯的光晕，保留照亮：渲染端按 {@code bloom} 只把 haloRadius/haloIntensity 归零，
+     * 表面受光走 intensity 与 surfaceWeight，两条路互不影响。
+     * 用于自己车的干扰灯——镜头就贴在玻片后面，光晕会糊住整个画面，但环境受光仍然要有。
+     */
+    public RVP_LightParameters withoutHalo() {
+        return new RVP_LightParameters(enabled, red, green, blue, radius, intensity,
+                durationTicks, mergeWindowTicks, surfaceWeight, decay, false, volumetricStrength, blockLightLevel);
     }
 
     /** 按真实阶段/年龄生成独立喷口自发光；所有数值由代码控制，不加入武器 JSON。 */

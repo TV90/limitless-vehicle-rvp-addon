@@ -33,6 +33,8 @@ public final class RVP_LightingConfig {
     private static final ForgeConfigSpec.DoubleValue MAX_DISTANCE;
     /** 总强度倍率，0 也能完全关闭绘制。 */
     private static final ForgeConfigSpec.DoubleValue INTENSITY;
+    /** 发出光源的载具自身结构盒是否遮挡这盏灯；默认关闭，保留给 A/B 对比。 */
+    private static final ForgeConfigSpec.BooleanValue SOURCE_VEHICLE_OCCLUDES_OWN_LIGHT;
 
     static {
         ForgeConfigSpec.Builder client = new ForgeConfigSpec.Builder();
@@ -50,6 +52,9 @@ public final class RVP_LightingConfig {
         MAX_LIGHTS = client.comment("每帧光源上限，0 关闭。默认 8。") .defineInRange("maxLights", 8, 0, 8);
         MAX_DISTANCE = client.comment("光源最大观察距离，单位格。") .defineInRange("maxDistance", 256.0, 16, 1024);
         INTENSITY = client.comment("屏幕光强度倍率，0 关闭。") .defineInRange("intensity", 1.0, 0, 2);
+        SOURCE_VEHICLE_OCCLUDES_OWN_LIGHT = client.comment("开启后，发出屏幕光的那辆载具自己的结构碰撞盒会像其它遮挡体一样挡住这盏灯。",
+                        "默认关闭：干扰机玻片的灯锚在车体盒子内，逐盒车壳会把这盏灯整个埋住，导致只有玻片变红、周围地面不受光。")
+                .define("sourceVehicleOccludesOwnLight", false);
         CLIENT_SPEC = client.build();
     }
 
@@ -97,8 +102,11 @@ public final class RVP_LightingConfig {
         return (CLIENT_SPEC.isLoaded() ? INTENSITY.get().floatValue() : 1)
                 * RVP_LightRuntimeTuning.get(Group.global, Parameter.brightness);
     }
+    /** 发出光源的载具是否参与遮挡自己的灯；未加载配置时按不遮挡处理。 */
+    public static boolean sourceVehicleOccludesOwnLight() { return CLIENT_SPEC.isLoaded() && SOURCE_VEHICLE_OCCLUDES_OWN_LIGHT.get(); }
     /** 本轮固定返回 false；已有 TOML 的 blockLight=true 也不能开启真实方块光。 */
     public static boolean blockLightEnabled() { return P5_ENABLED; }
+
     /** 返回 P5 保留代码的条目预算；当前不会放置新光源。 */
     public static int maxBlockLights() { return MAX_BLOCK_LIGHT_COUNT; }
     /** 返回 P5 保留代码的单次寿命预算，单位 tick。 */

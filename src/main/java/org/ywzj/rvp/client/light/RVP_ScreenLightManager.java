@@ -18,6 +18,11 @@ public final class RVP_ScreenLightManager {
     public static final RVP_ScreenLightManager INSTANCE = new RVP_ScreenLightManager();
     /** 待筛选光源的内存硬上限，独立于显卡八盏预算。 */
     static final int MAX_TRACKED = 128;
+    /**
+     * 干扰机光晕相对自身亮度的比例：人眼看红外干扰灯只该是一圈微弱红晕，
+     * 主体是玻片自己的顶点红光；表面受光不吃这个折扣，只有光晕那一路减半再减半。
+     */
+    static final float EO_JAMMER_HALO_SCALE = 0.4F;
     /** 短光句柄到状态的有序表，过载时先淘汰旧光。 */
     private final Map<Long, Entry> transients = new LinkedHashMap<>();
     /** 发动机每 UUID 一盏；不使用粒子作为键。 */
@@ -68,25 +73,48 @@ public final class RVP_ScreenLightManager {
         // 调用有界淘汰，短时间大量爆炸也不无限申请内存。
         reserveSpace();
         long id = ++nextId;
-        transients.put(id, new Entry(position, type, sourceKey, parameters, startTime,
-                startTime + parameters.durationTicks()));
+        transients.put(id, new Entry(position, type, sourceKey, null, parameters, startTime,
+                startTime + parameters.durationTicks(), null));
         return id;
     }
 
     /** 更新持续光；两 tick 没有心跳就失效，实体移除与远端超时无需依赖粒子存活。 */
     public void upsertPersistent(UUID key, Vec3 position, RVP_LightParameters parameters) {
+        // 调用统一持续光入口；发动机沿用原类型与全向球光。
+        upsertPersistent(key, position, RVP_LightSourceType.ROCKET_ENGINE, parameters, null);
+    }
+
+    /**
+     * 持续光可指定来源类型与半球轴。
+     * <p>{@code type} 决定运行时调参分组、光晕半径与喷口 HDR 那一路是否套用；
+     * {@code hemisphereAxis} 只影响表面受光的方向，null 即普通全向球光。</p>
+     */
+    public void upsertPersistent(UUID key, Vec3 position, RVP_LightSourceType type,
+            RVP_LightParameters parameters, Vec3 hemisphereAxis) {
+        upsertPersistent(key, key, position, type, parameters, hemisphereAxis);
+    }
+
+    /**
+     * 持续光可另指定归属实体：一辆车登记多盏灯（如窗帘干扰机左右两块玻片）时，
+     * 每盏灯有自己的键，归属都是这辆车，失效时 {@link #removePersistent(UUID)} 按车一次清掉。
+     */
+    public void upsertPersistent(UUID key, UUID owner, Vec3 position, RVP_LightSourceType type,
+            RVP_LightParameters parameters, Vec3 hemisphereAxis) {
         if (world == null || key == null || !valid(position, parameters)) {
             // 调用持续光删除入口，关闭配置立即生效。
             removePersistent(key);
             return;
         }
         if (!persistent.containsKey(key)) { reserveSpace(); }
-        persistent.put(key, new Entry(position, RVP_LightSourceType.ROCKET_ENGINE, key,
-                parameters, gameTime, gameTime + 2));
+        persistent.put(key, new Entry(position, type, key, owner, parameters, gameTime,
+                gameTime + 2, hemisphereAxis));
     }
 
-    /** 燃尽或移除时立即取消对应发动机光。 */
-    public void removePersistent(UUID key) { persistent.remove(key); }
+    /** 燃尽或移除时立即取消对应发动机光；按归属删除时同一辆车的全部灯一起清掉。 */
+    public void removePersistent(UUID key) {
+        persistent.remove(key);
+        persistent.entrySet().removeIf(entry -> key.equals(entry.getValue().owner));
+    }
 
     /** 默认爆炸实例被淘汰时，取消它尚未结束的短光。 */
     public void removeTransient(long handle) { transients.remove(handle); }
@@ -113,7 +141,8 @@ public final class RVP_ScreenLightManager {
         List<RVP_ScreenLight> sampled = new ArrayList<>(transients.size() + persistent.size());
         double now = gameTime + Math.max(0, Math.min(1, Float.isFinite(partialTick) ? partialTick : 0));
         transients.values().forEach(entry -> sampled.add(entry.sample(now, null)));
-        persistent.forEach((key, entry) -> sampled.add(entry.sample(now, key)));
+        // 持续光对外报告的键是归属实体（一辆车的多盏灯共用），自身遮挡判定才认得出"这是本车的灯"。
+        persistent.forEach((key, entry) -> sampled.add(entry.sample(now, entry.owner)));
         // 调用统一裁剪，灯的数量与粒子数量完全无关。
         return RVP_ScreenLightBudget.collect(sampled, camera, distance, limit, visible);
     }
@@ -170,17 +199,22 @@ public final class RVP_ScreenLightManager {
         private final RVP_LightSourceType type;
         /** 稳定炮口键或空。 */
         private final Object sourceKey;
+        /** 归属实体：一辆车多盏灯时它们共用同一个归属，用于整体清除与自身遮挡判定。 */
+        private final UUID owner;
         /** 安全参数。 */
         private RVP_LightParameters parameters;
         /** 本轮亮起的世界 tick。 */
         private long start;
         /** 持续光的心跳到期tick；短光按当前倍率和出生年龄动态计算实际终点。 */
         private long expires;
+        /** 半球光轴向（世界空间）；null 为全向球光，只有持续光会用。 */
+        private final Vec3 hemisphereAxis;
 
-        private Entry(Vec3 position, RVP_LightSourceType type, Object sourceKey,
-                RVP_LightParameters parameters, long start, long expires) {
-            this.position = position; this.type = type; this.sourceKey = sourceKey;
+        private Entry(Vec3 position, RVP_LightSourceType type, Object sourceKey, UUID owner,
+                RVP_LightParameters parameters, long start, long expires, Vec3 hemisphereAxis) {
+            this.position = position; this.type = type; this.sourceKey = sourceKey; this.owner = owner;
             this.parameters = parameters; this.start = start; this.expires = expires;
+            this.hemisphereAxis = hemisphereAxis;
         }
 
         /** 只比较出生年龄，不因调参重设开始时间，也不按渲染帧推进寿命。 */
@@ -200,7 +234,7 @@ public final class RVP_ScreenLightManager {
             float duration = lifetimeTicks(type, parameters);
             float progress = (float) Math.max(0, Math.min(1, age / duration));
             float fade = key == null ? (float) Math.pow(1 - progress, tuned.decay()) : 1;
-            if (type != RVP_LightSourceType.ROCKET_ENGINE) {
+            if (key == null && type != RVP_LightSourceType.ROCKET_ENGINE) {
                 // 调用整盏短光的平滑包络，照亮和光晕在同一时刻平滑结束。
                 fade = RVP_TransientLightTimeline.fade(age, parameters.durationTicks(), parameters.decay(),
                         RVP_LightRuntimeTuning.get(group, RVP_LightRuntimeTuning.Parameter.decayScale));
@@ -208,6 +242,10 @@ public final class RVP_ScreenLightManager {
             float haloIntensity = type == RVP_LightSourceType.EXPLOSION
                     ? RVP_LightRuntimeTuning.get(group, RVP_LightRuntimeTuning.Parameter.worldHaloIntensity) * fade
                     : tuned.intensity() * fade;
+            // 干扰机只压光晕那一路：intensity 同时喂表面受光，直接改预设会把环境受光一起削掉。
+            if (type == RVP_LightSourceType.EO_JAMMER) {
+                haloIntensity *= EO_JAMMER_HALO_SCALE;
+            }
             float green = tuned.green();
             float blue = tuned.blue();
             if (type == RVP_LightSourceType.EXPLOSION) {
@@ -220,7 +258,7 @@ public final class RVP_ScreenLightManager {
                     tuned.bloom() ? haloIntensity : 0,
                     key == null ? (float) Math.max(0, duration - age) : (float) Math.max(0, expires - now),
                     type, key, tuned.surfaceWeight(),
-                    tuned.bloom(), tuned.volumetricStrength());
+                    tuned.bloom(), tuned.volumetricStrength(), hemisphereAxis);
         }
     }
 }

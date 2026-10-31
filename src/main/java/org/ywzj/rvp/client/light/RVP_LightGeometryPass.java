@@ -20,6 +20,7 @@ import org.joml.Vector3f;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.*;
 import org.ywzj.rvp.client.render.RVP_GlStateSync;
+import org.ywzj.rvp.config.RVP_LightingConfig;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.structure.VehicleCubeOBB;
@@ -252,23 +253,28 @@ final class RVP_LightGeometryPass {
                     if (bodyCount >= MAX_BODIES || cube.position == null || cube.rotation == null) { continue; }
                     Vec3 center = cube.positionO == null ? cube.position : cube.positionO.lerp(cube.position, partialTick);
                     Quaternionf rotation = cube.rotationO == null ? new Quaternionf(cube.rotation) : new Quaternionf(cube.rotationO).slerp(cube.rotation, partialTick);
-                    // 调用已有结构盒半长，与车身/炮塔当前插值姿态一起提交。
-                    addBody(center, cube.obb().extents(), rotation, lights, camera);
+                    // 调用已有结构盒半长，与车身/炮塔当前插值姿态一起提交；发出该灯的载具默认不遮自己的灯。
+                    addBody(center, cube.obb().extents(), rotation, lights, camera, vehicle.getUUID());
                 }
             } else {
                 Vec3 offset = entity.getPosition(partialTick).subtract(entity.position());
                 AABB box = entity.getBoundingBox().move(offset);
                 addBody(box.getCenter(), new Vector3f((float) box.getXsize() / 2, (float) box.getYsize() / 2, (float) box.getZsize() / 2),
-                        new Quaternionf(), lights, camera);
+                        new Quaternionf(), lights, camera, null);
             }
         }
     }
 
     /** 每个盒只关联能照到它的光源；先做 CPU 半径过滤，显卡避免遍历所有无关实体。 */
-    private static void addBody(Vec3 center, Vector3f extents, Quaternionf rotation, List<RVP_ScreenLight> lights, Vec3 camera) {
+    private static void addBody(Vec3 center, Vector3f extents, Quaternionf rotation, List<RVP_ScreenLight> lights,
+            Vec3 camera, UUID sourceVehicle) {
+        boolean occludeOwn = RVP_LightingConfig.sourceVehicleOccludesOwnLight();
         int mask = 0;
         for (int index = 0; index < lights.size(); index++) {
-            if (center.distanceTo(lights.get(index).position()) <= lights.get(index).radius() + extents.length()) { mask |= 1 << index; }
+            RVP_ScreenLight light = lights.get(index);
+            // 调用本车遮灯开关；关闭时发出这盏灯的载具结构盒不参与该灯的光路，避免车体把自己的灯埋进盒子里。
+            if (!occludeOwn && sourceVehicle != null && sourceVehicle.equals(light.persistentKey())) { continue; }
+            if (center.distanceTo(light.position()) <= light.radius() + extents.length()) { mask |= 1 << index; }
         }
         if (mask == 0) { return; }
         int at = bodyCount++ * BODY_STRIDE;

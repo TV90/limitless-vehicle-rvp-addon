@@ -38,6 +38,11 @@ public class RVP_NvgHandler implements ResourceManagerReloadListener {
     private static final ResourceLocation NVG_EFFECT =
             RVP_MOD.resourceLocation("ywzj_rvp:shaders/post/night_vision.json");
 
+    /** 紧核模糊半径（像素）：保住光源核心亮度。5 抽样高斯按 ±1.38×、±3.23× 该值取样。 */
+    private static final float BLUR_SPREAD = 2.0F;
+    /** 宽核模糊半径（像素）：铺光源外围裙边。两尺度在合成 pass 里分别加权相加。 */
+    private static final float BLUR_SPREAD_WIDE = 8.0F;
+
     private static PostChain postChain;
     private static int lastWidth;
     private static int lastHeight;
@@ -117,12 +122,19 @@ public class RVP_NvgHandler implements ResourceManagerReloadListener {
             if (effect.safeGetUniform("Resolution") != null) {
                 effect.safeGetUniform("Resolution").set(width, height);
             }
-            // 两遍模糊共用同一 program，靠 BlurDir 区分横竖
+            // 两遍模糊共用同一 program，靠 BlurDir 区分横竖；BlurDir 的模长就是核半径（像素）。
+            // 宽核程序名以 nvg_blur_wide_* 结尾，与紧核分支互不包含，先判宽核。
+            if (name.endsWith("nvg_blur_wide_h") && effect.safeGetUniform("BlurDir") != null) {
+                effect.safeGetUniform("BlurDir").set(BLUR_SPREAD_WIDE, 0.0F);
+            }
+            if (name.endsWith("nvg_blur_wide_v") && effect.safeGetUniform("BlurDir") != null) {
+                effect.safeGetUniform("BlurDir").set(0.0F, BLUR_SPREAD_WIDE);
+            }
             if (name.endsWith("nvg_blur_h") && effect.safeGetUniform("BlurDir") != null) {
-                effect.safeGetUniform("BlurDir").set(1.0F, 0.0F);
+                effect.safeGetUniform("BlurDir").set(BLUR_SPREAD, 0.0F);
             }
             if (name.endsWith("nvg_blur_v") && effect.safeGetUniform("BlurDir") != null) {
-                effect.safeGetUniform("BlurDir").set(0.0F, 1.0F);
+                effect.safeGetUniform("BlurDir").set(0.0F, BLUR_SPREAD);
             }
             if (name.endsWith("nvg_composite") && effect.safeGetUniform("Time") != null) {
                 effect.safeGetUniform("Time").set(time);

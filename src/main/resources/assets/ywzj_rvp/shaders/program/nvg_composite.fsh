@@ -9,11 +9,16 @@
 //   3) 结构：光源眩光、过曝烧白保持不变。
 uniform sampler2D DiffuseSampler;
 uniform sampler2D BloomSampler;
+// 第二尺度光晕：宽核模糊的结果，只负责外围裙边。
+// 单尺度做不到"中心亮 + 外围散"——归一化高斯把核拉宽，小光源的峰值就按 1/半径² 掉下去，
+// 所以紧核保核心、宽核铺裙边，两路分别给强度。
+uniform sampler2D BloomWideSampler;
 
 uniform vec2 Resolution;
 uniform vec3 PhosphorColor;
 uniform float Gain;
 uniform float BloomIntensity;
+uniform float BloomWideIntensity;
 uniform float Whiten;
 uniform float ColorMix;
 uniform float Time;
@@ -60,9 +65,18 @@ void main() {
     vec3 natural = c * (g * 1.25);
     vec3 col = mix(phosphor, natural, clamp(ColorMix, 0.0, 1.0));
 
-    // 光源眩光：模糊后的光源掩码加性叠加
+    // 光源眩光：紧核保中心亮度，宽核铺外围裙边，两路分别叠加。
+    // 必须只取亮度、不能拿原色：像增强管是单色的，上一版直接把光源原色（干扰机的红）
+    // 加在荧光绿底上，Whiten 又要 over≥0.80 才开始去色，中段整片就成了用户看到的红斑。
+    // 取峰值通道而不是 luma——饱和红光的 luma 只有 0.34 倍，会把本来该刺眼的灯砍掉三分之二。
     vec3 bloom = texture(BloomSampler, texCoord).rgb;
-    col += bloom * BloomIntensity;
+    vec3 bloomWide = texture(BloomWideSampler, texCoord).rgb;
+    float bloomL = max(max(bloom.r, bloom.g), bloom.b);
+    float bloomWideL = max(max(bloomWide.r, bloomWide.g), bloomWide.b);
+    // 越接近核心越烧白，外围仍是荧光绿，看起来像管子里过曝而不是光源本身的颜色。
+    vec3 flareTint = mix(vec3(0.55, 1.00, 0.62), vec3(1.0), clamp(bloomL * 1.30, 0.0, 1.0));
+    col += flareTint * bloomL * BloomIntensity
+            + vec3(0.48, 1.00, 0.58) * bloomWideL * BloomWideIntensity;
 
     // 过曝去色：亮部向纯白烧穿
     float over = max(max(col.r, col.g), col.b);

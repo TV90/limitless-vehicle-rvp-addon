@@ -62,6 +62,15 @@ uniform vec4 LightShape6;
 uniform vec4 LightPositionRadius7;
 uniform vec4 LightColorIntensity7;
 uniform vec4 LightShape7;
+// 半球光轴向（观察空间 xyz）；w>0.5 表示只照亮该轴的正半侧，w=0 为全向球光。
+uniform vec4 LightDirection0;
+uniform vec4 LightDirection1;
+uniform vec4 LightDirection2;
+uniform vec4 LightDirection3;
+uniform vec4 LightDirection4;
+uniform vec4 LightDirection5;
+uniform vec4 LightDirection6;
+uniform vec4 LightDirection7;
 in vec2 screenUV;
 out vec4 fragColor;
 
@@ -236,6 +245,7 @@ void main() {
     vec4 haloColors[8] = vec4[8](LightHaloColorIntensity0, LightHaloColorIntensity1, LightHaloColorIntensity2, LightHaloColorIntensity3, LightHaloColorIntensity4, LightHaloColorIntensity5, LightHaloColorIntensity6, LightHaloColorIntensity7);
     vec4 shapes[8] = vec4[8](LightShape0, LightShape1, LightShape2, LightShape3, LightShape4, LightShape5, LightShape6, LightShape7);
     vec4 emissions[8] = vec4[8](LightEmission0, LightEmission1, LightEmission2, LightEmission3, LightEmission4, LightEmission5, LightEmission6, LightEmission7);
+    vec4 directions[8] = vec4[8](LightDirection0, LightDirection1, LightDirection2, LightDirection3, LightDirection4, LightDirection5, LightDirection6, LightDirection7);
     vec4 background = texture(SceneColor, screenUV);
     vec4 sampled = scenePosition(screenUV);
     if (sampled.w < -0.5) {
@@ -279,12 +289,17 @@ void main() {
         float surface = 0.0;
         vec3 delta = light.xyz - position;
         float distanceToLight = length(delta);
+        // 半球光：directions[index].w > 0.5 时只照亮轴向的正半侧；判据取"光源指向表面"方向与轴的夹角，背面片元不受光。
+        float hemisphere = 1.0;
+        if (directions[index].w > 0.5 && distanceToLight > 0.0001) {
+            hemisphere = smoothstep(-0.12, 0.12, dot(-delta / distanceToLight, directions[index].xyz));
+        }
         if (hasSurface && distanceToLight < light.w && shape.x > 0.0) {
             float radial = distanceToLight / light.w;
             float facing = distanceToLight < 0.0001 ? 1.0 : max(0.0, dot(normal, delta / distanceToLight));
             if (facing > 0.0) {
                 surface = pow(max(0.0, 1.0 - radial * radial), 2.0)
-                        * facing * shape.x * visibility(index, position, normal, light.xyz);
+                        * facing * shape.x * hemisphere * visibility(index, position, normal, light.xyz);
             }
         }
         float volume = shape.y > 0.0

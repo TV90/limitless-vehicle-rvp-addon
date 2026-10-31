@@ -2,7 +2,8 @@
   "targets": [
     "swap",
     "nvg_light",
-    "nvg_blur"
+    "nvg_blur",
+    "nvg_blur_wide"
   ],
   "passes": [
     {
@@ -21,6 +22,16 @@
       "outtarget": "nvg_light"
     },
     {
+      "name": "ywzj_rvp:nvg_blur_wide_h",
+      "intarget": "nvg_light",
+      "outtarget": "nvg_blur_wide"
+    },
+    {
+      "name": "ywzj_rvp:nvg_blur_wide_v",
+      "intarget": "nvg_blur_wide",
+      "outtarget": "nvg_blur"
+    },
+    {
       "name": "ywzj_rvp:nvg_composite",
       "intarget": "minecraft:main",
       "outtarget": "swap",
@@ -28,6 +39,10 @@
         {
           "name": "BloomSampler",
           "id": "nvg_light"
+        },
+        {
+          "name": "BloomWideSampler",
+          "id": "nvg_blur"
         }
       ]
     },

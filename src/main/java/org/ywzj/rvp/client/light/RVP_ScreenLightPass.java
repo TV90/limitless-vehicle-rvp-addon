@@ -377,6 +377,7 @@ public final class RVP_ScreenLightPass {
                 lightShader.safeGetUniform("LightHaloColorIntensity" + index).set(0F, 0F, 0F, 0F);
                 lightShader.safeGetUniform("LightShape" + index).set(0F, 0F, 0F, 0F);
                 lightShader.safeGetUniform("LightEmission" + index).set(0F, 0F, 0F, 0F);
+                lightShader.safeGetUniform("LightDirection" + index).set(0F, 0F, 0F, 0F);
                 continue;
             }
             RVP_ScreenLight light = lights.get(index);
@@ -399,7 +400,19 @@ public final class RVP_ScreenLightPass {
                         emission.coreIntensity() * RVP_LightingConfig.intensity(),
                         emission.haloIntensity() * RVP_LightingConfig.intensity());
             } else { lightShader.safeGetUniform("LightEmission" + index).set(0F, 0F, 0F, 0F); }
+            // 半球光轴向：w=1 交给 Shader 做前后半球判断，全向球光写 0 保持整圈受光。
+            Vector3f axis = viewDirection(light.hemisphereAxis());
+            lightShader.safeGetUniform("LightDirection" + index).set(axis.x, axis.y, axis.z,
+                    light.hemisphereAxis() == null ? 0F : 1F);
         }
+    }
+
+    /** 把世界方向换算到观察空间；只转方向不转位置，也不做相机位置相减。 */
+    static Vector3f viewDirection(Vec3 direction) {
+        if (direction == null) { return new Vector3f(); }
+        Vector3f rotated = VIEW.transformDirection(new Vector3f((float) direction.x, (float) direction.y,
+                (float) direction.z));
+        return rotated.lengthSquared() > 1.0E-12F ? rotated.normalize() : new Vector3f();
     }
 
     /** 核心独立达到显示峰值；使用硬件混合读取现有颜色，不增加背景复制或引入读写反馈。 */
