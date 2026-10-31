@@ -7,11 +7,13 @@ import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.client.debug.RVP_ShockwaveTuningCommands;
 import org.ywzj.rvp.client.light.RVP_ScreenLightDebugCommands;
 import org.ywzj.rvp.config.RVP_LightingConfig;
+import org.ywzj.rvp.light.RVP_HaloDecayCurve;
 import org.ywzj.rvp.light.RVP_LightRuntimeTuning;
 import org.ywzj.rvp.light.RVP_LightRuntimeTuning.Parameter;
 import org.ywzj.rvp.weapon.visual.RVP_ShockwaveRuntimeTuning;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalDouble;
@@ -31,8 +33,8 @@ public final class RVP_ScreenSpaceTuningModule implements RVP_TuningModule {
                 if (parameter.supports(group)) { options.add(lightOption(group, parameter)); }
             }
             String title = switch (group) {
-                case global -> "环境光总设置";
-                case explosion -> "爆炸照亮与光晕";
+                case global -> "环境光与光晕总设置";
+                case explosion -> "爆炸照亮、光晕与天空";
                 case muzzle -> "炮口照亮与光晕";
                 case engine -> "发动机喷焰与照亮";
                 case bloom -> "多层柔化光晕";
@@ -90,35 +92,66 @@ public final class RVP_ScreenSpaceTuningModule implements RVP_TuningModule {
             case brightness -> "照亮亮度倍率";
             case radiusScale -> "照亮半径倍率";
             case haloRadiusScale -> "光晕半径倍率";
+            case haloShrink -> "光晕收缩强度";
+            case skyPeakBrightness -> "天空峰值亮度";
+            case skyHoldTicks -> "天空峰值保持刻数";
+            case skyFadeTicks -> "天空淡出刻数";
+            case skyContract -> "天空收拢幅度";
             case red -> "红色分量倍率";
             case green -> "绿色分量倍率";
             case blue -> "蓝色分量倍率";
             case surface -> "表面受光倍率";
             case decayScale -> "衰减速度倍率";
-            case coreIntensity -> "喷焰白热核心亮度";
+            case haloDecayCurve -> "光晕亮度衰减曲线";
+            case haloPeakHoldTicks -> "光晕高亮保持时间";
+            case haloFadeOutTicks -> "光晕独立淡出时间";
+            case haloDropFraction -> "快速降亮占寿命比例";
+            case haloLowBrightness -> "保持段相对亮度";
+            case haloHoldUntil -> "低亮保持至寿命比例";
+            case coreIntensity -> group == RVP_LightRuntimeTuning.Group.engine ? "喷焰白热核心亮度" : "爆炸白热核心亮度";
             case haloIntensity -> "喷焰外围橙焰亮度";
+            case coreHaloIntensity -> "核心外围光团亮度";
+            case coreRadius -> "自发光核心半径";
+            case coreRadiusScale -> "核心半径当量倍率";
+            case coreShrink -> "核心缩小幅度";
+            case coreHaloRadius -> "核心外围光团半径";
+            case coreHaloScale -> "核心光团当量缩放";
             case worldHaloIntensity -> "广域光晕独立亮度";
             case inputPeak -> "送入柔化光晕的亮度上限";
             case blurScale -> "光晕柔化范围倍率";
             case nearStrength -> "近层光晕强度倍率";
             case farStrength -> "远层光晕强度倍率";
             case distanceScale -> "环境光观察距离倍率";
+            case skyDistance -> "天空散射专用距离";
             case smokeBrightness -> "烟雾额外受光倍率";
         };
         // 直接绑定同一个覆盖表；恢复开关时重新读取 TOML，不能把面板值当成配置默认。
         return new RVP_TuningOption(parameter.name(), title, parameter.description + "；下一显示帧生效。",
-                parameter == Parameter.enabled ? "开关" : "系数", parameter == Parameter.enabled
-                ? RVP_TuningOption.Control.TOGGLE : RVP_TuningOption.Control.NUMBER,
+                parameter == Parameter.enabled ? "开关" : parameter == Parameter.haloDecayCurve ? "曲线"
+                : parameter == Parameter.haloPeakHoldTicks || parameter == Parameter.haloFadeOutTicks
+                        || parameter == Parameter.skyHoldTicks || parameter == Parameter.skyFadeTicks
+                ? "刻（20刻=1秒）"
+                : parameter == Parameter.coreRadius || parameter == Parameter.coreHaloRadius
+                        || parameter == Parameter.skyDistance ? "格"
+                : parameter == Parameter.coreShrink || parameter == Parameter.coreRadiusScale
+                        || parameter == Parameter.coreHaloScale
+                        || parameter == Parameter.skyPeakBrightness ? "倍"
+                : parameter == Parameter.coreIntensity || parameter == Parameter.haloIntensity
+                        || parameter == Parameter.coreHaloIntensity ? "亮度（HDR）" : "系数",
+                parameter == Parameter.enabled ? RVP_TuningOption.Control.TOGGLE
+                : parameter == Parameter.haloDecayCurve ? RVP_TuningOption.Control.CHOICE : RVP_TuningOption.Control.NUMBER,
                 decimal(parameter.min), decimal(parameter.max), 0,
                 () -> lightDefault(group, parameter), () -> {
                     Float value = RVP_LightRuntimeTuning.overrides().getOrDefault(group, Map.of()).get(parameter);
                     return value == null ? OptionalDouble.empty() : OptionalDouble.of(decimal(value));
                 }, value -> RVP_LightRuntimeTuning.set(group, parameter, (float) value),
-                () -> RVP_LightRuntimeTuning.reset(group, parameter));
+                () -> RVP_LightRuntimeTuning.reset(group, parameter), parameter == Parameter.haloDecayCurve
+                ? Arrays.stream(RVP_HaloDecayCurve.values()).map(RVP_HaloDecayCurve::title).toList() : List.of());
     }
 
     private static double lightDefault(RVP_LightRuntimeTuning.Group group, Parameter parameter) {
-        if (parameter != Parameter.enabled) { return decimal(parameter.defaultValue(group)); }
+        // 调用业务默认值入口，分组曲线未覆盖时应在面板中显示全局实际选择。
+        if (parameter != Parameter.enabled) { return decimal(RVP_LightRuntimeTuning.defaultValue(group, parameter)); }
         // 调用配置原值，避免临时覆盖污染“恢复默认”提示。
         return (switch (group) {
             case global -> RVP_LightingConfig.configuredScreenEnabled();

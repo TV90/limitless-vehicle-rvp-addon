@@ -22,6 +22,9 @@ public final class RVP_DefaultExplosionEventData {
     /** 事件参数中承载非武器专用声音档案的内部标记键。 */
     private static final String SOUND_PROFILE = "sound_profile";
 
+    /** 事件参数中承载“是否空中起爆”的键；决定客户端是否为这次爆炸生成屏幕光源。 */
+    private static final String AIR_BURST = "air_burst";
+
     /** 完整载具击毁声音档案的当前标记值。 */
     private static final String VEHICLE_SOUND_PROFILE = "vehicle";
 
@@ -52,6 +55,19 @@ public final class RVP_DefaultExplosionEventData {
      */
     public static String encode(RVP_EnumWeaponKind weaponKind, @Nullable String explosionSound,
                                 boolean cannonSound) {
+        // 旧调用点默认按“空中起爆”处理，保持加入 air_burst 之前的光源行为。
+        return encode(weaponKind, explosionSound, cannonSound, true);
+    }
+
+    /**
+     * 把服务端弹体类型、自定义音效、炮弹音效标记与起爆位置性质编码为规范化 JSON。
+     *
+     * @param explosionSound 自定义爆炸音效事件 ID（可空，空则不写入该键）
+     * @param cannonSound 是否让 MACHINEGUN 类型使用大口径炮弹音效档案
+     * @param airBurst 是否在空中起爆；false 时客户端不生成屏幕光源（照亮/光晕/核心/天空）
+     */
+    public static String encode(RVP_EnumWeaponKind weaponKind, @Nullable String explosionSound,
+                                boolean cannonSound, boolean airBurst) {
         RVP_EnumWeaponKind safeKind = weaponKind == null ? RVP_EnumWeaponKind.ROCKET : weaponKind;
         JsonObject data = new JsonObject();
         data.addProperty(WEAPON_KIND, safeKind.name().toLowerCase(Locale.ROOT));
@@ -61,6 +77,8 @@ public final class RVP_DefaultExplosionEventData {
         if (cannonSound) {
             data.addProperty(CANNON_SOUND, true);
         }
+        // 调用起爆性质标记：显式写布尔值，客户端据此决定是否建灯，不依赖缺省值猜测。
+        data.addProperty(AIR_BURST, airBurst);
         // 调用 RVP 视觉参数规范化器，保证事件载荷排序稳定并受统一字节上限约束。
         return RVP_VisualPresetDataCodec.canonicalize(data).orElse("{}");
     }
@@ -123,6 +141,41 @@ public final class RVP_DefaultExplosionEventData {
         } catch (RuntimeException ignored) {
             return null;
         }
+    }
+
+    /**
+     * 判断客户端收到的事件是否在空中起爆；缺失、畸形或非布尔值按 true 处理，
+     * 使加入该标记之前的事件保持原有“生成光源”的行为。
+     */
+    public static boolean decodeAirBurst(String canonicalJson) {
+        if (canonicalJson == null || canonicalJson.isBlank()) {
+            return true;
+        }
+        try {
+            JsonElement root = JsonParser.parseString(canonicalJson);
+            if (!root.isJsonObject()) {
+                return true;
+            }
+            JsonElement value = root.getAsJsonObject().get(AIR_BURST);
+            if (value == null || !value.isJsonPrimitive() || !value.getAsJsonPrimitive().isBoolean()) {
+                return true;
+            }
+            return value.getAsBoolean();
+        } catch (RuntimeException ignored) {
+            return true;
+        }
+    }
+
+    /**
+     * 唯一的“是否创建屏幕光源”判定：既要求事件允许闪光，也要求服务端标记为空中起爆。
+     *
+     * <p>地面/命中起爆只保留粒子、烟雾与声音，不再生成照亮、光晕、白热核心与天空染色。</p>
+     *
+     * @param flash 事件是否允许闪光
+     * @param canonicalJson 服务端事件载荷
+     */
+    public static boolean shouldEmitScreenLight(boolean flash, String canonicalJson) {
+        return flash && decodeAirBurst(canonicalJson);
     }
 
     /**

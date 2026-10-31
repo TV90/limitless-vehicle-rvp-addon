@@ -17,6 +17,7 @@ New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
     (Join-Path $PSScriptRoot 'ScreenLightShaderSources.java') `
     (Join-Path $projectRoot 'src/main/java/org/ywzj/rvp/light/RVP_LightParameters.java') `
     (Join-Path $projectRoot 'src/main/java/org/ywzj/rvp/light/RVP_BloomParameters.java') `
+    (Join-Path $projectRoot 'src/main/java/org/ywzj/rvp/light/RVP_HaloDecayCurve.java') `
     (Join-Path $projectRoot 'src/main/java/org/ywzj/rvp/light/RVP_TransientLightTimeline.java')
 if ($LASTEXITCODE -ne 0) { throw 'Screen light GPU regression compilation failed' }
 & (Join-Path $jdkBin 'java.exe') "-Dorg.lwjgl.system.SharedLibraryExtractPath=$outputDir/natives" `

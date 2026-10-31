@@ -5,7 +5,9 @@ import net.minecraftforge.client.event.RenderLevelStageEvent;
 import net.minecraftforge.client.event.ViewportEvent;
 import org.ywzj.rvp.client.light.RVP_LightSourceType;
 import org.ywzj.rvp.client.light.RVP_ScreenLightManager;
+import org.ywzj.rvp.client.light.RVP_SkyScatterTrace;
 import org.ywzj.rvp.light.RVP_LightParameters;
+import org.ywzj.rvp.light.RVP_LightRuntimeTuning;
 import org.ywzj.rvp.weapon.visual.api.RVP_VisualEffectEvent;
 
 /** 为成功创建的其它爆炸工厂附加同一层光，不另发事件、不改变原声音和震动。 */
@@ -24,6 +26,9 @@ final class RVP_LitVisualEffect implements RVP_ClientVisualEffect {
         RVP_ScreenLightManager.INSTANCE.beginWorld(level, level.getGameTime());
         handle = RVP_ScreenLightManager.INSTANCE.addTransient(event.position(), RVP_LightSourceType.EXPLOSION,
                 null, parameters, event.startGameTime());
+        // 调用天空散射追踪，记录组合效果的附加光是否登记成功。
+        RVP_SkyScatterTrace.lightRegistered(event.position(), handle, RVP_ScreenLightManager.INSTANCE.size(),
+                RVP_LightRuntimeTuning.skyIntensity(RVP_LightRuntimeTuning.Group.explosion, 1), 0);
     }
 
     @Override
@@ -63,6 +68,8 @@ final class RVP_LitVisualEffect implements RVP_ClientVisualEffect {
     public void close() {
         // 调用原关闭与灯光取消，预算淘汰和换世界保持一致。
         if (!delegateClosed) { delegate.close(); delegateClosed = true; }
+        // 调用天空散射追踪，记录组合效果的附加光是否被提前取消。
+        RVP_SkyScatterTrace.lightClosed(handle, "组合效果关闭（自然结束或预算淘汰）");
         RVP_ScreenLightManager.INSTANCE.removeTransient(handle);
     }
 

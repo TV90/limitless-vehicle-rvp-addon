@@ -35,6 +35,9 @@ public record RVP_LightParameters(boolean enabled, float red, float green, float
     private static final float ENGINE_CORE_RADIUS = 0.28F;
     /** 橙色气团相对核心的半径倍数。 */
     private static final float ENGINE_HALO_RADIUS_SCALE = 3.5F;
+    /** 白热核心的参考当量：爆炸半径 4 格时的基础半径（与本类 explosion 公式一致），核心与光团半径以它为 1 倍。 */
+    public static final float CORE_REFERENCE_BASE = 12F;
+
     /** 爆炸半径只用作视觉输入，不允许核爆把屏幕光半径扩大到整张地图。 */
     public static RVP_LightParameters explosion(float explosionRadius) {
         float safeRadius = Float.isFinite(explosionRadius) ? Math.max(0, explosionRadius) : 4;

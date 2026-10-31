@@ -171,32 +171,58 @@ public final class RVP_ScreenLightPass {
         // 调用帧输入失效，暂停、窗口变化和无光帧均不复用旧深度。
         FRAME.discard();
         Minecraft mc = Minecraft.getInstance();
-        if (mc.level == null || lightShader == null) { return; }
+        if (mc.level == null || lightShader == null) {
+            // 调用天空散射追踪，记录“着色器或世界不可用”这类整帧跳过。
+            RVP_SkyScatterTrace.skip(mc.level == null ? "客户端世界为空" : "屏幕光着色器未加载（资源重载失败）");
+            return;
+        }
         // 调用世界身份检查，渲染先于客户端 tick 的新世界首帧也能正确清理。
         RVP_ScreenLightManager.INSTANCE.beginWorld(mc.level, mc.level.getGameTime());
-        if (!hasVisualInputs()) { return; }
+        if (!hasVisualInputs()) {
+            // 调用天空散射追踪，区分“总开关关闭/画面强度为0/确实没有活动光”。
+            RVP_SkyScatterTrace.skip("没有任何视觉输入（screenLight=" + RVP_LightingConfig.screenEnabled()
+                    + "，总强度=" + RVP_LightingConfig.intensity()
+                    + "，跟踪条目=" + RVP_ScreenLightManager.INSTANCE.size() + "）");
+            return;
+        }
         // 调用只读兼容性检查，拿不到可信世界输入时不操作外部目标。
         String reason = RVP_LightingCompatibility.disabledReason();
-        if (!reason.isEmpty()) { diagnostic(reason, null); return; }
+        if (!reason.isEmpty()) {
+            // 调用天空散射追踪，热成像等兼容性限制会让整层彩色光（含天空）关闭。
+            RVP_SkyScatterTrace.skip(reason);
+            diagnostic(reason, null);
+            return;
+        }
         VIEW.set(event.getPoseStack().last().pose());
         PROJECTION.set(event.getProjectionMatrix());
         // 调用光影公开场景快照查询，取得与深度配对的原世界矩阵。
         RVP_LightingCompatibility.sceneMatrices(VIEW, PROJECTION);
-        if (!validMatrix(VIEW) || !validMatrix(PROJECTION)) { diagnostic("世界矩阵无效，跳过本帧", null); return; }
+        if (!validMatrix(VIEW) || !validMatrix(PROJECTION)) {
+            RVP_SkyScatterTrace.skip("世界矩阵无效");
+            diagnostic("世界矩阵无效，跳过本帧", null);
+            return;
+        }
         // 调用已有正/反向深度分析，不能硬编码天空总是深度 1。
         nearAnalysis = RVP_DhProjectionMath.analyzeFromProjection(PROJECTION).orElse(null);
-        if (nearAnalysis == null) { diagnostic("近景投影端点无效，跳过本帧", null); return; }
+        if (nearAnalysis == null) {
+            RVP_SkyScatterTrace.skip("近景投影端点无效");
+            diagnostic("近景投影端点无效，跳过本帧", null);
+            return;
+        }
         camera = event.getCamera().getPosition();
         // 调用统一预算和球体投影裁剪，先剔除离屏光，最多只为八盏光查询实体/地形遮挡。
+        // 追踪开启时额外传入诊断回调，把每条被剔除的候选与具体原因写进日志。
         List<RVP_ScreenLight> candidates = !RVP_LightingConfig.screenEnabled() || RVP_LightingConfig.intensity() <= 0
                 ? List.of() : RVP_ScreenLightManager.INSTANCE.collectVisible(camera, event.getPartialTick(),
                 RVP_LightingConfig.maxDistance(), RVP_ScreenLightDebugCommands.limitForDiagnostics(RVP_LightingConfig.maxLights()), light -> {
                     // 调用显式单源诊断筛选；默认不影响正常灯数、颜色与生命周期。
                     if (!RVP_ScreenLightDebugCommands.acceptsForDiagnostics(light)) { return false; }
+                    // 调用天空散射判断：方向性染色与光心是否在屏幕内无关，爆心在背后的夜空闪光也必须保留。
+                    if (light.skyIntensity() > 0.001F) { return true; }
                     Vector3f center = viewPosition(light.position());
                     return RVP_PressureWaveGeometry.screenBounds(PROJECTION, center.x, center.y, center.z,
                             light.visibleRadius()) != null;
-                });
+                }, RVP_SkyScatterTrace.enabled() ? RVP_SkyScatterTrace::dropped : null);
         // 三维遮挡按每个受光点到光源的路径判断；相机看不见光心不能成为取消整盏环境光的理由。
         // 喷口/光晕仍由各自的近景与 DH 可见性检查控制，不在这里把整盏灯误删。
         lights = candidates;
@@ -211,12 +237,16 @@ public final class RVP_ScreenLightPass {
             trails = RVP_RocketTrailManager.INSTANCE.collect(camera, event.getPartialTick(),
                     segment -> RVP_RocketTrailPass.bounds(segment, VIEW, PROJECTION, camera) != null);
         }
-        if (lights.isEmpty() && plumes.isEmpty() && trails.isEmpty()) { return; }
+        if (lights.isEmpty() && plumes.isEmpty() && trails.isEmpty()) {
+            RVP_SkyScatterTrace.skip("采样与预算后没有任何可绘制内容");
+            return;
+        }
         plumeTime = ((mc.level.getGameTime() & 0xFFFFL) + event.getPartialTick()) / 20F;
         try {
             // 调用共享帧资源，每帧最多复制一次深度，与本帧矩阵配对。
             if (!FRAME.captureDepth()) {
                 lights = List.of(); lastFrameStatus = "近景深度暂不可用";
+                RVP_SkyScatterTrace.skip("近景深度暂不可用");
                 diagnostic(lastFrameStatus, null); return;
             }
             // 调用独立 DH/光影只读桥，远景深度另存一份，保持其自己的投影与观察矩阵。
@@ -247,13 +277,25 @@ public final class RVP_ScreenLightPass {
         frameLevel = null;
         if (expected == null || expected != Minecraft.getInstance().level
                 || lights.isEmpty() && plumes.isEmpty() && trails.isEmpty() || lightShader == null) {
+            // 调用天空散射追踪，区分“上一帧的帧身份失效/本帧无光/着色器丢失”。
+            RVP_SkyScatterTrace.skip(expected == null ? "本帧没有捕获到世界画面（capture 阶段提前返回）"
+                    : expected != Minecraft.getInstance().level ? "世界已切换，丢弃上一帧光源"
+                    : lightShader == null ? "屏幕光着色器未加载" : "本帧没有提交任何光源");
             FRAME.discard(); return;
         }
         // 调用状态作用域，包含绘制/读取目标、视口、采样器和原版渲染状态的完整恢复。
         try (RVP_ScreenFrameResources.State ignored = new RVP_ScreenFrameResources.State()) {
-            if (!FRAME.captureColor()) { diagnostic("场景目标或窗口发生变化，跳过本帧", null); return; }
+            if (!FRAME.captureColor()) {
+                RVP_SkyScatterTrace.skip("场景颜色复制失败（目标或窗口变化）");
+                diagnostic("场景目标或窗口发生变化，跳过本帧", null); return;
+            }
             // 调用统一参数上传；世界位置先用 double 减相机，远坐标不会抖动。
             uploadLights();
+            // 调用一次性的 uniform 声明检查：描述 JSON 漏写时 safeGetUniform 会静默返回空对象，天空项将恒为0。
+            RVP_SkyScatterTrace.once("skyUniform", "着色器 uniform 检查：LightSkySpread0 "
+                    + (lightShader.getUniform("LightSkySpread0") != null ? "已声明" : "缺失（描述 JSON 未同步，天空项会静默失效）")
+                    + "，LightSkyColorIntensity0 "
+                    + (lightShader.getUniform("LightSkyColorIntensity0") != null ? "已声明" : "缺失（描述 JSON 未同步，天空项会静默失效）"));
             if (lights.stream().anyMatch(light -> light.radius() > 0 && light.intensity() > 0 && light.surfaceWeight() > 0)) {
                 // 调用真实方块形状/实体盒采集，不再将缺失背面的相机深度用作投影几何。
                 RVP_LightGeometryPass.prepare(Minecraft.getInstance().level, lights, VIEW, camera, event.getPartialTick());
@@ -270,6 +312,9 @@ public final class RVP_ScreenLightPass {
                     diagnostic("光晕目标不可用，回退基础屏幕光", exception);
                 }
             }
+            // 调用天空散射追踪帧摘要：本帧真正提交的光源与逐灯 sky 采样值，合并剔除原因后节流输出。
+            RVP_SkyScatterTrace.frame(RVP_ScreenLightManager.INSTANCE.size(), lights,
+                    useBloom ? "光晕链" : "直接合成（bloom 关闭）");
             if (!useBloom) {
                 lightShader.safeGetUniform("OutputMode").set(0);
                 FRAME.bind(FRAME.mainTarget(), FRAME.width(), FRAME.height());
@@ -378,6 +423,8 @@ public final class RVP_ScreenLightPass {
                 lightShader.safeGetUniform("LightHaloColorIntensity" + index).set(0F, 0F, 0F, 0F);
                 lightShader.safeGetUniform("LightShape" + index).set(0F, 0F, 0F, 0F);
                 lightShader.safeGetUniform("LightEmission" + index).set(0F, 0F, 0F, 0F);
+                lightShader.safeGetUniform("LightSkyColorIntensity" + index).set(0F, 0F, 0F, 0F);
+                lightShader.safeGetUniform("LightSkySpread" + index).set(0F);
                 continue;
             }
             RVP_ScreenLight light = lights.get(index);
@@ -399,24 +446,47 @@ public final class RVP_ScreenLightPass {
                     RVP_LightingConfig.volumetricEnabled() ? light.volumetricStrength() : 0,
                     light.bloom() ? 1F : 0F,
                     light.type() == RVP_LightSourceType.ROCKET_ENGINE ? 0F : light.haloRadius());
-            if (RVP_RocketPlumeParameters.ROUND_SOURCE_ENABLED && light.type() == RVP_LightSourceType.ROCKET_ENGINE) {
-                // 调用统一代码预设；已采样的强度包含二脉冲、燃尽和预览年龄，不能重复乘阶段。
-                RVP_LightParameters.EngineEmission emission = RVP_LightParameters.engineEmission(light.radius(), light.intensity());
+            // 调用自发光上传：爆炸白热核心与旧圆形喷口共用同一组 LightEmission 槽位，互不叠加。
+            RVP_LightParameters.EngineEmission emission = light.emission();
+            if (emission == null && RVP_RocketPlumeParameters.ROUND_SOURCE_ENABLED
+                    && light.type() == RVP_LightSourceType.ROCKET_ENGINE) {
+                // 调用统一代码预设；旧通道只在开关恢复时使用，已采样的强度包含二脉冲与燃尽。
+                emission = RVP_LightParameters.engineEmission(light.radius(), light.intensity());
+            }
+            if (emission == null) {
+                lightShader.safeGetUniform("LightEmission" + index).set(0F, 0F, 0F, 0F);
+            } else {
                 lightShader.safeGetUniform("LightEmission" + index).set(emission.coreRadius(), emission.haloRadius(),
                         emission.coreIntensity() * RVP_LightingConfig.intensity(),
                         emission.haloIntensity() * RVP_LightingConfig.intensity());
-            } else { lightShader.safeGetUniform("LightEmission" + index).set(0F, 0F, 0F, 0F); }
+            }
+            // 调用天空散射独立上传；只被没有深度的天空像素读取，不计入光晕提取能量，也不参与八灯预算排序。
+            lightShader.safeGetUniform("LightSkyColorIntensity" + index).set(light.red(), light.green(), light.blue(),
+                    light.skyIntensity() * RVP_LightingConfig.intensity());
+            lightShader.safeGetUniform("LightSkySpread" + index).set(light.skySpread());
         }
     }
 
     /** 核心独立达到显示峰值；使用硬件混合读取现有颜色，不增加背景复制或引入读写反馈。 */
     private static void renderEmission() {
-        if (!RVP_RocketPlumeParameters.ROUND_SOURCE_ENABLED) { return; }
-        if (lights.stream().noneMatch(light -> light.type() == RVP_LightSourceType.ROCKET_ENGINE)) { return; }
+        if (!hasEmission()) { return; }
         lightShader.safeGetUniform("OutputMode").set(2);
         // 调用原主目标和专用混合，深度/手持物遮罩仍使用已配对的近景与 DH 来源。
         FRAME.bind(FRAME.mainTarget(), FRAME.width(), FRAME.height());
         FRAME.drawEmission(lightShader);
+    }
+
+    /** 本帧是否存在需要绕过 0.9 曝光上限的自发光核心：爆炸白热核心优先，旧圆形喷口只在开关恢复时参与。 */
+    private static boolean hasEmission() {
+        for (RVP_ScreenLight light : lights) {
+            if (light.emission() != null
+                    && (light.emission().coreIntensity() > 0.001F || light.emission().haloIntensity() > 0.001F)) {
+                return true;
+            }
+        }
+        // 调用旧通道开关；关闭时不再为发动机做一次空绘制。
+        return RVP_RocketPlumeParameters.ROUND_SOURCE_ENABLED
+                && lights.stream().anyMatch(light -> light.type() == RVP_LightSourceType.ROCKET_ENGINE);
     }
 
     /** 四层依次缩小并柔化，再从最小层回升；固定基础权重总和为一，强度调节不相互补偿。 */

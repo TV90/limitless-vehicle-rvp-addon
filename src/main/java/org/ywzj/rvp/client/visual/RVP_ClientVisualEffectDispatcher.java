@@ -6,6 +6,7 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
 import org.slf4j.Logger;
+import org.ywzj.rvp.client.light.RVP_SkyScatterTrace;
 import org.ywzj.rvp.weapon.visual.api.RVP_VisualEffectEvent;
 
 import java.util.ArrayList;
@@ -48,6 +49,9 @@ public final class RVP_ClientVisualEffectDispatcher {
             return;
         }
         ensureLevel(level);
+        // 调用天空散射追踪，记录事件是否真的到达本客户端；上游屏蔽时这里是唯一线索。
+        RVP_SkyScatterTrace.eventReceived(event.effectType(), event.flash(), event.position(),
+                event.baseExplosionRadius(), level.getGameTime() - event.startGameTime());
         RVP_ClientVisualEffectFactory factory = FACTORIES.get(event.effectType());
         if (factory == null) {
             if (WARNED_UNKNOWN_TYPES.add(event.effectType())) {

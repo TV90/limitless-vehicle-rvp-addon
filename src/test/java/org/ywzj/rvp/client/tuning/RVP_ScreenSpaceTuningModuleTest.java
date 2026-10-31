@@ -54,14 +54,14 @@ class RVP_ScreenSpaceTuningModuleTest {
     void lightBindingSeesCommandChangesAndCanWriteBackWithoutSecondState() {
         RVP_TuningRegistry registry = registry();
         RVP_TuningOption option = registry.options().get("screen_space/explosion/brightness");
-        assertEquals(20, option.value());
+        assertEquals(5, option.value());
         // 调用指令使用的同一业务入口，面板应直接看到新值。
         RVP_LightRuntimeTuning.set(RVP_LightRuntimeTuning.Group.explosion, RVP_LightRuntimeTuning.Parameter.brightness, 35);
         assertEquals(35, option.value());
         option.set(7);
         assertEquals(7, RVP_LightRuntimeTuning.get(RVP_LightRuntimeTuning.Group.explosion, RVP_LightRuntimeTuning.Parameter.brightness));
         option.reset();
-        assertEquals(20, option.value());
+        assertEquals(5, option.value());
         assertTrue(registry.snapshot().isEmpty());
     }
 
@@ -96,6 +96,54 @@ class RVP_ScreenSpaceTuningModuleTest {
     }
 
     @Test
+    void haloCurveButtonsCycleChineseChoicesAndPresetValidationIsAtomic() {
+        RVP_TuningRegistry registry = registry();
+        RVP_TuningOption global = registry.options().get("screen_space/global/haloDecayCurve");
+        RVP_TuningOption explosion = registry.options().get("screen_space/explosion/haloDecayCurve");
+        assertEquals(RVP_TuningOption.Control.CHOICE, global.control());
+        assertEquals("原有衰减", global.buttonText());
+        assertEquals("高亮保持后淡出", explosion.buttonText());
+        // 调用界面使用的同一循环与写入入口；分组未覆盖时实时跟随全局曲线。
+        global.set(global.nextButtonValue());
+        assertEquals("线性衰减", global.buttonText());
+        assertEquals("线性衰减", explosion.buttonText());
+        global.set(global.nextButtonValue());
+        assertEquals("快降后保持", explosion.buttonText());
+        explosion.set(0);
+        assertEquals("原有衰减", explosion.buttonText());
+        var previous = registry.snapshot();
+        // 调用预设恢复前校验，小数曲线序号应在清理现有覆盖之前被拒绝。
+        assertThrows(IllegalArgumentException.class,
+                () -> registry.restore(Map.of("screen_space/explosion/haloDecayCurve", 0.5D)));
+        assertEquals(previous, registry.snapshot());
+        explosion.reset();
+        assertEquals("快降后保持", explosion.buttonText());
+        assertTrue(explosion.overrideValue().isEmpty());
+        global.set(global.nextButtonValue());
+        assertEquals("高亮保持后淡出", global.buttonText());
+        global.set(global.nextButtonValue());
+        assertEquals("原有衰减", global.buttonText());
+        assertThrows(IllegalArgumentException.class, () -> global.set(1.5));
+        assertEquals(0, global.value());
+    }
+
+    @Test
+    void explosionPeakAndFadeControlsShareTheRealRuntimeValues() {
+        RVP_TuningRegistry registry = registry();
+        RVP_TuningOption peak = registry.options().get("screen_space/explosion/haloPeakHoldTicks");
+        RVP_TuningOption fade = registry.options().get("screen_space/explosion/haloFadeOutTicks");
+        assertEquals(5, peak.value());
+        assertEquals(70, fade.value());
+        // 调用真实面板写入与单项重置，确认用户能分别调节两段时间并恢复来源默认。
+        peak.set(6);
+        fade.set(12);
+        assertEquals(18, RVP_LightRuntimeTuning.haloDurationTicks(RVP_LightRuntimeTuning.Group.explosion, 32));
+        peak.reset();
+        // 保持刻数恢复默认5，淡出仍是刚设置的12，合计17刻。
+        assertEquals(17, RVP_LightRuntimeTuning.haloDurationTicks(RVP_LightRuntimeTuning.Group.explosion, 32));
+    }
+
+    @Test
     void shockwaveResetIsPerParameterAndExistingAnimationKeepsItsOriginalSnapshot() {
         RVP_TuningRegistry registry = registry();
         RVP_TuningOption speed = registry.options().get("screen_space/shockwave_sphere/speed");
@@ -116,3 +164,5 @@ class RVP_ScreenSpaceTuningModuleTest {
         assertFalse(RVP_ShockwaveRuntimeTuning.enabled(RVP_ShockwaveRuntimeTuning.Group.mach));
     }
 }
+
+

@@ -51,8 +51,16 @@ class RVP_DefaultExplosionSoundControllerTest {
                 RVP_DefaultExplosionSoundController.resolveSoundBand(cannon, 512.01D, 4.0F));
         assertEquals(RVP_DefaultExplosionSoundController.SoundDistanceBand.VERY_FAR,
                 RVP_DefaultExplosionSoundController.resolveSoundBand(cannon, 1536.0D, 4.0F));
+        // 炮弹/火箭/导弹/航弹的最大传播距离已放宽到 3560 格；载具击毁仍保持 1536 格。
+        assertEquals(RVP_DefaultExplosionSoundController.SoundDistanceBand.VERY_FAR,
+                RVP_DefaultExplosionSoundController.resolveSoundBand(cannon, 3560.0D, 4.0F));
         assertEquals(RVP_DefaultExplosionSoundController.SoundDistanceBand.OUT_OF_RANGE,
-                RVP_DefaultExplosionSoundController.resolveSoundBand(cannon, 1536.01D, 4.0F));
+                RVP_DefaultExplosionSoundController.resolveSoundBand(cannon, 3560.01D, 4.0F));
+        assertEquals(3560.0D, cannon.maximumRange());
+        assertEquals(3560.0D, RVP_DefaultExplosionSoundController.SoundProfile.ROCKET.maximumRange());
+        assertEquals(3560.0D, RVP_DefaultExplosionSoundController.SoundProfile.MISSILE.maximumRange());
+        assertEquals(3560.0D, RVP_DefaultExplosionSoundController.SoundProfile.BOMB.maximumRange());
+        assertEquals(512.0D, RVP_DefaultExplosionSoundController.SoundProfile.MACHINEGUN.maximumRange());
     }
 
     @Test

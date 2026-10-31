@@ -50,6 +50,32 @@ class RVP_DefaultExplosionEventDataTest {
     }
 
     @Test
+    void airBurstFlagRoundTripsAndLegacyPayloadsStayAirBurst() {
+        // 起爆性质决定客户端是否建灯：显式 true/false 必须原样往返。
+        assertTrue(RVP_DefaultExplosionEventData.decodeAirBurst(
+                RVP_DefaultExplosionEventData.encode(RVP_EnumWeaponKind.MISSILE, null, false, true)));
+        assertFalse(RVP_DefaultExplosionEventData.decodeAirBurst(
+                RVP_DefaultExplosionEventData.encode(RVP_EnumWeaponKind.MISSILE, null, false, false)));
+        // 加入该标记之前的事件没有这个键，按“空中起爆”处理，保持旧光效。
+        assertTrue(RVP_DefaultExplosionEventData.decodeAirBurst(null));
+        assertTrue(RVP_DefaultExplosionEventData.decodeAirBurst("{}"));
+        assertTrue(RVP_DefaultExplosionEventData.decodeAirBurst("{\"weapon_kind\":\"missile\"}"));
+        assertTrue(RVP_DefaultExplosionEventData.decodeAirBurst("{\"air_burst\":\"yes\"}"));
+    }
+
+    @Test
+    void screenLightRequiresBothFlashAndAirBurst() {
+        String ground = RVP_DefaultExplosionEventData.encode(RVP_EnumWeaponKind.ROCKET, null, true, false);
+        String air = RVP_DefaultExplosionEventData.encode(RVP_EnumWeaponKind.ROCKET, null, true, true);
+        // 地面/命中起爆不建灯，空爆建灯；关闭闪光时两者都不建灯。
+        assertFalse(RVP_DefaultExplosionEventData.shouldEmitScreenLight(true, ground));
+        assertTrue(RVP_DefaultExplosionEventData.shouldEmitScreenLight(true, air));
+        assertFalse(RVP_DefaultExplosionEventData.shouldEmitScreenLight(false, air));
+        // 缺省载荷没有标记时保持旧行为（建灯）。
+        assertTrue(RVP_DefaultExplosionEventData.shouldEmitScreenLight(true, "{}"));
+    }
+
+    @Test
     void vehicleSoundProfileRoundTripsWithoutPretendingToBeAWeaponKind() {
         String encoded = RVP_DefaultExplosionEventData.encodeVehicleSoundProfile();
         assertTrue(RVP_DefaultExplosionEventData.decodeVehicleSoundProfile(encoded));

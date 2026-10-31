@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.function.BiConsumer;
 import java.util.function.Predicate;
 
 /** 统一短光与持续光；时间由客户端世界提供，测试时不需要启动 Minecraft。 */
@@ -115,7 +116,7 @@ public final class RVP_ScreenLightManager {
     public void tick(Object currentWorld, long now) {
         // 调用世界检查，使切维度清理先于任何新状态采样。
         beginWorld(currentWorld, now);
-        // 调用整盏光源的实际寿命，调慢或调快衰减都会同步改变两路的结束时刻。
+        // 调用两路最晚结束时刻，独立延长的光晕不会随照亮提前被清理。
         transients.values().removeIf(entry -> entry.finished(now));
         persistent.values().removeIf(entry -> entry.expires <= now);
     }
@@ -123,12 +124,32 @@ public final class RVP_ScreenLightManager {
     /** 按部分 tick 采样并执行预算；没有活动光时返回空列表，调用者无需复制画面。 */
     public List<RVP_ScreenLight> collectVisible(Vec3 camera, float partialTick, double distance,
             int limit, Predicate<RVP_ScreenLight> visible) {
+        // 正式绘制不传诊断回调，保持原有开销与行为。
+        return collectVisible(camera, partialTick, distance, limit, visible, null);
+    }
+
+    /**
+     * 采样并执行预算，同时把被剔除的候选与原因交给诊断回调。
+     *
+     * @param camera 相机位置
+     * @param partialTick 部分刻
+     * @param distance 客户端距离预算
+     * @param limit 本帧灯数上限
+     * @param visible 视锥可见性判断
+     * @param diagnostics 剔除回调，null 表示不诊断
+     */
+    public List<RVP_ScreenLight> collectVisible(Vec3 camera, float partialTick, double distance,
+            int limit, Predicate<RVP_ScreenLight> visible,
+            BiConsumer<RVP_ScreenLight, String> diagnostics) {
         List<RVP_ScreenLight> sampled = new ArrayList<>(transients.size() + persistent.size());
         double now = gameTime + Math.max(0, Math.min(1, Float.isFinite(partialTick) ? partialTick : 0));
         transients.values().forEach(entry -> sampled.add(entry.sample(now, null)));
         persistent.forEach((key, entry) -> sampled.add(entry.sample(now, key)));
-        // 调用统一裁剪，灯的数量与粒子数量完全无关。
-        return RVP_ScreenLightBudget.collect(sampled, camera, distance, limit, visible);
+        // 调用天空专用距离预算；0 表示天空沿用普通预算，不影响地面照亮、光晕与核心。
+        double skyDistance = RVP_LightRuntimeTuning.get(RVP_LightRuntimeTuning.Group.global,
+                RVP_LightRuntimeTuning.Parameter.skyDistance);
+        // 调用统一裁剪，灯的数量与粒子数量完全无关；诊断只影响是否回调，不改变判定顺序。
+        return RVP_ScreenLightBudget.collect(sampled, camera, distance, skyDistance, limit, visible, diagnostics);
     }
 
     /** 判断本世界是否需要渲染工作。 */
@@ -159,12 +180,22 @@ public final class RVP_ScreenLightManager {
         };
     }
 
-    /** 爆炸/炮口按衰减倍率伸缩整盏光源寿命；发动机持续光和预览保留已有时间线。 */
-    private static float lifetimeTicks(RVP_LightSourceType type, RVP_LightParameters parameters) {
+    /** 爆炸/炮口照亮按衰减倍率伸缩；光晕的独立时长不会反向改变这里。 */
+    private static float lightingLifetimeTicks(RVP_LightSourceType type, RVP_LightParameters parameters) {
         if (type == RVP_LightSourceType.ROCKET_ENGINE || type == RVP_LightSourceType.EO_JAMMER) { return parameters.durationTicks(); }
         // 调用统一短光寿命规则，读取当前倍率而非出生时快照，既有光源也立即响应。
         return RVP_TransientLightTimeline.durationTicks(parameters.durationTicks(),
                 RVP_LightRuntimeTuning.get(group(type), RVP_LightRuntimeTuning.Parameter.decayScale));
+    }
+
+    /** 短光等待照亮、光晕与天空闪光都结束才清理；任一路调长都不会被其它路提前取消。 */
+    private static float lifetimeTicks(RVP_LightSourceType type, RVP_LightParameters parameters) {
+        // 调用两路各自的寿命，保留其中结束较晚的一路；不改变照亮的真实采样进度。
+        float lighting = lightingLifetimeTicks(type, parameters);
+        float halo = RVP_LightRuntimeTuning.haloDurationTicks(group(type), lighting);
+        // 调用天空自身的时间线（保持+淡出），天空可以比照亮和光晕都活得更久。
+        float sky = RVP_LightRuntimeTuning.skyDurationTicks(group(type));
+        return Math.max(lighting, Math.max(halo, sky));
     }
 
     /** 保持总表有界；持续光下一 tick 可重新竞争，不能永久占满短光预算。 */
@@ -212,29 +243,42 @@ public final class RVP_ScreenLightManager {
             // 调用采样时调参，使已有光源下一帧也能响应；不修改存储的原始预设或重置年龄。
             RVP_LightParameters tuned = group == null ? parameters : RVP_LightRuntimeTuning.apply(group, parameters);
             double age = Math.max(0, now - start);
-            // 调用整盏光源寿命，颜色、照亮、光晕和清理都跟随同一个时间进度。
-            float duration = lifetimeTicks(type, parameters);
+            // 调用照亮原寿命；光晕可以单独延长，不能用总条目寿命拖慢环境照亮或颜色变化。
+            float duration = lightingLifetimeTicks(type, parameters);
             float progress = (float) Math.max(0, Math.min(1, age / duration));
             float fade = key == null ? (float) Math.pow(1 - progress, tuned.decay()) : 1;
             if (type == RVP_LightSourceType.EXPLOSION || type == RVP_LightSourceType.MUZZLE) {
-                // 调用整盏短光的平滑包络，照亮和光晕在同一时刻平滑结束。
+                // 调用原有照亮包络；光晕可另选亮度曲线，但仍使用同一寿命终点。
                 fade = RVP_TransientLightTimeline.fade(age, parameters.durationTicks(), parameters.decay(),
                         RVP_LightRuntimeTuning.get(group, RVP_LightRuntimeTuning.Parameter.decayScale));
             }
-            float haloIntensity = type == RVP_LightSourceType.EXPLOSION
-                    ? RVP_LightRuntimeTuning.get(group, RVP_LightRuntimeTuning.Parameter.worldHaloIntensity) * fade
-                    : tuned.intensity() * fade;
+            // 调用独立光晕曲线；持续光没有固定结束时间，保持原有燃烧/开关包络，短光按原始年龄采样。
+            float haloFade = key == null ? RVP_LightRuntimeTuning.haloFade(group, age, duration, fade) : fade;
+            float haloIntensity = (type == RVP_LightSourceType.EXPLOSION
+                    ? RVP_LightRuntimeTuning.get(group, RVP_LightRuntimeTuning.Parameter.worldHaloIntensity)
+                    : tuned.intensity()) * haloFade;
             float green = tuned.green();
             float blue = tuned.blue();
             if (type == RVP_LightSourceType.EXPLOSION) {
                 green *= 1 - progress * 0.6F;
                 blue *= 1 - progress * 0.9F;
             }
-            return new RVP_ScreenLight(position, tuned.red(), green, blue, tuned.radius(),
-                    tuned.bloom() ? (group == null ? parameters.radius() : RVP_LightRuntimeTuning.haloRadius(group, parameters.radius())) : 0,
+            // 调用静态光晕范围并叠加随淡出收缩的倍率；只缩光晕半径，照亮半径仍用 tuned.radius()。
+            // 持续光与干扰机的光晕半径为常量或独立预设，收缩倍率为1，不出现收缩或NaN。
+            float haloRadius = tuned.bloom()
+                    ? (group == null ? parameters.radius()
+                    : RVP_LightRuntimeTuning.sampledHaloRadius(group, parameters.radius(), haloFade)) : 0;
+            // 调用天空峰值亮度与收拢幅度；使用天空自己的保持/淡出刻数，与光晕曲线完全独立。
+            float skyIntensity = key == null ? RVP_LightRuntimeTuning.skyIntensity(group, age) : 0;
+            float skySpread = RVP_LightRuntimeTuning.skySpread(group, age);
+            // 调用圆形白热核心：爆炸专用，尺寸随爆炸当量与寿命扩张、亮度跟随光晕淡出；其它来源为 null。
+            RVP_LightParameters.EngineEmission emission =
+                    type == RVP_LightSourceType.EXPLOSION && key == null
+                            ? RVP_LightRuntimeTuning.coreEmission(group, parameters.radius(), progress, haloFade) : null;
+            return new RVP_ScreenLight(position, tuned.red(), green, blue, tuned.radius(), haloRadius,
                     key == null && age >= duration ? 0 : tuned.intensity() * fade,
-                    tuned.bloom() ? haloIntensity : 0,
-                    key == null ? (float) Math.max(0, duration - age) : (float) Math.max(0, expires - now),
+                    tuned.bloom() ? haloIntensity : 0, skyIntensity, skySpread, emission,
+                    key == null ? (float) Math.max(0, lifetimeTicks(type, parameters) - age) : (float) Math.max(0, expires - now),
                     type, key, tuned.surfaceWeight(),
                     tuned.bloom(), tuned.volumetricStrength(), hemisphereAxis);
         }

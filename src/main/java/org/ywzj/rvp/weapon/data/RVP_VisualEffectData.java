@@ -35,9 +35,9 @@ public final class RVP_VisualEffectData {
     @SerializedName("duration_ticks")
     private int durationTicks = -1;
 
-    /** 服务端广播距离（格）；默认 {@code 1536}，接受大于等于 {@code 0} 的有限值，不影响伤害范围。 */
+    /** 服务端广播距离（格）；默认 {@code 8192}，接受大于等于 {@code 0} 的有限值，不影响伤害范围。 */
     @SerializedName("broadcast_range")
-    private double broadcastRange = 1536.0D;
+    private double broadcastRange = 8192.0D;
 
     /** 是否允许客户端播放该视觉的声音；默认 {@code true}，客户端设置仍可关闭。 */
     @SerializedName("sound")
@@ -104,7 +104,8 @@ public final class RVP_VisualEffectData {
     }
 
     public double getBroadcastRange() {
-        double finiteRange = Double.isFinite(broadcastRange) ? broadcastRange : 1536.0D;
+        // 调用非有限值回退：与字段默认值保持一致，避免旧配置写坏时把事件限制在极小范围。
+        double finiteRange = Double.isFinite(broadcastRange) ? broadcastRange : 8192.0D;
         return Math.max(0.0D, finiteRange);
     }
 

@@ -2,6 +2,7 @@ package org.ywzj.rvp.client.tuning;
 
 import java.math.BigDecimal;
 import java.math.MathContext;
+import java.util.List;
 import java.util.Objects;
 import java.util.OptionalDouble;
 import java.util.function.DoubleConsumer;
@@ -10,8 +11,8 @@ import java.util.function.Supplier;
 
 /** 通用参数描述与读写绑定；界面不需要认识任何具体特效、配置类或指令。 */
 public final class RVP_TuningOption {
-    /** 通用控件类型；开关也以严格的 0/1 保存，避免小数开关。 */
-    public enum Control { NUMBER, TOGGLE }
+    /** 通用控件类型；选择项保存整数序号，开关保存严格的 0/1。 */
+    public enum Control { NUMBER, TOGGLE, CHOICE }
 
     /** 分组内稳定的参数键，同时用于搜索和本地预设。 */
     private final String id;
@@ -21,8 +22,10 @@ public final class RVP_TuningOption {
     private final String description;
     /** 数值单位；无量纲参数可以填“倍率”或“比例”。 */
     private final String unit;
-    /** 使用数值输入和滑条，或使用开关按钮。 */
+    /** 使用数值输入和滑条，或使用开关/中文选择按钮。 */
     private final Control control;
+    /** 选择项的中文显示名，序号从 0 开始；数值与开关控件为空表。 */
+    private final List<String> choices;
     /** 允许写入的最小值。 */
     private final double min;
     /** 允许写入的最大值。 */
@@ -41,14 +44,26 @@ public final class RVP_TuningOption {
     public RVP_TuningOption(String id, String title, String description, String unit, Control control,
                             double min, double max, double sliderScale, DoubleSupplier defaultValue,
                             Supplier<OptionalDouble> overrideValue, DoubleConsumer writer, Runnable resetter) {
+        this(id, title, description, unit, control, min, max, sliderScale, defaultValue, overrideValue,
+                writer, resetter, List.of());
+    }
+
+    /** 带中文选择项的通用入口；原有数值和开关调用继续使用不带选择项的构造方法。 */
+    public RVP_TuningOption(String id, String title, String description, String unit, Control control,
+                            double min, double max, double sliderScale, DoubleSupplier defaultValue,
+                            Supplier<OptionalDouble> overrideValue, DoubleConsumer writer, Runnable resetter,
+                            List<String> choices) {
         this.id = Objects.requireNonNull(id);
         this.title = Objects.requireNonNull(title);
         this.description = Objects.requireNonNull(description);
         this.unit = Objects.requireNonNull(unit);
         this.control = Objects.requireNonNull(control);
+        this.choices = List.copyOf(choices);
         if (!Double.isFinite(min) || !Double.isFinite(max) || min >= max
                 || !Double.isFinite(sliderScale) || sliderScale < 0
-                || control == Control.TOGGLE && (min != 0 || max != 1)) {
+                || control == Control.TOGGLE && (min != 0 || max != 1)
+                || control == Control.CHOICE && (min != 0 || max != choices.size() - 1 || choices.size() < 2)
+                || control != Control.CHOICE && !choices.isEmpty()) {
             throw new IllegalArgumentException("无效的参数范围或滑条尺度：" + id);
         }
         this.min = min;
@@ -65,6 +80,17 @@ public final class RVP_TuningOption {
     public String description() { return description; }
     public String unit() { return unit; }
     public Control control() { return control; }
+    /** 当前按钮的中文值；选择项按序号显示，不让用户记忆曲线编号。 */
+    public String buttonText() {
+        // 调用同一个实际值绑定，命令改动和全局继承也能立即更新按钮文字。
+        return control == Control.CHOICE ? choices.get((int) value()) : value() == 0 ? "已关闭" : "已开启";
+    }
+
+    /** 选择按钮循环到下一项；开关仍在 0/1 之间切换。 */
+    public double nextButtonValue() {
+        // 调用统一读值，最后一个选择项之后回到第一个，不产生小数序号。
+        return control == Control.CHOICE ? (value() + 1) % choices.size() : value() == 0 ? 1 : 0;
+    }
     public double min() { return min; }
     public double max() { return max; }
     public double defaultValue() { return defaultValue.getAsDouble(); }
@@ -73,13 +99,15 @@ public final class RVP_TuningOption {
     /** 未覆盖时动态读取默认值，不能把客户端配置的关闭状态误显示为开启。 */
     public double value() { return overrideValue.get().orElseGet(defaultValue); }
 
-    /** 在界面、预设导入和业务写入前统一拒绝越界、NaN、无穷及小数开关。 */
+    /** 在界面、预设导入和业务写入前统一拒绝越界、NaN、无穷及小数开关/选择序号。 */
     public void validate(double value) {
         if (!Double.isFinite(value) || value < min || value > max
-                || control == Control.TOGGLE && value != 0 && value != 1) {
+                || control == Control.TOGGLE && value != 0 && value != 1
+                || control == Control.CHOICE && value != Math.rint(value)) {
             // 调用统一数值格式，提示明确的合法范围。
             throw new IllegalArgumentException(title + "：允许 " + format(min) + "～" + format(max)
-                    + (control == Control.TOGGLE ? "，开关只接受 0 或 1" : " " + unit));
+                    + (control == Control.TOGGLE ? "，开关只接受 0 或 1"
+                    : control == Control.CHOICE ? "，选择项只接受整数序号" : " " + unit));
         }
     }
 

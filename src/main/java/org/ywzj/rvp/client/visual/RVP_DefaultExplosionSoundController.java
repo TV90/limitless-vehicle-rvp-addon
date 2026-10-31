@@ -139,7 +139,7 @@ final class RVP_DefaultExplosionSoundController {
     }
 
     /**
-     * 按听者距离选择声音档位；炮弹档位固定使用 200/512/1536 格三段，其他档位保留旧逻辑。
+     * 按听者距离选择声音档位；炮弹档位固定使用 200/512/3560 格三段，其他档位保留旧逻辑。
      */
     static SoundDistanceBand resolveSoundBand(SoundProfile profile, double listenerDistance,
                                                float explosionRadius) {
@@ -202,15 +202,15 @@ final class RVP_DefaultExplosionSoundController {
     enum SoundProfile {
         /** 机枪/机炮弹：短促高音，小范围传播。 */
         MACHINEGUN("mchr_explosion_machinegun_near", "mchr_explosion_machinegun_far", 1.00F, 512.0D, 1),
-        /** 大口径机炮/炮弹：使用 cannon_exp 的近、中、远三段声音。 */
+        /** 大口径机炮/炮弹：使用 cannon_exp 的近、中、远三段声音，最远传播 3560 格。 */
         CANNON("mchr_explosion_cannon_near", "mchr_explosion_cannon_far",
-                "mchr_explosion_cannon_very_far", 1.00F, 1536.0D, 1),
-        /** 火箭弹：中性高爆音，中等范围传播 */
-        ROCKET("mchr_explosion_rocket_near", "mchr_explosion_rocket_far", 0.98F, 1536.0D, 1),
-        /** 导弹：厚重低音，远距离传播 */
-        MISSILE("mchr_explosion_missile_near", "mchr_explosion_missile_far", 0.90F, 1536.0D, 1),
-        /** 航弹：最低沉且传播最远。 */
-        BOMB("mchr_explosion_bomb_near", "mchr_explosion_bomb_far", 0.80F, 1536.0D, 1),
+                "mchr_explosion_cannon_very_far", 1.00F, 3560.0D, 1),
+        /** 火箭弹：中性高爆音，传播 3560 格。 */
+        ROCKET("mchr_explosion_rocket_near", "mchr_explosion_rocket_far", 0.98F, 3560.0D, 1),
+        /** 导弹：厚重低音，远距离传播 3560 格。 */
+        MISSILE("mchr_explosion_missile_near", "mchr_explosion_missile_far", 0.90F, 3560.0D, 1),
+        /** 航弹：最低沉且传播最远，3560 格。 */
+        BOMB("mchr_explosion_bomb_near", "mchr_explosion_bomb_far", 0.80F, 3560.0D, 1),
         /** 完整载具击毁：200 格内近音，超过 200 格使用远音，最多传播 1536 格。 */
         VEHICLE("vehicle_explosion_near", "vehicle_explosion_far", 1.00F, 1536.0D, 1);
 

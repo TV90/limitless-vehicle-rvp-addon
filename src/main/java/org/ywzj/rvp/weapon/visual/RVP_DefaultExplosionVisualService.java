@@ -1,7 +1,9 @@
 package org.ywzj.rvp.weapon.visual;
 
+import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.server.visual.RVP_NetworkVisualEventPublisher;
@@ -28,9 +30,42 @@ public final class RVP_DefaultExplosionVisualService {
     /** 大口径炮弹音效的严格阈值，单位毫米；恰好 16 mm 仍使用机枪音效。 */
     static final float CANNON_CALIBER_THRESHOLD_MM = 16.0F;
 
+    /** 空中起爆的高度门槛，单位格：爆心离地至少 35 格才生成 explosion 屏幕光源。 */
+    public static final double MIN_AIR_BURST_CLEARANCE = 35.0D;
+
     private static final RVP_NetworkVisualEventPublisher PUBLISHER = new RVP_NetworkVisualEventPublisher();
 
     private RVP_DefaultExplosionVisualService() {
+    }
+
+    /**
+     * 纯数值判定：爆心离地高度是否达到空中起爆门槛。
+     *
+     * @param explosionY 爆心世界 Y
+     * @param groundY 该水平位置的地面高度（原版 heightmap 返回的“地面之上第一格”）
+     * @return 离地高度 ≥ {@link #MIN_AIR_BURST_CLEARANCE} 时为 true；非有限值一律 false
+     */
+    public static boolean isAirBurstAt(double explosionY, int groundY) {
+        if (!Double.isFinite(explosionY)) { return false; }
+        return explosionY - groundY >= MIN_AIR_BURST_CLEARANCE;
+    }
+
+    /**
+     * 按真实地形判定一次起爆是否属于空中起爆；只有空中起爆才让客户端生成 explosion 光源。
+     *
+     * <p>用原版 {@link Heightmap.Types#MOTION_BLOCKING} 取地面高度：树叶、水面也挡住高度图，
+     * 因此在树冠正上方或水面上方不会因为“看起来高”而误判；地下爆心得到负的离地高度，
+     * 自然判为非空中起爆。</p>
+     *
+     * @param level 服务端世界
+     * @param pos 爆心
+     */
+    public static boolean isAirBurst(ServerLevel level, Vec3 pos) {
+        if (level == null || pos == null || !Double.isFinite(pos.y)) { return false; }
+        BlockPos center = BlockPos.containing(pos.x, pos.y, pos.z);
+        // 调用原版高度图，避免额外扫描方块；区块在弹体起爆时必然已加载。
+        int groundY = level.getHeight(Heightmap.Types.MOTION_BLOCKING, center.getX(), center.getZ());
+        return isAirBurstAt(pos.y, groundY);
     }
 
     /**
@@ -81,8 +116,8 @@ public final class RVP_DefaultExplosionVisualService {
      */
     public static void spawn(ServerLevel level, Vec3 pos, float radius, RVP_EnumWeaponKind weaponKind,
                              @Nullable String explosionSound) {
-        // 保留旧调用入口：ERA 等没有弹体口径的数据源默认继续使用原有音效档案。
-        spawn(level, pos, radius, weaponKind, explosionSound, false);
+        // 调用统一入口：是否空中起爆由爆心离地高度决定（≥35 格），与武器或载具无关。
+        spawn(level, pos, radius, weaponKind, explosionSound, false, isAirBurst(level, pos));
     }
 
     /**
@@ -97,18 +132,36 @@ public final class RVP_DefaultExplosionVisualService {
      */
     public static void spawn(ServerLevel level, Vec3 pos, float radius, RVP_EnumWeaponKind weaponKind,
                              @Nullable String explosionSound, boolean cannonSound) {
+        // 调用统一入口：空中起爆按爆心离地高度判定，命中地面/载具的爆点自然低于 35 格。
+        spawn(level, pos, radius, weaponKind, explosionSound, cannonSound, isAirBurst(level, pos));
+    }
+
+    /**
+     * 发布一次默认爆炸视觉与声音事件，并标明是否空中起爆。
+     *
+     * @param level 服务端世界
+     * @param pos 服务端权威爆心
+     * @param radius 已解析引信覆盖后的最终爆炸半径，单位格
+     * @param weaponKind RVP 弹体行为类型，用于客户端选择默认爆炸音色
+     * @param explosionSound 自定义爆炸音效事件 ID（可空）
+     * @param cannonSound 是否使用大口径炮弹音效档案
+     * @param airBurst 是否空中起爆；false 时客户端不生成屏幕光源（照亮/光晕/核心/天空）
+     */
+    public static void spawn(ServerLevel level, Vec3 pos, float radius, RVP_EnumWeaponKind weaponKind,
+                             @Nullable String explosionSound, boolean cannonSound, boolean airBurst) {
         RVP_VisualEffectEvent event = new RVP_VisualEffectEvent(
                 EFFECT_TYPE,
                 new ResourceLocation("rvp", "default"),
-                // 调用 RVP 默认爆炸事件编码器，把类型化武器分类与自定义音效写入受限公共载荷。
-                RVP_DefaultExplosionEventData.encode(weaponKind, explosionSound, cannonSound),
+                // 调用 RVP 默认爆炸事件编码器，把类型化武器分类、自定义音效与起爆性质写入受限公共载荷。
+                RVP_DefaultExplosionEventData.encode(weaponKind, explosionSound, cannonSound, airBurst),
                 level.dimension(),
                 pos,
                 radius,
                 1.0f,
                 1.0f,
                 -1,
-                1536.0,
+                // 调用端广播距离：空爆与远距爆炸的视觉、声音都需要更长覆盖，统一放宽到 8192 格。
+                8192.0,
                 level.random.nextLong(),
                 level.getGameTime(),
                 // sound=true：由 rvp:mchr_explosion 客户端实例按声速延迟播放近音或远音

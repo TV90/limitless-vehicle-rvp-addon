@@ -730,7 +730,7 @@ public final class RVP_TuningScreen extends Screen {
         private final CompactNumberEditBox input;
         /** 数值滑条；开关行不创建。 */
         private final OptionSlider slider;
-        /** 开关按钮；数值行不创建。 */
+        /** 开关或中文选择按钮；数值行不创建。 */
         private final Button toggle;
         /** 输入不完整、越界或被业务层拒绝的原因；原有效值保持不变。 */
         private String inputError;
@@ -777,9 +777,9 @@ public final class RVP_TuningScreen extends Screen {
                 input = null;
                 slider = null;
                 toggle = new CompactButton(font, "", () -> {
-                    // 调用同一业务开关写入入口，严格使用0或1。
-                    option.set(option.value() == 0 ? 1 : 0);
-                    RVP_TuningClient.log().info("PARAM source=toggle key=" + parameterKey + " value=" + option.value());
+                    // 调用通用按钮取值及业务写入入口；曲线循环选择整数项，开关仍严格使用0或1。
+                    option.set(option.nextButtonValue());
+                    RVP_TuningClient.log().info("PARAM source=button key=" + parameterKey + " value=" + option.value());
                 });
                 widgets.add(toggle);
             }
@@ -832,7 +832,8 @@ public final class RVP_TuningScreen extends Screen {
                 toggle.setY(top + 1);
                 toggle.setWidth(rowWidth - labelWidth);
                 toggle.setHeight(12);
-                toggle.setMessage(Component.literal(option.value() == 0 ? "已关闭" : "已开启"));
+                // 调用参数自己的中文值说明，通用界面不认识具体光晕曲线。
+                toggle.setMessage(Component.literal(option.buttonText()));
             }
             String description = option.title() + "（" + option.id() + "）：" + option.description()
                     + "\nDefault: " + RVP_TuningOption.format(option.defaultValue()) + "\nRange: "

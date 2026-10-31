@@ -437,6 +437,7 @@
         512
       ]
     },
+    { "name": "OcclusionReduceLevel", "type": "int", "count": 1, "values": [0] },
     {
       "name": "OutputMode",
       "type": "int",

@@ -27,7 +27,8 @@ public final class RVP_RocketPlumeManager {
     public void beginWorld(Object current, long now) {
         if (world != current || now < gameTime) { entries.clear(); world = current; }
         gameTime = now;
-        entries.values().removeIf(entry -> entry.expires <= now);
+        // 调用真实结束边界，独立延长预览光晕时等待其完成，真实发动机仍按两刻心跳失效。
+        entries.values().removeIf(entry -> endTime(entry) <= now);
     }
 
     /** 正常喷流两 tick 无心跳失效；预览最多四十 tick，使用同一形状程序。 */
@@ -56,14 +57,17 @@ public final class RVP_RocketPlumeManager {
         double now = gameTime + Math.max(0, Math.min(1, Float.isFinite(partialTick) ? partialTick : 0));
         List<RVP_RocketPlume> result = new ArrayList<>();
         for (Tracked entry : entries.values()) {
-            if (entry.expires <= now) { continue; }
+            if (endTime(entry) <= now) { continue; }
             float fade = entry.preview ? (float) Math.max(0, 1 - (now - entry.start) / 40.0) : 1;
+            // 调用共用光晕曲线；只替换有限预览的光晕包络，真实持续喷焰仍跟随发动机燃烧事实。
+            float haloFade = entry.preview ? RVP_LightRuntimeTuning.haloFade(RVP_LightRuntimeTuning.Group.engine,
+                    now - entry.start, 40, fade) : 1;
             // 调用独立光晕半径调参，照亮范围改动不会影响已有预览、真实喷焰或几何长宽。
             RVP_RocketPlume base = entry.plume;
             RVP_RocketPlume sample = new RVP_RocketPlume(base.position(), base.direction(), base.length(), base.radius(),
                     RVP_LightRuntimeTuning.haloRadius(RVP_LightRuntimeTuning.Group.engine, base.haloRadius()),
-                    base.strength() * fade, base.seed());
-            if (sample.strength() > 0 && visible.test(sample)) { result.add(sample); }
+                    base.strength() * fade, base.seed(), base.strength() * haloFade);
+            if ((sample.strength() > 0 || sample.haloStrength() > 0) && visible.test(sample)) { result.add(sample); }
         }
         return result.stream().sorted(Comparator.comparingDouble(plume -> plume.center().distanceToSqr(camera)))
                 .limit(RVP_RocketPlumeParameters.MAX_VISIBLE).toList();
@@ -77,6 +81,13 @@ public final class RVP_RocketPlumeManager {
     public int size() { return entries.size(); }
     /** 登出、切维度和明确 clear 命令清理 CPU 输入。 */
     public void clear() { entries.clear(); world = null; gameTime = 0; }
+
+    /** 预览等待核心和独立光晕均结束；真实喷流继续严格使用燃烧心跳到期时间。 */
+    private static double endTime(Tracked entry) {
+        // 调用共用光晕寿命，使预览和真实短光采用同样的独立保持/淡出参数。
+        return entry.preview ? entry.start + Math.max(40,
+                RVP_LightRuntimeTuning.haloDurationTicks(RVP_LightRuntimeTuning.Group.engine, 40)) : entry.expires;
+    }
 
     /** 拒绝 NaN/无穷坐标，避免损坏整屏绘制。 */
     private static boolean finite(Vec3 vector) {

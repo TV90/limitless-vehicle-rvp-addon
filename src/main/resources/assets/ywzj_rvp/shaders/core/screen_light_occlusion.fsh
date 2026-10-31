@@ -37,6 +37,24 @@ uniform vec4 LightHaloColorIntensity4;
 uniform vec4 LightHaloColorIntensity5;
 uniform vec4 LightHaloColorIntensity6;
 uniform vec4 LightHaloColorIntensity7;
+// 天空散射：rgb为颜色，a为已应用淡出与画质倍率的强度；只被没有深度的天空像素读取。
+uniform vec4 LightSkyColorIntensity0;
+uniform vec4 LightSkyColorIntensity1;
+uniform vec4 LightSkyColorIntensity2;
+uniform vec4 LightSkyColorIntensity3;
+uniform vec4 LightSkyColorIntensity4;
+uniform vec4 LightSkyColorIntensity5;
+uniform vec4 LightSkyColorIntensity6;
+uniform vec4 LightSkyColorIntensity7;
+// 天空亮区宽度：1为整片覆盖，0为只在爆心方向；随时间收拢，只改变方向分布。
+uniform float LightSkySpread0;
+uniform float LightSkySpread1;
+uniform float LightSkySpread2;
+uniform float LightSkySpread3;
+uniform float LightSkySpread4;
+uniform float LightSkySpread5;
+uniform float LightSkySpread6;
+uniform float LightSkySpread7;
 // 每盏光独立的喷口参数：核心半径、橙色气团半径、核心 HDR 峰值、气团 HDR 峰值。
 // 普通爆炸和炮口槽位清零，不用扩大环境光半径伪造喷焰。
 uniform vec4 LightEmission0;
@@ -125,7 +143,8 @@ vec3 neighborPosition(vec2 uv, vec3 fallback) {
 // 喷口独立自发光：天空也能看见，默认关闭的空气散射不影响它。
 // 光心和当前像素都检查近景/DH 遮挡，完整藏在墙后的光源不能向墙外画一个光团。
 vec3 sourceEmission(vec3 ray, float sceneDistance, vec4 light, vec3 color, vec4 emission) {
-    if (emission.x <= 0.0 || emission.z <= 0.0 || light.z >= 0.0) { return vec3(0.0); }
+    // 允许只保留外围光团（核心亮度为0）；核心半径或两路亮度都为空时才视为没有自发光。
+    if (emission.x <= 0.0 || (emission.z <= 0.0 && emission.w <= 0.0) || light.z >= 0.0) { return vec3(0.0); }
     vec4 clip = Projection * vec4(light.xyz, 1.0);
     if (clip.w <= 0.00001) { return vec3(0.0); }
     vec2 centerUV = clip.xy / clip.w * 0.5 + 0.5;
@@ -217,6 +236,21 @@ vec3 composite(vec3 background, vec3 contribution) {
     return background + response * max(vec3(0.0), vec3(1.0) - background) * 0.9;
 }
 
+// 天空散射：天空没有深度也没有表面法线，只能按视线与爆心方向的夹角染色。
+// spread 为1时覆盖整片天空，趋近0时只剩爆心方向；strength 已包含淡出比例和画质倍率。
+// 允许爆心在相机背后：整片天空的亮度来自大气散射，不应因转头看向别处而消失。
+vec3 skyScatter(vec3 ray, vec4 light, vec4 color, float spread) {
+    if (color.a <= 0.0) { return vec3(0.0); }
+    vec3 center = light.xyz;
+    float centerLength = length(center);
+    // 光心与相机重合时没有稳定方向，按正前方采样，避免归一化出NaN。
+    float cosAngle = centerLength < 0.0001 ? 0.0 : clamp(dot(ray, center / centerLength), -1.0, 1.0);
+    // 收拢指数：spread=1 时 0.8 覆盖整片，spread=0 时 6.0 只留爆心方向。
+    float lobe = exp(-mix(6.0, 0.8, clamp(spread, 0.0, 1.0)) * (1.0 - cosAngle));
+    // 0.45 的基础分量让背向爆心的天空同样被染亮，避免出现可见的圆形边界。
+    return color.rgb * color.a * mix(0.45, 1.0, lobe);
+}
+
 // 分层深度构建也复用此程序；逐层完整归约四个子像素，不用平均值替代范围。
 vec4 occlusionDepthOutput() {
     if (OutputMode == 5) {
@@ -247,6 +281,8 @@ void main() {
     vec4 haloColors[8] = vec4[8](LightHaloColorIntensity0, LightHaloColorIntensity1, LightHaloColorIntensity2, LightHaloColorIntensity3, LightHaloColorIntensity4, LightHaloColorIntensity5, LightHaloColorIntensity6, LightHaloColorIntensity7);
     vec4 shapes[8] = vec4[8](LightShape0, LightShape1, LightShape2, LightShape3, LightShape4, LightShape5, LightShape6, LightShape7);
     vec4 emissions[8] = vec4[8](LightEmission0, LightEmission1, LightEmission2, LightEmission3, LightEmission4, LightEmission5, LightEmission6, LightEmission7);
+    vec4 skyColors[8] = vec4[8](LightSkyColorIntensity0, LightSkyColorIntensity1, LightSkyColorIntensity2, LightSkyColorIntensity3, LightSkyColorIntensity4, LightSkyColorIntensity5, LightSkyColorIntensity6, LightSkyColorIntensity7);
+    float skySpreads[8] = float[8](LightSkySpread0, LightSkySpread1, LightSkySpread2, LightSkySpread3, LightSkySpread4, LightSkySpread5, LightSkySpread6, LightSkySpread7);
     vec4 background = texture(SceneColor, screenUV);
     vec4 sampled = scenePosition(screenUV);
     if (sampled.w < -0.5) {
@@ -283,12 +319,16 @@ void main() {
     }
     vec3 normal = hasSurface ? surfaceNormal(screenUV, position) : vec3(0.0, 0.0, 1.0);
     vec3 contribution = vec3(0.0);
+    // 天空染色单独累加：不进入光晕提取，也不受照亮半径或照亮亮度影响。
+    vec3 skyContribution = vec3(0.0);
     float bloomEnergy = 0.0;
     for (int index = 0; index < 8; ++index) {
         if (index >= LightCount) { break; }
         vec4 light = positions[index];
         vec4 color = colors[index];
         vec4 shape = shapes[index];
+        // 天空散射先于照亮判空累加：关掉照亮（radiusScale 或 brightness 为0）时天空仍然闪。
+        if (!hasSurface) { skyContribution += skyScatter(ray, light, skyColors[index], skySpreads[index]); }
         if (light.w <= 0.0 || color.a <= 0.0) { continue; }
         float surface = 0.0;
         vec3 delta = light.xyz - position;
@@ -311,6 +351,8 @@ void main() {
         contribution += added;
         if (shape.z > 0.5) { bloomEnergy += dot(added, vec3(0.2126, 0.7152, 0.0722)); }
     }
+    // 天空像素没有表面受光，只叠加按方向染色的散射量；地面/方块不受这一项影响。
+    contribution += skyContribution;
     // RGBA16F 的有限最大值为 65504；给 8 灯、2 倍画质强度与模糊舍入保留余量，禁止出现 Inf。
     contribution = clamp(contribution, vec3(0.0), vec3(60000.0));
     bloomEnergy = clamp(bloomEnergy, 0.0, 60000.0);

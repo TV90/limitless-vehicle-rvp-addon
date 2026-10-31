@@ -78,12 +78,12 @@ final class RVP_RocketPlumePass {
         shader.safeGetUniform("HaloEnabled").set(RVP_LightingConfig.missileHaloEnabled() ? 1 : 0);
         for (RVP_RocketPlume plume : plumes) {
             // 光晕范围为零时仅取消模糊来源，显示模式仍保留真实白热喷焰。
-            if (mode == 1 && plume.haloRadius() <= 0) { continue; }
+            if (mode == 1 && (plume.haloRadius() <= 0 || plume.haloStrength() <= 0)) { continue; }
             // 调用整条喷流的包围框，不要求喷口本身在屏幕内。
             RVP_PressureWaveGeometry.Bounds bounds = shapeBounds(plume, view, projection, camera, frame.height());
             if (bounds == null) { continue; }
             // 调用同一喷口、朝向、燃烧强度上传，细尾焰与广域光晕不能各自推算弹体姿态。
-            uploadPlume(plume, view, camera);
+            uploadPlume(plume, view, camera, mode == 1);
             // 未使用可见度采样的模式也绑定有效外部输入，避免采样器别名指向正在写入的附件。
             shader.setSampler("PlumeVisibility", frame.depth());
             frame.bind(mode == 1 ? frame.glowTarget() : frame.mainTarget(), frame.width(), frame.height());
@@ -109,10 +109,12 @@ final class RVP_RocketPlumePass {
         // 本方法只在光晕开关打开时进入，可见度采样仍按完整喷流计算。
         shader.safeGetUniform("HaloEnabled").set(1);
         for (RVP_RocketPlume plume : plumes) {
+            if (plume.haloStrength() <= 0) { continue; }
             var bounds = haloBounds(plume, view, projection, camera);
             if (bounds == null) { continue; }
             // 调用独立光晕快照；照亮范围和光晕范围分别调参，阶段仍仅改变亮度。
-            uploadPlume(plume, view, camera);
+            // 调用光晕自身亮度作为可见度开关，预览核心先结束时仍能正确显示尚在淡出的光晕。
+            uploadPlume(plume, view, camera, true);
             // 可见度模式只写一像素；此时采样器指向近景深度，绝不读写自己的同一附件。
             shader.setSampler("PlumeVisibility", frame.depth());
             shader.safeGetUniform("OutputMode").set(3);
@@ -129,21 +131,23 @@ final class RVP_RocketPlumePass {
     }
 
     /** 上传真实几何、世界光晕半径与代码亮度；不把照明半径用作喷焰模型缩放。 */
-    private static void uploadPlume(RVP_RocketPlume plume, Matrix4f view, Vec3 camera) {
+    private static void uploadPlume(RVP_RocketPlume plume, Matrix4f view, Vec3 camera, boolean glowSource) {
         Vector3f position = viewPosition(plume.position(), view, camera);
         Vector3f axis = view.transformDirection(new Vector3f((float) plume.direction().x,
                 (float) plume.direction().y, (float) plume.direction().z)).normalize();
         shader.safeGetUniform("PlumeOriginLength").set(position.x, position.y, position.z, plume.length());
         shader.safeGetUniform("PlumeAxisRadius").set(axis.x, axis.y, axis.z, plume.radius());
         shader.safeGetUniform("PlumeHaloRadius").set(plume.haloRadius());
+        // 模糊来源使用独立光晕亮度，直接显示和可见度采样仍使用喷焰本体亮度。
+        float emissionStrength = glowSource ? plume.haloStrength() : plume.strength();
         // 调用会话亮度入口，只替换已有程序输入；阶段包络、二十步采样、遮挡和显示映射保持原算法。
         shader.safeGetUniform("PlumeEmission").set(
-                RVP_LightRuntimeTuning.get(Group.engine, Parameter.coreIntensity) * plume.strength(),
-                RVP_LightRuntimeTuning.get(Group.engine, Parameter.haloIntensity) * plume.strength(), plume.seed(),
+                RVP_LightRuntimeTuning.get(Group.engine, Parameter.coreIntensity) * emissionStrength,
+                RVP_LightRuntimeTuning.get(Group.engine, Parameter.haloIntensity) * emissionStrength, plume.seed(),
                 RVP_LightRuntimeTuning.get(Group.bloom, Parameter.inputPeak));
         // 调用独立广域亮度；只乘一次推进阶段，不再借用外围橙焰的亮度。
         shader.safeGetUniform("PlumeHaloIntensity").set(
-                RVP_LightRuntimeTuning.get(Group.engine, Parameter.worldHaloIntensity) * plume.strength());
+                RVP_LightRuntimeTuning.get(Group.engine, Parameter.worldHaloIntensity) * plume.haloStrength());
     }
 
     /** 所有局部绘制共用保守矩形，视口仍为完整世界画面。 */

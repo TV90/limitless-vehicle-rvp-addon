@@ -37,7 +37,7 @@
 
 排查时优先阅读该文件最后一次 `BOOT` 之后的记录。仅有 `BOOT` 而没有 `REGISTER`，说明尚未完成客户端初始化；正常渲染每一帧不写日志。独立日志本身写盘失败时只向主日志报告一次故障，不会让调参工具崩溃。
 
-本阶段正常登记记录为 `REGISTER bus=MOD modules=[screen_space] options=56`，对应6组、56项参数。注册回归会保留“游戏总线尚未启动”的真实条件，按生产订阅注解选择加载总线并执行实际回调。
+加入光晕独立保持/淡出参数后，正常登记记录为 `REGISTER bus=MOD modules=[screen_space] options=80`，对应6组、80项参数。注册回归会保留“游戏总线尚未启动”的真实条件，按生产订阅注解选择加载总线并执行实际回调。
 
 ## 保存与撤销
 
@@ -58,7 +58,7 @@
 
 1. 新建 `RVP_TuningModule` 实现，提供稳定 `id`、显示名、说明和不可变 `Group` 清单。稳定键只接受英文大小写、数字、下划线，不能用显示名称做保存键。
 2. 每项使用 `RVP_TuningOption` 绑定**现有业务层**的默认值读取、覆盖读取、写入、单项重置。不存在覆盖用 `OptionalDouble.empty()`，不要把所有默认值提前写回业务存储。默认值可以动态读取 TOML。
-3. 数值选用 `Control.NUMBER`，开关选用 `Control.TOGGLE`（严格0/1）。同时提供中文名称、作用、生效条件、单位、范围。现有模块统一传入`sliderScale=0`，让滑条位置与上下限之间的数值成正比。通用接口保留正数尺度供未来明确需要对数换算的模块选用；文本输入不受滑条精度限制。
+3. 数值选用 `Control.NUMBER`，开关选用 `Control.TOGGLE`（严格0/1），有限选项选用 `Control.CHOICE` 并传入中文选项列表（保存从0开始的整数序号，按钮循环选择）。同时提供中文名称、作用、生效条件、单位、范围。现有数值模块统一传入`sliderScale=0`，让滑条位置与上下限之间的数值成正比。通用接口保留正数尺度供未来明确需要对数换算的模块选用；文本输入不受滑条精度限制。
 4. 需要按钮时添加 `Action`，操作直接调用本地业务方法并返回可读结果；失败抛出可读异常。`showWorldAfter=true` 表示成功后临时收起面板观察，普通操作可用三参数构造器保持面板打开。不要把服务端管理命令藏在这里。
 5. 用 `@Mod.EventBusSubscriber(value = Dist.CLIENT, bus = MOD, modid = RVP_MOD.MOD_ID)` 监听 `RVP_RegisterTuningModulesEvent`，调用 `event.register(new YourModule())`。启动器在客户端setup的主线程任务中通过`ModLoader.postEvent`向MOD加载总线发布一次事件，之后封存目录、加载预设。**这里必须使用MOD总线**：Forge游戏总线直到客户端加载完成才启动，setup时向游戏总线发布会被忽略，日志表现为`REGISTER modules=[] options=0`。按键、客户端命令等运行期事件仍监听FORGE总线。
 

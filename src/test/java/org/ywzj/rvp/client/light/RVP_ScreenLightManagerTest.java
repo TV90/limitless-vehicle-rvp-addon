@@ -32,6 +32,13 @@ class RVP_ScreenLightManagerTest {
         RVP_LightRuntimeTuning.reset();
     }
 
+    /** 只验证照亮寿命时，把光晕改为跟随照亮、关闭天空，避免它们独立延长整盏光源。 */
+    private void isolateLightingLifetime() {
+        // 调用统一调参入口：原曲线让光晕与照亮同寿命，天空峰值0表示不写天空。
+        RVP_LightRuntimeTuning.set(Group.explosion, Parameter.haloDecayCurve, 0);
+        RVP_LightRuntimeTuning.set(Group.explosion, Parameter.skyPeakBrightness, 0);
+    }
+
     /** 读取无视锥裁剪的实际快照，用于检查生命周期，预算仍正常执行。 */
     private List<RVP_ScreenLight> sample(float partialTick) {
         return manager.collectVisible(Vec3.ZERO, partialTick, 256, 8, light -> true);
@@ -84,6 +91,8 @@ class RVP_ScreenLightManagerTest {
 
     @Test
     void explosionFadesAndWarmsWithoutAdvancingAtRenderRate() {
+        // 本项只验证照亮淡出与帧率无关：光晕跟随照亮寿命、天空关闭。
+        isolateLightingLifetime();
         manager.addTransient(new Vec3(1, 0, 0), RVP_LightSourceType.EXPLOSION, null,
                 RVP_LightParameters.explosion(4), 100);
         RVP_ScreenLight first = sample(0).get(0);
@@ -99,6 +108,8 @@ class RVP_ScreenLightManagerTest {
 
     @Test
     void delayedEventsCatchUpAndAlreadyExpiredEventsAreRejected() {
+        // 本项只验证照亮寿命与迟包判定：关闭独立光晕曲线与天空。
+        isolateLightingLifetime();
         RVP_LightParameters parameters = RVP_LightParameters.explosion(4);
         assertEquals(0, manager.addTransient(Vec3.ZERO, RVP_LightSourceType.EXPLOSION, null, parameters, 60));
         manager.addTransient(Vec3.ZERO, RVP_LightSourceType.EXPLOSION, null, parameters, 96);
@@ -108,6 +119,8 @@ class RVP_ScreenLightManagerTest {
 
     @Test
     void slightlyLeadingServerClockStartsAtAgeZeroInsteadOfDroppingFlash() {
+        // 本项只验证照亮寿命：关闭独立光晕曲线与天空。
+        isolateLightingLifetime();
         RVP_LightParameters parameters = RVP_LightParameters.explosion(4);
         assertNotEquals(0, manager.addTransient(Vec3.ZERO, RVP_LightSourceType.EXPLOSION, null, parameters, 105));
         assertEquals(parameters.durationTicks(), sample(0).get(0).remainingTicks());
@@ -117,12 +130,14 @@ class RVP_ScreenLightManagerTest {
 
     @Test
     void explosionLivesExactlyThirtyTwoTicksWithPointThreeDecayAndRenderRateCannotExtendIt() {
+        // 本项只验证照亮寿命：关闭独立光晕曲线与天空。
+        isolateLightingLifetime();
         // 调用真实爆炸预设与管理器，覆盖1.6秒中点、最后半刻和精确过期边界。
         RVP_LightParameters parameters = RVP_LightParameters.explosion(4);
         manager.addTransient(Vec3.ZERO, RVP_LightSourceType.EXPLOSION, null, parameters, 100);
         manager.tick(world, 116);
         RVP_ScreenLight middle = sample(0).get(0);
-        assertEquals(parameters.intensity() * 20 * Math.pow(.5, .3), middle.intensity(), .00001);
+        assertEquals(parameters.intensity() * 5 * Math.pow(.5, .3), middle.intensity(), .00001);
         assertEquals(16, middle.remainingTicks());
         manager.tick(world, 131);
         RVP_ScreenLight last = sample(.5F).get(0);
@@ -139,6 +154,12 @@ class RVP_ScreenLightManagerTest {
             // 调用两类真实预设和管理器，检查慢衰减下照亮、光晕都超过原始寿命后仍有效。
             RVP_LightRuntimeTuning.reset();
             Group group = type == RVP_LightSourceType.EXPLOSION ? Group.explosion : Group.muzzle;
+            // 调用原曲线设置，本项专门验证原曲线下照亮与光晕共同伸缩；新独立时长另有回归。
+            RVP_LightRuntimeTuning.set(group, Parameter.haloDecayCurve, 0);
+            // 天空有独立时间线（默认3+29刻）会把整盏光延长到 32 刻，本项只验证照亮/光晕寿命，先关掉天空。
+            if (Parameter.skyPeakBrightness.supports(group)) {
+                RVP_LightRuntimeTuning.set(group, Parameter.skyPeakBrightness, 0);
+            }
             RVP_LightParameters parameters = type == RVP_LightSourceType.EXPLOSION
                     ? RVP_LightParameters.explosion(4) : RVP_LightParameters.muzzle(125, false);
             RVP_ScreenLightManager lightManager = new RVP_ScreenLightManager();
@@ -167,6 +188,10 @@ class RVP_ScreenLightManagerTest {
 
     @Test
     void liveDecayChangesKeepBirthTimeAndDelayedSourcesUseTheAdjustedLifetime() {
+        // 调用原曲线设置，保留本项对原有同步结束边界的回归覆盖。
+        RVP_LightRuntimeTuning.set(Group.explosion, Parameter.haloDecayCurve, 0);
+        // 天空自有时间线会独立延长整盏光，本项只验证照亮/光晕寿命，先关掉天空。
+        RVP_LightRuntimeTuning.set(Group.explosion, Parameter.skyPeakBrightness, 0);
         // 调用实时调参与迟包登记，不重置出生年龄；恢复参数不能让已结束的条目复活。
         RVP_LightParameters parameters = RVP_LightParameters.explosion(4);
         long handle = manager.addTransient(Vec3.ZERO, RVP_LightSourceType.EXPLOSION, null, parameters, 100);
@@ -282,3 +307,4 @@ class RVP_ScreenLightManagerTest {
         assertTrue(manager.collectVisible(Vec3.ZERO, 0, 256, 8, light -> true).isEmpty());
     }
 }
+

@@ -668,6 +668,22 @@
         0
       ]
     },
+    { "name": "LightSkyColorIntensity0", "type": "float", "count": 4, "values": [0, 0, 0, 0] },
+    { "name": "LightSkyColorIntensity1", "type": "float", "count": 4, "values": [0, 0, 0, 0] },
+    { "name": "LightSkyColorIntensity2", "type": "float", "count": 4, "values": [0, 0, 0, 0] },
+    { "name": "LightSkyColorIntensity3", "type": "float", "count": 4, "values": [0, 0, 0, 0] },
+    { "name": "LightSkyColorIntensity4", "type": "float", "count": 4, "values": [0, 0, 0, 0] },
+    { "name": "LightSkyColorIntensity5", "type": "float", "count": 4, "values": [0, 0, 0, 0] },
+    { "name": "LightSkyColorIntensity6", "type": "float", "count": 4, "values": [0, 0, 0, 0] },
+    { "name": "LightSkyColorIntensity7", "type": "float", "count": 4, "values": [0, 0, 0, 0] },
+    { "name": "LightSkySpread0", "type": "float", "count": 1, "values": [0] },
+    { "name": "LightSkySpread1", "type": "float", "count": 1, "values": [0] },
+    { "name": "LightSkySpread2", "type": "float", "count": 1, "values": [0] },
+    { "name": "LightSkySpread3", "type": "float", "count": 1, "values": [0] },
+    { "name": "LightSkySpread4", "type": "float", "count": 1, "values": [0] },
+    { "name": "LightSkySpread5", "type": "float", "count": 1, "values": [0] },
+    { "name": "LightSkySpread6", "type": "float", "count": 1, "values": [0] },
+    { "name": "LightSkySpread7", "type": "float", "count": 1, "values": [0] },
     {
       "name": "OcclusionReady",
       "type": "int",

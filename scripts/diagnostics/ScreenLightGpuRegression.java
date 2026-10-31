@@ -5,6 +5,7 @@ import org.lwjgl.opengl.*;
 import org.ywzj.rvp.light.RVP_LightParameters;
 import org.ywzj.rvp.light.RVP_BloomParameters;
 import org.ywzj.rvp.light.RVP_TransientLightTimeline;
+import org.ywzj.rvp.light.RVP_HaloDecayCurve;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -66,6 +67,8 @@ public final class ScreenLightGpuRegression {
             testIndependentPlumeGlow(plume);
             testSeparatedLightHalo(light);
             testTransientLightTimeline(light, bloom);
+            testHaloDecayCurves(light);
+            testExplosionPeakHalo(light);
             testExtendedEngineSurface(light);
             smoke = program(shaders, "smoke_light_occlusion");
             testSmokeLighting(smoke);
@@ -462,6 +465,50 @@ public final class ScreenLightGpuRegression {
         require(many[0] < 0.99F && many[1] < 0.99F && many[2] < 0.99F, "eight lights caused unbounded whiteout");
         near(BACKGROUND[3], many[3], "eight light alpha");
         System.out.println("PASS empty sky, zero lights, and bounded eight-light exposure");
+
+        // 天空散射：只有没有深度的天空像素按视线与爆心方向的夹角染色，照亮半径与强度都留空以隔离该通道。
+        // 显式设定 90° 标准视锥，四角才有可预测的视线方向差异可供对照。
+        matrix(shader, "Projection", new float[] {1,0,0,0, 0,1,0,0, 0,0,A,-1, 0,0,B,0});
+        matrix(shader, "InverseProjection", new float[] {1,0,0,0, 0,1,0,0, 0,0,0,1/B, 0,0,-1,A/B});
+        sampler(shader, "SceneDepth", 1, sky);
+        sampler(shader, "DistantDepth", 2, sky);
+        lights(shader, 1, 0, 0, -50, 0, 0, 0, 0);
+        for (int index = 0; index < 8; index++) {
+            GL20.glUniform4f(GL20.glGetUniformLocation(shader, "LightSkyColorIntensity" + index), 1, 0.7F, 0.2F, 0);
+            GL20.glUniform1f(GL20.glGetUniformLocation(shader, "LightSkySpread" + index), 1);
+        }
+        render(output, SIZE, SIZE);
+        background(pixel(output[0], SIZE / 2, SIZE / 2), "zero sky strength");
+        // 0.8强度、整片宽度：正对爆心的屏幕中心接近满值，画面四角也必须有底光。
+        GL20.glUniform4f(GL20.glGetUniformLocation(shader, "LightSkyColorIntensity0"), 1, 0.7F, 0.2F, 0.8F);
+        render(output, SIZE, SIZE);
+        float skyCenter = pixel(output[0], SIZE / 2, SIZE / 2)[0];
+        // 目标只有16×16，(8,8)就是屏幕中心；四角取(0,0)才有偏离爆心的视线方向。
+        float skyCornerWide = pixel(output[0], 0, 0)[0];
+        require(Math.abs(skyCenter - composite(BACKGROUND[0], 0.8F)) < 0.02F,
+                "sky scatter peak expected=" + composite(BACKGROUND[0], 0.8F) + " actual=" + skyCenter);
+        require(skyCornerWide > BACKGROUND[0] + 0.02F, "wide sky scatter must tint the whole sky, not only the blast direction");
+        // 收拢到0宽度：同一角落明显变暗，中心保持最亮，形成向爆心收缩的观感。
+        GL20.glUniform1f(GL20.glGetUniformLocation(shader, "LightSkySpread0"), 0);
+        render(output, SIZE, SIZE);
+        float skyCornerNarrow = pixel(output[0], 0, 0)[0];
+        require(Math.abs(pixel(output[0], SIZE / 2, SIZE / 2)[0] - skyCenter) < 0.01F,
+                "contraction must keep the blast direction bright");
+        require(skyCornerNarrow < skyCornerWide - 0.02F,
+                "contraction must darken the sky away from the blast; wide=" + skyCornerWide + " narrow=" + skyCornerNarrow);
+        require(skyCornerNarrow > BACKGROUND[0], "contraction must keep the ambient sky floor");
+        // 表面像素不受天空项影响：墙面在天空强度拉满时仍保持原画面。
+        int skyWall = depth(SIZE, SIZE, 5, false);
+        sampler(shader, "SceneDepth", 1, skyWall);
+        GL20.glUniform1f(GL20.glGetUniformLocation(shader, "LightSkySpread0"), 1);
+        render(output, SIZE, SIZE);
+        background(pixel(output[0], SIZE / 2, SIZE / 2), "sky scatter must not touch surfaces");
+        for (int index = 0; index < 8; index++) {
+            GL20.glUniform4f(GL20.glGetUniformLocation(shader, "LightSkyColorIntensity" + index), 0, 0, 0, 0);
+            GL20.glUniform1f(GL20.glGetUniformLocation(shader, "LightSkySpread" + index), 0);
+        }
+        GL20.glUniform1i(GL20.glGetUniformLocation(shader, "LightCount"), 0);
+        System.out.println("PASS sky scatter tints the whole sky, contracts toward the blast and never touches surfaces");
 
         sampler(shader, "SceneDepth", 1, sky);
         lights(shader, 1, 0, 0, -3, 2, 1, 0, 1);
@@ -1302,6 +1349,85 @@ public final class ScreenLightGpuRegression {
         System.out.println("PASS independent explosion wide halo gain 0..60000, brightness isolation, whole-source 0.5/1/2 decay timing, smooth final composite and Alpha");
     }
 
+    /** 回读新增曲线送入生产光晕程序后的亮度；切换光晕曲线不能串改环境照亮。 */
+    private static void testHaloDecayCurves(int shader) {
+        int size = 64;
+        int sky = depth(size, size, 0, false), surface = depth(size, size, 5, false);
+        int scene = color(size, size, BACKGROUND);
+        int[] lit = target(size, size), glow = target(size, size);
+        GL20.glUseProgram(shader); uniforms(shader);
+        GL20.glUniform2f(GL20.glGetUniformLocation(shader, "ScreenSize"), size, size);
+        sampler(shader, "SceneColor", 0, scene); sampler(shader, "SceneDepth", 1, surface);
+        sampler(shader, "DistantDepth", 2, sky);
+        lights(shader, 1, 0, 0, -3, 60, 25, .85F, 0);
+        GL20.glUniform4f(GL20.glGetUniformLocation(shader, "LightShape0"), .85F, 0, 1, 12);
+        GL20.glUniform4f(GL20.glGetUniformLocation(shader, "LightHaloColorIntensity0"), 1, .82F, .48F, 16);
+        GL20.glUniform1i(GL20.glGetUniformLocation(shader, "OutputMode"), 3); render(glow, size, size);
+        float fullHalo = pixel(glow[0], size / 2, size / 2)[0];
+        require(fullHalo > 0, "halo curve reference is invisible");
+        for (float scale : new float[] {.5F, 1, 2}) {
+            // 调用正式寿命规则，验证同一归一化曲线在加速和减速后仍保持相同形状。
+            float duration = RVP_TransientLightTimeline.durationTicks(32, scale);
+            for (float progress : new float[] {0, .05F, .1F, .25F, .5F, .8F, .9F, .99F, 1}) {
+                float original = RVP_TransientLightTimeline.fade(duration * progress, 32, .3F, scale);
+                GL20.glUniform4f(GL20.glGetUniformLocation(shader, "LightColorIntensity0"), 1, .82F, .48F, 25 * original);
+                GL20.glUniform1i(GL20.glGetUniformLocation(shader, "OutputMode"), 1); render(lit, size, size);
+                float environment = pixel(lit[0], size / 2, size / 2)[0];
+                for (RVP_HaloDecayCurve curve : new RVP_HaloDecayCurve[] {RVP_HaloDecayCurve.LINEAR, RVP_HaloDecayCurve.FLASH_HOLD}) {
+                    // 调用生产曲线函数后上传真实光晕槽位；低亮保持段不能再乘环境光的原包络。
+                    float fade = curve.fade(progress, original, .1F, .15F, .8F);
+                    GL20.glUniform4f(GL20.glGetUniformLocation(shader, "LightHaloColorIntensity0"), 1, .82F, .48F, 16 * fade);
+                    GL20.glUniform1i(GL20.glGetUniformLocation(shader, "OutputMode"), 3); render(glow, size, size);
+                    float actual = pixel(glow[0], size / 2, size / 2)[0] / fullHalo;
+                    float expected = curve == RVP_HaloDecayCurve.LINEAR ? 1 - progress : fade;
+                    if (curve == RVP_HaloDecayCurve.FLASH_HOLD && progress >= .1F && progress <= .8F) { expected = .15F; }
+                    near(expected, actual, "GPU halo curve " + curve + " progress=" + progress);
+                    GL20.glUniform1i(GL20.glGetUniformLocation(shader, "OutputMode"), 1); render(lit, size, size);
+                    near(environment, pixel(lit[0], size / 2, size / 2)[0], "halo curve changed environment lighting");
+                }
+            }
+        }
+        System.out.println("PASS linear/flash-hold halo GPU brightness, constant low plateau, exact zero endpoint, 0.5/1/2 lifetime scales and environment isolation");
+    }
+
+    /** 天空闪光的实际像素：保持3刻后平滑淡出，空间上中心最亮、向外单调变暗。 */
+    private static void testExplosionPeakHalo(int shader) {
+        int size = 65, center = size / 2;
+        int sky = depth(size, size, 0, false), scene = color(size, size, BACKGROUND);
+        int[] glow = target(size, size);
+        GL20.glUseProgram(shader); uniforms(shader);
+        GL20.glUniform2f(GL20.glGetUniformLocation(shader, "ScreenSize"), size, size);
+        sampler(shader, "SceneColor", 0, scene); sampler(shader, "SceneDepth", 1, sky);
+        sampler(shader, "DistantDepth", 2, sky);
+        lights(shader, 1, 0, 0, -3, 60, 25, .85F, 0);
+        GL20.glUniform4f(GL20.glGetUniformLocation(shader, "LightShape0"), .85F, 0, 1, 2);
+        GL20.glUniform4f(GL20.glGetUniformLocation(shader, "LightHaloColorIntensity0"), 1, .82F, .48F, 16);
+        GL20.glUniform1i(GL20.glGetUniformLocation(shader, "OutputMode"), 3); render(glow, size, size);
+        float peak = pixel(glow[0], center, center)[0];
+        near(16, peak, "sky halo center must equal configured peak");
+        float previous = peak;
+        for (int offset = 1; offset <= center; offset++) {
+            float right = pixel(glow[0], center + offset, center)[0];
+            float left = pixel(glow[0], center - offset, center)[0];
+            require(right <= previous + .002F, "sky halo brightened toward its rim");
+            near(right / peak, left / peak, "sky halo lost radial symmetry");
+            previous = right;
+        }
+        near(0, previous, "sky halo rim must reach zero");
+        for (double age : new double[] {0, 1, 2.99, 3, 3.5, 17.5, 31.9, 32}) {
+            // 调用生产实际刻函数，保持和淡出分开计时；天空没有表面，依然应显示独立光晕。
+            float fade = RVP_HaloDecayCurve.peakHoldFade(age, 3, 29);
+            GL20.glUniform4f(GL20.glGetUniformLocation(shader, "LightHaloColorIntensity0"), 1, .82F, .48F, 16 * fade);
+            render(glow, size, size);
+            float actual = pixel(glow[0], center, center)[0] / peak;
+            near(fade, actual, "three-tick sky flash time sampling");
+            if (age <= 3) { near(1, actual, "sky flash lost brightness before three ticks"); }
+            if (age == 17.5) { near(.5F, actual, "sky flash fade midpoint"); }
+            if (age == 32) { near(0, actual, "sky flash end"); }
+        }
+        System.out.println("PASS explosion sky halo keeps its peak for 3 ticks then fades smoothly; radial center is brightest, symmetric rim reaches zero");
+    }
+
     /** 真正 500 格照明：距发动机 450 格的 DH 表面仍受光，窄口径范围不能冒充同样远距照明。 */
     private static void testExtendedEngineSurface(int shader) {
         GL20.glUseProgram(shader); uniforms(shader);
@@ -1661,6 +1787,11 @@ public final class ScreenLightGpuRegression {
     /** RGBA16F 的量化容差。 */
     private static void near(float expected, float actual, String message) {
         require(Math.abs(expected - actual) < 0.002F, message + " expected=" + expected + " actual=" + actual);
+    }
+
+    /** 与生产着色器完全相同的最终合成，用于核对天空散射的像素期望值。 */
+    private static float composite(float background, float contribution) {
+        return (float) (background + (1 - Math.exp(-contribution)) * (1 - background) * 0.9);
     }
 
     /** 不依赖 -ea 的失败断言。 */

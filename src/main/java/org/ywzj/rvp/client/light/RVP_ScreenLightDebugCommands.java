@@ -84,6 +84,24 @@ public final class RVP_ScreenLightDebugCommands {
             }));
         }
         root.then(isolate);
+        var skyDebug = Commands.literal("skydebug").executes(context -> skyDebugStatus(context.getSource()));
+        skyDebug.then(Commands.literal("on").executes(context -> {
+            // 调用追踪开关，开启后把爆炸事件到提交显卡的关键节点写入独立 UTF-8 日志文件。
+            RVP_SkyScatterTrace.setEnabled(true);
+            send(context.getSource(), "天空散射追踪已开启：" + RVP_SkyScatterTrace.status()
+                    + "；复现后用 /rvplight skydebug off 关闭，并回传该文件。");
+            return 1;
+        }));
+        skyDebug.then(Commands.literal("off").executes(context -> {
+            // 先取路径再关闭，提示玩家到哪里取本次记录。
+            String file = RVP_SkyScatterTrace.path();
+            // 调用追踪开关，关闭后不再产生任何日志开销。
+            RVP_SkyScatterTrace.setEnabled(false);
+            send(context.getSource(), "天空散射追踪已关闭；本次记录在 " + (file.isEmpty() ? "（未产生文件）" : file));
+            return 1;
+        }));
+        skyDebug.then(Commands.literal("status").executes(context -> skyDebugStatus(context.getSource())));
+        root.then(skyDebug);
         var set = Commands.literal("set");
         var reset = Commands.literal("reset").executes(context -> {
             // 调用会话重置，恢复现有算法的代码参数与用户原有画质配置。
@@ -136,6 +154,17 @@ public final class RVP_ScreenLightDebugCommands {
         return root.then(set).then(status).then(reset);
     }
 
+    /** 展示追踪开关、日志文件位置与当前天空参数，确认复现时开关确实打开。 */
+    private static int skyDebugStatus(CommandSourceStack source) {
+        send(source, "天空散射追踪=" + RVP_SkyScatterTrace.status()
+                + "；explosion.skyPeakBrightness=" + RVP_LightRuntimeTuning.get(Group.explosion, Parameter.skyPeakBrightness)
+                + "，skyHoldTicks=" + RVP_LightRuntimeTuning.get(Group.explosion, Parameter.skyHoldTicks)
+                + "，skyFadeTicks=" + RVP_LightRuntimeTuning.get(Group.explosion, Parameter.skyFadeTicks)
+                + "，skyContract=" + RVP_LightRuntimeTuning.get(Group.explosion, Parameter.skyContract)
+                + "；用 /rvplight skydebug on|off 切换。");
+        return 1;
+    }
+
     /** 展示中文分组含义和可直接复制使用的调试示例。 */
     private static int help(CommandSourceStack source) {
         // 调用本地反馈说明指令与单位，避免只展示英文参数名。
@@ -150,7 +179,13 @@ public final class RVP_ScreenLightDebugCommands {
         send(source, "/rvplight occlusion 采样下一帧表面遮挡；status 查看实际提交灯数/位置、离屏及预算耗尽计数。");
         send(source, "/rvplight isolate explosion|muzzle|engine 只绘制该类的一盏环境光；isolate off 恢复全部，便于排除真实多灯投影。");
         send(source, "两种半径均允许0～8192格；爆炸光默认32刻即1.6秒，衰减系数0.3；喷焰长宽仍由原有缩放决定。");
-        send(source, "explosion/muzzle的decayScale越小整盏光源越长，越大越短；爆炸0.5约3.2秒、2约0.8秒，照亮和光晕同步平滑淡出。");
+        send(source, "explosion/muzzle的decayScale调照亮寿命：爆炸0.5约3.2秒、2约0.8秒；光晕曲线0～2跟随，曲线3独立计时。");
+        send(source, "haloDecayCurve只改光晕亮度：0原有、1线性、2快降后保持、3高亮保持后淡出；global统一设置，各来源可单独覆盖。");
+        send(source, "曲线2用haloDropFraction调快速降亮时间比例、haloLowBrightness调低亮比例、haloHoldUntil调保持终点；不改变环境照亮或光源寿命。");
+        send(source, "爆炸光晕默认开启并使用曲线3：按worldHaloIntensity保持3刻，然后平滑归零；haloPeakHoldTicks可调保持时间，中心最亮、向外变暗。");
+        send(source, "haloFadeOutTicks独立调光晕淡出时间，爆炸默认29刻；只改光晕，不会改变照亮地面/墙面/烟雾的时间。");
+        send(source, "爆炸光晕在淡出时向中心收缩：haloShrink 1收到中心、0保持固定半径；只缩光晕，照亮范围/亮度/寿命不变。");
+        send(source, "/rvplight skydebug on 开启天空散射追踪：写入独立 UTF-8 文件 logs/rvp-sky-scatter.log；off 关闭。");
         send(source, "所有修改下一帧生效，仅本机；重连/换维度保留，重启游戏恢复默认。不会写配置或载具包。");
         return 1;
     }
@@ -176,7 +211,7 @@ public final class RVP_ScreenLightDebugCommands {
                 }) ? 1 : 0)
                 : RVP_LightRuntimeTuning.get(group, parameter);
         send(source, group + "." + parameter + "=" + value + (overridden ? "（临时覆盖）" : "（沿用默认）")
-                + "，默认=" + (parameter == Parameter.enabled ? "客户端配置" : parameter.defaultValue(group))
+                + "，默认=" + (parameter == Parameter.enabled ? "客户端配置" : RVP_LightRuntimeTuning.defaultValue(group, parameter))
                 + "，范围=" + parameter.min + "～" + parameter.max + "；" + parameter.description);
         return 1;
     }

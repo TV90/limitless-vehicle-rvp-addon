@@ -24,9 +24,27 @@ final class RVP_DefaultExplosionEffectInstance implements RVP_ClientVisualEffect
         org.ywzj.rvp.client.light.RVP_ScreenLightManager manager = org.ywzj.rvp.client.light.RVP_ScreenLightManager.INSTANCE;
         // 调用世界检查与短光登记，startGameTime 自动扣除网络延迟。
         manager.beginWorld(level, level.getGameTime());
-        lightHandle = event.flash() ? manager.addTransient(event.position(),
+        // 调用唯一的光源判定：只有“允许闪光 + 服务端标记空中起爆”才建灯；
+        // 地面/命中起爆保留粒子、烟雾与声音，但不再产生照亮、光晕、白热核心与天空染色。
+        boolean emitLight = org.ywzj.rvp.weapon.visual.RVP_DefaultExplosionEventData
+                .shouldEmitScreenLight(event.flash(), event.canonicalPresetDataJson());
+        lightHandle = emitLight ? manager.addTransient(event.position(),
                 org.ywzj.rvp.client.light.RVP_LightSourceType.EXPLOSION, null, parameters,
                 event.startGameTime()) : 0;
+        // 调用天空散射追踪：未达离地高度门槛不建灯是预期行为，单独记录避免与“光源被剔除”混淆。
+        if (!emitLight) {
+            org.ywzj.rvp.client.light.RVP_SkyScatterTrace.lightSkipped(event.position(),
+                    event.flash()
+                            ? "爆心离地不足 " + org.ywzj.rvp.weapon.visual.RVP_DefaultExplosionVisualService
+                                    .MIN_AIR_BURST_CLEARANCE + " 格，仅空中起爆生成爆炸光源"
+                            : "事件未允许闪光");
+        }
+        // 调用天空散射追踪，记录光源是否真的登记成功；handle=0 后不会再有任何帧日志。
+        org.ywzj.rvp.client.light.RVP_SkyScatterTrace.lightRegistered(event.position(), lightHandle,
+                manager.size(),
+                org.ywzj.rvp.light.RVP_LightRuntimeTuning.skyIntensity(
+                        org.ywzj.rvp.light.RVP_LightRuntimeTuning.Group.explosion, 1),
+                initialAge);
     }
 
     @Override
@@ -52,6 +70,9 @@ final class RVP_DefaultExplosionEffectInstance implements RVP_ClientVisualEffect
     public void close() {
         // 调用默认爆炸声音控制器，取消因实例淘汰或切换世界而尚未抵达的声音。
         soundController.close();
+        // 调用天空散射追踪，记录光源是自然结束还是被效果实例预算提前淘汰。
+        org.ywzj.rvp.client.light.RVP_SkyScatterTrace.lightClosed(lightHandle,
+                soundController.isFinished() ? "效果自然结束" : "效果实例被淘汰或世界切换");
         // 调用短光取消入口，实例预算淘汰时不会遗留它的闪光。
         org.ywzj.rvp.client.light.RVP_ScreenLightManager.INSTANCE.removeTransient(lightHandle);
     }
