@@ -1,6 +1,7 @@
 {
   "type": "rvp:torpedo",
   "name": "Mk46 ASW Torpedo",
+  "recoil": 0,
   "name_CN": "MK46 轻型反潜鱼雷",
   "velocity": 2.0,
   "life": 3600,

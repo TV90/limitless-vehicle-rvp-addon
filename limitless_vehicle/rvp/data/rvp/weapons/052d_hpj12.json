@@ -1,7 +1,7 @@
 {
   "type": "rvp:machinegun",
   "name": "H/PJ-12 30mm Cannon",
-  "recoil": 0.1,
+  "recoil": 0,
   "shoot_interval": 50,
   "max_capacity": 150,
   "reload": {

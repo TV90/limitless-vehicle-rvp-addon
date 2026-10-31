@@ -1,6 +1,7 @@
 {
   "type": "rvp:missile",
   "name": "YJ-20 BM",
+  "recoil": 0,
   "life": 6000,
   "shoot_interval": 500,
   "max_capacity": 4,
