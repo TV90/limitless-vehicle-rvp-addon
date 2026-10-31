@@ -159,7 +159,11 @@ public final class RVP_EoJammerGlowRenderer {
         if (glowPlates.isEmpty()) {
             return;
         }
-        if (!isNight(vehicle.level())) {
+        // 白天只是人眼看不出这盏灯：窗帘干扰灯的能量在红外波段，像增强管会把它整片转成可见光。
+        // 所以开着夜视时不看天光，玻片发红、光晕、周围照亮全都照常出；夜视开关是本机视角的判据
+        // （isActive 只跟随本机夜视状态，与环境亮度无关），没戴夜视的观察者仍按下面的夜间条件走。
+        boolean nightVision = RVP_NvgHandler.isActive();
+        if (!nightVision && !isNight(vehicle.level())) {
             RVP_ScreenLightManager.INSTANCE.removePersistent(vehicleKey);
             return;
         }

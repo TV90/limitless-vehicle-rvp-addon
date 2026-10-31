@@ -5,6 +5,7 @@ import net.minecraftforge.client.event.RenderLevelStageEvent;
 import net.minecraftforge.client.event.ViewportEvent;
 import org.ywzj.rvp.client.light.RVP_LightSourceType;
 import org.ywzj.rvp.client.light.RVP_ScreenLightManager;
+import org.ywzj.rvp.config.RVP_LightingConfig;
 import org.ywzj.rvp.light.RVP_LightParameters;
 import org.ywzj.rvp.weapon.visual.api.RVP_VisualEffectEvent;
 
@@ -20,10 +21,12 @@ final class RVP_LitVisualEffect implements RVP_ClientVisualEffect {
     RVP_LitVisualEffect(ClientLevel level, RVP_VisualEffectEvent event, RVP_ClientVisualEffect delegate) {
         this.delegate = delegate;
         // 调用代码中的爆炸光参数，现有事件仍只负责爆心、半径、时间和闪光事实。
-        RVP_LightParameters parameters = RVP_LightParameters.explosion(event.baseExplosionRadius());
         RVP_ScreenLightManager.INSTANCE.beginWorld(level, level.getGameTime());
-        handle = RVP_ScreenLightManager.INSTANCE.addTransient(event.position(), RVP_LightSourceType.EXPLOSION,
-                null, parameters, event.startGameTime());
+        // 爆炸光默认关闭：只撤这盏灯，句柄留 0 表示无灯，原效果的粒子与声音照常。
+        handle = RVP_LightingConfig.explosionLightEnabled()
+                ? RVP_ScreenLightManager.INSTANCE.addTransient(event.position(), RVP_LightSourceType.EXPLOSION,
+                        null, RVP_LightParameters.explosion(event.baseExplosionRadius()), event.startGameTime())
+                : 0;
     }
 
     @Override

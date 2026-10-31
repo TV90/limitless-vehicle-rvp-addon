@@ -36,6 +36,14 @@ class RVP_LightParametersTest {
     }
 
     @Test
+    void explosionLightDefaultsOffWithoutLoadedConfig() {
+        // 调用配置读取入口：规格尚未加载时也必须按关闭处理，与 TOML 的默认值一致，不能回退成亮灯。
+        assertFalse(RVP_LightingConfig.explosionLightEnabled());
+        // 撤灯只撤灯：爆炸光不参与真实方块光，P5 仍固定关闭。
+        assertEquals(0, RVP_LightParameters.explosion(8).blockLightLevel());
+    }
+
+    @Test
     void explosionRadiusIsBoundedEvenForNuclearAndInvalidInput() {
         assertTrue(RVP_LightParameters.explosion(8192).radius() <= 32);
         assertEquals(RVP_LightParameters.explosion(4), RVP_LightParameters.explosion(Float.NaN));

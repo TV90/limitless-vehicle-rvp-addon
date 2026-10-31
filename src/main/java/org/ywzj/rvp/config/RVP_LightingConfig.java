@@ -23,6 +23,8 @@ public final class RVP_LightingConfig {
     private static final ForgeConfigSpec.BooleanValue BLOOM;
     /** 导弹发动机广域光晕；默认关闭，关闭后保留喷焰本体和表面受光。 */
     private static final ForgeConfigSpec.BooleanValue MISSILE_HALO;
+    /** 爆炸屏幕光；默认关闭，关闭后爆炸粒子、声音与镜头震动照旧。 */
+    private static final ForgeConfigSpec.BooleanValue EXPLOSION_LIGHT;
     /** 光电干扰机玻片夜间红光总开关；关闭后玻片完全保持原贴图。 */
     private static final ForgeConfigSpec.BooleanValue EO_JAMMER_GLOW;
     /** 可选空气散射总开关，默认关闭。 */
@@ -47,6 +49,9 @@ public final class RVP_LightingConfig {
         EO_JAMMER_GLOW = client.comment("光电干扰机玻片在夜间/暗处乘红色并发光；关闭后玻片完全保持原贴图。",
                         "玻片骨骼与对应干扰模块由 display JSON 的 eo_jammer_glow 指定。")
                 .define("eoJammerGlow", true);
+        EXPLOSION_LIGHT = client.comment("爆炸瞬间的屏幕空间闪光与照亮；默认关闭（2026-10-31 按要求停用）。",
+                        "关闭只撤掉这盏灯：爆炸粒子、火球、声音与镜头震动都不受影响，也不占用八盏灯的预算。")
+                .define("explosionLight", false);
         VOLUMETRIC = client.comment("允许代码预设中的球形空气散射，默认关闭；不读取武器 JSON 光源配置。")
                 .define("volumetric", false);
         MAX_LIGHTS = client.comment("每帧光源上限，0 关闭。默认 8。") .defineInRange("maxLights", 8, 0, 8);
@@ -85,6 +90,10 @@ public final class RVP_LightingConfig {
     /** 光电干扰机玻片夜间红光；配置未加载时按开启处理，与 TOML 默认值一致。 */
     public static boolean eoJammerGlowEnabled() {
         return !CLIENT_SPEC.isLoaded() || EO_JAMMER_GLOW.get();
+    }
+    /** 爆炸屏幕光；配置未加载时按关闭处理，与 TOML 默认值一致。 */
+    public static boolean explosionLightEnabled() {
+        return CLIENT_SPEC.isLoaded() && EXPLOSION_LIGHT.get();
     }
     /** 默认关闭实验性空气散射。 */
     public static boolean volumetricEnabled() { return CLIENT_SPEC.isLoaded() && VOLUMETRIC.get(); }
