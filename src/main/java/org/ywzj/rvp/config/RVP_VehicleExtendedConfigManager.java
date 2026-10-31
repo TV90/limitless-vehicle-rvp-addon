@@ -380,6 +380,7 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
         boolean persistentChunkLease = parsePersistentChunkLease(obj);
         VehicleExtendedConfig.AutoCollectiveConfig autoCollective = parseAutoCollective(obj);
         Set<String> helipadBones = parseHelipadBones(obj);
+        VehicleExtendedConfig.FlightDeckConfig flightDeck = parseFlightDeck(obj);
         ResourceLocation armorType = parseArmorType(obj);
         Float maxIncidenceAngle = parseMaxIncidenceAngle(obj);
         if (groundContactPartIds.isEmpty()
@@ -392,7 +393,8 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
                 && autoCollective == null
                 && helipadBones.isEmpty()
                 && armorType == null
-                && maxIncidenceAngle == null) {
+                && maxIncidenceAngle == null
+                && flightDeck == null) {
             return VehicleExtendedConfig.EMPTY;
         }
         return new VehicleExtendedConfig(
@@ -408,7 +410,8 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
                 autoCollective,
                 Set.copyOf(helipadBones),
                 armorType,
-                maxIncidenceAngle
+                maxIncidenceAngle,
+                flightDeck
         );
     }
 
@@ -481,6 +484,28 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
      * 注意：本字段必须纳入 parseVehicle 的"全空即 EMPTY"早退判定，否则只配此字段的载具配置会
      * 静默失效（§45 审计教训）。
      */
+    private static VehicleExtendedConfig.FlightDeckConfig parseFlightDeck(JsonObject obj) {
+        if (!obj.has("rvp_flight_deck") || !obj.get("rvp_flight_deck").isJsonObject()) {
+            return null;
+        }
+        JsonObject deck = obj.getAsJsonObject("rvp_flight_deck");
+        String bone = GsonHelper.getAsString(deck, "bone", "");
+        if (bone == null || bone.isBlank()) {
+            // 没有骨骼名等于没有甲板，不能留一个"空壳配置"让 isEnabled 恒真
+            return null;
+        }
+        float friction = GsonHelper.getAsFloat(deck, "friction", 0.35f);
+        friction = Math.max(0.0f, Math.min(1.0f, friction));
+        return new VehicleExtendedConfig.FlightDeckConfig(
+                bone.trim(),
+                friction,
+                GsonHelper.getAsFloat(deck, "carry_linear", 1.0f),
+                GsonHelper.getAsFloat(deck, "carry_angular", 1.0f),
+                GsonHelper.getAsFloat(deck, "max_relative_speed", 0.4f),
+                GsonHelper.getAsFloat(deck, "position_spring", 0.08f),
+                GsonHelper.getAsBoolean(deck, "immune_impact", true));
+    }
+
     private static Set<String> parseHelipadBones(JsonObject obj) {
         if (!obj.has("rvp_helipads")) {
             return Set.of();
@@ -833,10 +858,43 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
              * 判定、爆炸引信衰减与调试包统一使用钳后角度。消费方
              * {@code RVP_VehicleExtendedConfigManager#getMaxIncidenceAngle}。
              */
-            @Nullable Float maxIncidenceAngle
+            @Nullable Float maxIncidenceAngle,
+            /**
+             * [RVP] 航母甲板（{@code rvp_flight_deck}，2026-10-31）：null = 该载具无甲板。
+             * 甲板骨骼必须是结构模型（*.structure.json）里的具名骨，世界系 OBB 由
+             * {@code OBB.getOBBsFromBone} 按舰船实时位姿现算；消费方
+             * {@code org.ywzj.rvp.flightdeck.RVP_FlightDeckManager}。
+             * <p>注意：必须纳入 parseVehicle 的"全空即 EMPTY"早退判定，否则只配此字段的
+             * 载具配置会静默失效（§45 审计教训）。
+             */
+            @Nullable FlightDeckConfig flightDeck
     ) {
         public static final VehicleExtendedConfig EMPTY = new VehicleExtendedConfig(
-                Set.of(), null, Set.of(), Map.of(), Map.of(), Map.of(), 1.0f, 0.0f, false, null, Set.of(), null, null);
+                Set.of(), null, Set.of(), Map.of(), Map.of(), Map.of(), 1.0f, 0.0f, false, null, Set.of(), null, null, null);
+
+        /**
+         * [RVP] 航母飞行甲板参数（{@code rvp_flight_deck} 块，2026-10-31）。
+         * <p>语义：停在甲板上的载具继承母舰的线速度与角速度，水平速度向母舰速度收敛（甲板摩擦），
+         * 可选的相对位置回拉让转弯时不至于整体滑出去；相对速度超过 {@code maxRelativeSpeed}
+         * 即自动解除停靠，因此玩家随时可以推油门起飞，不是控制锁定的"着舰"。
+         */
+        public record FlightDeckConfig(
+                /** 甲板骨骼名（结构模型具名骨，其 cube 顶面即停靠面）。 */
+                String bone,
+                /** 水平速度向母舰速度收敛的每 tick 比例 [0,1]；越大越像"粘在甲板上"。 */
+                float friction,
+                /** 母舰线速度继承系数（1 = 完全跟随）。 */
+                float carryLinear,
+                /** 母舰角速度继承系数（1 = 完全跟随转向）。 */
+                float carryAngular,
+                /** 停靠解除阈值：与甲板期望速度之差超过该值（格/tick）即视为起飞或撞离。 */
+                float maxRelativeSpeed,
+                /** 相对位置回拉强度（每 tick 对位移偏差的补偿比例，0 = 只给速度不纠偏）。 */
+                float positionSpring,
+                /** 停靠期间是否免疫载具间动能碰撞伤害。 */
+                boolean immuneImpact
+        ) {
+        }
 
         /**
          * [RVP] 自动总距模式参数（{@code rvp_auto_collective} 块）：
@@ -869,7 +927,8 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
                     || autoCollective != null
                     || !helipadBones.isEmpty()
                     || armorType != null
-                    || maxIncidenceAngle != null;
+                    || maxIncidenceAngle != null
+                    || flightDeck != null;
         }
 
         public boolean hasPhysicsOnlyBones() {

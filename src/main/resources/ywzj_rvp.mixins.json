@@ -37,7 +37,10 @@
     "WeaponUnitParentAimOverrideMixin",
     "RVP_VesselTurnDepthMixin",
     "CommonAssetsManagerSyncMixin",
-    "CommonAssetsManagerAccessor"
+    "CommonAssetsManagerAccessor",
+    "PhysicsEngineFlightDeckMixin",
+    "AbstractVehicleFlightDeckImpactMixin",
+    "AbstractVehicleFlightDeckObbMixin"
   ],
   "client": [
     "FirstPersonHandlerExplosionShakeMixin",
