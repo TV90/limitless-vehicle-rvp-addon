@@ -23,6 +23,12 @@ public final class RVP_ScreenLightManager {
      * 主体是玻片自己的顶点红光；表面受光不吃这个折扣，只有光晕那一路减半再减半。
      */
     static final float EO_JAMMER_HALO_SCALE = 0.4F;
+    /**
+     * 激光束光晕相对自身亮度的比例：光束本身才是主体，两端只是伴生光斑。
+     * 普通视角与夜视共用这一折扣，夜视档由预设把半径/亮度抬一档（见
+     * {@code RVP_LightParameters.laserStartNightVision}），因此夜视光圈仍然明显更大。
+     */
+    static final float LASER_HALO_SCALE = 0.4F;
     /** 短光句柄到状态的有序表，过载时先淘汰旧光。 */
     private final Map<Long, Entry> transients = new LinkedHashMap<>();
     /** 发动机每 UUID 一盏；不使用粒子作为键。 */
@@ -116,6 +122,15 @@ public final class RVP_ScreenLightManager {
         persistent.entrySet().removeIf(entry -> key.equals(entry.getValue().owner));
     }
 
+    /**
+     * 只删除同一归属下指定类型的灯：一辆车可能同时挂着干扰机玻片灯和激光束灯，
+     * 干扰机按车清灯时不能把激光灯一起带走（反之亦然）。
+     */
+    public void removePersistent(UUID key, RVP_LightSourceType type) {
+        persistent.entrySet().removeIf(entry -> entry.getValue().type == type
+                && (key.equals(entry.getKey()) || key.equals(entry.getValue().owner)));
+    }
+
     /** 默认爆炸实例被淘汰时，取消它尚未结束的短光。 */
     public void removeTransient(long handle) { transients.remove(handle); }
 
@@ -172,6 +187,8 @@ public final class RVP_ScreenLightManager {
             // 2026-10-31：EO_JAMMER 是本次新加的枚举值，作者群那边漏了这个分支，导致穷尽 switch 编译不过；
             // 干扰机光参数由 RVP_LightParameters.eoJammer() 固定、不走运行时调参，归到总设置分组即可。
             case EO_JAMMER -> RVP_LightRuntimeTuning.Group.global;
+            // 激光束两端灯光同样由预设固定，只跟总开关、亮度与距离倍率走。
+            case LASER -> RVP_LightRuntimeTuning.Group.global;
         };
     }
 
@@ -242,9 +259,11 @@ public final class RVP_ScreenLightManager {
             float haloIntensity = type == RVP_LightSourceType.EXPLOSION
                     ? RVP_LightRuntimeTuning.get(group, RVP_LightRuntimeTuning.Parameter.worldHaloIntensity) * fade
                     : tuned.intensity() * fade;
-            // 干扰机只压光晕那一路：intensity 同时喂表面受光，直接改预设会把环境受光一起削掉。
+            // 干扰机 / 激光只压光晕那一路：intensity 同时喂表面受光，直接改预设会把环境受光一起削掉。
             if (type == RVP_LightSourceType.EO_JAMMER) {
                 haloIntensity *= EO_JAMMER_HALO_SCALE;
+            } else if (type == RVP_LightSourceType.LASER) {
+                haloIntensity *= LASER_HALO_SCALE;
             }
             float green = tuned.green();
             float blue = tuned.blue();

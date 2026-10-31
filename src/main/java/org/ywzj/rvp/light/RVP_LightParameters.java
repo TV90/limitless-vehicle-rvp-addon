@@ -90,6 +90,45 @@ public record RVP_LightParameters(boolean enabled, float red, float green, float
     }
 
     /**
+     * 激光束起点：半球光，半球轴由调用方沿光束方向给出，只照亮炮口前方那半边；
+     * 颜色直接取自光束（{@code strength} 由充能透明度折算），充能时先暗后亮。
+     * 普通视角按干扰机同款收小：光圈主体是光束本身，两端只留一小圈伴生亮斑。
+     */
+    public static RVP_LightParameters laserStart(float red, float green, float blue, float strength) {
+        return laserBeam(red, green, blue, strength, 2.4F, 0.9F, 0.6F, 1.2F);
+    }
+
+    /** 激光束终点：全向球光，贴在射线命中点，照亮命中处一小圈（普通视角同样收小）。 */
+    public static RVP_LightParameters laserEnd(float red, float green, float blue, float strength) {
+        return laserBeam(red, green, blue, strength, 2.0F, 1.0F, 0.55F, 1.5F);
+    }
+
+    /**
+     * 夜视仪下的激光束起点：与光电干扰机同思路——像增强管会把光束散射与镜面反光整片放大，
+     * 所以同一盏灯在夜视下半径和亮度都抬一档，夜里隔着几百格也能一眼看到光束起点的半球光。
+     */
+    public static RVP_LightParameters laserStartNightVision(float red, float green, float blue, float strength) {
+        return laserBeam(red, green, blue, strength, 4.5F, 3.0F, 0.6F, 1.2F);
+    }
+
+    /** 夜视仪下的激光束终点：命中点球光同样放大，光圈比普通视角明显更亮更大。 */
+    public static RVP_LightParameters laserEndNightVision(float red, float green, float blue, float strength) {
+        return laserBeam(red, green, blue, strength, 3.8F, 3.2F, 0.55F, 1.5F);
+    }
+
+    /** 两盏灯共用同一套安全裁剪：颜色钳到 0～1，充能强度不低于 0.15，非法值按满亮处理。 */
+    private static RVP_LightParameters laserBeam(float red, float green, float blue, float strength,
+            float radius, float intensity, float surfaceWeight, float decay) {
+        float k = Float.isFinite(strength) ? Math.max(0.15F, Math.min(1F, strength)) : 1F;
+        return new RVP_LightParameters(true, clampChannel(red), clampChannel(green), clampChannel(blue),
+                radius, intensity * k, 3, 0, surfaceWeight, decay, true, 0, 0);
+    }
+
+    private static float clampChannel(float value) {
+        return Float.isFinite(value) ? Math.max(0F, Math.min(1F, value)) : 1F;
+    }
+
+    /**
      * 关掉这盏灯的光晕，保留照亮：渲染端按 {@code bloom} 只把 haloRadius/haloIntensity 归零，
      * 表面受光走 intensity 与 surfaceWeight，两条路互不影响。
      * 用于自己车的干扰灯——镜头就贴在玻片后面，光晕会糊住整个画面，但环境受光仍然要有。

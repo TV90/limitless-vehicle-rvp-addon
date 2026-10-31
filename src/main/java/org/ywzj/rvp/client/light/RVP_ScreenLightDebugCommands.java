@@ -73,8 +73,9 @@ public final class RVP_ScreenLightDebugCommands {
                                                 FloatArgumentType.getFloat(context, "caliber"))))));
         var status = Commands.literal("status").executes(context -> status());
         var isolate = Commands.literal("isolate");
-        String[] names = {"explosion", "muzzle", "engine", "off"};
-        RVP_LightSourceType[] types = {RVP_LightSourceType.EXPLOSION, RVP_LightSourceType.MUZZLE, RVP_LightSourceType.ROCKET_ENGINE, null};
+        String[] names = {"explosion", "muzzle", "engine", "laser", "off"};
+        RVP_LightSourceType[] types = {RVP_LightSourceType.EXPLOSION, RVP_LightSourceType.MUZZLE,
+                RVP_LightSourceType.ROCKET_ENGINE, RVP_LightSourceType.LASER, null};
         for (int index = 0; index < names.length; index++) {
             RVP_LightSourceType selected = types[index];
             isolate.then(Commands.literal(names[index]).executes(context -> {

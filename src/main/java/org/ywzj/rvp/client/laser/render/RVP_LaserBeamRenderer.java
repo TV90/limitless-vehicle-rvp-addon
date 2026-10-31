@@ -25,6 +25,7 @@ import org.ywzj.rvp.client.laser.RVP_ClientLaserState.LaserBeamKey;
 import org.ywzj.rvp.client.laser.RVP_LaserBeamSmoothing;
 
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Draws active laser beams as stretched bedrock models (same path as machinegun tracers).
@@ -70,7 +71,11 @@ public final class RVP_LaserBeamRenderer {
             if (!beam.isDrawable()) {
                 continue;
             }
-            renderBeamModel(poseStack, bufferSource, packedLight, resolved, beam, worldTime, partialTick);
+            // 光束灯光归属发射载具：与干扰机玻片灯同归属，整车清灯已按类型分离。
+            Entity ownerEntity = level.getEntity(entry.getKey().vehicleId());
+            UUID owner = ownerEntity == null ? null : ownerEntity.getUUID();
+            renderBeamModel(poseStack, bufferSource, packedLight, resolved, beam, entry.getKey(), owner,
+                    worldTime, partialTick);
         }
 
         bufferSource.endBatch();
@@ -79,7 +84,7 @@ public final class RVP_LaserBeamRenderer {
 
     private static void renderBeamModel(PoseStack poseStack, MultiBufferSource bufferSource, int packedLight,
                                         ResolvedBeam ctx, org.ywzj.rvp.weapon.laser.RVP_LaserBeam beam,
-                                        long worldTime, float partialTick) {
+                                        LaserBeamKey beamKey, UUID owner, long worldTime, float partialTick) {
         RVP_LaserDisplayHelper.ResolvedDisplay display = RVP_LaserDisplayHelper.resolve(ctx.data().getWeaponId());
         if (display == null) {
             return;
@@ -107,6 +112,8 @@ public final class RVP_LaserBeamRenderer {
         if (a <= 0.01f) {
             return;
         }
+        // 光束两端光圈：起点半球光、终点球光，颜色与光束同值；充能时随透明度变暗。
+        RVP_LaserBeamLights.updateLaser(beamKey, owner, start, end, r, g, b, a);
 
         poseStack.pushPose();
         RVP_LaserBeamPose.applyBeamTransform(poseStack, start, end, width);

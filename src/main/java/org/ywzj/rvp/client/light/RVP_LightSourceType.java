@@ -9,5 +9,7 @@ public enum RVP_LightSourceType {
     /** 按弹体 UUID 更新的发动机持续光。 */
     ROCKET_ENGINE,
     /** 光电干扰机玻片持续光；不继承发动机调参、喷口 HDR 核心和烟雾受光。 */
-    EO_JAMMER
+    EO_JAMMER,
+    /** 激光武器 / DIRCM 光束两端持续光：起点半球光、终点球光，颜色随光束本身。 */
+    LASER
 }

@@ -87,18 +87,18 @@ public final class RVP_EoJammerGlowRenderer {
     public static void render(AbstractVehicle vehicle, float partialTick, PoseStack poseStack,
                               MultiBufferSource bufferSource, int packedLight) {
         if (!RVP_LightingConfig.eoJammerGlowEnabled()) {
-            RVP_ScreenLightManager.INSTANCE.removePersistent(vehicle.getUUID());
+            RVP_ScreenLightManager.INSTANCE.removePersistent(vehicle.getUUID(), RVP_LightSourceType.EO_JAMMER);
             return;
         }
         // 残骸与已移除实体不发光：干扰机随车体一起熄灭。
         if (vehicle.isRemoved() || !vehicle.isAlive() || vehicle.isDestroyed()) {
-            RVP_ScreenLightManager.INSTANCE.removePersistent(vehicle.getUUID());
+            RVP_ScreenLightManager.INSTANCE.removePersistent(vehicle.getUUID(), RVP_LightSourceType.EO_JAMMER);
             return;
         }
         VehicleDisplay<?, ?> display = ClientAssetsManager.INSTANCE
                 .getVehicleDisplay(vehicle.getDisplayId()).orElse(null);
         if (display == null) {
-            RVP_ScreenLightManager.INSTANCE.removePersistent(vehicle.getUUID());
+            RVP_ScreenLightManager.INSTANCE.removePersistent(vehicle.getUUID(), RVP_LightSourceType.EO_JAMMER);
             return;
         }
         // 座舱视角渲染的是座舱 display，玻片在外部机体上，跳过避免画进驾驶舱。
@@ -106,18 +106,18 @@ public final class RVP_EoJammerGlowRenderer {
                 && LocalVehiclePlayer.instance.viewType == LocalVehiclePlayer.ViewType.OPERATOR
                 && display.getCabinDisplay() != null;
         if (isCabinView) {
-            RVP_ScreenLightManager.INSTANCE.removePersistent(vehicle.getUUID());
+            RVP_ScreenLightManager.INSTANCE.removePersistent(vehicle.getUUID(), RVP_LightSourceType.EO_JAMMER);
             return;
         }
         List<RVP_EoJammerGlowManager.Rule> rules = RVP_EoJammerGlowManager.INSTANCE.rulesFor(vehicle.getDisplayId());
         if (rules.isEmpty()) {
-            RVP_ScreenLightManager.INSTANCE.removePersistent(vehicle.getUUID());
+            RVP_ScreenLightManager.INSTANCE.removePersistent(vehicle.getUUID(), RVP_LightSourceType.EO_JAMMER);
             return;
         }
         VehicleBedrockModel model = display.getModel();
         ResourceLocation texture = display.getTexture();
         if (model == null || texture == null || !model.hasBakedModel()) {
-            RVP_ScreenLightManager.INSTANCE.removePersistent(vehicle.getUUID());
+            RVP_ScreenLightManager.INSTANCE.removePersistent(vehicle.getUUID(), RVP_LightSourceType.EO_JAMMER);
             return;
         }
         // 与本体渲染器同源：优先载具当前实例，缺失时退回模型默认实例（姿态同样已由本体写入）。
@@ -126,7 +126,7 @@ public final class RVP_EoJammerGlowRenderer {
             modelInstance = model.getDefaultModelInstance();
         }
         if (modelInstance == null) {
-            RVP_ScreenLightManager.INSTANCE.removePersistent(vehicle.getUUID());
+            RVP_ScreenLightManager.INSTANCE.removePersistent(vehicle.getUUID(), RVP_LightSourceType.EO_JAMMER);
             return;
         }
 
@@ -153,7 +153,8 @@ public final class RVP_EoJammerGlowRenderer {
         // 本帧熄灭的玻片单独撤自己那盏灯，不能整车一起撤，否则左右两盏互相牵连。
         for (int plate = 0; plate < rules.size(); plate++) {
             if (!glowPlates.contains(plate)) {
-                RVP_ScreenLightManager.INSTANCE.removePersistent(plateLightKey(vehicleKey, plate));
+                RVP_ScreenLightManager.INSTANCE.removePersistent(plateLightKey(vehicleKey, plate),
+                        RVP_LightSourceType.EO_JAMMER);
             }
         }
         if (glowPlates.isEmpty()) {
@@ -164,7 +165,7 @@ public final class RVP_EoJammerGlowRenderer {
         // （isActive 只跟随本机夜视状态，与环境亮度无关），没戴夜视的观察者仍按下面的夜间条件走。
         boolean nightVision = RVP_NvgHandler.isActive();
         if (!nightVision && !isNight(vehicle.level())) {
-            RVP_ScreenLightManager.INSTANCE.removePersistent(vehicleKey);
+            RVP_ScreenLightManager.INSTANCE.removePersistent(vehicleKey, RVP_LightSourceType.EO_JAMMER);
             return;
         }
 
@@ -174,7 +175,7 @@ public final class RVP_EoJammerGlowRenderer {
         boolean ownVehicle = LocalVehiclePlayer.instance.vehicle == vehicle;
         boolean screenLight = RVP_LightingConfig.screenEnabled() && RVP_LightingConfig.maxLights() > 0;
         if (!screenLight) {
-            RVP_ScreenLightManager.INSTANCE.removePersistent(vehicleKey);
+            RVP_ScreenLightManager.INSTANCE.removePersistent(vehicleKey, RVP_LightSourceType.EO_JAMMER);
         }
 
         poseStack.pushPose();
@@ -252,7 +253,7 @@ public final class RVP_EoJammerGlowRenderer {
         UUID key = plateLightKey(vehicleKey, plate);
         // 屏幕光只补环境受光与光晕，顶点红光是主体；远处载具不占八盏灯的预算。
         if (player == null || player.position().distanceToSqr(anchor) > MAX_LIGHT_DISTANCE_SQR) {
-            RVP_ScreenLightManager.INSTANCE.removePersistent(key);
+            RVP_ScreenLightManager.INSTANCE.removePersistent(key, RVP_LightSourceType.EO_JAMMER);
             return;
         }
         // 调用持续光统一入口：每帧心跳续期，条件失效时立即删除；半球轴随炮塔朝向。
