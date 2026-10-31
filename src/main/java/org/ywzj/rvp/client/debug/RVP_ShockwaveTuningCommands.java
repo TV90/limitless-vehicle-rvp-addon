@@ -126,18 +126,32 @@ public final class RVP_ShockwaveTuningCommands {
 
     /** 用正式空气层画法预览；地面组件保留简化轮廓，不向服务端发包或造成伤害。 */
     private static int preview(CommandSourceStack source, float radius, float height) {
-        Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft.level == null || minecraft.player == null || !Float.isFinite(radius) || !Float.isFinite(height)) {
-            source.sendFailure(Component.literal("需要进入世界，且半径和高度必须为有限数值。"));
+        try {
+            // 调用与图形调参面板共用的本地预览入口，只生成客户端视觉效果。
+            send(source, previewAtPlayer(radius, height));
+            return 1;
+        } catch (IllegalArgumentException | IllegalStateException failure) {
+            source.sendFailure(Component.literal(failure.getMessage()));
             return 0;
+        }
+    }
+
+    /** 面板与指令共用的无伤害预览；失败抛出可读原因，不要求构造服务端指令来源。 */
+    public static String previewAtPlayer(float radius, float height) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.level == null || minecraft.player == null) {
+            throw new IllegalStateException("需要先进入世界才能预览。");
+        }
+        if (!Float.isFinite(radius) || radius < 0.1F || radius > 512 || !Float.isFinite(height)
+                || height < -64 || height > 256) {
+            throw new IllegalArgumentException("预览半径允许0.1～512格，离地高度允许-64～256格。");
         }
         Vec3 forward = minecraft.player.getLookAngle().multiply(1, 0, 1).normalize();
         Vec3 target = minecraft.player.position().add(forward.scale(20));
         int x = (int) Math.floor(target.x);
         int z = (int) Math.floor(target.z);
         if (!minecraft.level.hasChunk(x >> 4, z >> 4)) {
-            source.sendFailure(Component.literal("前方区块尚未加载，请靠近后重试。"));
-            return 0;
+            throw new IllegalStateException("前方区块尚未加载，请靠近后重试。");
         }
         double ground = minecraft.level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
         // 调用正式地形分类和尺寸公式；预览使用等长八方向，实弹仍使用服务端地形采样。
@@ -151,10 +165,8 @@ public final class RVP_ShockwaveTuningCommands {
                 minecraft.level.random.nextLong(), minecraft.level.getGameTime(), false, false, false, false, profile);
         // 调用现有客户端分派器，使用真实实例的生命周期、热成像与预算管理。
         RVP_ClientVisualEffectDispatcher.accept(visual);
-        // 调用本地提示入口，说明预览与正式爆炸共用中心通透的压力波和深度遮挡。
-        send(source, "已显示本地无伤害预览，半径=" + radius + "，离地=" + height
-                + "；压力波中心通透、白雾内浓外淡，外层有空气折射，按场景深度遮挡；地面环和马赫杆已停用。");
-        return 1;
+        return "已显示本地无伤害预览，半径=" + radius + "，离地=" + height
+                + "；中心通透，白雾和空气折射按场景深度遮挡。";
     }
 
     /** 向当前客户端反馈中文调参说明。 */

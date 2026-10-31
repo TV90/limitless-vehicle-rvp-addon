@@ -69,20 +69,33 @@ public final class RVP_ScreenLightManager {
         reserveSpace();
         long id = ++nextId;
         transients.put(id, new Entry(position, type, sourceKey, parameters, startTime,
-                startTime + parameters.durationTicks()));
+                startTime + parameters.durationTicks(), null));
         return id;
     }
 
     /** 更新持续光；两 tick 没有心跳就失效，实体移除与远端超时无需依赖粒子存活。 */
     public void upsertPersistent(UUID key, Vec3 position, RVP_LightParameters parameters) {
+        // 调用类型化持续光入口，原发动机调用继续使用全向光。
+        upsertPersistent(key, position, RVP_LightSourceType.ROCKET_ENGINE, parameters, null);
+    }
+
+    /** 持续光保留来源和半球轴；干扰机不再被误归为发动机，轴为 null 时保持全向光。 */
+    public void upsertPersistent(UUID key, Vec3 position, RVP_LightSourceType type,
+                                 RVP_LightParameters parameters, Vec3 hemisphereAxis) {
+        if (type != RVP_LightSourceType.ROCKET_ENGINE && type != RVP_LightSourceType.EO_JAMMER) {
+            throw new IllegalArgumentException("持续光只支持发动机或光电干扰机");
+        }
+        if (hemisphereAxis != null && (!Double.isFinite(hemisphereAxis.lengthSqr()) || hemisphereAxis.lengthSqr() < 1.0E-12)) {
+            throw new IllegalArgumentException("半球光方向必须是非零有限向量");
+        }
         if (world == null || key == null || !valid(position, parameters)) {
             // 调用持续光删除入口，关闭配置立即生效。
             removePersistent(key);
             return;
         }
         if (!persistent.containsKey(key)) { reserveSpace(); }
-        persistent.put(key, new Entry(position, RVP_LightSourceType.ROCKET_ENGINE, key,
-                parameters, gameTime, gameTime + 2));
+        persistent.put(key, new Entry(position, type, key, parameters, gameTime, gameTime + 2,
+                hemisphereAxis == null ? null : hemisphereAxis.normalize()));
     }
 
     /** 燃尽或移除时立即取消对应发动机光。 */
@@ -140,15 +153,15 @@ public final class RVP_ScreenLightManager {
             case EXPLOSION -> RVP_LightRuntimeTuning.Group.explosion;
             case MUZZLE -> RVP_LightRuntimeTuning.Group.muzzle;
             case ROCKET_ENGINE -> RVP_LightRuntimeTuning.Group.engine;
-            // 2026-10-31：EO_JAMMER 是本次新加的枚举值，作者群那边漏了这个分支，导致穷尽 switch 编译不过；
-            // 干扰机光参数由 RVP_LightParameters.eoJammer() 固定、不走运行时调参，归到总设置分组即可。
-            case EO_JAMMER -> RVP_LightRuntimeTuning.Group.global;
+            // 干扰机直接使用eoJammer()预设；global没有颜色/半径参数，套用会生成NaN并被光源预算剔除。
+            // 返回null，由采样入口保留独立预设；总画质倍率仍由绘制阶段统一应用。
+            case EO_JAMMER -> null;
         };
     }
 
     /** 爆炸/炮口按衰减倍率伸缩整盏光源寿命；发动机持续光和预览保留已有时间线。 */
     private static float lifetimeTicks(RVP_LightSourceType type, RVP_LightParameters parameters) {
-        if (type == RVP_LightSourceType.ROCKET_ENGINE) { return parameters.durationTicks(); }
+        if (type == RVP_LightSourceType.ROCKET_ENGINE || type == RVP_LightSourceType.EO_JAMMER) { return parameters.durationTicks(); }
         // 调用统一短光寿命规则，读取当前倍率而非出生时快照，既有光源也立即响应。
         return RVP_TransientLightTimeline.durationTicks(parameters.durationTicks(),
                 RVP_LightRuntimeTuning.get(group(type), RVP_LightRuntimeTuning.Parameter.decayScale));
@@ -176,11 +189,14 @@ public final class RVP_ScreenLightManager {
         private long start;
         /** 持续光的心跳到期tick；短光按当前倍率和出生年龄动态计算实际终点。 */
         private long expires;
+        /** 世界空间的半球光轴；null 表示不限制方向。 */
+        private final Vec3 hemisphereAxis;
 
         private Entry(Vec3 position, RVP_LightSourceType type, Object sourceKey,
-                RVP_LightParameters parameters, long start, long expires) {
+                RVP_LightParameters parameters, long start, long expires, Vec3 hemisphereAxis) {
             this.position = position; this.type = type; this.sourceKey = sourceKey;
             this.parameters = parameters; this.start = start; this.expires = expires;
+            this.hemisphereAxis = hemisphereAxis;
         }
 
         /** 只比较出生年龄，不因调参重设开始时间，也不按渲染帧推进寿命。 */
@@ -194,13 +210,13 @@ public final class RVP_ScreenLightManager {
             // 调用类型分组映射，照亮与光晕的所有输入由同一原始条目采样。
             RVP_LightRuntimeTuning.Group group = group(type);
             // 调用采样时调参，使已有光源下一帧也能响应；不修改存储的原始预设或重置年龄。
-            RVP_LightParameters tuned = RVP_LightRuntimeTuning.apply(group, parameters);
+            RVP_LightParameters tuned = group == null ? parameters : RVP_LightRuntimeTuning.apply(group, parameters);
             double age = Math.max(0, now - start);
             // 调用整盏光源寿命，颜色、照亮、光晕和清理都跟随同一个时间进度。
             float duration = lifetimeTicks(type, parameters);
             float progress = (float) Math.max(0, Math.min(1, age / duration));
             float fade = key == null ? (float) Math.pow(1 - progress, tuned.decay()) : 1;
-            if (type != RVP_LightSourceType.ROCKET_ENGINE) {
+            if (type == RVP_LightSourceType.EXPLOSION || type == RVP_LightSourceType.MUZZLE) {
                 // 调用整盏短光的平滑包络，照亮和光晕在同一时刻平滑结束。
                 fade = RVP_TransientLightTimeline.fade(age, parameters.durationTicks(), parameters.decay(),
                         RVP_LightRuntimeTuning.get(group, RVP_LightRuntimeTuning.Parameter.decayScale));
@@ -215,12 +231,12 @@ public final class RVP_ScreenLightManager {
                 blue *= 1 - progress * 0.9F;
             }
             return new RVP_ScreenLight(position, tuned.red(), green, blue, tuned.radius(),
-                    tuned.bloom() ? RVP_LightRuntimeTuning.haloRadius(group, parameters.radius()) : 0,
+                    tuned.bloom() ? (group == null ? parameters.radius() : RVP_LightRuntimeTuning.haloRadius(group, parameters.radius())) : 0,
                     key == null && age >= duration ? 0 : tuned.intensity() * fade,
                     tuned.bloom() ? haloIntensity : 0,
                     key == null ? (float) Math.max(0, duration - age) : (float) Math.max(0, expires - now),
                     type, key, tuned.surfaceWeight(),
-                    tuned.bloom(), tuned.volumetricStrength());
+                    tuned.bloom(), tuned.volumetricStrength(), hemisphereAxis);
         }
     }
 }

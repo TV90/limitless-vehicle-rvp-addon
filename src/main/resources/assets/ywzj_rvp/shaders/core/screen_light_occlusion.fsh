@@ -19,6 +19,15 @@ uniform float HandDepthLimit;
 uniform vec2 ScreenSize;
 uniform int LightCount;
 uniform int OutputMode;
+// xyz为观察空间半球方向，w=1启用；全零槽位保持普通全向光。
+uniform vec4 LightHemisphereAxis0;
+uniform vec4 LightHemisphereAxis1;
+uniform vec4 LightHemisphereAxis2;
+uniform vec4 LightHemisphereAxis3;
+uniform vec4 LightHemisphereAxis4;
+uniform vec4 LightHemisphereAxis5;
+uniform vec4 LightHemisphereAxis6;
+uniform vec4 LightHemisphereAxis7;
 // 独立光晕颜色和已采样强度；不读取照亮brightness或照亮寿命。
 uniform vec4 LightHaloColorIntensity0;
 uniform vec4 LightHaloColorIntensity1;
@@ -230,6 +239,8 @@ vec4 occlusionDepthOutput() {
 }
 
 void main() {
+    vec4 hemisphereAxes[8] = vec4[8](LightHemisphereAxis0, LightHemisphereAxis1, LightHemisphereAxis2, LightHemisphereAxis3,
+            LightHemisphereAxis4, LightHemisphereAxis5, LightHemisphereAxis6, LightHemisphereAxis7);
     if (OutputMode == 5 || OutputMode == 6) { fragColor = occlusionDepthOutput(); return; }
     vec4 positions[8] = vec4[8](LightPositionRadius0, LightPositionRadius1, LightPositionRadius2, LightPositionRadius3, LightPositionRadius4, LightPositionRadius5, LightPositionRadius6, LightPositionRadius7);
     vec4 colors[8] = vec4[8](LightColorIntensity0, LightColorIntensity1, LightColorIntensity2, LightColorIntensity3, LightColorIntensity4, LightColorIntensity5, LightColorIntensity6, LightColorIntensity7);
@@ -251,7 +262,10 @@ void main() {
         vec3 glow = vec3(0.0);
         for (int index = 0; index < 8; ++index) {
             if (index >= LightCount) { break; }
-            if (shapes[index].z > 0.5) { glow += sourceHalo(ray, positions[index], haloColors[index], shapes[index].w); }
+            vec4 axis = hemisphereAxes[index];
+            if (shapes[index].z > 0.5 && (axis.w < 0.5 || dot(-positions[index].xyz, axis.xyz) >= 0.0)) {
+                glow += sourceHalo(ray, positions[index], haloColors[index], shapes[index].w);
+            }
         }
         glow = clamp(glow, vec3(0.0), vec3(60000.0));
         fragColor = vec4(glow, min(60000.0, dot(glow, vec3(0.2126, 0.7152, 0.0722))));
@@ -279,7 +293,10 @@ void main() {
         float surface = 0.0;
         vec3 delta = light.xyz - position;
         float distanceToLight = length(delta);
-        if (hasSurface && distanceToLight < light.w && shape.x > 0.0) {
+        vec4 axis = hemisphereAxes[index];
+        // 表面位于光源朝向的前半球才照亮，不能用相机朝向代替实际受光点。
+        bool inHemisphere = axis.w < 0.5 || dot(-delta, axis.xyz) >= 0.0;
+        if (hasSurface && distanceToLight < light.w && shape.x > 0.0 && inHemisphere) {
             float radial = distanceToLight / light.w;
             float facing = distanceToLight < 0.0001 ? 1.0 : max(0.0, dot(normal, delta / distanceToLight));
             if (facing > 0.0) {

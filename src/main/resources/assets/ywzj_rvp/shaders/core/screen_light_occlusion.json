@@ -25,6 +25,14 @@
     }
   ],
   "uniforms": [
+    { "name": "LightHemisphereAxis0", "type": "float", "count": 4, "values": [0, 0, 0, 0] },
+    { "name": "LightHemisphereAxis1", "type": "float", "count": 4, "values": [0, 0, 0, 0] },
+    { "name": "LightHemisphereAxis2", "type": "float", "count": 4, "values": [0, 0, 0, 0] },
+    { "name": "LightHemisphereAxis3", "type": "float", "count": 4, "values": [0, 0, 0, 0] },
+    { "name": "LightHemisphereAxis4", "type": "float", "count": 4, "values": [0, 0, 0, 0] },
+    { "name": "LightHemisphereAxis5", "type": "float", "count": 4, "values": [0, 0, 0, 0] },
+    { "name": "LightHemisphereAxis6", "type": "float", "count": 4, "values": [0, 0, 0, 0] },
+    { "name": "LightHemisphereAxis7", "type": "float", "count": 4, "values": [0, 0, 0, 0] },
     {
       "name": "LightEmission0",
       "type": "float",

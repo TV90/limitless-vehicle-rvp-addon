@@ -372,6 +372,7 @@ public final class RVP_ScreenLightPass {
     private static void uploadLightSlots() {
         for (int index = 0; index < RVP_ScreenLightBudget.MAX_LIGHTS; index++) {
             if (index >= lights.size()) {
+                lightShader.safeGetUniform("LightHemisphereAxis" + index).set(0F, 0F, 0F, 0F);
                 lightShader.safeGetUniform("LightPositionRadius" + index).set(0F, 0F, 0F, 0F);
                 lightShader.safeGetUniform("LightColorIntensity" + index).set(0F, 0F, 0F, 0F);
                 lightShader.safeGetUniform("LightHaloColorIntensity" + index).set(0F, 0F, 0F, 0F);
@@ -380,6 +381,12 @@ public final class RVP_ScreenLightPass {
                 continue;
             }
             RVP_ScreenLight light = lights.get(index);
+            if (light.hemisphereAxis() != null) {
+                // 世界方向只乘观察旋转，不加相机平移；四分量分别上传，避免原版把数组误识别为标量。
+                Vec3 axis = light.hemisphereAxis();
+                Vector3f direction = VIEW.transformDirection(new Vector3f((float) axis.x, (float) axis.y, (float) axis.z)).normalize();
+                lightShader.safeGetUniform("LightHemisphereAxis" + index).set(direction.x, direction.y, direction.z, 1F);
+            } else { lightShader.safeGetUniform("LightHemisphereAxis" + index).set(0F, 0F, 0F, 0F); }
             Vector3f center = viewPosition(light.position());
             // 当前 P5 在代码层关闭；按完整屏幕光强度验证，不再施加两层光叠加时的 0.65 倍补偿。
             lightShader.safeGetUniform("LightPositionRadius" + index).set(center.x, center.y, center.z, light.radius());

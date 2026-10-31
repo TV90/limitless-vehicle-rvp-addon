@@ -3,6 +3,7 @@
   "subtitles.ywzj_rvp.explosion": "爆炸",
   "subtitles.ywzj_rvp.ecm_jammer": "主动ECM干扰",
   "key.category.ywzj_rvp": "YWZJ RVP",
+  "key.ywzj_rvp.open_tuning.desc": "打开 RVP 调参工具",
   "key.ywzj_rvp.open_gps_panel.desc": "打开战术地图",
   "key.ywzj_rvp.debug_overlay.desc": "RVP 调试覆盖层 (F10)",
   "message.ywzj_rvp.debug_overlay.on": "[RVP] 调试覆盖层：开",

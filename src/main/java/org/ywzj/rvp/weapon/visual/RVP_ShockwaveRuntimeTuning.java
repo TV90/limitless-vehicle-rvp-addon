@@ -137,6 +137,22 @@ public final class RVP_ShockwaveRuntimeTuning {
     /** 恢复单个组件的代码默认值。 */
     public static synchronized void reset(Group group) { VALUES.remove(group); }
 
+    /** 清除单项覆盖，供通用调参面板使用；不会重置同组的其它试调结果。 */
+    public static synchronized void reset(Group group, Parameter parameter) {
+        Map<Parameter, Float> values = VALUES.get(group);
+        if (values != null) {
+            values.remove(parameter);
+            if (values.isEmpty()) { VALUES.remove(group); }
+        }
+    }
+
+    /** 返回实际覆盖而非默认快照，保存与撤销时保留“未覆盖”的语义。 */
+    public static synchronized java.util.OptionalDouble override(Group group, Parameter parameter) {
+        Float value = VALUES.getOrDefault(group, Map.of()).get(parameter);
+        return value == null ? java.util.OptionalDouble.empty()
+                : java.util.OptionalDouble.of(Double.parseDouble(Float.toString(value)));
+    }
+
     /** 为下一次爆炸复制参数，避免调参影响已经开始的时间线。 */
     public static synchronized Snapshot snapshot() {
         Map<Group, Map<Parameter, Float>> copy = new EnumMap<>(Group.class);

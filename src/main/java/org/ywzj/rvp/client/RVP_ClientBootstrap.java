@@ -52,7 +52,11 @@ public final class RVP_ClientBootstrap {
     }
 
     public static void onClientSetup(FMLClientSetupEvent event) {
+        // 调用通用调参工具的 Mods 配置入口注册；物理服务端不会加载此客户端类。
+        org.ywzj.rvp.client.tuning.RVP_TuningClient.registerConfigScreen();
         event.enqueueWork(() -> {
+            // 调用扩展注册与本地预设加载；具体分类通过事件自注册，不在启动器中列举。
+            org.ywzj.rvp.client.tuning.RVP_TuningClient.initialize();
             // 客户端初始化时安装通用视觉消费端，避免公共网络消息直接加载客户端渲染类。
             RVP_VisualEffectEndpoint.install(RVP_ClientVisualEffectDispatcher::accept);
             // 安装导弹空中目标命中碎片消费端，把 S2C 快照转换为本地纯视觉粒子。

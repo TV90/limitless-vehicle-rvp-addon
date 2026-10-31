@@ -169,7 +169,11 @@ public final class RVP_ScreenLightDebugCommands {
         // 调用覆盖快照和画质读取入口，未设置的开关尊重现有 TOML。
         boolean overridden = RVP_LightRuntimeTuning.overrides().getOrDefault(group, Map.of()).containsKey(parameter);
         float value = parameter == Parameter.enabled
-                ? ((group == Group.global ? RVP_LightingConfig.screenEnabled() : RVP_LightingConfig.bloomEnabled()) ? 1 : 0)
+                ? ((switch (group) {
+                    case global -> RVP_LightingConfig.screenEnabled();
+                    case engine -> RVP_LightingConfig.missileHaloEnabled();
+                    default -> RVP_LightingConfig.bloomEnabled();
+                }) ? 1 : 0)
                 : RVP_LightRuntimeTuning.get(group, parameter);
         send(source, group + "." + parameter + "=" + value + (overridden ? "（临时覆盖）" : "（沿用默认）")
                 + "，默认=" + (parameter == Parameter.enabled ? "客户端配置" : parameter.defaultValue(group))
@@ -245,7 +249,7 @@ public final class RVP_ScreenLightDebugCommands {
     }
 
     /** 口径提供两种范围的基础值，各自倍率独立应用；缩放仍只改变喷焰本身长宽。 */
-    private static int preview(float radius, boolean engine, float scale, float caliber) {
+    public static int preview(float radius, boolean engine, float scale, float caliber) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null || mc.player == null) { return 0; }
         Vec3 position = mc.gameRenderer.getMainCamera().getPosition().add(mc.player.getLookAngle().scale(4));

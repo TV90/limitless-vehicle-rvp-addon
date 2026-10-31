@@ -85,7 +85,8 @@ final class RVP_RocketTrailPass {
     private static void uploadLights(RVP_RocketTrailSegment segment) {
         // 与粒子烟一致：发动机光只照世界表面，不重新点亮仍残留的旧尾迹烟段。
         List<RVP_ScreenLight> lights = RVP_ScreenLightPass.currentLights().stream()
-                .filter(light -> light.type() != RVP_LightSourceType.ROCKET_ENGINE)
+                // 与粒子烟同步排除干扰机红光，不能将残留尾烟染成新的红色火团。
+                .filter(light -> light.type() != RVP_LightSourceType.ROCKET_ENGINE && light.type() != RVP_LightSourceType.EO_JAMMER)
                 .filter(light -> light.position().distanceToSqr(segment.center())
                         < Math.pow(light.radius() + segment.boundRadius(), 2))
                 .sorted(Comparator.comparingDouble(light -> light.position().distanceToSqr(segment.center())))

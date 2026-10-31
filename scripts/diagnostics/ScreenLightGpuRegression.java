@@ -52,6 +52,7 @@ public final class ScreenLightGpuRegression {
             System.out.println("PASS both production GLSL programs compile and link");
             setupTriangle();
             testSurfaceLight(light);
+            testHemisphereLight(light);
             testDistantAndShaderDepth(light);
             testBorrowedPackedDepthCopy();
             testEngineEmission(light, bloom);
@@ -474,6 +475,31 @@ public final class ScreenLightGpuRegression {
     }
 
     /** 执行真实半分辨率提取、两次模糊和最终合成，检查光晕没有改变透明度。 */
+    /** 直接回读生产材质，确认半球轴只裁剪背面，清零后普通全向灯完全恢复。 */
+    private static void testHemisphereLight(int shader) {
+        int scene = color(SIZE, SIZE, BACKGROUND);
+        int sceneDepth = depth(SIZE, SIZE, 5, false);
+        int[] output = target(SIZE, SIZE);
+        GL20.glUseProgram(shader);
+        sampler(shader, "SceneColor", 0, scene);
+        sampler(shader, "SceneDepth", 1, sceneDepth);
+        uniforms(shader);
+        lights(shader, 1, 0, 0, -3, 5, 1, 1, 0);
+        int axis = GL20.glGetUniformLocation(shader, "LightHemisphereAxis0");
+        require(axis >= 0, "production hemisphere uniform missing");
+        GL20.glUniform4f(axis, 0, 0, -1, 1);
+        render(output, SIZE, SIZE);
+        float[] front = pixel(output[0], 8, 8);
+        require(front[0] > BACKGROUND[0] + 0.1F, "front hemisphere did not receive light");
+        GL20.glUniform4f(axis, 0, 0, 1, 1);
+        render(output, SIZE, SIZE);
+        background(pixel(output[0], 8, 8), "back hemisphere must stay unlit");
+        GL20.glUniform4f(axis, 0, 0, 0, 0);
+        render(output, SIZE, SIZE);
+        near(front[0], pixel(output[0], 8, 8)[0], "zero axis restores omnidirectional light");
+        System.out.println("PASS front/back hemisphere and unchanged omnidirectional light");
+    }
+
     private static void testBloom(int light, int bloom) {
         int scene = color(SIZE, SIZE, BACKGROUND);
         int depth = depth(SIZE, SIZE, 5, false);

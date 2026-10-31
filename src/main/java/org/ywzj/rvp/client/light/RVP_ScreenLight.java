@@ -19,11 +19,19 @@ import java.util.UUID;
  * @param surfaceWeight 表面受光权重
  * @param bloom 是否进入光晕提取
  * @param volumetricStrength 空气散射强度
+ * @param hemisphereAxis 世界空间半球轴；null 表示全向光，只有干扰机等定向持续光提供
  */
 public record RVP_ScreenLight(Vec3 position, float red, float green, float blue, float radius, float haloRadius,
         float intensity, float haloIntensity, float remainingTicks,
         RVP_LightSourceType type, UUID persistentKey,
-        float surfaceWeight, boolean bloom, float volumetricStrength) {
+        float surfaceWeight, boolean bloom, float volumetricStrength, Vec3 hemisphereAxis) {
+    /** 普通全向光构造入口；现有爆炸、炮口和发动机快照不需要提供方向。 */
+    public RVP_ScreenLight(Vec3 position, float red, float green, float blue, float radius, float haloRadius,
+                           float intensity, float haloIntensity, float remainingTicks, RVP_LightSourceType type,
+                           UUID persistentKey, float surfaceWeight, boolean bloom, float volumetricStrength) {
+        this(position, red, green, blue, radius, haloRadius, intensity, haloIntensity, remainingTicks,
+                type, persistentKey, surfaceWeight, bloom, volumetricStrength, null);
+    }
     /** 只使用仍有可见贡献的一路范围，照亮结束后不能拿它的大半径占据光晕预算。 */
     public float visibleRadius() {
         return Math.max(intensity > 0.001F ? radius : 0, haloIntensity > 0.001F ? haloRadius : 0);

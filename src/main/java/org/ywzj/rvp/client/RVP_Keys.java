@@ -30,6 +30,9 @@ public class RVP_Keys {
     /** 辅助设备面板（AUI）：俯视图 + 设备状态栏目 + 快修顺序设置，默认 O。 */
     public static final KeyMapping OPEN_EQUIP_PANEL = key("open_equip_panel", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_O);
 
+    /** 通用本地调参工具，默认 F8；不要求乘坐载具，可在控制设置中改键。 */
+    public static final KeyMapping OPEN_TUNING = key("open_tuning", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_F8);
+
     /** Toggle debug overlay (hit debug HUD). */
     public static final KeyMapping DEBUG_OVERLAY = key("debug_overlay", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_F10);
 
@@ -80,6 +83,7 @@ public class RVP_Keys {
     public static void onRegisterKeys(RegisterKeyMappingsEvent event) {
         event.register(OPEN_GPS_PANEL);
         event.register(OPEN_EQUIP_PANEL);
+        event.register(OPEN_TUNING);
         event.register(DEBUG_OVERLAY);
         event.register(ARM_SELECT_PREV);
         event.register(ARM_SELECT_NEXT);

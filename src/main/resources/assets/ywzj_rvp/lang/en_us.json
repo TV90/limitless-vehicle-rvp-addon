@@ -3,6 +3,7 @@
   "subtitles.ywzj_rvp.explosion": "Explosion",
   "subtitles.ywzj_rvp.ecm_jammer": "Active ECM jamming",
   "key.category.ywzj_rvp": "YWZJ RVP",
+  "key.ywzj_rvp.open_tuning.desc": "Open RVP tuning tool",
   "key.ywzj_rvp.open_gps_panel.desc": "Open Tactical Map",
   "key.ywzj_rvp.debug_overlay.desc": "RVP debug overlay (F10)",
   "message.ywzj_rvp.debug_overlay.on": "[RVP] Debug overlay: ON",

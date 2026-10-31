@@ -64,18 +64,25 @@ public final class RVP_LightingConfig {
     public static boolean screenEnabled() {
         // 调用本机会话覆盖；未调参时沿用已加载的画质配置。
         return RVP_LightRuntimeTuning.getOrDefault(Group.global, Parameter.enabled,
-                !CLIENT_SPEC.isLoaded() || SCREEN_LIGHT.get() ? 1 : 0) == 1;
+                configuredScreenEnabled() ? 1 : 0) == 1;
     }
     /** 配置未加载时使用默认光晕。 */
     public static boolean bloomEnabled() {
         // 调用光晕临时开关；reset 后重新尊重 TOML，不改写磁盘文件。
         return RVP_LightRuntimeTuning.getOrDefault(Group.bloom, Parameter.enabled,
-                !CLIENT_SPEC.isLoaded() || BLOOM.get() ? 1 : 0) == 1;
+                configuredBloomEnabled() ? 1 : 0) == 1;
     }
+    /** 返回原始画质选择，供调参面板显示真正的默认值；不读取会话覆盖。 */
+    public static boolean configuredScreenEnabled() { return !CLIENT_SPEC.isLoaded() || SCREEN_LIGHT.get(); }
+    /** 返回原始光晕选择；恢复默认后继续尊重玩家已有 TOML。 */
+    public static boolean configuredBloomEnabled() { return !CLIENT_SPEC.isLoaded() || BLOOM.get(); }
+    /** 返回原始发动机光晕选择；默认关闭，面板不会自行开启。 */
+    public static boolean configuredMissileHaloEnabled() { return CLIENT_SPEC.isLoaded() && MISSILE_HALO.get(); }
     /** 导弹发动机广域光晕；默认关闭，关闭后只去掉喷焰外圈。 */
     public static boolean missileHaloEnabled() {
-        // 配置未加载时按关闭处理，与 TOML 默认值一致。
-        return CLIENT_SPEC.isLoaded() && MISSILE_HALO.get();
+        // 调用本地会话开关；未显式调参时仍保持原来默认关闭的行为。
+        return RVP_LightRuntimeTuning.getOrDefault(Group.engine, Parameter.enabled,
+                configuredMissileHaloEnabled() ? 1 : 0) == 1;
     }
     /** 光电干扰机玻片夜间红光；配置未加载时按开启处理，与 TOML 默认值一致。 */
     public static boolean eoJammerGlowEnabled() {
