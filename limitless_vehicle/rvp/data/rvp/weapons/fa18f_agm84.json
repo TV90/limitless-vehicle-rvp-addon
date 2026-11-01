@@ -82,14 +82,24 @@
   "detonate_data": {
     "explosion_data": {
       "explode": true,
-      "damage": 900,
-      "radius": 18,
+      "damage": 1000,
+      "radius": 9,
       "proximity_fuze": false,
-      "destroy_block": true
+      "destroy_block": true,
+      "explosion_damage_factor": {
+        "player": 0.05,
+        "living": 0.05,
+        "vehicle_default": 1.0,
+        "vehicles": {
+          "ywzj_vehicle:tracked_vehicle": 0.9,
+          "ywzj_vehicle:wheeled_vehicle": 1.2,
+          "ywzj_vehicle:vessel_vehicle": 2.5
+        }
+      }
     }
   },
   "collision_data": {
-    "direct_damage": 900
+    "direct_damage": 10
   },
   "seeker_color": "0xFFFFFF",
   "fire_control_sensor_type_override": "rf"

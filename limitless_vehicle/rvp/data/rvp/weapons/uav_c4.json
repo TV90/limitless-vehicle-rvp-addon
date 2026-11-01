@@ -1,0 +1,48 @@
+{
+  "type": "rvp:bomb",
+  "name": "UAV C4 Self-Destruct Charge",
+  "name_CN": "UAV C4 自爆炸药",
+  "recoil": 0,
+  "shoot_interval": 2000,
+  "max_capacity": 1,
+  "reload": {
+    "time": 400,
+    "ammo": "ywzj_vehicle:ammo_aerial_bomb"
+  },
+  "x_rot_max": 90,
+  "x_rot_min": -90,
+  "y_rot_max": 180,
+  "y_rot_min": -180,
+  "fire_data": {
+    "self_destruct_vehicle": true,
+    "require_lock": false,
+    "fire_mode": "SEMI_AUTO"
+  },
+  "guidance_data": {
+    "guidance_type": "NONE"
+  },
+  "collision_data": {
+    "direct_damage": 0
+  },
+  "effects_data": {
+    "trajectory_particle": "none"
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": true,
+      "damage": 700,
+      "radius": 12,
+      "destroy_block": true,
+      "explosion_damage_factor": {
+        "player": 0.0857,
+        "living": 0.0857,
+        "vehicle_default": 1.0,
+        "vehicles": {
+          "ywzj_vehicle:tracked_vehicle": 0.9,
+          "ywzj_vehicle:wheeled_vehicle": 1.2,
+          "ywzj_vehicle:vessel_vehicle": 2.0
+        }
+      }
+    }
+  }
+}

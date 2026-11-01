@@ -12,7 +12,7 @@
     "fire_mode": "FULL_AUTO"
   },
   "projectile_data": {
-    "velocity": 2.5,
+    "velocity": 1.8,
     "gravity": -0.005,
     "drag": 0.01,
     "rotate_to_motion": true

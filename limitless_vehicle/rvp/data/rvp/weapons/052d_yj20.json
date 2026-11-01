@@ -105,17 +105,19 @@
     "effects_before_explosion": true,
     "explosion_data": {
       "explode": true,
-      "damage": 2400,
-      "radius": 64,
-      "proximity_fuze": false,
+      "damage": 1200,
+      "radius": 32,
+      "proximity_fuze": true,
+      "proximity_radius": 0,
       "destroy_block": true,
-      "destroy_radius": 33,
       "explosion_damage_factor": {
+        "player": 0.0833,
+        "living": 0.0833,
         "vehicle_default": 1.0,
         "vehicles": {
           "ywzj_vehicle:tracked_vehicle": 0.9,
           "ywzj_vehicle:wheeled_vehicle": 1.2,
-          "ywzj_vehicle:vessel_vehicle": 2.0
+          "ywzj_vehicle:vessel_vehicle": 1.82
         }
       }
     },
@@ -249,7 +251,7 @@
     }
   ],
   "collision_data": {
-    "direct_damage": 80,
+    "direct_damage": 0,
     "damage_decay": [
       {
         "domain": "angle",

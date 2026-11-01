@@ -34,26 +34,23 @@
   "detonate_data": {
     "explosion_data": {
       "explode": true,
-      "damage": 250,
-      "radius": 5,
+      "damage": 200,
+      "radius": 8,
       "destroy_block": true,
-      "proximity_fuze": true,
-      "proximity_radius": 10,
       "explosion_damage_factor": {
-        "player": 0.1,
-        "living": 0.1,
+        "player": 0.2,
+        "living": 0.2,
         "vehicle_default": 1.0,
         "vehicles": {
-          "ywzj_vehicle:tracked_vehicle": 0.9,
-          "ywzj_vehicle:wheeled_vehicle": 1.2,
-          "ywzj_vehicle:vessel_vehicle": 2.0
+          "ywzj_vehicle:wheeled_vehicle": 4.0,
+          "ywzj_vehicle:rotary_wing_vehicle": 2.0,
+          "ywzj_vehicle:fixed_wing_vehicle": 2.0,
+          "ywzj_vehicle:vessel_vehicle": 3.67
         }
       }
     }
   },
   "collision_data": {
-    "living_penetration": 0,
-    "wall_penetration": 0,
     "bounce": 1,
     "bounce_incidence_angle": 80,
     "bounce_on_vehicle": true,
