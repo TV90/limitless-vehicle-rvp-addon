@@ -153,7 +153,7 @@ public final class RVP_AuiAuxiliaryVehicleScreen extends ApricityScreen {
             entry.setAttribute("type", "button");
             Element name = document.createElement("span");
             name.setClassName("aux-option-name");
-            name.setTextContent(option.name());
+            name.setTextContent(resolveOptionName(option));
             Element id = document.createElement("span");
             id.setClassName("aux-option-id");
             id.setTextContent(option.vehicleId().toString());
@@ -163,6 +163,22 @@ public final class RVP_AuiAuxiliaryVehicleScreen extends ApricityScreen {
             entry.addEventListener("click", event -> selectOption(index));
             optionList.appendChild(entry);
         }
+    }
+
+    /** 候选名称按当前语言解析；中文配置字面量不能覆盖载具已有的中英文翻译。 */
+    private static String resolveOptionName(RVP_DeployableUavCatalog.Option option) {
+        String configuredName = option.name();
+        // 配置可直接填写自定义翻译键，优先保留同一载具不同候选的命名能力。
+        if (configuredName != null && !configuredName.isBlank() && I18n.exists(configuredName)) {
+            return I18n.get(configuredName);
+        }
+        // 沿用本体 VehicleDataManager 的 entity.<namespace>.<path> 命名规则，不创建预览实体。
+        String vehicleNameKey = "entity." + option.vehicleId().getNamespace() + "." + option.vehicleId().getPath();
+        if (I18n.exists(vehicleNameKey)) {
+            return I18n.get(vehicleNameKey);
+        }
+        // 缺少语言资源时保留作者配置名称，最终使用载具 ID 兜底。
+        return configuredName == null || configuredName.isBlank() ? option.vehicleId().toString() : configuredName;
     }
 
     private void selectOption(int index) {
@@ -177,7 +193,7 @@ public final class RVP_AuiAuxiliaryVehicleScreen extends ApricityScreen {
                     + (options.get(i).id().equals(appliedOptionId) ? " current" : ""));
             }
         }
-        if (selectedName != null) selectedName.setTextContent(option.name());
+        if (selectedName != null) selectedName.setTextContent(resolveOptionName(option));
         if (selectedId != null) selectedId.setTextContent(option.vehicleId().toString());
         if (selectedRole != null) selectedRole.setTextContent(option.role());
         if (selectedDetails != null) {
@@ -335,8 +351,13 @@ public final class RVP_AuiAuxiliaryVehicleScreen extends ApricityScreen {
                 } else if (reason != null && !reason.isBlank()) {
                     text = I18n.get("ui.ywzj_rvp.uav.option_locked", translateReason(reason));
                 } else {
-                    text = I18n.get("ui.ywzj_rvp.uav.option_current",
-                            state.selectedOptionId() == null ? I18n.get("gui.ywzj_rvp.auxiliary.none") : state.selectedOptionId());
+                    String selectedOptionId = state.selectedOptionId();
+                    // 当前配置同样使用本地化名称；提交和状态匹配仍保留服务端稳定 ID。
+                    String currentName = options.stream().filter(option -> option.id().equals(selectedOptionId))
+                            .findFirst().map(RVP_AuiAuxiliaryVehicleScreen::resolveOptionName)
+                            .orElse(selectedOptionId == null
+                                    ? I18n.get("gui.ywzj_rvp.auxiliary.none") : selectedOptionId);
+                    text = I18n.get("ui.ywzj_rvp.uav.option_current", currentName);
                 }
             }
             if (!text.equals(stateText.getTextContent())) stateText.setTextContent(text);
