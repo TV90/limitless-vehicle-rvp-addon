@@ -1,6 +1,7 @@
 {
   "type": "rvp:missile",
   "name": "RIM-161 HVY ARH-SAM",
+  "recoil": 0,
   "show_msl_indicator": true,
   "shoot_interval": 500,
   "max_capacity": 8,

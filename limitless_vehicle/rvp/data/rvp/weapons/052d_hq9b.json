@@ -1,6 +1,7 @@
 {
   "type": "rvp:missile",
   "name": "HHQ-9B HVY ARH-SAM",
+  "recoil": 0,
   "show_msl_indicator": true,
   "shoot_interval": 500,
   "max_capacity": 8,

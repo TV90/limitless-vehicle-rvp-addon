@@ -1,6 +1,7 @@
 {
   "type": "rvp:rocket",
   "name": "Rocket",
+  "recoil": 0,
   "shoot_interval": 200,
   "max_capacity": 10,
   "reload": {

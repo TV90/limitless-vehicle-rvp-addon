@@ -1,6 +1,7 @@
 {
   "type": "rvp:missile",
   "name": "ESSM SARH-AAM",
+  "recoil": 0,
   "show_msl_indicator": true,
   "shoot_interval": 500,
   "fire_control_sensor_type_override": "rf",

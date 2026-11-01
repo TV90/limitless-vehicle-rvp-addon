@@ -1,6 +1,7 @@
 {
   "type": "rvp:machinegun",
   "name": "H/PJ-38 130MM Cannon",
+  "recoil": 0,
   "shoot_interval": 4000,
   "max_capacity": 1,
   "reload": {

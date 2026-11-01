@@ -1,6 +1,7 @@
 {
   "type": "rvp:missile",
   "name": "YJ19 ARH-RGM",
+  "recoil": 0,
   "shoot_interval": 500,
   "max_capacity": 4,
   "reload": {

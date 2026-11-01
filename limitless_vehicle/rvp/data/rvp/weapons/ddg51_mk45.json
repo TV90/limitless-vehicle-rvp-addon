@@ -1,6 +1,7 @@
 {
   "type": "rvp:machinegun",
   "name": "MK-45 MOD4 127MM Cannon",
+  "recoil": 0,
   "shoot_interval": 20,
   "max_capacity": 1,
   "reload": {
