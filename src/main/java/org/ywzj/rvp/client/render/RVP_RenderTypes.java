@@ -11,6 +11,9 @@ import java.util.function.Function;
 
 public class RVP_RenderTypes extends RenderType {
 
+    /** 座舱材质按实例身份登记，供独立透明阶段识别；不把屏幕或尾焰误当成玻璃。 */
+    private static final java.util.Set<RenderType> COCKPIT_TYPES = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+
     public RVP_RenderTypes(String pName, VertexFormat pFormat, VertexFormat.Mode pMode, int pBufferSize, boolean pAffectsCrumbling, boolean pSortOnUpload, Runnable pSetupState, Runnable pClearState) {
         super(pName, pFormat, pMode, pBufferSize, pAffectsCrumbling, pSortOnUpload, pSetupState, pClearState);
     }
@@ -84,21 +87,21 @@ public class RVP_RenderTypes extends RenderType {
                 .setTextureState(shard)
                 .setShaderState(RENDERTYPE_ENTITY_TRANSLUCENT_SHADER)
                 .setTransparencyState(TRANSLUCENT_TRANSPARENCY)
-                .setLayeringState(VIEW_OFFSET_Z_LAYERING)
+                .setDepthTestState(LEQUAL_DEPTH_TEST)
                 .setCullState(CULL)
                 .setOverlayState(OVERLAY)
                 .setLightmapState(LIGHTMAP)
                 .setWriteMaskState(COLOR_WRITE)
                 .createCompositeState(true);
-        return create(
+        return registerCockpit(create(
                 "ywzj_rvp:cube_cockpit_translucent_culled",
                 DefaultVertexFormat.NEW_ENTITY,
                 VertexFormat.Mode.QUADS,
                 256,
                 true,
-                true,
+                true, // 保留预览/阴影等直绘路径的原版 quad 排序；世界阶段另含三角面排序。
                 state
-        );
+        ));
     });
 
     private static final Function<ResourceLocation, RenderType> CUBE_CUTOUT_CULLED = Util.memoize((location) -> {
@@ -149,21 +152,21 @@ public class RVP_RenderTypes extends RenderType {
                 .setTextureState(shard)
                 .setShaderState(RENDERTYPE_ENTITY_TRANSLUCENT_SHADER)
                 .setTransparencyState(TRANSLUCENT_TRANSPARENCY)
-                .setLayeringState(VIEW_OFFSET_Z_LAYERING)
+                .setDepthTestState(LEQUAL_DEPTH_TEST)
                 .setCullState(CULL)
                 .setOverlayState(OVERLAY)
                 .setLightmapState(LIGHTMAP)
                 .setWriteMaskState(COLOR_WRITE)
                 .createCompositeState(true);
-        return create(
+        return registerCockpit(create(
                 "ywzj_rvp:poly_mesh_cockpit_translucent_culled",
                 DefaultVertexFormat.NEW_ENTITY,
                 VertexFormat.Mode.TRIANGLES,
                 256,
                 true,
-                true,
+                true, // 保留预览/阴影等直绘路径的原版 quad 排序；世界阶段另含三角面排序。
                 state
-        );
+        ));
     });
 
     /** 半透明四边形只写颜色，保留真实前景遮挡；用于粒子和不能充当遮挡物的发动机尾焰。 */
@@ -297,6 +300,16 @@ public class RVP_RenderTypes extends RenderType {
 
     public static RenderType cubeTransparent(ResourceLocation texture) {
         return CUBE_TRANSLUCENT_CULLED.apply(texture);
+    }
+
+    /** 登记的是 memoize 后复用的实例，不在每个顶点查询贴图或解析材质名称。 */
+    private static RenderType registerCockpit(RenderType type) {
+        COCKPIT_TYPES.add(type);
+        return type;
+    }
+
+    public static boolean isCockpitTransparent(RenderType type) {
+        return COCKPIT_TYPES.contains(type);
     }
 
     public static RenderType cubeCockpitTransparent(ResourceLocation texture) {

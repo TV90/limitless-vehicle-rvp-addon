@@ -22,7 +22,6 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.ywzj.rvp.client.cockpit.RVP_CockpitDiag;
 import org.ywzj.rvp.client.cockpit.RVP_CockpitScreenManager;
 import org.ywzj.rvp.client.render.RVP_CockpitPassengerRenderContext;
-import org.ywzj.rvp.client.render.RVP_CockpitPassengerRenderer;
 import org.ywzj.rvp.client.render.RVP_DistanceBoneHider;
 import org.ywzj.rvp.client.render.RVP_RenderTypes;
 import org.ywzj.rvp.client.resource.RVP_DisplayTransparentModeManager;
@@ -85,9 +84,7 @@ public abstract class VehicleBedrockModelCockpitRenderMixin {
         if (invisibleBones != null) {
             invisibleBones.forEach(invisibleBone -> invisibleBone.visible = false);
         }
-        if (hasCockpitDepthFix) {
-            RVP_CockpitPassengerRenderer.renderLocalPassengerBeforeCockpit(self, poseStack, source, packedLight);
-        }
+        // 乘员由正常实体管线绘制；RVP 模型出口把座舱玻璃延后到实体缓冲提交之后。
         // 排查期诊断节拍（方法级一次，每秒一条汇总；循环内所有条目共用同一拍）。
         boolean diagNow = RVP_CockpitDiag.isEnabled()
                 && System.currentTimeMillis() - lastRenderDiagMs >= 1000;
