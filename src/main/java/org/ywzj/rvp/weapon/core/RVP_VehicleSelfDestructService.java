@@ -9,6 +9,7 @@ import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.entity.projectile.RVP_BombEntity;
 import org.ywzj.rvp.uav.RVP_DeployableUavService;
 import org.ywzj.rvp.uav.RVP_LinkedUavStateTable;
+import org.ywzj.rvp.uav.RVP_NativeUavReturnService;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -16,7 +17,7 @@ import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import java.util.ArrayList;
 import java.util.function.BooleanSupplier;
 
-/** MCH 自爆炸弹语义：当前载具原地起爆；RVP 部署实例必须先完成真人回传。 */
+/** MCH 自爆炸弹语义：当前载具原地起爆；部署实例和原生 UAV 必须先完成真人回传。 */
 public final class RVP_VehicleSelfDestructService {
     private RVP_VehicleSelfDestructService() {}
 
@@ -36,12 +37,26 @@ public final class RVP_VehicleSelfDestructService {
         if (auxiliary && RVP_DeployableUavService.wouldReturnAnchorBeHitByExplosion(level, carrier, center, radius))
             return false;
         float checkedRadius = radius;
+        // 调用显式三类分派，原生 uav:true 不能因没有母车部署标记而跳过回传。
+        RVP_NativeUavReturnService.ReturnMode returnMode =
+                RVP_NativeUavReturnService.classify(carrier.uav, auxiliary);
+        // 必须在 stopRiding 清除本体返回字段之前构造快照；普通有人载具不准备保护动作。
+        BooleanSupplier nativeReturn = returnMode == RVP_NativeUavReturnService.ReturnMode.NATIVE
+                ? RVP_NativeUavReturnService.snapshotReturn(level, carrier, center, checkedRadius)
+                : () -> true;
         // 复用现有炸弹战斗部及特效，不向世界生成投射物，不触发寿终或二次爆炸。
         RVP_BombEntity warhead = new RVP_BombEntity(RVP_Entities.RVP_BOMB.get(), level, data.getWeaponId());
         warhead.initFromWeapon(data, RVP_EnumWeaponKind.BOMB, carrier, shooter, center,
                 new RVP_BaseBullet.AimRot(carrier.getXRot(), carrier.getYRot()), Vec3.ZERO);
         return RVP_SelfDestructSequence.execute(carrier.getUUID(),
-                () -> !auxiliary || RVP_DeployableUavService.returnPassengersForTermination(level, carrier, center, checkedRadius),
+                () -> {
+                    boolean returned = RVP_NativeUavReturnService.returnForMode(returnMode,
+                            () -> RVP_DeployableUavService.returnPassengersForTermination(level, carrier, center, checkedRadius),
+                            nativeReturn);
+                    // 真人已返回后立即移除本车假操作员，不能等其下一 tick 再自动清理。
+                    return returned && (returnMode == RVP_NativeUavReturnService.ReturnMode.MANNED
+                            || RVP_NativeUavReturnService.discardReturnedOperators(level, carrier));
+                },
                 () -> {
                     // 所有门禁通过后才消耗一枚弹药；部署终结在回传成功后启动冷却。
                     if (carrier.isRemoved() || carrier.isDestroyed() || !consumeOne.getAsBoolean()) return false;
