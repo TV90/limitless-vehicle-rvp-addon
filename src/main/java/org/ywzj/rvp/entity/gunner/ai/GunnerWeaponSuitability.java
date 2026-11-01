@@ -16,6 +16,7 @@ import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.rvp.weapon.AntiRadiationSeekerHelper;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
+import org.ywzj.rvp.weapon.core.RVP_WeaponHeatManager;
 import org.ywzj.rvp.weapon.data.RVP_Range;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
@@ -95,6 +96,11 @@ public final class GunnerWeaponSuitability {
         }
         RVP_WeaponData data = rvpWeapon.getData();
         if (data == null || target == null || !target.isAlive()) {
+            return false;
+        }
+        // 过热重选门槛（2026-11-01）：高射速武器打到过热后，必须等热量降到最大值 20% 以下
+        // 才允许炮手重新选择该武器；锁定期内本武器不可选，炮手会改用其它武器或等待冷却。
+        if (RVP_WeaponHeatManager.isLockedOutAfterOverheat(rvpWeapon)) {
             return false;
         }
         // 激光致盲（2026-09-17）：被致盲的 gunner 只能使用雷达制导/雷达中段（SARH/ARH/AIR）

@@ -51,7 +51,8 @@ class RVP_HaloDecayIntegrationTest {
                 case EXPLOSION -> 0.6F;
                 case MUZZLE -> 4;
                 case ROCKET_ENGINE -> 2;
-                case EO_JAMMER -> 1;
+                // 合并后干扰机与激光只将外围光晕压至40%，全局曲线仍须覆盖这两类来源。
+                case EO_JAMMER, LASER -> 0.4F;
             };
             assertEquals(initialHalo * 0.5F, linear.haloIntensity(), 0.00001F);
             assertEquals(original.intensity(), linear.intensity());

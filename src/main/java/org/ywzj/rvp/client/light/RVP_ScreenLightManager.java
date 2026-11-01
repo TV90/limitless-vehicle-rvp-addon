@@ -19,9 +19,13 @@ public final class RVP_ScreenLightManager {
     public static final RVP_ScreenLightManager INSTANCE = new RVP_ScreenLightManager();
     /** 待筛选光源的内存硬上限，独立于显卡八盏预算。 */
     static final int MAX_TRACKED = 128;
+    /** 干扰机只压低外围光晕，保留本地预设的表面照亮强度。 */
+    static final float EO_JAMMER_HALO_SCALE = 0.4F;
+    /** 激光两端的外围光晕倍率，主光束及表面照亮不受此倍率影响。 */
+    static final float LASER_HALO_SCALE = 0.4F;
     /** 短光句柄到状态的有序表，过载时先淘汰旧光。 */
     private final Map<Long, Entry> transients = new LinkedHashMap<>();
-    /** 发动机每 UUID 一盏；不使用粒子作为键。 */
+    /** 每个稳定灯键一盏持续光；同一载具的玻片和激光端点可各自登记。 */
     private final Map<UUID, Entry> persistent = new LinkedHashMap<>();
     /** 当前世界身份；重连同一维度也必须清理。 */
     private Object world;
@@ -69,7 +73,7 @@ public final class RVP_ScreenLightManager {
         // 调用有界淘汰，短时间大量爆炸也不无限申请内存。
         reserveSpace();
         long id = ++nextId;
-        transients.put(id, new Entry(position, type, sourceKey, parameters, startTime,
+        transients.put(id, new Entry(position, type, sourceKey, null, parameters, startTime,
                 startTime + parameters.durationTicks(), null));
         return id;
     }
@@ -83,8 +87,16 @@ public final class RVP_ScreenLightManager {
     /** 持续光保留来源和半球轴；干扰机不再被误归为发动机，轴为 null 时保持全向光。 */
     public void upsertPersistent(UUID key, Vec3 position, RVP_LightSourceType type,
                                  RVP_LightParameters parameters, Vec3 hemisphereAxis) {
-        if (type != RVP_LightSourceType.ROCKET_ENGINE && type != RVP_LightSourceType.EO_JAMMER) {
-            throw new IllegalArgumentException("持续光只支持发动机或光电干扰机");
+        // 调用带归属的统一入口，原单灯调用仍以自己的灯键作为归属。
+        upsertPersistent(key, key, position, type, parameters, hemisphereAxis);
+    }
+
+    /** 一辆车可拥有多盏独立持续光，归属供整车清理与本车遮挡判定使用。 */
+    public void upsertPersistent(UUID key, UUID owner, Vec3 position, RVP_LightSourceType type,
+                                 RVP_LightParameters parameters, Vec3 hemisphereAxis) {
+        if (type != RVP_LightSourceType.ROCKET_ENGINE && type != RVP_LightSourceType.EO_JAMMER
+                && type != RVP_LightSourceType.LASER) {
+            throw new IllegalArgumentException("持续光只支持发动机、光电干扰机或激光");
         }
         if (hemisphereAxis != null && (!Double.isFinite(hemisphereAxis.lengthSqr()) || hemisphereAxis.lengthSqr() < 1.0E-12)) {
             throw new IllegalArgumentException("半球光方向必须是非零有限向量");
@@ -95,12 +107,23 @@ public final class RVP_ScreenLightManager {
             return;
         }
         if (!persistent.containsKey(key)) { reserveSpace(); }
-        persistent.put(key, new Entry(position, type, key, parameters, gameTime, gameTime + 2,
+        persistent.put(key, new Entry(position, type, key, owner == null ? key : owner, parameters, gameTime, gameTime + 2,
                 hemisphereAxis == null ? null : hemisphereAxis.normalize()));
     }
 
-    /** 燃尽或移除时立即取消对应发动机光。 */
-    public void removePersistent(UUID key) { persistent.remove(key); }
+    /** 燃尽或整车移除时，按灯键及归属一起清理该实体的持续光。 */
+    public void removePersistent(UUID key) {
+        if (key == null) { return; }
+        persistent.remove(key);
+        persistent.entrySet().removeIf(entry -> key.equals(entry.getValue().owner));
+    }
+
+    /** 只清理归属实体的指定来源，干扰机停用不能连带清掉同车激光灯。 */
+    public void removePersistent(UUID key, RVP_LightSourceType type) {
+        if (key == null) { return; }
+        persistent.entrySet().removeIf(entry -> entry.getValue().type == type
+                && (key.equals(entry.getKey()) || key.equals(entry.getValue().owner)));
+    }
 
     /** 默认爆炸实例被淘汰时，取消它尚未结束的短光。 */
     public void removeTransient(long handle) { transients.remove(handle); }
@@ -144,7 +167,8 @@ public final class RVP_ScreenLightManager {
         List<RVP_ScreenLight> sampled = new ArrayList<>(transients.size() + persistent.size());
         double now = gameTime + Math.max(0, Math.min(1, Float.isFinite(partialTick) ? partialTick : 0));
         transients.values().forEach(entry -> sampled.add(entry.sample(now, null)));
-        persistent.forEach((key, entry) -> sampled.add(entry.sample(now, key)));
+        // 对外报告归属实体 UUID；每片玻片有独立灯键，但遮挡查询仍需认出它们来自同一辆车。
+        persistent.forEach((key, entry) -> sampled.add(entry.sample(now, entry.owner)));
         // 调用天空专用距离预算；0 表示天空沿用普通预算，不影响地面照亮、光晕与核心。
         double skyDistance = RVP_LightRuntimeTuning.get(RVP_LightRuntimeTuning.Group.global,
                 RVP_LightRuntimeTuning.Parameter.skyDistance);
@@ -176,13 +200,14 @@ public final class RVP_ScreenLightManager {
             case ROCKET_ENGINE -> RVP_LightRuntimeTuning.Group.engine;
             // 干扰机直接使用eoJammer()预设；global没有颜色/半径参数，套用会生成NaN并被光源预算剔除。
             // 返回null，由采样入口保留独立预设；总画质倍率仍由绘制阶段统一应用。
-            case EO_JAMMER -> null;
+            case EO_JAMMER, LASER -> null;
         };
     }
 
     /** 爆炸/炮口照亮按衰减倍率伸缩；光晕的独立时长不会反向改变这里。 */
     private static float lightingLifetimeTicks(RVP_LightSourceType type, RVP_LightParameters parameters) {
-        if (type == RVP_LightSourceType.ROCKET_ENGINE || type == RVP_LightSourceType.EO_JAMMER) { return parameters.durationTicks(); }
+        if (type == RVP_LightSourceType.ROCKET_ENGINE || type == RVP_LightSourceType.EO_JAMMER
+                || type == RVP_LightSourceType.LASER) { return parameters.durationTicks(); }
         // 调用统一短光寿命规则，读取当前倍率而非出生时快照，既有光源也立即响应。
         return RVP_TransientLightTimeline.durationTicks(parameters.durationTicks(),
                 RVP_LightRuntimeTuning.get(group(type), RVP_LightRuntimeTuning.Parameter.decayScale));
@@ -214,6 +239,8 @@ public final class RVP_ScreenLightManager {
         private final RVP_LightSourceType type;
         /** 稳定炮口键或空。 */
         private final Object sourceKey;
+        /** 持续光所属实体 UUID；短光为 null，一车多灯共用该归属。 */
+        private final UUID owner;
         /** 安全参数。 */
         private RVP_LightParameters parameters;
         /** 本轮亮起的世界 tick。 */
@@ -223,9 +250,10 @@ public final class RVP_ScreenLightManager {
         /** 世界空间的半球光轴；null 表示不限制方向。 */
         private final Vec3 hemisphereAxis;
 
-        private Entry(Vec3 position, RVP_LightSourceType type, Object sourceKey,
+        private Entry(Vec3 position, RVP_LightSourceType type, Object sourceKey, UUID owner,
                 RVP_LightParameters parameters, long start, long expires, Vec3 hemisphereAxis) {
             this.position = position; this.type = type; this.sourceKey = sourceKey;
+            this.owner = owner;
             this.parameters = parameters; this.start = start; this.expires = expires;
             this.hemisphereAxis = hemisphereAxis;
         }
@@ -257,6 +285,12 @@ public final class RVP_ScreenLightManager {
             float haloIntensity = (type == RVP_LightSourceType.EXPLOSION
                     ? RVP_LightRuntimeTuning.get(group, RVP_LightRuntimeTuning.Parameter.worldHaloIntensity)
                     : tuned.intensity()) * haloFade;
+            // 仅外围光晕沿用远端收紧倍率，不改变本地照亮预设或独立淡出时间线。
+            if (type == RVP_LightSourceType.EO_JAMMER) {
+                haloIntensity *= EO_JAMMER_HALO_SCALE;
+            } else if (type == RVP_LightSourceType.LASER) {
+                haloIntensity *= LASER_HALO_SCALE;
+            }
             float green = tuned.green();
             float blue = tuned.blue();
             if (type == RVP_LightSourceType.EXPLOSION) {

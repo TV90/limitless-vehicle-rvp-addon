@@ -70,6 +70,8 @@ public final class RVP_DircmBeamRenderer {
                 if (start.distanceToSqr(end) < 1.0E-4) {
                     continue;
                 }
+                // 光束两端光圈：起点半球光沿光束方向、终点球光，颜色与光束顶点色一致。
+                RVP_LaserBeamLights.updateDircm(vehicleId, channel.boneName(), rvpVehicle.getUUID(), start, end);
                 drawBeam(event, start.subtract(cameraPos), end.subtract(cameraPos), worldTime);
             }
         }

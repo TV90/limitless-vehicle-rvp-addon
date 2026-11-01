@@ -100,10 +100,19 @@ public final class RVP_IrSeekerTracker {
                 && RVP_IrLockHelper.isTargetWithinAcquireLimits(geo, sticky, data)) {
             best = sticky;
         } else {
-            best = Infrared.findTarget(geo,
-                    RVP_IrLockHelper.halfAngleFromFull(data.resolveLaunchSeekerFullFov()));
+            float acquireHalfAngle = RVP_IrLockHelper.halfAngleFromFull(data.resolveLaunchSeekerFullFov());
+            best = Infrared.findTarget(geo, acquireHalfAngle);
             if (best != null && !RVP_IrLockHelper.isTargetWithinAcquireLimits(geo, best, data)) {
                 best = null;
+            }
+            // [RVP] 2026-11-01 轮廓伺服：中心点出锥但机体轮廓仍在锥内的目标，放宽搜索锥后按轮廓口径复核
+            if (best == null) {
+                Entity outlineBest = Infrared.findTarget(geo,
+                        acquireHalfAngle + RVP_IrLockHelper.ACQUIRE_OUTLINE_SEARCH_MARGIN_DEG);
+                if (outlineBest != null
+                        && RVP_IrLockHelper.isTargetWithinAcquireLimits(geo, outlineBest, data)) {
+                    best = outlineBest;
+                }
             }
         }
 

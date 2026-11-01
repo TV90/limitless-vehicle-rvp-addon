@@ -36,6 +36,15 @@ class RVP_LightParametersTest {
     }
 
     @Test
+    void explosionAndOwnOcclusionKeepLocalAndNewDefaults() {
+        // 调用配置读取入口：合并沿用本地照亮默认开启，远端新增的本车遮挡默认关闭。
+        assertTrue(RVP_LightingConfig.explosionLightEnabled());
+        assertFalse(RVP_LightingConfig.sourceVehicleOccludesOwnLight());
+        // 真实方块光仍保持本地关闭状态，屏幕光开关不改变它。
+        assertEquals(0, RVP_LightParameters.explosion(8).blockLightLevel());
+    }
+
+    @Test
     void explosionRadiusIsBoundedEvenForNuclearAndInvalidInput() {
         assertTrue(RVP_LightParameters.explosion(8192).radius() <= 32);
         assertEquals(RVP_LightParameters.explosion(4), RVP_LightParameters.explosion(Float.NaN));

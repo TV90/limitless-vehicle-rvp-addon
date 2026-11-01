@@ -253,6 +253,32 @@ class RVP_ScreenLightManagerTest {
     }
 
     @Test
+    void typeScopedRemovalKeepsOtherLightsOfTheSameOwner() {
+        // 同一辆车同时挂干扰机玻片灯与激光束两端灯，按车清灯只能清掉指定类型。
+        UUID owner = UUID.randomUUID();
+        manager.upsertPersistent(UUID.randomUUID(), owner, Vec3.ZERO, RVP_LightSourceType.EO_JAMMER,
+                RVP_LightParameters.eoJammer(), new Vec3(0, 0, 4));
+        manager.upsertPersistent(UUID.randomUUID(), owner, Vec3.ZERO, RVP_LightSourceType.LASER,
+                RVP_LightParameters.laserStart(1, 0, 0, 1), new Vec3(0, 0, 1));
+        manager.upsertPersistent(UUID.randomUUID(), owner, Vec3.ZERO, RVP_LightSourceType.LASER,
+                RVP_LightParameters.laserEnd(1, 0, 0, 1), null);
+        assertEquals(3, manager.size());
+
+        // 调用合并后的采样入口：独立灯键统一报告车辆归属，方向保持本地单位化校验。
+        assertEquals(3, sample(0).size());
+        assertTrue(sample(0).stream().allMatch(light -> owner.equals(light.persistentKey())));
+        assertTrue(sample(0).stream().filter(light -> light.hemisphereAxis() != null)
+                .allMatch(light -> Math.abs(light.hemisphereAxis().length() - 1.0D) < 1.0E-9D));
+
+        manager.removePersistent(owner, RVP_LightSourceType.EO_JAMMER);
+        assertEquals(2, manager.size());
+        assertTrue(sample(0).stream().allMatch(light -> light.type() == RVP_LightSourceType.LASER));
+
+        manager.removePersistent(owner, RVP_LightSourceType.LASER);
+        assertEquals(0, manager.size());
+    }
+
+    @Test
     void worldIdentityAndClockRollbackClearBothKindsOfLight() {
         manager.addTransient(Vec3.ZERO, RVP_LightSourceType.EXPLOSION, null, RVP_LightParameters.explosion(4), 100);
         manager.upsertPersistent(UUID.randomUUID(), Vec3.ZERO, RVP_LightParameters.engine());

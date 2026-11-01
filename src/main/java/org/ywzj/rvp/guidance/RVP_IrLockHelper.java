@@ -37,6 +37,12 @@ public final class RVP_IrLockHelper {
                 && !data.isGpsMissile();
     }
 
+    /**
+     * [RVP] 2026-11-01 轮廓伺服：搜索放宽余量。Infrared.findTarget 按中心点排序与截断，
+     * 中心点出锥但轮廓在锥内的目标需要更宽的搜索锥才能进入轮廓过滤。
+     */
+    public static final float ACQUIRE_OUTLINE_SEARCH_MARGIN_DEG = 6.0f;
+
     public static boolean isTargetWithinAcquireLimits(WeaponUnit weaponUnit, Entity target, RVP_WeaponData data) {
         return isTargetWithinAcquireLimits(weaponUnit, target, data, 0f);
     }
@@ -46,14 +52,14 @@ public final class RVP_IrLockHelper {
         return isTargetWithinRangedLimits(
                 weaponUnit, target, null,
                 launch.maxLockHalfAngle() + Math.max(0f, extraAngleMargin),
-                launch.targetDistanceRange(), launch.altitudeRange());
+                launch.targetDistanceRange(), launch.altitudeRange(), true);
     }
 
     public static boolean isTargetWithinHoldLimits(WeaponUnit weaponUnit, Entity target, RVP_WeaponData data) {
         RVP_GuidanceLaunchConfig launch = RVP_GuidanceModelResolver.resolveLaunch(data);
         return isTargetWithinRangedLimits(
                 weaponUnit, target, null,
-                launch.maxOffAxisLockAngle(), launch.targetDistanceRange(), launch.altitudeRange());
+                launch.maxOffAxisLockAngle(), launch.targetDistanceRange(), launch.altitudeRange(), false);
     }
 
     /**
@@ -65,7 +71,7 @@ public final class RVP_IrLockHelper {
         RVP_GuidanceLaunchConfig launch = RVP_GuidanceModelResolver.resolveLaunch(data);
         return isTargetWithinRangedLimits(
                 weaponUnit, target, null, 180f,
-                launch.targetDistanceRange(), launch.altitudeRange());
+                launch.targetDistanceRange(), launch.altitudeRange(), false);
     }
 
     public static boolean isTargetWithinLimits(
@@ -126,7 +132,7 @@ public final class RVP_IrLockHelper {
         RVP_GuidanceLaunchConfig launch = RVP_GuidanceModelResolver.resolveLaunch(data);
         return isTargetWithinRangedLimits(
                 weaponUnit, target, referenceDir, launch.maxLockHalfAngle(),
-                launch.targetDistanceRange(), launch.altitudeRange());
+                launch.targetDistanceRange(), launch.altitudeRange(), true);
     }
 
     public static boolean isTargetWithinLaunchAltitudeRange(RVP_WeaponData data, Entity target) {
@@ -140,13 +146,20 @@ public final class RVP_IrLockHelper {
         return data == null ? null : RVP_GuidanceModelResolver.resolveLaunch(data).altitudeRange();
     }
 
+    /**
+     * [RVP] 2026-11-01 轮廓伺服：{@code outlineAssist} 为 true 时角度门不再比对目标最大 OBB 中心点，
+     * 而是用 {@link RVP_HmdTargetingMath#effectiveAngularMissDeg} 按包围盒外接球角半径修正——
+     * 准线落在机体轮廓（外接球）内即按 0 度计，伺服获取通道与头瞄通道共用同一轮廓口径。
+     * hold / 发射离轴门保持中心点口径不变（语义为"保持/发射"，不随轮廓放宽）。
+     */
     private static boolean isTargetWithinRangedLimits(
             WeaponUnit weaponUnit,
             Entity target,
             @Nullable Vec3 referenceDir,
             float maxAngleDeg,
             @Nullable RVP_Range<Float> distanceRange,
-            @Nullable RVP_Range<Float> altitudeRange
+            @Nullable RVP_Range<Float> altitudeRange,
+            boolean outlineAssist
     ) {
         if (weaponUnit == null || target == null || !target.isAlive()) {
             return false;
@@ -167,9 +180,17 @@ public final class RVP_IrLockHelper {
         }
         Vec3 aim = referenceDir != null ? referenceDir : weaponUnit.worldVec();
         if (aim.lengthSqr() > 1.0E-6) {
-            double dot = Mth.clamp(aim.normalize().dot(toTarget.normalize()), -1.0, 1.0);
-            if (Math.toDegrees(Math.acos(dot)) > Math.max(maxAngleDeg, 0f)) {
-                return false;
+            if (outlineAssist) {
+                double missDeg = RVP_HmdTargetingMath.effectiveAngularMissDeg(
+                        checkStart, aim, target.getBoundingBox());
+                if (missDeg > Math.max(maxAngleDeg, 0f)) {
+                    return false;
+                }
+            } else {
+                double dot = Mth.clamp(aim.normalize().dot(toTarget.normalize()), -1.0, 1.0);
+                if (Math.toDegrees(Math.acos(dot)) > Math.max(maxAngleDeg, 0f)) {
+                    return false;
+                }
             }
         }
         return hasClearLineOfSight(weaponUnit, target, checkStart, checkEnd);
@@ -266,7 +287,7 @@ public final class RVP_IrLockHelper {
         return isTargetWithinRangedLimits(
                 weaponUnit, target, boresight,
                 launch.maxOffAxisLockAngle() + Math.max(0f, angleToleranceDeg),
-                launch.targetDistanceRange(), launch.altitudeRange());
+                launch.targetDistanceRange(), launch.altitudeRange(), false);
     }
 
     /**

@@ -277,13 +277,19 @@ public final class RVP_LightRuntimeTuning {
     /** 照亮半径只乘一次，三类光源都允许缩到零或扩大到8192格，光晕另行采样。 */
     public static float radius(Group group, float baseRadius) {
         // 调用独立照亮倍率，不读取光晕参数，防止两种范围重新耦合。
-        return Math.min(MAX_TUNED_RADIUS, Math.max(0, baseRadius * get(group, Parameter.radiusScale)));
+        return Math.min(MAX_TUNED_RADIUS, Math.max(0, baseRadius * scale(group, Parameter.radiusScale)));
     }
 
     /** 光晕始终从原始基础半径计算；改照亮半径不会改变此结果。 */
     public static float haloRadius(Group group, float baseRadius) {
         // 调用独立光晕倍率，0 也会关闭发动机的模糊来源和广域橙晕，核心继续显示。
-        return Math.min(MAX_TUNED_RADIUS, Math.max(0, baseRadius * get(group, Parameter.haloRadiusScale)));
+        return Math.min(MAX_TUNED_RADIUS, Math.max(0, baseRadius * scale(group, Parameter.haloRadiusScale)));
+    }
+
+    /** 分组不开放该倍率时代码默认值是 NaN；采样按 1 处理，不能让 NaN 污染半径、颜色和表面权重。 */
+    private static float scale(Group group, Parameter parameter) {
+        float value = get(group, parameter);
+        return Float.isFinite(value) ? value : 1F;
     }
 
     /** 光晕随淡出向中心收缩的半径倍率；持续光和不支持该参数的分组保持 1 倍。 */
@@ -394,12 +400,12 @@ public final class RVP_LightRuntimeTuning {
         // 三类光源都应用代码默认倍率，不能因没有临时覆盖而跳过炮口与发动机的新默认值。
         // 调用统一参数读取和半径入口；保留原始寿命、合并窗口和光晕标记，不反写已有预设。
         return new RVP_LightParameters(base.enabled(),
-                Math.min(1, base.red() * get(group, Parameter.red)),
-                Math.min(1, base.green() * get(group, Parameter.green)),
-                Math.min(1, base.blue() * get(group, Parameter.blue)), radius(group, base.radius()),
+                Math.min(1, base.red() * scale(group, Parameter.red)),
+                Math.min(1, base.green() * scale(group, Parameter.green)),
+                Math.min(1, base.blue() * scale(group, Parameter.blue)), radius(group, base.radius()),
                 base.intensity() * get(group, Parameter.brightness), base.durationTicks(), base.mergeWindowTicks(),
-                base.surfaceWeight() * get(group, Parameter.surface),
-                base.decay() * (group == Group.engine ? 1 : get(group, Parameter.decayScale)),
+                base.surfaceWeight() * scale(group, Parameter.surface),
+                base.decay() * (group == Group.engine ? 1 : scale(group, Parameter.decayScale)),
                 base.bloom(), base.volumetricStrength(), base.blockLightLevel());
     }
 }

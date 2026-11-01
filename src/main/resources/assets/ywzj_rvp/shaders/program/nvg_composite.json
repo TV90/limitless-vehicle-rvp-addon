@@ -15,6 +15,9 @@
     },
     {
       "name": "BloomSampler"
+    },
+    {
+      "name": "BloomWideSampler"
     }
   ],
   "uniforms": [
@@ -51,6 +54,14 @@
       "count": 1,
       "values": [
         1.9
+      ]
+    },
+    {
+      "name": "BloomWideIntensity",
+      "type": "float",
+      "count": 1,
+      "values": [
+        3.0
       ]
     },
     {

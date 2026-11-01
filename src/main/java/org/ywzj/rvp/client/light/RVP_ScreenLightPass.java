@@ -521,13 +521,13 @@ public final class RVP_ScreenLightPass {
                 && lights.stream().anyMatch(light -> light.type() == RVP_LightSourceType.ROCKET_ENGINE);
     }
 
-    /** 照亮通道：按来源类型读取 TOML 分项开关；干扰机小光只受总开关约束。 */
+    /** 照亮通道：按来源类型读取 TOML 分项开关；干扰机与激光小光只受总开关约束。 */
     private static boolean surfaceEnabled(RVP_LightSourceType type) {
         return switch (type) {
             case EXPLOSION -> RVP_LightingConfig.explosionLightEnabled();
             case MUZZLE -> RVP_LightingConfig.muzzleLightEnabled();
             case ROCKET_ENGINE -> RVP_LightingConfig.engineLightEnabled();
-            case EO_JAMMER -> true;
+            case EO_JAMMER, LASER -> true;
         };
     }
 
@@ -536,7 +536,7 @@ public final class RVP_ScreenLightPass {
         return switch (type) {
             case EXPLOSION -> RVP_LightingConfig.explosionHaloEnabled();
             case ROCKET_ENGINE -> RVP_LightingConfig.missileHaloEnabled();
-            case MUZZLE, EO_JAMMER -> true;
+            case MUZZLE, EO_JAMMER, LASER -> true;
         };
     }
 

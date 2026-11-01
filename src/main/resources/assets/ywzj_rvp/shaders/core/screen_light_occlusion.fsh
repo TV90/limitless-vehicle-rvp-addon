@@ -353,14 +353,17 @@ void main() {
         vec3 delta = light.xyz - position;
         float distanceToLight = length(delta);
         vec4 axis = hemisphereAxes[index];
-        // 表面位于光源朝向的前半球才照亮，不能用相机朝向代替实际受光点。
-        bool inHemisphere = axis.w < 0.5 || dot(-delta, axis.xyz) >= 0.0;
-        if (hasSurface && distanceToLight < light.w && shape.x > 0.0 && inHemisphere) {
+        // 半球边缘沿用平滑过渡，方向参数仍使用本地上传链，天空与环境适应保持独立。
+        float hemisphere = 1.0;
+        if (axis.w > 0.5 && distanceToLight > 0.0001) {
+            hemisphere = smoothstep(-0.12, 0.12, dot(-delta / distanceToLight, axis.xyz));
+        }
+        if (hasSurface && distanceToLight < light.w && shape.x > 0.0) {
             float radial = distanceToLight / light.w;
             float facing = distanceToLight < 0.0001 ? 1.0 : max(0.0, dot(normal, delta / distanceToLight));
             if (facing > 0.0) {
                 surface = pow(max(0.0, 1.0 - radial * radial), 2.0)
-                        * facing * shape.x * visibility(index, position, normal, light.xyz);
+                        * facing * shape.x * hemisphere * visibility(index, position, normal, light.xyz);
             }
         }
         float volume = shape.y > 0.0

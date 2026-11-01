@@ -47,9 +47,18 @@ public abstract class WeaponUnitFireControlLockMixin {
                 ci.cancel();
                 return;
             }
-            Entity target = Infrared.findTarget(self, RVP_IrLockHelper.halfAngleFromFull(rvpWeapon.getData().resolveLaunchSeekerFullFov()));
+            float acquireHalfAngle = RVP_IrLockHelper.halfAngleFromFull(rvpWeapon.getData().resolveLaunchSeekerFullFov());
+            Entity target = Infrared.findTarget(self, acquireHalfAngle);
             if (!RVP_IrLockHelper.isTargetWithinAcquireLimits(self, target, rvpWeapon.getData())) {
                 target = null;
+            }
+            // [RVP] 2026-11-01 轮廓伺服：与 tracker 同口径，中心点出锥但轮廓在锥内也可手动锁定
+            if (target == null) {
+                target = Infrared.findTarget(self,
+                        acquireHalfAngle + RVP_IrLockHelper.ACQUIRE_OUTLINE_SEARCH_MARGIN_DEG);
+                if (!RVP_IrLockHelper.isTargetWithinAcquireLimits(self, target, rvpWeapon.getData())) {
+                    target = null;
+                }
             }
             if (target != null) {
                 self.setLockedEntity(target);

@@ -20,11 +20,11 @@ import java.util.UUID;
  * @param emission 圆形白热核心与外围光团；null 表示该光源没有自发光
  * @param remainingTicks 剩余 tick；短光取照亮与光晕中较晚的结束时刻
  * @param type 来源类型
- * @param persistentKey 发动机 UUID，短光为 null
+ * @param persistentKey 持续光归属实体 UUID；同车多灯共用归属，短光为 null
  * @param surfaceWeight 表面受光权重
  * @param bloom 是否进入光晕提取
  * @param volumetricStrength 空气散射强度
- * @param hemisphereAxis 世界空间半球轴；null 表示全向光，只有干扰机等定向持续光提供
+ * @param hemisphereAxis 世界空间半球轴；null 表示全向光，干扰机玻片和激光起点提供方向
  */
 public record RVP_ScreenLight(Vec3 position, float red, float green, float blue, float radius, float haloRadius,
         float intensity, float haloIntensity, float skyIntensity, float skySpread,
@@ -38,6 +38,16 @@ public record RVP_ScreenLight(Vec3 position, float red, float green, float blue,
         // 未显式提供天空与自发光参数时保持“不染天空、无白热核心”，与加入这些通道之前的行为完全一致。
         this(position, red, green, blue, radius, haloRadius, intensity, haloIntensity, 0, 1, null, remainingTicks,
                 type, persistentKey, surfaceWeight, bloom, volumetricStrength, null);
+    }
+
+    /** 定向持续光构造入口；未指定天空和核心参数时保持这两条通道关闭。 */
+    public RVP_ScreenLight(Vec3 position, float red, float green, float blue, float radius, float haloRadius,
+                           float intensity, float haloIntensity, float remainingTicks, RVP_LightSourceType type,
+                           UUID persistentKey, float surfaceWeight, boolean bloom, float volumetricStrength,
+                           Vec3 hemisphereAxis) {
+        // 调用完整快照构造入口，支持远端定向灯调用，同时保留本地天空、核心独立字段。
+        this(position, red, green, blue, radius, haloRadius, intensity, haloIntensity, 0, 1, null, remainingTicks,
+                type, persistentKey, surfaceWeight, bloom, volumetricStrength, hemisphereAxis);
     }
 
     /** 只使用仍有可见贡献的一路范围，照亮结束后不能拿它的大半径占据光晕预算；天空散射没有半径概念，由预算单独保留。 */

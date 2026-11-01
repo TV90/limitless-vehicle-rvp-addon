@@ -51,6 +51,8 @@ public final class RVP_LightingConfig {
     private static final ForgeConfigSpec.DoubleValue INTENSITY;
     /** 空中起爆离地高度门槛，单位格；0 表示不限制。 */
     private static final ForgeConfigSpec.DoubleValue AIR_BURST_CLEARANCE;
+    /** 发光载具的结构盒是否遮挡自己的持续光；默认关闭，避免玻片灯被车壳埋住。 */
+    private static final ForgeConfigSpec.BooleanValue SOURCE_VEHICLE_OCCLUDES_OWN_LIGHT;
 
     static {
         ForgeConfigSpec.Builder client = new ForgeConfigSpec.Builder();
@@ -87,6 +89,9 @@ public final class RVP_LightingConfig {
         AIR_BURST_CLEARANCE = client.comment("空中起爆离地高度门槛，单位格；默认 100，0 表示不限制（贴地爆炸也生成爆炸光源）。",
                         "服务端只下发爆心离地高度，是否建灯由本客户端门槛决定；只影响爆炸屏幕光源，粒子与声音不受影响。")
                 .defineInRange("airBurstClearance", 100.0, 0, 32768);
+        SOURCE_VEHICLE_OCCLUDES_OWN_LIGHT = client.comment("发光载具自己的结构盒是否遮挡它的持续光。",
+                        "默认关闭：玻片灯可能位于车体盒内；其它载具与方块仍正常参与遮挡。")
+                .define("sourceVehicleOccludesOwnLight", false);
         CLIENT_SPEC = client.build();
     }
 
@@ -178,6 +183,10 @@ public final class RVP_LightingConfig {
         // 调用总亮度倍率；真实光源与烟雾共用结果，喷焰保持独立自发光。
         return (CLIENT_SPEC.isLoaded() ? INTENSITY.get().floatValue() : 1)
                 * RVP_LightRuntimeTuning.get(Group.global, Parameter.brightness);
+    }
+    /** 保留远端新增的本车遮挡选择；配置未加载时按默认不遮挡处理。 */
+    public static boolean sourceVehicleOccludesOwnLight() {
+        return CLIENT_SPEC.isLoaded() && SOURCE_VEHICLE_OCCLUDES_OWN_LIGHT.get();
     }
     /** 本轮固定返回 false；已有 TOML 的 blockLight=true 也不能开启真实方块光。 */
     public static boolean blockLightEnabled() { return P5_ENABLED; }

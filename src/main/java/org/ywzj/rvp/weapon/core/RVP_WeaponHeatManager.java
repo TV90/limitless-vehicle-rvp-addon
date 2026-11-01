@@ -32,6 +32,12 @@ public final class RVP_WeaponHeatManager {
     private static final HeatState DISABLED_STATE = new HeatState();
 
     /**
+     * 过热锁解除阈值：打到过热后，热量必须降到最大值的 20% 以下才允许重新选择该武器
+     * （2026-11-01 用户需求：高射速武器过热后不能刚降到上限以下就被炮手立刻选回、反复过热）。
+     */
+    public static final float OVERHEAT_RECOVERY_RATIO = 0.2F;
+
+    /**
      * 武器级热量的键：同一载具内的「武器站 id + 槽位序号」。
      * 两端由同一套载具 JSON 按同一顺序构造武器，故两端算出的键必然一致。
      */
@@ -86,6 +92,8 @@ public final class RVP_WeaponHeatManager {
             state.currentHeat += spec.heatCount();
             if (state.currentHeat >= spec.maxHeatCount()) {
                 state.currentHeat += spec.overheatExtraHeat();
+                // 打过热即上锁：即使热量下一秒就掉回上限以下，也要等降到 20% 才解锁重选。
+                state.overheatedLatch = true;
             }
         }
     }
@@ -131,6 +139,27 @@ public final class RVP_WeaponHeatManager {
         synchronized (LOCK) {
             int max = maxHeat(weapon);
             return max > 0 && currentHeat(weapon) >= max;
+        }
+    }
+
+    /**
+     * 过热锁是否仍生效：一旦打到过热就置位，只有热量降到 {@link #OVERHEAT_RECOVERY_RATIO}
+     * 以下才解除。消费点：{@code GunnerWeaponSuitability.canSelectForTarget}——炮手在锁定期内
+     * 不能重新选择该武器（会改用别的武器或等待），避免高射速武器刚过热门槛就立刻被选回。
+     */
+    public static boolean isLockedOutAfterOverheat(RVP_WeaponBase weapon) {
+        synchronized (LOCK) {
+            HeatSpec spec = resolveSpec(weapon);
+            if (!spec.enabled()) {
+                return false;
+            }
+            HeatState state = spec.state();
+            tickState(state, tickClock(weapon));
+            if (state.overheatedLatch
+                    && state.currentHeat < spec.maxHeatCount() * OVERHEAT_RECOVERY_RATIO) {
+                state.overheatedLatch = false;
+            }
+            return state.overheatedLatch;
         }
     }
 
@@ -199,6 +228,8 @@ public final class RVP_WeaponHeatManager {
         private int currentHeat;
         /** 上次推进冷却的世界 gameTime（long，防老存档 gameTime 超 int 溢出）。 */
         private long lastTick = Long.MIN_VALUE;
+        /** 是否处于"打过热等待冷却到 20% 以下"的锁定期；未启用过热的武器恒为 false。 */
+        private boolean overheatedLatch;
     }
 
     private record HeatSpec(
