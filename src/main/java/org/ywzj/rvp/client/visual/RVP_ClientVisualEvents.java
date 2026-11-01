@@ -12,6 +12,7 @@ import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.client.nuclear.RVP_NuclearShockwaveRenderer;
 import org.ywzj.rvp.client.visual.shockwave.RVP_ShockwaveRenderer;
 import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteAmmoVisualRenderer;
 import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteVehicleBillboardManager;
@@ -88,6 +89,9 @@ public final class RVP_ClientVisualEvents {
 
     @SubscribeEvent
     public static void onComputeCameraAngles(ViewportEvent.ComputeCameraAngles event) {
+        // 调用两类实际波面的抵达检查，先提交本帧新脉冲，再由通用执行器立即应用。
+        RVP_ShockwaveRenderer.updateScreenShake(event);
+        RVP_NuclearShockwaveRenderer.updateScreenShake(event);
         // 调用通用震动执行器，统一应用温压及其他参数调用方提交的镜头偏移。
         RVP_ScreenShakeExecutor.applyCameraShake(event);
         // 调用工厂实例的反馈入口，新增效果无需 Mixin。

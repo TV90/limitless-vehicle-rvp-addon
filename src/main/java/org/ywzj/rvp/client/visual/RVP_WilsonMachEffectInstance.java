@@ -74,7 +74,7 @@ public final class RVP_WilsonMachEffectInstance implements RVP_ClientVisualEffec
         simulateTo((int) timeline(0));
         // 调用球面亮带服务，保留真实爆心；球面由地形深度遮挡，不再按八方向压扁形状。
         wave = RVP_ShockwaveRenderer.spawn(event.position().x, event.position().y, event.position().z,
-                initialAge, duration, radius, tuning);
+                initialAge, duration, radius, tuning, event.seed());
     }
 
     private void createClouds() {

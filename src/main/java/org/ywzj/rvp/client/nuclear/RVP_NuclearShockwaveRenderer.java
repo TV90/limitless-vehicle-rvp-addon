@@ -20,6 +20,8 @@ import net.minecraft.client.renderer.ShaderInstance;
 import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
+import net.minecraftforge.client.event.ViewportEvent;
+import org.ywzj.rvp.client.visual.shake.RVP_ShockwaveScreenShake;
 import org.ywzj.rvp.client.visual.shockwave.RVP_ShockwaveRenderer;
 import org.ywzj.rvp.client.visual.shockwave.RVP_ShockwaveMesh;
 
@@ -48,9 +50,9 @@ public final class RVP_NuclearShockwaveRenderer {
 
     private RVP_NuclearShockwaveRenderer() {}
 
-    public static void spawn(double x, double y, double z, int initialAge) {
+    public static void spawn(double x, double y, double z, int initialAge, long seed) {
         if (initialAge < LIFETIME) {
-            ACTIVE.add(new Shockwave(x, y, z, Math.max(0, initialAge)));
+            ACTIVE.add(new Shockwave(x, y, z, Math.max(0, initialAge), seed));
         }
     }
 
@@ -65,6 +67,24 @@ public final class RVP_NuclearShockwaveRenderer {
     public static void clear() {
         ACTIVE.clear();
     }
+
+    /** 核爆沿原球壳扩张速度检查玩家抵达，不改动原核爆震动或声音。 */
+    public static void updateScreenShake(ViewportEvent.ComputeCameraAngles event) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.level == null || minecraft.player == null) { return; }
+        Vec3 playerPosition = minecraft.player.getPosition((float) event.getPartialTick());
+        double now = minecraft.level.getGameTime() + event.getPartialTick();
+        for (Shockwave wave : ACTIVE) {
+            float age = wave.age + (float) event.getPartialTick();
+            if (age >= LIFETIME) { continue; }
+            // 调用与核爆球壳绘制共用的半径公式，按实际玩家位置触发一次，并按最大范围衰减。
+            wave.screenShake.update(now, playerPosition.distanceTo(new Vec3(wave.x, wave.y, wave.z)),
+                    radius(age), radius(LIFETIME));
+        }
+    }
+
+    /** 核爆球壳的实际外半径（格）；保留原有初始 1 格与每刻 2.25 格的扩张速度。 */
+    private static float radius(float age) { return age * RADIUS_PER_TICK + 1.0F; }
 
     public static void render(RenderLevelStageEvent event) {
         // 调用共享资源入口取得着色器，避免重复注册同名 shader；状态与参数仍归核爆持有。
@@ -116,11 +136,12 @@ public final class RVP_NuclearShockwaveRenderer {
             setUniform(intensityUniform, alpha);
             BufferBuilder builder = tesselator.getBuilder();
             builder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX_COLOR_NORMAL);
+            // 调用共用半径公式绘制核爆球壳，使相机抵达判断与眼前波面保持同一速度。
             buildSphere(builder,
                     (float) (shockwave.x - cameraPos.x),
                     (float) (shockwave.y - cameraPos.y),
                     (float) (shockwave.z - cameraPos.z),
-                    visualAge * RADIUS_PER_TICK + 1.0F,
+                    radius(visualAge),
                     Mth.clamp((int) (alpha * 255.0F), 0, 255));
             BufferUploader.drawWithShader(builder.end());
         }
@@ -196,12 +217,16 @@ public final class RVP_NuclearShockwaveRenderer {
         private final double z;
         /** 核爆球壳年龄（tick）。 */
         private int age;
+        /** 本核爆球壳的一次性抵达状态，新增反馈与旧核爆震动互不取消。 */
+        private final RVP_ShockwaveScreenShake screenShake;
 
-        private Shockwave(double x, double y, double z, int age) {
+        private Shockwave(double x, double y, double z, int age, long seed) {
             this.x = x;
             this.y = y;
             this.z = z;
             this.age = age;
+            // 创建核爆球壳的独立抵达状态，波面回收不截断已提交的 0.6 秒震动。
+            screenShake = new RVP_ShockwaveScreenShake(seed);
         }
     }
 }

@@ -10,10 +10,12 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.client.event.RegisterShadersEvent;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
+import net.minecraftforge.client.event.ViewportEvent;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 import org.slf4j.Logger;
 import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.client.visual.shake.RVP_ShockwaveScreenShake;
 import org.ywzj.rvp.weapon.visual.RVP_PressureWaveGeometry;
 import org.ywzj.rvp.weapon.visual.RVP_ShockwaveRuntimeTuning;
 
@@ -66,13 +68,13 @@ public final class RVP_ShockwaveRenderer {
 
     /** 创建可取消的空气冲击层；尺寸、时间和会话快照仍来自同一正式事件。 */
     public static Shockwave spawn(double x, double y, double z, int initialAge, int baseDuration,
-            float radius, RVP_ShockwaveRuntimeTuning.Snapshot tuning) {
+            float radius, RVP_ShockwaveRuntimeTuning.Snapshot tuning, long seed) {
         // 调用世界检查和寿命换算，保持既有扩张速度。
         ensureLevel();
         int duration = tuning.duration(sphere, baseDuration);
         if (initialAge >= duration || !Float.isFinite(radius) || radius <= 0) { return null; }
         if (ACTIVE.size() >= 8) { ACTIVE.remove(0); }
-        Shockwave wave = new Shockwave(x, y, z, Math.max(0, initialAge), duration, baseDuration, tuning);
+        Shockwave wave = new Shockwave(x, y, z, Math.max(0, initialAge), duration, baseDuration, tuning, seed);
         ACTIVE.add(wave);
         return wave;
     }
@@ -89,6 +91,23 @@ public final class RVP_ShockwaveRenderer {
         ensureLevel();
         for (int i = ACTIVE.size() - 1; i >= 0; i--) {
             if (++ACTIVE.get(i).age >= ACTIVE.get(i).duration) { ACTIVE.remove(i); }
+        }
+    }
+
+    /** 每帧按玩家而非第三人称相机的位置判定波面抵达；与空气层绘制共用半径和时钟。 */
+    public static void updateScreenShake(ViewportEvent.ComputeCameraAngles event) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.level == null || minecraft.player == null || activeLevel != minecraft.level) { return; }
+        float partialTick = (float) event.getPartialTick();
+        Vec3 playerPosition = minecraft.player.getPosition(partialTick);
+        double now = minecraft.level.getGameTime() + event.getPartialTick();
+        for (Shockwave wave : ACTIVE) {
+            // 调用同一快照的年龄换算，调慢扩张、加速或修改曲线后仍与实际波面同步。
+            float age = wave.standardAge(partialTick);
+            if (wave.tuning.age(sphere, age) >= wave.tuning.get(sphere, lifetime)) { continue; }
+            // 调用单波面抵达判定，只比较三维直线距离；墙体遮挡不影响震动。
+            wave.screenShake.update(now, playerPosition.distanceTo(new Vec3(wave.x, wave.y, wave.z)),
+                    wave.tuning.sphereRadius(age), wave.maximumRadius);
         }
     }
 
@@ -129,7 +148,8 @@ public final class RVP_ShockwaveRenderer {
         // 每个爆炸最多一层宽厚雾和一层透明压力波前；活跃爆炸总量仍限制为 8 个。
         List<RVP_PressureWavePass.Wave> visible = new ArrayList<>(ACTIVE.size() * 2);
         for (Shockwave wave : ACTIVE) {
-            float age = (wave.age + event.getPartialTick()) * LIFETIME / wave.baseDuration;
+            // 调用与抵达判定共用的年龄换算，避免绘制与震动使用不同扩张时钟。
+            float age = wave.standardAge(event.getPartialTick());
             // 调用同一快照的扩张、淡出与厚度压缩公式，避免出现两个不同的动画时钟。
             float fade = wave.tuning.alpha(sphere, age);
             float radius = wave.tuning.sphereRadius(age);
@@ -181,12 +201,23 @@ public final class RVP_ShockwaveRenderer {
         private final int baseDuration;
         /** 本次爆炸的固定参数快照。 */
         private final RVP_ShockwaveRuntimeTuning.Snapshot tuning;
+        /** 波面实际寿命结束时的可达半径（格），包含扩张速度、曲线与 2048 格上限。 */
+        private final float maximumRadius;
+        /** 本波面独立的一次性抵达状态；自动追加事件无需启用旧的 shake 开关。 */
+        private final RVP_ShockwaveScreenShake screenShake;
 
         private Shockwave(double x, double y, double z, int age, int duration, int baseDuration,
-                RVP_ShockwaveRuntimeTuning.Snapshot tuning) {
+                RVP_ShockwaveRuntimeTuning.Snapshot tuning, long seed) {
             this.x = x; this.y = y; this.z = z;
             this.age = age; this.duration = duration; this.baseDuration = baseDuration;
             this.tuning = tuning;
+            // 调用精确时间换算取得寿命末端，不能用向上取整后的回收 tick 夸大最大可达范围。
+            maximumRadius = tuning.sphereRadius(tuning.get(sphere, lifetime) / tuning.age(sphere, 1));
+            // 创建本波面的一次性反馈状态，复用通用执行器和爆炸强度设置。
+            screenShake = new RVP_ShockwaveScreenShake(seed);
         }
+
+        /** 把实际年龄换算为绘制与震动共用的标准年龄，单位游戏刻。 */
+        private float standardAge(float partialTick) { return (age + partialTick) * LIFETIME / baseDuration; }
     }
 }

@@ -105,7 +105,7 @@ public final class RVP_NuclearVisualManager {
         long elapsed = Math.max(0L, level.getGameTime() - message.startGameTime());
         // 调用核爆专用球壳，保留原参数与迟到事件的 219 tick 年龄上限。
         RVP_NuclearShockwaveRenderer.spawn(message.x(), message.y(), message.z(),
-                (int) Math.min(elapsed, 219L));
+                (int) Math.min(elapsed, 219L), message.seed());
         renderCacheDirty = true;
         if (message.flash() && minecraft.player != null
                 && minecraft.player.distanceToSqr(message.x(), message.y(), message.z()) <= effect.flashRangeSq()) {

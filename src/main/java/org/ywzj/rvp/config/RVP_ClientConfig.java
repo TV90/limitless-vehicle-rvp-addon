@@ -171,7 +171,7 @@ public class RVP_ClientConfig {
 
         explosionShakeIntensity = builder
                 .comment(
-                        "Base-mod explosion camera shake intensity multiplier applied to",
+                        "Explosion camera shake intensity multiplier applied to RVP shockwave arrivals and",
                         "FirstPersonHandler.addExplosionShake strength (covers base/RVP explosions",
                         "and large-caliber missile flyby shake). 0 disables the shake entirely.",
                         "Default: 1.0"
