@@ -7,6 +7,7 @@ import net.minecraftforge.client.event.RenderPlayerEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.client.render.RVP_CockpitPassengerRenderer;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 
@@ -31,7 +32,10 @@ public class RVP_RenderLivingHandler {
         if (!(entity.getVehicle() instanceof AbstractVehicle vehicle)) {
             return false;
         }
-        // 玻璃已延后绘制，乘员统一走正常实体渲染；这里只保留载具显式隐藏乘员的配置。
+        if (entity == net.minecraft.client.Minecraft.getInstance().player
+                && RVP_CockpitPassengerRenderer.shouldCustomRenderLocalPassenger(vehicle)) {
+            return true;
+        }
         return RVP_VehicleHitboxFactorManager.INSTANCE.isHidePassenger(vehicle.getVehicleId());
     }
 }

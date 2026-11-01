@@ -11,9 +11,6 @@ import java.util.function.Function;
 
 public class RVP_RenderTypes extends RenderType {
 
-    /** 座舱材质按实例身份登记，供独立透明阶段识别；不把屏幕或尾焰误当成玻璃。 */
-    private static final java.util.Map<RenderType, RenderType> COCKPIT_TYPES = new java.util.IdentityHashMap<>();
-
     public RVP_RenderTypes(String pName, VertexFormat pFormat, VertexFormat.Mode pMode, int pBufferSize, boolean pAffectsCrumbling, boolean pSortOnUpload, Runnable pSetupState, Runnable pClearState) {
         super(pName, pFormat, pMode, pBufferSize, pAffectsCrumbling, pSortOnUpload, pSetupState, pClearState);
     }
@@ -81,9 +78,28 @@ public class RVP_RenderTypes extends RenderType {
         );
     });
 
-    /** 即时回退与延后合成共享纹理；只有实体提交后的合成材质写深度。 */
-    private static final Function<ResourceLocation, RenderType> CUBE_COCKPIT_TRANSLUCENT = Util.memoize(
-            texture -> registerCockpit(texture, VertexFormat.Mode.QUADS));
+    private static final Function<ResourceLocation, RenderType> CUBE_COCKPIT_TRANSLUCENT_CULLED = Util.memoize((location) -> {
+        RenderStateShard.TextureStateShard shard = new RenderStateShard.TextureStateShard(location, false, false);
+        RenderType.CompositeState state = RenderType.CompositeState.builder()
+                .setTextureState(shard)
+                .setShaderState(RENDERTYPE_ENTITY_TRANSLUCENT_SHADER)
+                .setTransparencyState(TRANSLUCENT_TRANSPARENCY)
+                .setLayeringState(VIEW_OFFSET_Z_LAYERING)
+                .setCullState(CULL)
+                .setOverlayState(OVERLAY)
+                .setLightmapState(LIGHTMAP)
+                .setWriteMaskState(COLOR_WRITE)
+                .createCompositeState(true);
+        return create(
+                "ywzj_rvp:cube_cockpit_translucent_culled",
+                DefaultVertexFormat.NEW_ENTITY,
+                VertexFormat.Mode.QUADS,
+                256,
+                true,
+                true,
+                state
+        );
+    });
 
     private static final Function<ResourceLocation, RenderType> CUBE_CUTOUT_CULLED = Util.memoize((location) -> {
         RenderStateShard.TextureStateShard shard = new RenderStateShard.TextureStateShard(location, false, false);
@@ -127,9 +143,28 @@ public class RVP_RenderTypes extends RenderType {
         );
     });
 
-    /** 薄面片和封闭舱盖均按本体透明材质双面绘制，不用模型绕序猜测可见面。 */
-    private static final Function<ResourceLocation, RenderType> POLY_MESH_COCKPIT_TRANSLUCENT = Util.memoize(
-            texture -> registerCockpit(texture, VertexFormat.Mode.TRIANGLES));
+    private static final Function<ResourceLocation, RenderType> POLY_MESH_COCKPIT_TRANSLUCENT_CULLED = Util.memoize((location) -> {
+        RenderStateShard.TextureStateShard shard = new RenderStateShard.TextureStateShard(location, false, false);
+        RenderType.CompositeState state = RenderType.CompositeState.builder()
+                .setTextureState(shard)
+                .setShaderState(RENDERTYPE_ENTITY_TRANSLUCENT_SHADER)
+                .setTransparencyState(TRANSLUCENT_TRANSPARENCY)
+                .setLayeringState(VIEW_OFFSET_Z_LAYERING)
+                .setCullState(CULL)
+                .setOverlayState(OVERLAY)
+                .setLightmapState(LIGHTMAP)
+                .setWriteMaskState(COLOR_WRITE)
+                .createCompositeState(true);
+        return create(
+                "ywzj_rvp:poly_mesh_cockpit_translucent_culled",
+                DefaultVertexFormat.NEW_ENTITY,
+                VertexFormat.Mode.TRIANGLES,
+                256,
+                true,
+                true,
+                state
+        );
+    });
 
     /** 半透明四边形只写颜色，保留真实前景遮挡；用于粒子和不能充当遮挡物的发动机尾焰。 */
     private static final Function<ResourceLocation, RenderType> TEXTURED_TRANSLUCENT_NO_DEPTH_WRITE = Util.memoize((location) -> {
@@ -264,46 +299,12 @@ public class RVP_RenderTypes extends RenderType {
         return CUBE_TRANSLUCENT_CULLED.apply(texture);
     }
 
-    /** 同时建立回退/合成材质：回退不提前挡乘员，合成在全部实体之后恢复可靠深度。 */
-    private static RenderType registerCockpit(ResourceLocation texture, VertexFormat.Mode mode) {
-        RenderType direct = createCockpitType(texture, mode, false);
-        RenderType composite = createCockpitType(texture, mode, true);
-        COCKPIT_TYPES.put(direct, composite);
-        return direct;
-    }
-
-    /** 与本体透明材质一样双面；深度写入只交给独立延后阶段使用。 */
-    private static RenderType createCockpitType(ResourceLocation texture, VertexFormat.Mode mode, boolean writeDepth) {
-        RenderType.CompositeState state = RenderType.CompositeState.builder()
-                .setTextureState(new RenderStateShard.TextureStateShard(texture, false, false))
-                .setShaderState(RENDERTYPE_ENTITY_TRANSLUCENT_SHADER)
-                .setTransparencyState(TRANSLUCENT_TRANSPARENCY)
-                .setDepthTestState(LEQUAL_DEPTH_TEST)
-                .setCullState(NO_CULL)
-                .setOverlayState(OVERLAY)
-                .setLightmapState(LIGHTMAP)
-                .setWriteMaskState(writeDepth ? COLOR_DEPTH_WRITE : COLOR_WRITE)
-                .createCompositeState(true);
-        return create("ywzj_rvp:cockpit_" + mode.name().toLowerCase(java.util.Locale.ROOT)
-                        + (writeDepth ? "_composite" : "_direct"),
-                DefaultVertexFormat.NEW_ENTITY, mode, 256, true, mode == VertexFormat.Mode.QUADS, state);
-    }
-
-    public static boolean isCockpitTransparent(RenderType type) {
-        return COCKPIT_TYPES.containsKey(type);
-    }
-
-    /** 调用者必须已提交实体缓冲，不能把这个写深度材质用于实体中途的玻璃。 */
-    public static RenderType cockpitComposite(RenderType type) {
-        return COCKPIT_TYPES.getOrDefault(type, type);
-    }
-
     public static RenderType cubeCockpitTransparent(ResourceLocation texture) {
-        return CUBE_COCKPIT_TRANSLUCENT.apply(texture);
+        return CUBE_COCKPIT_TRANSLUCENT_CULLED.apply(texture);
     }
 
     public static RenderType polyMeshCockpitTransparent(ResourceLocation texture) {
-        return POLY_MESH_COCKPIT_TRANSLUCENT.apply(texture);
+        return POLY_MESH_COCKPIT_TRANSLUCENT_CULLED.apply(texture);
     }
 
     /** 获取四边形半透明通道；只写颜色，仍受已绘制的地形和实体深度约束。 */

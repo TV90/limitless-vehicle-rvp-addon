@@ -10,7 +10,6 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.resources.ResourceLocation;
 import org.ywzj.rvp.client.light.RVP_SmokeLightPass;
-import org.ywzj.rvp.client.render.RVP_CockpitTransparencyPass;
 import org.ywzj.vehicle.client.render.ModRenderTypes;
 import org.ywzj.vehicle.client.resource.vehicle.SpecialBoneEffect;
 import org.ywzj.vehicle.client.resource.vehicle.VehicleBedrockModel;
@@ -42,9 +41,7 @@ public class RVP_VehicleBedrockModel extends VehicleBedrockModel {
                                    int packedLight, int packedOverlay, List<BoneState> invisibleBones,
                                    boolean isLocalPlayerVehicle) {
         // 调用同帧世界窗口检查，界面预览、光影阴影和无灯画面不记录炮口几何。
-        // 调用独立透明阶段，玻璃只记录一次；屏幕、炮口及其它材质保持原出口。
-        MultiBufferSource materialSource = RVP_CockpitTransparencyPass.defer(source);
-        MultiBufferSource lightingSource = materialSource;
+        MultiBufferSource lightingSource = source;
         if (RVP_SmokeLightPass.capturesMuzzle()
                 && effects.stream().anyMatch(effect -> effect.type == SpecialBoneEffect.SpecialBoneEffectType.MUZZLE_FLASH)) {
             Map<RenderType, ResourceLocation> materials = new IdentityHashMap<>();
@@ -55,7 +52,7 @@ public class RVP_VehicleBedrockModel extends VehicleBedrockModel {
                 if (effect.texture != null) { materials.put(ModRenderTypes.muzzleFlash(effect.texture), effect.texture); }
             }
             lightingSource = type -> {
-                VertexConsumer original = materialSource.getBuffer(type);
+                VertexConsumer original = source.getBuffer(type);
                 ResourceLocation effectTexture = materials.get(type);
                 // 调用共用薄面片受光记录器，只包装真正使用炮口材质的顶点；玻璃和普通车体原样放行。
                 return effectTexture == null ? original : RVP_SmokeLightPass.captureMuzzle(original, effectTexture);
