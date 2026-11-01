@@ -132,6 +132,8 @@ final class RVP_RocketPlumePass {
 
     /** 上传真实几何、世界光晕半径与代码亮度；不把照明半径用作喷焰模型缩放。 */
     private static void uploadPlume(RVP_RocketPlume plume, Matrix4f view, Vec3 camera, boolean glowSource) {
+        // 调用喷口附近的同帧环境亮度；显卡只对外围光晕使用，喷焰主体和可见度保持原值。
+        shader.safeGetUniform("PlumeAmbient").set(RVP_ScreenLightPass.ambientBrightness(plume.position()));
         Vector3f position = viewPosition(plume.position(), view, camera);
         Vector3f axis = view.transformDirection(new Vector3f((float) plume.direction().x,
                 (float) plume.direction().y, (float) plume.direction().z)).normalize();

@@ -97,6 +97,7 @@ allprojects { lightingProject ->
             dependsOn tasks.named('classes')
             source = lightingProject.files(
                     new File(lightingProject.projectDir, 'scripts/diagnostics/RocketTrailVolumeGpuRegression.java'),
+                    new File(lightingProject.projectDir, 'scripts/diagnostics/ScreenLightShaderSources.java'),
                     new File(lightingProject.projectDir, 'scripts/diagnostics/RocketTrailInteriorGpuRegression.java'))
             classpath = sourceSets.test.runtimeClasspath
             destinationDirectory.set(trailInteriorOutput)

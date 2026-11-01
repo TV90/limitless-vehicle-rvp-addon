@@ -1,6 +1,8 @@
 #version 150
 // 仅烟雾受光，不从烟雾纹理生成遮挡；输入深度在粒子烟绘制前保存。
 uniform sampler2D Sampler0;
+// 固定的RVP照明前颜色副本，不能读取已被本帧灯光提亮的主目标。
+uniform sampler2D SceneColor;
 uniform sampler2D SceneDepth;
 uniform sampler2D DistantDepth;
 uniform mat4 InverseProjection;
@@ -17,6 +19,15 @@ uniform vec2 ScreenSize;
 // 0=正常受光，4=只读光路诊断。
 uniform int OutputMode;
 uniform int LightCount;
+// 烟雾筛选后的灯槽各自绑定来源环境亮度，负值表示只参考画面。
+uniform float LightAmbient0;
+uniform float LightAmbient1;
+uniform float LightAmbient2;
+uniform float LightAmbient3;
+uniform float LightAmbient4;
+uniform float LightAmbient5;
+uniform float LightAmbient6;
+uniform float LightAmbient7;
 uniform vec4 LightPositionRadius0;
 uniform vec4 LightColorIntensity0;
 uniform vec4 LightPositionRadius1;
@@ -37,6 +48,8 @@ in vec2 texCoord;
 in vec4 smokeColor;
 in vec3 smokePosition;
 out vec4 fragColor;
+
+#moj_import <ywzj_rvp:rvp_ambient_light.glsl>
 
 vec3 viewPosition(vec2 uv, float depth) {
     vec4 point = InverseProjection * vec4(uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
@@ -97,6 +110,9 @@ void main() {
     vec4 positions[8] = vec4[8](LightPositionRadius0, LightPositionRadius1, LightPositionRadius2, LightPositionRadius3, LightPositionRadius4, LightPositionRadius5, LightPositionRadius6, LightPositionRadius7);
     vec4 colors[8] = vec4[8](LightColorIntensity0, LightColorIntensity1, LightColorIntensity2, LightColorIntensity3, LightColorIntensity4, LightColorIntensity5, LightColorIntensity6, LightColorIntensity7);
     vec3 contribution = vec3(0.0);
+    float sceneBrightness = rvpAmbientSceneBrightness(gl_FragCoord.xy / ScreenSize);
+    float ambient[8] = float[8](LightAmbient0, LightAmbient1, LightAmbient2, LightAmbient3,
+            LightAmbient4, LightAmbient5, LightAmbient6, LightAmbient7);
     for (int index = 0; index < 8; index++) {
         if (index >= LightCount) { break; }
         float radius = positions[index].w;
@@ -104,7 +120,9 @@ void main() {
         float radial = distance(smokePosition, positions[index].xyz) / radius;
         if (radial >= 1.0) { continue; }
         float falloff = pow(max(0.0, 1.0 - radial * radial), 2.0);
-        contribution += colors[index].rgb * colors[index].a * falloff * visibility(index, smokePosition, positions[index].xyz);
+        contribution += colors[index].rgb * colors[index].a * falloff
+                * visibility(index, smokePosition, positions[index].xyz)
+                * rvpAmbientMultiplier(ambient[index], sceneBrightness);
     }
     // 原粒子灰色是烟的底色，不能把它当成完全不散射的固体黑漆；仍保留贴图明暗与 RGB 色相。
     vec3 albedo = max(textureColor.rgb, vec3(0.0)) * (vec3(0.35) + 0.65 * clamp(smokeColor.rgb, 0.0, 1.0));

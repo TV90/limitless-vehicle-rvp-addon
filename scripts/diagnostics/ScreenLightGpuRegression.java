@@ -73,6 +73,8 @@ public final class ScreenLightGpuRegression {
             smoke = program(shaders, "smoke_light_occlusion");
             testSmokeLighting(smoke);
             testMuzzleLighting(Path.of(args[0]), smoke);
+            // 调用生产环境适应像素回归；使用独立程序状态，不污染上述历史照明与遮挡基线。
+            testAmbientLighting(shaders);
             if (GL11.glGetError() != GL11.GL_NO_ERROR) { throw new AssertionError("OpenGL error at completion"); }
             System.out.println("PASS all RVP screen light GPU regressions; OpenGL error=0");
         } finally {
@@ -598,6 +600,156 @@ public final class ScreenLightGpuRegression {
         render(halfA, SIZE / 2, SIZE / 2);
         near(0, pixel(halfA[0], 4, 4)[0], "disabled bloom extraction");
         System.out.println("PASS per-light Bloom disable preserves light and suppresses glow");
+    }
+
+    /** 实际生产程序验证环境混合、单调过渡、各受光层与自发光主体的边界。 */
+    private static void testAmbientLighting(Path shaders) throws Exception {
+        int light = program(shaders, "screen_light_occlusion");
+        int smoke = program(shaders, "smoke_light_occlusion");
+        int plume = program(shaders, "rocket_plume_ranges");
+        int smokeVao = 0, smokeVbo = 0;
+        try {
+            int[] output = target(SIZE, SIZE);
+            int sky = depth(SIZE, SIZE, 0, false), surface = depth(SIZE, SIZE, 5, false);
+            GL30.glBindVertexArray(vao);
+            GL20.glUseProgram(light); uniforms(light);
+            sampler(light, "SceneDepth", 1, surface); sampler(light, "DistantDepth", 2, sky);
+            lights(light, 1, 0, 0, -3, 5, 1, 1, 0);
+            GL20.glUniform4f(GL20.glGetUniformLocation(light, "LightShape0"), 1, 0, 1, 2);
+            // 每行依次为游戏亮度、画面亮度、游戏权重、保留比例、曲线指数、期望倍率。
+            float[][] cases = {
+                    {0, 0, .7F, .1F, 1, 1}, {.2F, .2F, .7F, .1F, 1, 1},
+                    {1, 1, .7F, .1F, 1, .1F}, {.5F, .5F, .7F, .1F, 1, .55F},
+                    {.5F, .5F, .7F, .1F, 2, .775F}, {.5F, .5F, .7F, .1F, .5F, .363604F},
+                    {-1, .5F, .9F, .1F, 1, .55F}, {1, 0, 0, .1F, 1, 1},
+                    {1, 0, 1, .1F, 1, .1F}, {0, 1, .7F, .1F, 1, .933333F},
+                    {1, 1, .7F, 1, 1, 1}
+            };
+            for (float[] item : cases) {
+                float baseline = ambientPixel(light, output, 3, false, item[0], item[1], item[2], item[3], item[4])[0];
+                float actual = ambientPixel(light, output, 3, true, item[0], item[1], item[2], item[3], item[4])[0];
+                require(baseline > .01F, "ambient halo reference must be visible");
+                near(item[5], actual / baseline, "production ambient mixture/curve/fallback");
+            }
+            // 中心为黑、周围四点为0.625，五点均值必须是0.5，不能只看中心像素。
+            float kernelReference = ambientPixel(light, output, 3, false, -1, 0, 0, .1F, 1)[0];
+            float[] neighborhood = new float[SIZE * SIZE * 4];
+            for (int[] point : new int[][] {{6,8}, {10,8}, {8,6}, {8,10}}) {
+                for (int channel = 0; channel < 3; channel++) { neighborhood[(point[1] * SIZE + point[0]) * 4 + channel] = .625F; }
+            }
+            sampler(light, "SceneColor", 0, texture(SIZE, SIZE, GL30.GL_RGBA16F, GL11.GL_RGBA, neighborhood));
+            GL20.glUniform4f(GL20.glGetUniformLocation(light, "AmbientSettings"), 1, 0, .1F, 1);
+            render(output, SIZE, SIZE);
+            near(.55F, pixel(output[0], 8, 8)[0] / kernelReference, "five-point scene brightness average");
+            float previous = Float.POSITIVE_INFINITY;
+            for (int step = 0; step <= 100; step++) {
+                float actual = ambientPixel(light, output, 3, true, step / 100F, .5F, 1, .1F, 1)[0];
+                require(actual <= previous + .0001F, "ambient response is not monotonic");
+                if (step > 0) { require(previous - actual < .03F, "ambient transition jumped"); }
+                previous = actual;
+            }
+            // 八灯每个槽位各自提供明暗值，不能因为共享画面采样而混用来源数据。
+            lights(light, 8, 0, 0, -3, 5, 1, 1, 0);
+            for (int index = 0; index < 8; index++) {
+                GL20.glUniform4f(GL20.glGetUniformLocation(light, "LightColorIntensity" + index), 1, .7F, .2F, 0);
+                GL20.glUniform4f(GL20.glGetUniformLocation(light, "LightShape" + index), 1, 0, 1, 2);
+                GL20.glUniform4f(GL20.glGetUniformLocation(light, "LightHaloColorIntensity" + index), 1, .7F, .2F, 0);
+            }
+            for (int active = 0; active < 8; active++) {
+                GL20.glUniform4f(GL20.glGetUniformLocation(light, "LightHaloColorIntensity" + active), 1, .7F, .2F, 1);
+                float baseline = ambientPixel(light, output, 3, false, 1, 0, 1, .1F, 1)[0];
+                GL20.glUniform1f(GL20.glGetUniformLocation(light, "LightAmbient" + active), 1);
+                // 本次不再走会重写第0槽的辅助入口，直接绘制检查当前活动槽。
+                GL20.glUniform4f(GL20.glGetUniformLocation(light, "AmbientSettings"), 1, 1, .1F, 1);
+                render(output, SIZE, SIZE);
+                near(.1F, pixel(output[0], 8, 8)[0] / baseline, "ambient world value lost in light slot " + active);
+                GL20.glUniform4f(GL20.glGetUniformLocation(light, "LightHaloColorIntensity" + active), 1, .7F, .2F, 0);
+            }
+            // 表面和天空只对其输入乘一次倍率，保留0.1而非重复压成0.01。
+            lights(light, 1, 0, 0, -3, 5, 1, 1, 0);
+            float raw = ambientPixel(light, output, 1, false, 1, 1, .7F, .1F, 1)[0];
+            require(raw > .01F, "ambient surface reference must be lit");
+            near(.1F, ambientPixel(light, output, 1, true, 1, 1, .7F, .1F, 1)[0] / raw,
+                    "surface intensity must adapt exactly once");
+            sampler(light, "SceneDepth", 1, sky);
+            GL20.glUniform4f(GL20.glGetUniformLocation(light, "LightSkyColorIntensity0"), 1, .7F, .2F, 1);
+            GL20.glUniform1f(GL20.glGetUniformLocation(light, "LightSkySpread0"), 1);
+            raw = ambientPixel(light, output, 1, false, 1, 1, .7F, .1F, 1)[0];
+            near(.1F, ambientPixel(light, output, 1, true, 1, 1, .7F, .1F, 1)[0] / raw, "sky intensity adaptation");
+            // 核心和贴身光团单独开关，两路都要在基础贡献及独立显示模式保持原亮度。
+            GL20.glUniform4f(GL20.glGetUniformLocation(light, "LightSkyColorIntensity0"), 0, 0, 0, 0);
+            // 基础模式会跳过强度为0的灯，故保持灯有效，只把表面和空气散射权重清零。
+            GL20.glUniform4f(GL20.glGetUniformLocation(light, "LightColorIntensity0"), 1, .7F, .2F, 1);
+            GL20.glUniform4f(GL20.glGetUniformLocation(light, "LightShape0"), 0, 0, 0, 0);
+            for (int component = 0; component < 2; component++) {
+                GL20.glUniform4f(GL20.glGetUniformLocation(light, "LightEmission0"), .8F, 2, component == 0 ? 4 : 0, component == 1 ? 2 : 0);
+                for (int mode : new int[] {1, 2}) {
+                    float[] before = ambientPixel(light, output, mode, false, 1, 1, .7F, .1F, 1);
+                    float[] after = ambientPixel(light, output, mode, true, 1, 1, .7F, .1F, 1);
+                    require(before[0] > .01F, "emissive reference disappeared");
+                    for (int channel = 0; channel < 4; channel++) { near(before[channel], after[channel], "core/close glow changed"); }
+                }
+            }
+            System.out.println("PASS ambient production pixels: dark=100%, bright=10%, 70/30 mix, missing-world fallback, curves, continuous monotonic response, eight source slots, surface/halo/sky, unchanged core and close glow");
+
+            // 粒子烟使用真实Position/UV/Color输入；大三角形位于相机前3格。
+            smokeVao = GL30.glGenVertexArrays(); smokeVbo = GL15.glGenBuffers();
+            GL30.glBindVertexArray(smokeVao); GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, smokeVbo);
+            GL15.glBufferData(GL15.GL_ARRAY_BUFFER, new float[] {-3,-3,-3,0,0, 9,-3,-3,2,0, -3,9,-3,0,2}, GL15.GL_STATIC_DRAW);
+            GL20.glEnableVertexAttribArray(0); GL20.glVertexAttribPointer(0, 3, GL11.GL_FLOAT, false, 20, 0);
+            GL20.glEnableVertexAttribArray(1); GL20.glVertexAttribPointer(1, 2, GL11.GL_FLOAT, false, 20, 12);
+            GL20.glDisableVertexAttribArray(2); GL20.glVertexAttrib4f(2, 1, 1, 1, 1);
+            GL20.glUseProgram(smoke); uniforms(smoke);
+            matrix(smoke, "SmokeView", new float[] {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1});
+            sampler(smoke, "SceneDepth", 1, sky); sampler(smoke, "DistantDepth", 2, sky);
+            sampler(smoke, "Sampler0", 3, color(SIZE, SIZE, new float[] {1,1,1,.5F}));
+            lights(smoke, 1, 0, 0, -2, 5, .5F, 1, 0);
+            float[] smokeOff = ambientPixel(smoke, output, 0, false, 1, 1, .7F, .1F, 1);
+            float[] smokeOn = ambientPixel(smoke, output, 0, true, 1, 1, .7F, .1F, 1);
+            require(smokeOff[0] > .01F, "ambient smoke reference must be lit");
+            near(.5F * (1 - (float) Math.pow(1 - smokeOff[0] / .5F, .1)), smokeOn[0], "smoke input adapted before display response");
+            near(0, smokeOn[3], "ambient smoke alpha");
+            System.out.println("PASS ambient particle-smoke input reduced once; transparent output preserved");
+
+            GL30.glBindVertexArray(vao);
+            GL20.glUseProgram(plume); uniforms(plume);
+            sampler(plume, "SceneDepth", 1, sky); sampler(plume, "DistantDepth", 2, sky);
+            sampler(plume, "PlumeVisibility", 3, color(1, 1, new float[] {1,0,0,1}));
+            plumeGeometry(plume, -.5F, 0, -3, 1, 0, 0, 2, .7F);
+            GL20.glUniform4f(GL20.glGetUniformLocation(plume, "PlumeEmission"), 60000, 5, .2F, 12);
+            GL20.glUniform1f(GL20.glGetUniformLocation(plume, "PlumeHaloIntensity"), .4F);
+            GL20.glUniform1i(GL20.glGetUniformLocation(plume, "HaloEnabled"), 1);
+            for (int mode : new int[] {0, 1, 2, 3, 4}) {
+                float[] before = ambientPixel(plume, output, mode, false, 1, 1, .7F, .1F, 1);
+                float[] after = ambientPixel(plume, output, mode, true, 1, 1, .7F, .1F, 1);
+                require(before[0] > .0001F, "ambient plume reference must be visible in mode " + mode);
+                if (mode == 1) { near(.1F, after[0] / before[0], "plume bloom input reduced once"); }
+                else if (mode == 4) { near(1 - (float) Math.pow(1 - before[0], .1), after[0], "world halo intensity adapted before display"); }
+                else {
+                    for (int channel = 0; channel < 4; channel++) { near(before[channel], after[channel], "plume body/visibility changed"); }
+                }
+            }
+            System.out.println("PASS ambient engine broad halo and bloom adapt; plume radiance, displayed flame and visibility remain unchanged");
+        } finally {
+            GL20.glUseProgram(0); GL30.glBindVertexArray(vao);
+            if (smokeVbo != 0) { GL15.glDeleteBuffers(smokeVbo); }
+            if (smokeVao != 0) { GL30.glDeleteVertexArrays(smokeVao); }
+            GL20.glDeleteProgram(light); GL20.glDeleteProgram(smoke); GL20.glDeleteProgram(plume);
+        }
+    }
+
+    /** 对同一生产通道切换环境适应；背景使用独立只读纹理，回读仅发生在诊断中。 */
+    private static float[] ambientPixel(int shader, int[] target, int mode, boolean enabled,
+            float world, float scene, float weight, float minimum, float curve) {
+        GL20.glUseProgram(shader);
+        sampler(shader, "SceneColor", 0, color(SIZE, SIZE, new float[] {scene, scene, scene, .37F}));
+        GL20.glUniform4f(GL20.glGetUniformLocation(shader, "AmbientSettings"), enabled ? 1 : 0, weight, minimum, curve);
+        GL20.glUniform1f(GL20.glGetUniformLocation(shader, "LightAmbient0"), world);
+        GL20.glUniform1f(GL20.glGetUniformLocation(shader, "PlumeAmbient"), world);
+        GL20.glUniform1i(GL20.glGetUniformLocation(shader, "OutputMode"), mode);
+        // 调用实际生产程序和浮点回读，不在测试中替换光照算法。
+        render(target, SIZE, SIZE);
+        return pixel(target[0], 8, 8);
     }
 
     /** 生产程序需要的固定矩阵与采样分辨率。 */

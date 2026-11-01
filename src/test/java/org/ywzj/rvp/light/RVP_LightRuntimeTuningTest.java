@@ -16,6 +16,25 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /** 验证正式管理器的即时调参、预算、原始年龄和恢复能力，不启动游戏客户端。 */
 class RVP_LightRuntimeTuningTest {
+    @Test
+    void ambientSettingsDoNotMutateLightAgeEmissionOrLifetime() {
+        RVP_ScreenLightManager manager = new RVP_ScreenLightManager();
+        Object world = new Object();
+        // 调用正式出生和采样，在同一游戏年龄修改环境参数，CPU快照必须完全相同。
+        manager.beginWorld(world, 100);
+        manager.addTransient(Vec3.ZERO, RVP_LightSourceType.EXPLOSION, null, RVP_LightParameters.explosion(4), 100);
+        manager.tick(world, 102);
+        var before = manager.collectVisible(Vec3.ZERO, .5F, 256, 8, light -> true);
+        RVP_LightRuntimeTuning.set(Group.global, Parameter.ambientWorldWeight, .3F);
+        RVP_LightRuntimeTuning.set(Group.global, Parameter.ambientMinStrength, .25F);
+        RVP_LightRuntimeTuning.set(Group.global, Parameter.ambientCurve, 2);
+        assertEquals(before, manager.collectVisible(Vec3.ZERO, .5F, 256, 8, light -> true));
+        RVP_LightRuntimeTuning.set(Group.global, Parameter.ambientEnabled, 0);
+        assertEquals(before, manager.collectVisible(Vec3.ZERO, .5F, 256, 8, light -> true));
+        assertThrows(IllegalArgumentException.class,
+                () -> RVP_LightRuntimeTuning.set(Group.engine, Parameter.ambientWorldWeight, .5F));
+    }
+
     @BeforeEach
     @AfterEach
     void resetTuning() {

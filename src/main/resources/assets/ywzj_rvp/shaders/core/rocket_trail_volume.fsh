@@ -1,5 +1,6 @@
 #version 150
 // 纯程序体积尾烟：世界烟段提供密度，逐像素沿视线积分，不采样任何烟雾图片。
+uniform sampler2D SceneColor;
 uniform sampler2D SceneDepth;
 uniform sampler2D DistantDepth;
 // 近景与 DH 分别使用各自深度/投影，统一到玩家观察空间后再比较距离。
@@ -27,6 +28,11 @@ uniform vec4 TrailColor;
 uniform vec3 TrailNoiseOrigin;
 uniform int RaySteps;
 uniform int LightCount;
+// 每段烟重新筛出的四盏光各自携带来源环境亮度；不能按原八灯槽号复用。
+uniform float LightAmbient0;
+uniform float LightAmbient1;
+uniform float LightAmbient2;
+uniform float LightAmbient3;
 // 最多四盏本帧实际活动光源；位置/半径与 RGB/强度成对出现。
 uniform vec4 LightPositionRadius0;
 uniform vec4 LightColorIntensity0;
@@ -38,6 +44,8 @@ uniform vec4 LightPositionRadius3;
 uniform vec4 LightColorIntensity3;
 in vec2 screenUV;
 out vec4 fragColor;
+
+#moj_import <ywzj_rvp:rvp_ambient_light.glsl>
 
 vec3 viewPosition(vec2 uv, float depth) {
     vec4 point = InverseProjection * vec4(uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
@@ -150,17 +158,19 @@ float lightVisibility(vec3 position, vec3 light) {
     return 1.0;
 }
 
-vec3 illumination(vec3 position) {
+vec3 illumination(vec3 position, float sceneBrightness) {
     vec4 positions[4] = vec4[4](LightPositionRadius0, LightPositionRadius1, LightPositionRadius2, LightPositionRadius3);
     vec4 colors[4] = vec4[4](LightColorIntensity0, LightColorIntensity1, LightColorIntensity2, LightColorIntensity3);
     vec3 result = vec3(0.0);
+    float ambient[4] = float[4](LightAmbient0, LightAmbient1, LightAmbient2, LightAmbient3);
     for (int index = 0; index < 4; index++) {
         if (index >= LightCount) { break; }
         if (positions[index].w <= 0.0 || colors[index].a <= 0.0) { continue; }
         float radial = distance(position, positions[index].xyz) / positions[index].w;
         if (radial >= 1.0) { continue; }
         float falloff = pow(max(0.0, 1.0 - radial * radial), 2.0);
-        result += colors[index].rgb * colors[index].a * falloff * lightVisibility(position, positions[index].xyz);
+        result += colors[index].rgb * colors[index].a * falloff * lightVisibility(position, positions[index].xyz)
+                * rvpAmbientMultiplier(ambient[index], sceneBrightness);
     }
     return 1.0 - exp(-clamp(result, vec3(0.0), vec3(60000.0)) * 0.45);
 }
@@ -186,7 +196,9 @@ void main() {
     int steps = clamp(RaySteps, 4, 24);
     float stepLength = (end - begin) / float(steps);
     // 光照在当前像素穿过的可见烟区间取代表点，不拿背景方块当作烟的空间位置。
-    vec3 light = illumination(ray * (begin + end) * 0.5);
+    // 当前像素的原画面明暗只读一次，不放进烟雾密度的逐步积分循环。
+    float sceneBrightness = LightCount > 0 ? rvpAmbientSceneBrightness(screenUV) : 0.0;
+    vec3 light = illumination(ray * (begin + end) * 0.5, sceneBrightness);
     vec3 accumulated = vec3(0.0);
     float transmittance = 1.0;
     for (int index = 0; index < 24; index++) {

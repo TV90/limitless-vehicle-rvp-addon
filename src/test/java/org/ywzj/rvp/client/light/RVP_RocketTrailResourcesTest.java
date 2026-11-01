@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -21,7 +22,18 @@ class RVP_RocketTrailResourcesTest {
         assertEquals("ywzj_rvp:rocket_trail_volume", manifest.get("vertex").getAsString());
         assertEquals("ywzj_rvp:rocket_trail_volume", manifest.get("fragment").getAsString());
         Map<String, String> declarations = new HashMap<>();
-        var matcher = Pattern.compile("uniform\\s+(\\w+)\\s+(\\w+)\\s*;").matcher(resource(".fsh"));
+        // 调用真实打包的公共环境算法，包含文件中的参数也属于这个程序，不能漏掉。
+        String source = resource(".fsh");
+        var imports = Pattern.compile("#moj_import\\s+<ywzj_rvp:([^>]+)>").matcher(source);
+        StringBuilder expanded = new StringBuilder(source);
+        while (imports.find()) {
+            String path = "/assets/ywzj_rvp/shaders/include/" + imports.group(1);
+            try (var input = RVP_RocketTrailResourcesTest.class.getResourceAsStream(path)) {
+                assertNotNull(input, path);
+                expanded.append('\n').append(new String(input.readAllBytes(), StandardCharsets.UTF_8));
+            }
+        }
+        var matcher = Pattern.compile("uniform\\s+(\\w+)\\s+(\\w+)\\s*;").matcher(expanded);
         while (matcher.find()) { assertNull(declarations.put(matcher.group(2), matcher.group(1))); }
         var declaredNames = new HashSet<String>();
         for (var entry : manifest.getAsJsonArray("uniforms")) {
@@ -36,13 +48,16 @@ class RVP_RocketTrailResourcesTest {
             assertEquals(type.equals("mat4") ? "matrix4x4" : type.equals("int") ? "int" : "float",
                     parameter.get("type").getAsString(), name);
         }
+        Set<String> samplers = new HashSet<>();
         for (var entry : manifest.getAsJsonArray("samplers")) {
             String name = entry.getAsJsonObject().get("name").getAsString();
             assertEquals("sampler2D", declarations.get(name), name);
             assertTrue(declaredNames.add(name));
+            samplers.add(name);
         }
         assertEquals(declarations.keySet(), declaredNames, "遗漏参数会导致实际游戏中接口缺失");
-        assertEquals(2, manifest.getAsJsonArray("samplers").size(), "只读取两份场景深度，没有烟雾图片");
+        assertEquals(Set.of("SceneColor", "SceneDepth", "DistantDepth"), samplers,
+                "只读取照明前画面与两份场景深度，没有烟雾图片");
     }
 
     /** 读取实际 classpath 资源，缺失即失败，不绕过 Gradle 的资源打包。 */

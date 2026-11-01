@@ -53,7 +53,8 @@ public final class RocketTrailVolumeGpuRegression {
             Path root = Path.of(args[0]);
             Path resources = root.resolve("src/main/resources/assets/ywzj_rvp/shaders/core");
             int vertex = compile(GL20.GL_VERTEX_SHADER, Files.readString(resources.resolve("rocket_trail_volume.vsh")));
-            int fragment = compile(GL20.GL_FRAGMENT_SHADER, Files.readString(resources.resolve("rocket_trail_volume.fsh")));
+            // 调用生产包含展开，环境适应与其它受光通道共用同一个正式算法。
+            int fragment = compile(GL20.GL_FRAGMENT_SHADER, ScreenLightShaderSources.read(resources.resolve("rocket_trail_volume.fsh")));
             shader = GL20.glCreateProgram();
             GL20.glAttachShader(shader, vertex); GL20.glAttachShader(shader, fragment);
             GL20.glBindAttribLocation(shader, 0, "Position"); GL20.glLinkProgram(shader);
@@ -66,6 +67,8 @@ public final class RocketTrailVolumeGpuRegression {
             GL11.glDisable(GL11.GL_DEPTH_TEST); GL11.glDepthMask(false); GL11.glDisable(GL11.GL_CULL_FACE);
             // 调用正式程序的像素回读，不以测试内的简化绘图逻辑替代体积烟算法。
             tests();
+            // 调用环境适应专项，验证体积烟只减少受光，不改变自身密度、透明度和原有颜色。
+            testAmbientLighting();
             if (afterVolumeChecks != null) { afterVolumeChecks.run(); }
             preview(root);
             require(GL11.glGetError() == GL11.GL_NO_ERROR, "OpenGL error at completion");
@@ -177,6 +180,45 @@ public final class RocketTrailVolumeGpuRegression {
         clear(output, SIZE, SIZE, new float[4]); draw();
         zero(pixel(output, 32, 32), "subpixel filtering must not bring smoke in front of a physical wall");
         System.out.println("PASS 4096-block coverage without subpixel depth leaks");
+    }
+
+    /** 白天、暗处、缺区块及关闭适应时，体积烟受光使用与世界表面一致的环境判断。 */
+    private static void testAmbientLighting() {
+        int output = target(SIZE, SIZE), sky = depth(SIZE, 0, false);
+        // 调用原有场景设置，先记录同一团烟未受光时的真实像素。
+        base(SIZE, SIZE, sky);
+        float[] scene = new float[SIZE * SIZE * 4]; Arrays.fill(scene, 1);
+        sampler("SceneColor", 2, texture(SIZE, SIZE, GL30.GL_RGBA16F, GL11.GL_RGBA, scene));
+        clear(output, SIZE, SIZE, new float[4]); draw();
+        float[] unlit = pixel(output, 32, 32);
+        uniform1i("LightCount", 1);
+        uniform4("LightPositionRadius0", 0, 1, -6, 8);
+        uniform4("LightColorIntensity0", 1, .3F, .05F, .5F);
+        uniform1("LightAmbient0", 1);
+        uniform4("AmbientSettings", 0, .7F, .1F, 1);
+        clear(output, SIZE, SIZE, new float[4]); draw();
+        float[] original = pixel(output, 32, 32);
+        uniform4("AmbientSettings", 1, .7F, .1F, 1);
+        clear(output, SIZE, SIZE, new float[4]); draw();
+        float[] bright = pixel(output, 32, 32);
+        require(bright[0] > unlit[0] && bright[0] < original[0], "bright environment did not reduce volume illumination");
+        near(original[3], bright[3], "ambient adaptation changed smoke density/alpha");
+        // 适应后的像素应等于关闭适应并把原灯光输入手动乘0.1，而非烟色整体乘0.1。
+        uniform4("AmbientSettings", 0, .7F, .1F, 1);
+        uniform4("LightColorIntensity0", 1, .3F, .05F, .05F);
+        clear(output, SIZE, SIZE, new float[4]); draw();
+        near(bright, pixel(output, 32, 32), "volume ambient intensity must apply exactly once");
+        // 缺失当地光照时，白色原画面仍应得到相同的10%受光。
+        uniform4("AmbientSettings", 1, .7F, .1F, 1);
+        uniform4("LightColorIntensity0", 1, .3F, .05F, .5F); uniform1("LightAmbient0", -1);
+        clear(output, SIZE, SIZE, new float[4]); draw();
+        near(bright, pixel(output, 32, 32), "volume missing-world fallback");
+        // 游戏光照权重为1且当地全暗时，即使背景白色也应保持原受光。
+        uniform4("AmbientSettings", 1, 1, .1F, 1); uniform1("LightAmbient0", 0);
+        clear(output, SIZE, SIZE, new float[4]); draw();
+        near(original, pixel(output, 32, 32), "dark volume illumination should remain unchanged");
+        uniform4("AmbientSettings", 0, .7F, .1F, 1);
+        System.out.println("PASS ambient volume smoke: bright=10% input, dark unchanged, missing-world fallback, unchanged density/color/alpha");
     }
 
     /** 生成生产程序的四个视图供人工核对，PNG 仅写入 build 诊断目录，不作为游戏资源。 */

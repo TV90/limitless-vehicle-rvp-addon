@@ -25,6 +25,15 @@
     }
   ],
   "uniforms": [
+    {"name": "AmbientSettings", "type": "float", "count": 4, "values": [1, 0.7, 0.1, 1]},
+    {"name": "LightAmbient0", "type": "float", "count": 1, "values": [-1]},
+    {"name": "LightAmbient1", "type": "float", "count": 1, "values": [-1]},
+    {"name": "LightAmbient2", "type": "float", "count": 1, "values": [-1]},
+    {"name": "LightAmbient3", "type": "float", "count": 1, "values": [-1]},
+    {"name": "LightAmbient4", "type": "float", "count": 1, "values": [-1]},
+    {"name": "LightAmbient5", "type": "float", "count": 1, "values": [-1]},
+    {"name": "LightAmbient6", "type": "float", "count": 1, "values": [-1]},
+    {"name": "LightAmbient7", "type": "float", "count": 1, "values": [-1]},
     { "name": "LightHemisphereAxis0", "type": "float", "count": 4, "values": [0, 0, 0, 0] },
     { "name": "LightHemisphereAxis1", "type": "float", "count": 4, "values": [0, 0, 0, 0] },
     { "name": "LightHemisphereAxis2", "type": "float", "count": 4, "values": [0, 0, 0, 0] },

@@ -13,6 +13,33 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /** 验证首批面板绑定与已有命令、配置和冲击波生命周期使用同一份业务状态。 */
 class RVP_ScreenSpaceTuningModuleTest {
+    @Test
+    void ambientControlsShareCommandsAndRoundTripThroughPresets() {
+        // 调用真实目录，确认新增开关、默认值与预设都使用正式光照参数，而非独立界面状态。
+        RVP_TuningRegistry registry = registry();
+        RVP_TuningOption enabled = registry.options().get("screen_space/global/ambientEnabled");
+        assertEquals(RVP_TuningOption.Control.TOGGLE, enabled.control());
+        assertEquals(1, enabled.value());
+        assertEquals(.7, registry.options().get("screen_space/global/ambientWorldWeight").value());
+        assertEquals(.1, registry.options().get("screen_space/global/ambientMinStrength").value());
+        assertEquals(1, registry.options().get("screen_space/global/ambientCurve").value());
+        enabled.set(0);
+        registry.options().get("screen_space/global/ambientWorldWeight").set(.45);
+        registry.options().get("screen_space/global/ambientMinStrength").set(.25);
+        registry.options().get("screen_space/global/ambientCurve").set(2);
+        var preset = registry.snapshot();
+        RVP_LightRuntimeTuning.reset();
+        registry.restore(preset);
+        assertEquals(preset, registry.snapshot());
+        assertEquals(0, RVP_LightRuntimeTuning.get(RVP_LightRuntimeTuning.Group.global,
+                RVP_LightRuntimeTuning.Parameter.ambientEnabled));
+        assertThrows(IllegalArgumentException.class, () -> enabled.set(.5));
+        assertThrows(IllegalArgumentException.class, () -> RVP_LightRuntimeTuning.set(
+                RVP_LightRuntimeTuning.Group.global, RVP_LightRuntimeTuning.Parameter.ambientEnabled, .5F));
+        enabled.reset();
+        assertEquals(1, enabled.value());
+    }
+
     @BeforeEach @AfterEach
     void reset() {
         // 调用真实会话清理，隔离测试对其它光照/冲击波测试的影响。

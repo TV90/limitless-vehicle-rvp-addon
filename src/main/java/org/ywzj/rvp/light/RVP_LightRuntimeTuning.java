@@ -26,6 +26,18 @@ public final class RVP_LightRuntimeTuning {
         /** 总开关/光晕/发动机照亮与外晕开关覆盖，未设置时沿用 TOML；不开放真实方块光。 */
         enabled("开关：0关闭、1开启；engine控制发动机环境光与广域光晕，保留喷焰；未覆盖时沿用客户端配置（默认开启）", 0, 1,
                 1, Float.NaN, Float.NaN, 1, 1),
+        /** 环境适应总开关；只调照亮、外围光晕和天空闪光，保留发光核心与贴身光团。 */
+        ambientEnabled("环境明暗适应；默认1开启、0恢复原效果，只影响照亮、烟雾受光、外围光晕和天空，核心、贴身光团与喷焰保持自身亮度", 0, 1,
+                1, Float.NaN, Float.NaN, Float.NaN, Float.NaN),
+        /** 当地原版光照的混合权重；剩余权重来自RVP照明前画面，缺区块时只参考画面。 */
+        ambientWorldWeight("游戏光照权重；默认0.7即游戏70%加画面30%，范围0～1；当地光照不可用时只用原画面，不加载区块", 0, 1,
+                0.7F, Float.NaN, Float.NaN, Float.NaN, Float.NaN),
+        /** 最亮环境保留的灯光输入比例；0.1即10%，不是最终屏幕像素亮度。 */
+        ambientMinStrength("最亮环境保留比例；默认0.1即保留10%的灯光计算输入，暗处仍保留100%，不缩范围或寿命", 0, 1,
+                0.1F, Float.NaN, Float.NaN, Float.NaN, Float.NaN),
+        /** 明暗平滑过渡的指数；默认1，大于1更晚减弱，小于1更早减弱，端点保持不变。 */
+        ambientCurve("环境适应过渡曲线；默认1，范围0.1～4；大于1更晚减弱、小于1更早减弱，暗端0.2和亮端0.8不变", 0.1F, 4,
+                1, Float.NaN, Float.NaN, Float.NaN, Float.NaN),
         /** 环境照明亮度倍率；爆炸默认5、炮口默认4、发动机默认2，爆炸广域光晕另用独立亮度。 */
         brightness("照亮亮度倍率；爆炸默认5、炮口默认4、发动机默认2，不改变爆炸广域光晕或发动机喷焰，炮口光晕沿用炮口光强", 0, 256,
                 1, 5, 4, 2, Float.NaN),
@@ -153,6 +165,9 @@ public final class RVP_LightRuntimeTuning {
         /** 指令与写入校验共用的适用性检查。 */
         public boolean supports(Group group) { return Float.isFinite(defaultValue(group)); }
 
+        /** 两种开关共用整数校验与面板控件，环境适应开关不读取原有画质TOML。 */
+        public boolean toggle() { return this == enabled || this == ambientEnabled; }
+
         /** 光晕时间参数可以由 global 统一设置，也可按来源覆盖。 */
         public boolean haloTimeline() {
             return this == haloDecayCurve || this == haloPeakHoldTicks || this == haloFadeOutTicks || this == haloDropFraction
@@ -215,11 +230,11 @@ public final class RVP_LightRuntimeTuning {
     /** 校验后替换覆盖表；额外拒绝 NaN/无穷和小数开关，任何失败都保留原值。 */
     public static synchronized void set(Group group, Parameter parameter, float value) {
         if (!parameter.supports(group) || !Float.isFinite(value) || value < parameter.min || value > parameter.max
-                || parameter == Parameter.enabled && value != 0 && value != 1
+                || parameter.toggle() && value != 0 && value != 1
                 || parameter == Parameter.haloDecayCurve && value != Math.rint(value)) {
             throw new IllegalArgumentException("参数不适用或数值越界：" + group + "." + parameter
                     + "，允许 " + parameter.min + "～" + parameter.max
-                    + (parameter == Parameter.enabled ? "，开关只接受0或1" : "")
+                    + (parameter.toggle() ? "，开关只接受0或1" : "")
                     + (parameter == Parameter.haloDecayCurve ? "，曲线只接受整数0、1、2、3" : ""));
         }
         Map<Group, Map<Parameter, Float>> next = new EnumMap<>(Group.class);

@@ -99,6 +99,10 @@ final class ScreenLightOcclusionGpuRegression {
             GL11.glDrawBuffer(GL30.GL_COLOR_ATTACHMENT0); GL11.glReadBuffer(GL30.GL_COLOR_ATTACHMENT0);
             float[][] images = new float[4][];
             for (int pass = 0; pass < 4; pass++) {
+                // 各几何模式必须读取同一份未照亮背景；否则上一模式的光会被当成新环境亮度，
+                // 把正常的自适应减亮误判为阴影，尤其在强炮口/发动机光下会出现大量假影噪点。
+                GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, world);
+                GL30.glClearBufferfv(GL11.GL_COLOR, 0, new float[4]);
                 require(frame.captureDepth(world, pass == 0 ? planeDepth : sceneDepth, width, height), "solid-box capture");
                 require(frame.captureColor(world, width, height), "solid-box color");
                 configure(shader, frame, projection, null, false);

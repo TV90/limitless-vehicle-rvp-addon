@@ -171,10 +171,13 @@ public final class RVP_SmokeLightPass {
         shader.safeGetUniform("LightCount").set(lights.size());
         for (int index = 0; index < RVP_ScreenLightBudget.MAX_LIGHTS; index++) {
             if (index >= lights.size()) {
+                shader.safeGetUniform("LightAmbient" + index).set(RVP_AmbientLightSampler.UNAVAILABLE);
                 shader.safeGetUniform("LightPositionRadius" + index).set(0F, 0F, 0F, 0F);
                 shader.safeGetUniform("LightColorIntensity" + index).set(0F, 0F, 0F, 0F); continue;
             }
             RVP_ScreenLight light = lights.get(index);
+            // 调用同帧源位置缓存，烟雾筛掉发动机及干扰机后不能沿用原八灯槽号。
+            shader.safeGetUniform("LightAmbient" + index).set(RVP_ScreenLightPass.ambientBrightness(light.position()));
             // 调用相同观察变换与年龄/阶段采样，爆炸、炮口、发动机没有烟雾专用白名单。
             Vector3f position = RVP_ScreenLightPass.viewPosition(light.position());
             VIEW_LIGHT_SPHERES[index * 4] = position.x;

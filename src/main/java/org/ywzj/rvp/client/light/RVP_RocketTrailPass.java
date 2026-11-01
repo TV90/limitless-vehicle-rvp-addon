@@ -94,11 +94,14 @@ final class RVP_RocketTrailPass {
         shader.safeGetUniform("LightCount").set(lights.size());
         for (int index = 0; index < 4; index++) {
             if (index >= lights.size()) {
+                shader.safeGetUniform("LightAmbient" + index).set(RVP_AmbientLightSampler.UNAVAILABLE);
                 shader.safeGetUniform("LightPositionRadius" + index).set(0F, 0F, 0F, 0F);
                 shader.safeGetUniform("LightColorIntensity" + index).set(0F, 0F, 0F, 0F);
                 continue;
             }
             RVP_ScreenLight light = lights.get(index);
+            // 调用按世界位置缓存的环境亮度，四灯重新筛选后仍对应真实来源。
+            shader.safeGetUniform("LightAmbient" + index).set(RVP_ScreenLightPass.ambientBrightness(light.position()));
             // 调用同帧观察空间转换，不能把背景墙位置拿来当烟团位置。
             Vector3f position = RVP_ScreenLightPass.viewPosition(light.position());
             shader.safeGetUniform("LightPositionRadius" + index).set(position.x, position.y, position.z, light.radius());

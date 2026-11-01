@@ -5,6 +5,7 @@
     "Position"
   ],
   "samplers": [
+    {"name": "SceneColor"},
     {
       "name": "SceneDepth"
     },
@@ -16,6 +17,8 @@
     }
   ],
   "uniforms": [
+    {"name": "AmbientSettings", "type": "float", "count": 4, "values": [1, 0.7, 0.1, 1]},
+    {"name": "PlumeAmbient", "type": "float", "count": 1, "values": [-1]},
     {
       "name": "InverseProjection",
       "type": "matrix4x4",

@@ -1,5 +1,6 @@
 #version 150
 // RVP 自有程序喷焰：不读取本体贴图，不写场景深度，所有发光参数由 Java 代码提供。
+uniform sampler2D SceneColor;
 uniform sampler2D SceneDepth;
 uniform sampler2D DistantDepth;
 // 每条喷流顺序复用的一像素可见度，写入可见度模式时绑定其它有效纹理，避免附件反馈。
@@ -22,12 +23,16 @@ uniform vec4 PlumeAxisRadius;
 uniform vec4 PlumeEmission;
 // 由既有毫米口径计算的世界光晕半径，与发动机环境照明共同限制在 20～500 格。
 uniform float PlumeHaloRadius;
+// 喷口附近的原版环境亮度；只用于外围光晕，负值表示当地数据不可用。
+uniform float PlumeAmbient;
 // 广域橙晕亮度独立于喷焰外围橙焰，推进阶段由 Java 统一乘一次。
 uniform float PlumeHaloIntensity;
 uniform float Time;
 uniform int OutputMode;
 in vec2 screenUV;
 out vec4 fragColor;
+
+#moj_import <ywzj_rvp:rvp_ambient_light.glsl>
 
 vec3 viewPosition(vec2 uv, float depth) {
     vec4 point = InverseProjection * vec4(uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
@@ -205,7 +210,8 @@ vec3 worldHalo(vec3 ray) {
     if (radialSq >= 1.0) { return vec3(0.0); }
     // 世界半径决定轮廓，亮度/阶段只改变强度；指数中心和平方边缘避免硬圆盘边界。
     float falloff = exp(-6.0 * radialSq) * pow(1.0 - radialSq, 2.0);
-    float response = 1.0 - exp(-PlumeHaloIntensity * visible * falloff);
+    float ambientMultiplier = rvpAmbientMultiplier(PlumeAmbient, rvpAmbientSceneBrightness(screenUV));
+    float response = 1.0 - exp(-PlumeHaloIntensity * visible * falloff * ambientMultiplier);
     return vec3(1.0, 0.38, 0.07) * response;
 }
 
@@ -229,6 +235,8 @@ void main() {
         float peak = max(emission.r, max(emission.g, emission.b));
         float limit = max(PlumeEmission.w, 0.001);
         vec3 bloomInput = emission * (limit * (1.0 - exp(-peak / limit)) / max(peak, 0.0001));
+        // 只在柔化输入乘一次环境倍率；显示模式2的喷焰主体与可见度模式3保持原值。
+        bloomInput *= rvpAmbientMultiplier(PlumeAmbient, rvpAmbientSceneBrightness(screenUV));
         fragColor = vec4(bloomInput, dot(bloomInput, vec3(0.2126, 0.7152, 0.0722)));
     } else {
         fragColor = vec4(1.0 - exp(-emission), 0.0);

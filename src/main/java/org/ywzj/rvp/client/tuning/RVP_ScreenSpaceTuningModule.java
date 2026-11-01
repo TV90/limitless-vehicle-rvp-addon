@@ -89,6 +89,10 @@ public final class RVP_ScreenSpaceTuningModule implements RVP_TuningModule {
         // 中文名称只属于具体业务适配器，通用界面不会按这些名字分支。
         String title = switch (parameter) {
             case enabled -> group == RVP_LightRuntimeTuning.Group.engine ? "发动机照亮与外晕开关" : "启用此效果";
+            case ambientEnabled -> "按环境明暗适应灯光";
+            case ambientWorldWeight -> "游戏光照混合权重";
+            case ambientMinStrength -> "最亮环境保留比例";
+            case ambientCurve -> "环境明暗过渡曲线";
             case brightness -> "照亮亮度倍率";
             case radiusScale -> "照亮半径倍率";
             case haloRadiusScale -> "光晕半径倍率";
@@ -127,7 +131,7 @@ public final class RVP_ScreenSpaceTuningModule implements RVP_TuningModule {
         };
         // 直接绑定同一个覆盖表；恢复开关时重新读取 TOML，不能把面板值当成配置默认。
         return new RVP_TuningOption(parameter.name(), title, parameter.description + "；下一显示帧生效。",
-                parameter == Parameter.enabled ? "开关" : parameter == Parameter.haloDecayCurve ? "曲线"
+                parameter.toggle() ? "开关" : parameter == Parameter.haloDecayCurve ? "曲线"
                 : parameter == Parameter.haloPeakHoldTicks || parameter == Parameter.haloFadeOutTicks
                         || parameter == Parameter.skyHoldTicks || parameter == Parameter.skyFadeTicks
                 ? "刻（20刻=1秒）"
@@ -138,7 +142,7 @@ public final class RVP_ScreenSpaceTuningModule implements RVP_TuningModule {
                         || parameter == Parameter.skyPeakBrightness ? "倍"
                 : parameter == Parameter.coreIntensity || parameter == Parameter.haloIntensity
                         || parameter == Parameter.coreHaloIntensity ? "亮度（HDR）" : "系数",
-                parameter == Parameter.enabled ? RVP_TuningOption.Control.TOGGLE
+                parameter.toggle() ? RVP_TuningOption.Control.TOGGLE
                 : parameter == Parameter.haloDecayCurve ? RVP_TuningOption.Control.CHOICE : RVP_TuningOption.Control.NUMBER,
                 decimal(parameter.min), decimal(parameter.max), 0,
                 () -> lightDefault(group, parameter), () -> {

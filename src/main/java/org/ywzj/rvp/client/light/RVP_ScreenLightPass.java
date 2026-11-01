@@ -29,6 +29,8 @@ public final class RVP_ScreenLightPass {
     private static final Logger LOGGER = LogUtils.getLogger();
     /** 所有光共享的颜色、深度与绘制目标。 */
     private static final RVP_ScreenFrameResources FRAME = new RVP_ScreenFrameResources();
+    /** 同帧各光源的原版环境亮度；世界表面、粒子烟、体积烟与发动机外晕共享。 */
+    private static final RVP_AmbientLightSampler AMBIENT = new RVP_AmbientLightSampler();
     /** 基础光 Shader；失败时整层关闭，原有特效不受影响。 */
     private static ShaderInstance lightShader;
     /** 可选光晕 Shader；失败时回退基础光直接合成。 */
@@ -70,6 +72,8 @@ public final class RVP_ScreenLightPass {
 
     /** 渲染帧开始即丢弃旧来源，早于 DH 的天空/地形事件。 */
     public static void beginFrame() {
+        // 调用环境缓存清空，暂停、切世界或本帧没有灯光时也不能保留旧世界查询入口。
+        AMBIENT.clear();
         lights = List.of(); frameLevel = null; distant = null; distantAnalysis = null;
         plumes = List.of();
         trails = List.of();
@@ -289,6 +293,8 @@ public final class RVP_ScreenLightPass {
                 RVP_SkyScatterTrace.skip("场景颜色复制失败（目标或窗口变化）");
                 diagnostic("场景目标或窗口发生变化，跳过本帧", null); return;
             }
+            // 调用本帧原版光照取样入口；颜色副本已经固定，后续所有受光层只读同一份环境。
+            AMBIENT.beginFrame(expected, event.getPartialTick());
             // 调用统一参数上传；世界位置先用 double 减相机，远坐标不会抖动。
             uploadLights();
             // 调用一次性的 uniform 声明检查：描述 JSON 漏写时 safeGetUniform 会静默返回空对象，天空项将恒为0。
@@ -366,7 +372,11 @@ public final class RVP_ScreenLightPass {
             // 调用可选单帧回读；正常绘制不会同步读取 GPU。
             if (!lights.isEmpty()) { RVP_LightOcclusionPass.captureReport(FRAME, lightShader); }
         } catch (RuntimeException exception) { diagnostic("灯光合成失败，保留世界画面", exception); }
-        finally { lights = List.of(); plumes = List.of(); trails = List.of(); FRAME.discard(); }
+        finally {
+            lights = List.of(); plumes = List.of(); trails = List.of(); FRAME.discard();
+            // 调用环境缓存释放，即使某个绘制层失败也不把世界引用留到下一帧。
+            AMBIENT.clear();
+        }
     }
 
     /** 上传固定八盏光；未用的槽位清零，避免上一帧数据泄漏。 */
@@ -381,6 +391,12 @@ public final class RVP_ScreenLightPass {
 
     /** 上传同一帧近景、DH 与手持物输入，独立喷焰不另建一份深度管线。 */
     static void uploadScene(ShaderInstance target) {
+        // 调用会话参数读取；统一上传给四个受光程序，F8及指令修改下一帧生效。
+        target.safeGetUniform("AmbientSettings").set(
+                RVP_LightRuntimeTuning.get(RVP_LightRuntimeTuning.Group.global, RVP_LightRuntimeTuning.Parameter.ambientEnabled),
+                RVP_LightRuntimeTuning.get(RVP_LightRuntimeTuning.Group.global, RVP_LightRuntimeTuning.Parameter.ambientWorldWeight),
+                RVP_LightRuntimeTuning.get(RVP_LightRuntimeTuning.Group.global, RVP_LightRuntimeTuning.Parameter.ambientMinStrength),
+                RVP_LightRuntimeTuning.get(RVP_LightRuntimeTuning.Group.global, RVP_LightRuntimeTuning.Parameter.ambientCurve));
         target.setSampler("SceneColor", FRAME.color());
         target.setSampler("SceneDepth", FRAME.depth());
         // 没有 DH 时仍绑定完整有效的纹理，避免未用采样器携带外部阴影比较模式。
@@ -413,10 +429,17 @@ public final class RVP_ScreenLightPass {
     /** 烟雾受光复用完全相同的预算和已采样灯光，不重置闪光年龄或发动机阶段。 */
     static List<RVP_ScreenLight> currentLights() { return lights; }
 
+    /** 按实际世界位置取当帧缓存；烟雾重新排列灯槽后仍会绑定正确的那盏灯。 */
+    static float ambientBrightness(Vec3 position) {
+        // 调用共享环境取样器，持续发动机外晕也能复用已取样的位置。
+        return AMBIENT.sample(position);
+    }
+
     /** 上传环境光槽位；旧圆形喷口自发光由代码开关暂停，旧 Shader 实现仍保留。 */
     private static void uploadLightSlots() {
         for (int index = 0; index < RVP_ScreenLightBudget.MAX_LIGHTS; index++) {
             if (index >= lights.size()) {
+                lightShader.safeGetUniform("LightAmbient" + index).set(RVP_AmbientLightSampler.UNAVAILABLE);
                 lightShader.safeGetUniform("LightHemisphereAxis" + index).set(0F, 0F, 0F, 0F);
                 lightShader.safeGetUniform("LightPositionRadius" + index).set(0F, 0F, 0F, 0F);
                 lightShader.safeGetUniform("LightColorIntensity" + index).set(0F, 0F, 0F, 0F);
@@ -428,6 +451,8 @@ public final class RVP_ScreenLightPass {
                 continue;
             }
             RVP_ScreenLight light = lights.get(index);
+            // 调用光源附近环境亮度，负值告诉显卡只用原画面，不把缺区块误当作暗处。
+            lightShader.safeGetUniform("LightAmbient" + index).set(ambientBrightness(light.position()));
             if (light.hemisphereAxis() != null) {
                 // 世界方向只乘观察旋转，不加相机平移；四分量分别上传，避免原版把数组误识别为标量。
                 Vec3 axis = light.hemisphereAxis();
@@ -553,6 +578,8 @@ public final class RVP_ScreenLightPass {
 
     /** 世界卸载和资源重载释放临时显存；非渲染线程只排队，不直接调用 GL。 */
     public static void clear() {
+        // 调用世界查询入口清理，资源重载和卸载不会沿用旧缓存。
+        AMBIENT.clear();
         lights = List.of(); frameLevel = null; distant = null; distantAnalysis = null; nearAnalysis = null;
         lastSubmittedLights = List.of();
         plumes = List.of();

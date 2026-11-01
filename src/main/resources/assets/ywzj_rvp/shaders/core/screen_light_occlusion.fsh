@@ -18,6 +18,15 @@ uniform float DistantEmptyDepth;
 uniform float HandDepthLimit;
 uniform vec2 ScreenSize;
 uniform int LightCount;
+// 每盏光在自身世界位置采样的环境亮度；负值表示当地数据不可用。
+uniform float LightAmbient0;
+uniform float LightAmbient1;
+uniform float LightAmbient2;
+uniform float LightAmbient3;
+uniform float LightAmbient4;
+uniform float LightAmbient5;
+uniform float LightAmbient6;
+uniform float LightAmbient7;
 uniform int OutputMode;
 // xyz为观察空间半球方向，w=1启用；全零槽位保持普通全向光。
 uniform vec4 LightHemisphereAxis0;
@@ -91,6 +100,8 @@ uniform vec4 LightColorIntensity7;
 uniform vec4 LightShape7;
 in vec2 screenUV;
 out vec4 fragColor;
+
+#moj_import <ywzj_rvp:rvp_ambient_light.glsl>
 
 // 通过深度还原当前像素对应的可见表面；不改变 Minecraft 方块光。
 vec3 viewPosition(vec2 uv, float depth) {
@@ -293,6 +304,10 @@ void main() {
     vec3 position = hasSurface ? sampled.xyz : viewPosition(screenUV, 0.5);
     vec3 ray = normalize(position);
     float sceneDistance = hasSurface ? length(position) : 2048.0;
+    // 自发光主体不读取环境倍率；其余通道每像素只取一次原画面明暗，多灯共用。
+    float sceneBrightness = OutputMode == 2 ? 0.0 : rvpAmbientSceneBrightness(screenUV);
+    float ambient[8] = float[8](LightAmbient0, LightAmbient1, LightAmbient2, LightAmbient3,
+            LightAmbient4, LightAmbient5, LightAmbient6, LightAmbient7);
     // 独立光晕来源模式；LightShape.w 是光晕半径，LightPositionRadius.w 仍只表示照亮半径。
     if (OutputMode == 3) {
         vec3 glow = vec3(0.0);
@@ -300,7 +315,8 @@ void main() {
             if (index >= LightCount) { break; }
             vec4 axis = hemisphereAxes[index];
             if (shapes[index].z > 0.5 && (axis.w < 0.5 || dot(-positions[index].xyz, axis.xyz) >= 0.0)) {
-                glow += sourceHalo(ray, positions[index], haloColors[index], shapes[index].w);
+                glow += sourceHalo(ray, positions[index], haloColors[index], shapes[index].w)
+                        * rvpAmbientMultiplier(ambient[index], sceneBrightness);
             }
         }
         glow = clamp(glow, vec3(0.0), vec3(60000.0));
@@ -328,7 +344,10 @@ void main() {
         vec4 color = colors[index];
         vec4 shape = shapes[index];
         // 天空散射先于照亮判空累加：关掉照亮（radiusScale 或 brightness 为0）时天空仍然闪。
-        if (!hasSurface) { skyContribution += skyScatter(ray, light, skyColors[index], skySpreads[index]); }
+        float ambientMultiplier = rvpAmbientMultiplier(ambient[index], sceneBrightness);
+        if (!hasSurface) {
+            skyContribution += skyScatter(ray, light, skyColors[index], skySpreads[index]) * ambientMultiplier;
+        }
         if (light.w <= 0.0 || color.a <= 0.0) { continue; }
         float surface = 0.0;
         vec3 delta = light.xyz - position;
@@ -346,7 +365,8 @@ void main() {
         }
         float volume = shape.y > 0.0
                 ? volumeIntegral(ray, sceneDistance, light.xyz, light.w) * shape.y : 0.0;
-        vec3 added = color.rgb * color.a * (surface + volume)
+        // 只对照亮和空气散射乘倍率；核心及贴身光团的 sourceEmission 必须保持独立。
+        vec3 added = color.rgb * color.a * (surface + volume) * ambientMultiplier
                 + sourceEmission(ray, sceneDistance, light, color.rgb, emissions[index]);
         contribution += added;
         if (shape.z > 0.5) { bloomEnergy += dot(added, vec3(0.2126, 0.7152, 0.0722)); }

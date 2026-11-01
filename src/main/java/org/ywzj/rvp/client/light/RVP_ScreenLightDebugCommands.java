@@ -171,6 +171,8 @@ public final class RVP_ScreenLightDebugCommands {
         send(source, "global=环境光总设置，explosion=爆炸，muzzle=炮口，engine=发动机，bloom=模糊光晕。");
         send(source, "/rvplight set <组> <参数> <值>；status <组> [参数] 查看数值、默认值及中文含义，支持Tab补全。");
         send(source, "/rvplight reset [组] [参数] 恢复默认；copy 将本次全部修改复制成可重放指令。");
+        send(source, "global的ambientEnabled控制环境适应；默认游戏光照70%加原画面30%，暗处保持、最亮处保留10%，不压暗核心、贴身光团或喷焰。");
+        send(source, "ambientWorldWeight调游戏光照权重，ambientMinStrength调最亮处保留比例，ambientCurve大于1更晚减弱、小于1更早减弱；F8也可调整。");
         send(source, "explosion/muzzle/engine 均支持 radiusScale 调照亮半径、haloRadiusScale 调光晕半径；两者分开，0可单独关闭。");
         send(source, "例：set explosion worldHaloIntensity 8 独立调爆炸广域光晕；set explosion haloRadiusScale 0.5 调其范围。");
         send(source, "bloom nearStrength 调贴近亮焰的两层光晕，farStrength 调向周围消散的两层辉光；两者互不补偿。");
