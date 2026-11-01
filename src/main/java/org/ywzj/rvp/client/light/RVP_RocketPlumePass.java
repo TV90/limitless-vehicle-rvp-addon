@@ -72,6 +72,9 @@ final class RVP_RocketPlumePass {
     static void render(RVP_ScreenFrameResources frame, List<RVP_RocketPlume> plumes,
             Matrix4f view, Matrix4f projection, Vec3 camera, float time, int mode) {
         if (!available() || plumes.isEmpty()) { return; }
+        // 调用导弹广域橙晕开关：关闭后喷焰不再写亮部输入，只保留显示模式的真实白热喷流，
+        // 远处亚像素喷流因此不会再被光晕放大成固定像素亮斑。
+        if (mode == 1 && !RVP_LightingConfig.missileHaloEnabled()) { return; }
         // 调用共用场景上传，近景、DH、光影手持物使用与环境照明完全相同的配对矩阵。
         RVP_ScreenLightPass.uploadScene(shader);
         shader.safeGetUniform("OutputMode").set(mode);

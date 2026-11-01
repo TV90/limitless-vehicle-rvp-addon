@@ -5,16 +5,13 @@ import com.github.mcmodderanchor.simplebedrockmodel.v2.common.model.runtime.Bake
 import com.github.mcmodderanchor.simplebedrockmodel.v2.common.model.runtime.BoneState;
 import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.texture.OverlayTexture;
-import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
@@ -43,7 +40,7 @@ import java.util.UUID;
 
 /**
  * 光电干扰机玻片夜间红光：在载具本体渲染完成后，对 display JSON {@code eo_jammer_glow}
- * 指定的玻片骨再画一遍，用顶点色乘红色并强制满亮度，同时注册一盏红色屏幕光。
+ * 指定的玻片骨再画一遍，用顶点色乘红色并强制满亮度；照亮开启时另注册一盏红色屏幕光。
  *
  * <p>只追加不改写：本体渲染仍是常规 cutout 通道，白天、残骸、干扰模块失效时不画第二遍，
  * 玻片保持原样。第二遍复用同一 {@link BakedModelInstance}，动画姿态由本体渲染器本帧写入，
@@ -62,10 +59,10 @@ import java.util.UUID;
 @OnlyIn(Dist.CLIENT)
 public final class RVP_EoJammerGlowRenderer {
 
-    /** 环境亮度低于该值即点亮：1 为正午露天，0 为深夜或洞顶下。 */
-    private static final float DARK_AMBIENT_THRESHOLD = 0.6F;
-    /** 亮度采样点在车体上方的高度：贴地会落进实心方块（不透光、天光恒 0），抬到车身与玻片附近。 */
-    private static final double AMBIENT_SAMPLE_HEIGHT = 1.5;
+    /** 夜间时段（世界时间）：0 为清晨 6 点，13000～23000 为原版夜晚。 */
+    private static final long NIGHT_START = 13000L;
+    private static final long NIGHT_END = 23000L;
+    private static final long DAY_LENGTH = 24000L;
     /** 红光顶点色：乘在原贴图上，保留纹理明暗细节。 */
     private static final float GLOW_RED = 1.0F;
     private static final float GLOW_GREEN = 0.20F;
@@ -166,18 +163,15 @@ public final class RVP_EoJammerGlowRenderer {
         }
         // 白天只是人眼看不出这盏灯：窗帘干扰灯的能量在红外波段，像增强管会把它整片转成可见光。
         // 所以开着夜视时不看天光，玻片发红、光晕、周围照亮全都照常出；夜视开关是本机视角的判据
-        // （isActive 只跟随本机夜视状态，与环境亮度无关），没戴夜视的观察者仍按下面的环境亮度条件走。
+        // （isActive 只跟随本机夜视状态，与环境亮度无关），没戴夜视的观察者仍按下面的夜间条件走。
         boolean nightVision = RVP_NvgHandler.isActive();
-        if (!nightVision) {
-            Vec3 sample = entityPosition(vehicle, partialTick).add(0.0, AMBIENT_SAMPLE_HEIGHT, 0.0);
-            // 调用环境亮度判定：天光遮蔽 × 昼夜/天气黑暗度，洞顶、车库、黄昏、雷雨都会提前/延后点亮。
-            if (!isDarkEnough(vehicle.level(), sample, partialTick)) {
-                RVP_ScreenLightManager.INSTANCE.removePersistent(vehicleKey, RVP_LightSourceType.EO_JAMMER);
-                return;
-            }
+        if (!nightVision && !isNight(vehicle.level())) {
+            RVP_ScreenLightManager.INSTANCE.removePersistent(vehicleKey, RVP_LightSourceType.EO_JAMMER);
+            return;
         }
 
-        // 屏幕光总开关关闭时撤掉本车全部灯，顶点红光照常画（那是玻片本身的样子）。
+        // 照亮总开关关闭时连光晕一起撤：玻片只留模型自身红光（顶点色叠加），
+        // 夜视仪下这层自发光仍会被荧光滤镜放大，不再借屏幕光光晕。
         // 自己在车上时这盏灯只留照亮、不带光晕：观瞄与第三人称镜头就贴在玻片后面，
         // 光晕会糊住整个画面；玻片仍然发红、车体照样被红光照到，别人看你这辆车一切照旧。
         boolean ownVehicle = LocalVehiclePlayer.instance.vehicle == vehicle;
@@ -281,30 +275,21 @@ public final class RVP_EoJammerGlowRenderer {
     }
 
     /**
-     * 环境亮度判定：玻片处的天光遮蔽 × 昼夜/天气黑暗度，低于阈值即视为"暗"。
-     *
-     * <p>不能用 {@code Level.getSkyDarken()}（int 字段）或 {@code getMaxLocalRawBrightness}：
-     * 该字段只在进世界时由 {@code updateSkyBrightness} 算一次，后者拿它减天光，夜里仍按 15 算，
-     * 会把整夜判成白天。这里改用原版光照贴图同款的 {@link ClientLevel#getSkyDarken(float)}，
-     * 它每次调用都按时间与天气实时重算。</p>
-     *
-     * <p>只取天光层、不取方块光：玩家在车边点火把不该把拟真设备判亮。屏幕光是渲染阶段的附加光，
-     * 不写入光照引擎，因此自身发光不会反过来把自己判成"不暗"。</p>
+     * 夜间判定只看世界时间，不用光照引擎：客户端 {@code Level.skyDarken} 只在进世界时计算一次，
+     * {@code getMaxLocalRawBrightness} 在夜里仍按天光 15 算，会把整夜判成白天；
+     * 同时方块光（玩家基地照明）也不该决定拟真设备是否工作。屏幕光是渲染阶段的附加光，
+     * 不写入光照引擎，因此自身发光不会反过来把自己判成"不暗"。
      */
-    private static boolean isDarkEnough(Level level, Vec3 samplePos, float partialTick) {
+    private static boolean isNight(Level level) {
         if (level == null) {
             return false;
         }
-        // 无天光维度（下界、末地）没有昼夜与天空遮蔽，按常暗处理。
+        // 无天光的维度（下界、末地）没有昼夜，按常暗处理。
         if (!level.dimensionType().hasSkyLight()) {
             return true;
         }
-        // 天光遮蔽：露天 15，洞顶、车库顶、密林树冠下更低甚至为 0。
-        float skyExposure = level.getBrightness(LightLayer.SKY, BlockPos.containing(samplePos)) / 15.0F;
-        // skyDarken：0.2 为正午、1.0 为深夜（天气已计入），换算成"日光比例"。
-        float skyDarken = ((ClientLevel) level).getSkyDarken(partialTick);
-        float daylight = Mth.clamp(1.0F - (skyDarken - 0.2F) / 0.8F, 0.0F, 1.0F);
-        return skyExposure * daylight < DARK_AMBIENT_THRESHOLD;
+        long time = Math.floorMod(level.getDayTime(), DAY_LENGTH);
+        return time >= NIGHT_START && time < NIGHT_END;
     }
 
     /** 实体插值位置，与本体渲染器同帧一致。 */

@@ -31,7 +31,7 @@ import java.util.*;
 
 /** 光源周围的真实三维碰撞形状；参考 Sable 的几何场与表面受光分离，不再从相机轮廓猜遮挡厚度。 */
 final class RVP_LightGeometryPass {
-    /** 每盏光缓存 64³ 个方块，光心位于中央，遮挡体覆盖四周各 32 格。 */
+    /** 每盏光的纹理槽位按 64³ 布局，光心位于中央；实际只填写并上传半径内的子盒。 */
     static final int SIZE = 64;
     /** 64 个 Z 切片平铺为 8×8 小图，每盏灯在普通二维纹理中占用一个 512² 区域。 */
     static final int ATLAS_SIZE = 512;
@@ -51,6 +51,8 @@ final class RVP_LightGeometryPass {
     private static final Map<List<AABB>, Integer> SHAPES = new HashMap<>();
     /** 单盏灯上传缓冲，按平铺切片顺序写入，无逐帧磁盘资源。 */
     private static final ShortBuffer CELLS = BufferUtils.createShortBuffer(SIZE * SIZE * SIZE);
+    /** 清除旧原点区域用的全零缓冲；一次最多上传 64×64 个短整数。 */
+    private static final ShortBuffer ZEROS = BufferUtils.createShortBuffer(SIZE * SIZE);
     /** 两行形状表：第一行最小点与盒数，第二行最大点。 */
     private static final FloatBuffer PALETTE = BufferUtils.createFloatBuffer(MAX_SHAPES * 8);
     /** 八盏灯的网格原点及有效区域编号，先减 double 相机坐标再转 float。 */
@@ -59,6 +61,8 @@ final class RVP_LightGeometryPass {
     private static final float[] BODIES = new float[MAX_BODIES * BODY_STRIDE];
     /** 每盏灯的纹理区域已上传的原点。 */
     private static final BlockPos[] UPLOADED_ORIGINS = new BlockPos[8];
+    /** 每盏灯当前原点下已上传的体素子盒（低端含、高端不含），用于换原点时清掉旧数据。 */
+    private static final int[][] UPLOADED_BOUNDS = new int[8][6];
     /** 每盏灯已上传的逻辑刻；同刻多显示帧只更新实体插值。 */
     private static final long[] UPLOADED_TICKS = new long[8];
     /** 方块形状编号纹理，R16UI，八盏灯按四列两行放置；兼容 Minecraft 仅绑定二维采样器的接口。 */
@@ -108,13 +112,21 @@ final class RVP_LightGeometryPass {
                 RVP_ScreenLight light = lights.get(slot);
                 if (light.radius() <= 0 || light.intensity() <= 0 || light.surfaceWeight() <= 0) { continue; }
                 BlockPos origin = BlockPos.containing(light.position()).offset(-SIZE / 2, -SIZE / 2, -SIZE / 2);
-                if (UPLOADED_TICKS[slot] != tick || !origin.equals(UPLOADED_ORIGINS[slot])) {
+                // 光源只照半径以内的表面，光路也整段落在球内，所以子盒取半径外扩两格即可覆盖全部查询体素。
+                int reach = Math.min(SIZE / 2, (int) Math.ceil(light.radius()) + 2);
+                int x0 = SIZE / 2 - reach, y0 = SIZE / 2 - reach, z0 = SIZE / 2 - reach;
+                int x1 = SIZE / 2 + reach, y1 = SIZE / 2 + reach, z1 = SIZE / 2 + reach;
+                boolean moved = !origin.equals(UPLOADED_ORIGINS[slot]);
+                if (UPLOADED_TICKS[slot] != tick || moved) {
+                    // 调用旧区域清除：换原点后旧体素不再对应当前世界位置，不能留给以后换回大半径的灯。
+                    if (moved) { uploadZeros(slot, UPLOADED_BOUNDS[slot]); }
+                    zeroCells(x0, y0, z0, x1, y1, z1);
                     // 调用区段复用的体积构建，稠密三维格仅存形状编号，不复制每个方块的完整盒数据。
-                    fillCells(level, origin);
-                    RVP_GlStateSync.activeTexture(GL13.GL_TEXTURE4);
-                    RVP_GlStateSync.bindTexture2D(cellsTexture);
-                    GL11.glTexSubImage2D(GL11.GL_TEXTURE_2D, 0, (slot & 3) * ATLAS_SIZE, (slot >> 2) * ATLAS_SIZE,
-                            ATLAS_SIZE, ATLAS_SIZE, GL30.GL_RED_INTEGER, GL11.GL_UNSIGNED_SHORT, CELLS);
+                    fillCells(level, origin, x0, y0, z0, x1, y1, z1);
+                    uploadCells(slot, x0, y0, z0, x1, y1, z1);
+                    int[] bounds = UPLOADED_BOUNDS[slot];
+                    bounds[0] = x0; bounds[1] = y0; bounds[2] = z0;
+                    bounds[3] = x1; bounds[4] = y1; bounds[5] = z1;
                     UPLOADED_ORIGINS[slot] = origin;
                     UPLOADED_TICKS[slot] = tick;
                 }
@@ -132,7 +144,7 @@ final class RVP_LightGeometryPass {
             // 调用实体采集，载具用已有旋转结构盒，普通实体用其碰撞体积。
             collectBodies(level, lights, camera, partialTick);
             ready = true;
-            description = "三维方块场=64³/灯，形状=" + nextShape + "，实体盒=" + bodyCount
+            description = "三维方块场=半径子盒/灯（≤64³），形状=" + nextShape + "，实体盒=" + bodyCount
                     + "，本帧准备=" + String.format(Locale.ROOT, "%.2fms", (System.nanoTime() - started) / 1_000_000.0);
         } catch (RuntimeException exception) {
             // 调用自有资源清理，失败时关闭投影猜测，不能重启之前会重复轮廓的屏幕空间算法。
@@ -156,26 +168,81 @@ final class RVP_LightGeometryPass {
     /** 命令只读显示当前使用的几何来源及明确边界。 */
     static String status() { return description + "；未加载区段不猜测遮挡"; }
 
-    /** 构建一盏灯的切片图；空区段整段跳过，其余按行复制。 */
-    private static void fillCells(ClientLevel level, BlockPos origin) {
-        CELLS.clear();
-        for (int index = 0; index < CELLS.capacity(); index++) { CELLS.put((short) 0); }
-        for (int sy = origin.getY() >> 4; sy <= (origin.getY() + SIZE - 1) >> 4; sy++) {
-            for (int sz = origin.getZ() >> 4; sz <= (origin.getZ() + SIZE - 1) >> 4; sz++) {
-                for (int sx = origin.getX() >> 4; sx <= (origin.getX() + SIZE - 1) >> 4; sx++) {
+    /** 构建一盏灯半径子盒的切片图；空区段整段跳过，其余按行复制。 */
+    private static void fillCells(ClientLevel level, BlockPos origin, int x0, int y0, int z0, int x1, int y1, int z1) {
+        for (int sy = (origin.getY() + y0) >> 4; sy <= (origin.getY() + y1 - 1) >> 4; sy++) {
+            for (int sz = (origin.getZ() + z0) >> 4; sz <= (origin.getZ() + z1 - 1) >> 4; sz++) {
+                for (int sx = (origin.getX() + x0) >> 4; sx <= (origin.getX() + x1 - 1) >> 4; sx++) {
                     short[] section = section(level, sx, sy, sz);
                     if (section == AIR) { continue; }
-                    int x0 = Math.max(0, (sx << 4) - origin.getX()), x1 = Math.min(SIZE, (sx + 1 << 4) - origin.getX());
-                    int y0 = Math.max(0, (sy << 4) - origin.getY()), y1 = Math.min(SIZE, (sy + 1 << 4) - origin.getY());
-                    int z0 = Math.max(0, (sz << 4) - origin.getZ()), z1 = Math.min(SIZE, (sz + 1 << 4) - origin.getZ());
-                    for (int y = y0; y < y1; y++) { for (int z = z0; z < z1; z++) {
-                        int source = ((origin.getY() + y & 15) << 8) + ((origin.getZ() + z & 15) << 4) + (origin.getX() + x0 & 15);
-                        CELLS.position(atlasIndex(x0, y, z)); CELLS.put(section, source, x1 - x0);
+                    int sx0 = Math.max(x0, (sx << 4) - origin.getX()), sx1 = Math.min(x1, (sx + 1 << 4) - origin.getX());
+                    int sy0 = Math.max(y0, (sy << 4) - origin.getY()), sy1 = Math.min(y1, (sy + 1 << 4) - origin.getY());
+                    int sz0 = Math.max(z0, (sz << 4) - origin.getZ()), sz1 = Math.min(z1, (sz + 1 << 4) - origin.getZ());
+                    for (int y = sy0; y < sy1; y++) { for (int z = sz0; z < sz1; z++) {
+                        int source = ((origin.getY() + y & 15) << 8) + ((origin.getZ() + z & 15) << 4) + (origin.getX() + sx0 & 15);
+                        CELLS.position(atlasIndex(sx0, y, z)); CELLS.put(section, source, sx1 - sx0);
                     } }
                 }
             }
         }
         CELLS.position(0).limit(CELLS.capacity());
+    }
+
+    /** 把子盒区域先置零；子盒外保持原内容，但纹理里也从未上传过，不会被采样。 */
+    private static void zeroCells(int x0, int y0, int z0, int x1, int y1, int z1) {
+        for (int y = y0; y < y1; y++) {
+            for (int z = z0; z < z1; z++) {
+                CELLS.position(atlasIndex(x0, y, z));
+                for (int x = x0; x < x1; x++) { CELLS.put((short) 0); }
+            }
+        }
+        CELLS.position(0).limit(CELLS.capacity());
+    }
+
+    /** 只上传子盒的切片；行距按平铺图集宽度，避免把未使用的 64³ 区域整块复制上传。 */
+    private static void uploadCells(int slot, int x0, int y0, int z0, int x1, int y1, int z1) {
+        RVP_GlStateSync.activeTexture(GL13.GL_TEXTURE4);
+        RVP_GlStateSync.bindTexture2D(cellsTexture);
+        GL11.glPixelStorei(GL11.GL_UNPACK_ROW_LENGTH, ATLAS_SIZE);
+        try {
+            // 超大半径已覆盖整个立方体：恢复单次整块上传，避免拆成 64 次小切片。
+            if (x0 == 0 && y0 == 0 && z0 == 0 && x1 == SIZE && y1 == SIZE && z1 == SIZE) {
+                CELLS.position(0).limit(CELLS.capacity());
+                GL11.glPixelStorei(GL11.GL_UNPACK_ROW_LENGTH, 0);
+                GL11.glTexSubImage2D(GL11.GL_TEXTURE_2D, 0, (slot & 3) * ATLAS_SIZE, (slot >> 2) * ATLAS_SIZE,
+                        ATLAS_SIZE, ATLAS_SIZE, GL30.GL_RED_INTEGER, GL11.GL_UNSIGNED_SHORT, CELLS);
+                return;
+            }
+            for (int z = z0; z < z1; z++) {
+                CELLS.position(atlasIndex(x0, y0, z));
+                GL11.glTexSubImage2D(GL11.GL_TEXTURE_2D, 0,
+                        (slot & 3) * ATLAS_SIZE + (z & 7) * SIZE + x0,
+                        (slot >> 2) * ATLAS_SIZE + (z >> 3) * SIZE + y0,
+                        x1 - x0, y1 - y0, GL30.GL_RED_INTEGER, GL11.GL_UNSIGNED_SHORT, CELLS);
+            }
+        } finally {
+            GL11.glPixelStorei(GL11.GL_UNPACK_ROW_LENGTH, 0);
+        }
+    }
+
+    /** 用全零缓冲清掉同一槽位上一次原点留下的子盒；空区域直接跳过。 */
+    private static void uploadZeros(int slot, int[] bounds) {
+        if (bounds[0] >= bounds[3] || bounds[1] >= bounds[4] || bounds[2] >= bounds[5]) { return; }
+        RVP_GlStateSync.activeTexture(GL13.GL_TEXTURE4);
+        RVP_GlStateSync.bindTexture2D(cellsTexture);
+        GL11.glPixelStorei(GL11.GL_UNPACK_ROW_LENGTH, 0);
+        ZEROS.position(0);
+        try {
+            for (int z = bounds[2]; z < bounds[5]; z++) {
+                GL11.glTexSubImage2D(GL11.GL_TEXTURE_2D, 0,
+                        (slot & 3) * ATLAS_SIZE + (z & 7) * SIZE + bounds[0],
+                        (slot >> 2) * ATLAS_SIZE + (z >> 3) * SIZE + bounds[1],
+                        bounds[3] - bounds[0], bounds[4] - bounds[1],
+                        GL30.GL_RED_INTEGER, GL11.GL_UNSIGNED_SHORT, ZEROS);
+            }
+        } finally {
+            GL11.glPixelStorei(GL11.GL_UNPACK_ROW_LENGTH, 0);
+        }
     }
 
     /** 世界 XYZ 体素到一层 512² 切片图的地址，与 GLSL 完全一致。 */
@@ -289,6 +356,7 @@ final class RVP_LightGeometryPass {
         if (cellsTexture != 0) { return; }
         try (UnpackState ignored = new UnpackState()) {
             Arrays.fill(UPLOADED_TICKS, Long.MIN_VALUE);
+            for (int[] bounds : UPLOADED_BOUNDS) { Arrays.fill(bounds, 0); }
             cellsTexture = GL11.glGenTextures();
             RVP_GlStateSync.activeTexture(GL13.GL_TEXTURE4); RVP_GlStateSync.bindTexture2D(cellsTexture);
             GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST);
@@ -336,6 +404,7 @@ final class RVP_LightGeometryPass {
         ready = false; available = true; world = null; tick = Long.MIN_VALUE; bodyCount = 0;
         SECTIONS.clear(); STATES.clear(); SHAPES.clear(); nextShape = 2;
         Arrays.fill(ORIGINS, 0); Arrays.fill(BODIES, 0); Arrays.fill(UPLOADED_ORIGINS, null);
+        for (int[] bounds : UPLOADED_BOUNDS) { Arrays.fill(bounds, 0); }
         if (cellsTexture != 0) { GL11.glDeleteTextures(cellsTexture); cellsTexture = 0; }
         if (paletteTexture != 0) { RenderSystem.deleteTexture(paletteTexture); paletteTexture = 0; }
         description = "三维遮挡尚未准备";
