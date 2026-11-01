@@ -31,10 +31,14 @@ import org.ywzj.rvp.client.visual.RVP_UnderwaterExplosionTuning;
 @OnlyIn(Dist.CLIENT)
 public class RVP_MchrSmokeParticle extends SingleQuadParticle {
 
+    /** 小口径炮口烟的宽高倍率；以原有 7.62 mm 烟片为基准缩小一半。 */
+    private static final float MUZZLE_SIZE_SCALE = 0.5f;
     /** MCHR particleScale（扩散变量，渲染半宽 = 0.1 × scale）。 */
     private float mchrScale;
     /** 扩散上限（= size × 2.0 的 MCHR scale 值）。 */
     private final float maxScale;
+    /** 每 tick 的扩散增量；普通烟默认 0.8，小口径炮口烟按自身尺寸单独设置。 */
+    private float scaleGrowthPerTick = 0.8f;
     /** 当前帧索引（8 帧横排，UV 自算）。 */
     private int frame;
     /** 渲染类型（默认 MCHR 烟贴图；114514 彩蛋事件切换 EGG 贴图，布局一致）。 */
@@ -117,7 +121,7 @@ public class RVP_MchrSmokeParticle extends SingleQuadParticle {
      * 炮口烟入口：复用 {@code boom/smoke.png} 的 8 帧烟雾动画，使用中性深灰色，
      * 并切换到深度只测不写的渲染类型，避免透明烟团写入深度后遮挡载具模型。
      *
-     * @param size 由炮口口径换算出的 MCHR 尺寸参数
+     * @param size 由炮口口径换算出的 MCHR 尺寸参数；本入口再将烟片宽高减半
      * @param lifetime 炮口烟寿命，单位 tick
      */
     public static RVP_MchrSmokeParticle ofMuzzle(ClientLevel level, double x, double y, double z,
@@ -127,8 +131,12 @@ public class RVP_MchrSmokeParticle extends SingleQuadParticle {
         float base = 0.18f + random.nextFloat() * 0.12f;
         RVP_MchrSmokeParticle particle = new RVP_MchrSmokeParticle(
                 level, x, y, z, vx, vy, vz,
-                size, base + 0.02f, base + 0.01f, base, 0.58f + random.nextFloat() * 0.18f,
+                size * MUZZLE_SIZE_SCALE, base + 0.02f, base + 0.01f, base,
+                0.58f + random.nextFloat() * 0.18f,
                 lifetime, Double.NaN);
+        // 每刻增长最终尺寸的 20%，让不同口径的烟片在整个扩散过程中保持相同比例；
+        // 7.62 mm 的初始尺寸、最终尺寸和每刻扩散量均为原来的一半。
+        particle.scaleGrowthPerTick = particle.maxScale * 0.2f;
         // 小口径炮口烟出生时绕面向相机的烟片法线随机旋转 0～180 度，
         // 同步旧角度可避免首帧从 0 度插值转入随机角度；后续不更新角度，因此烟团不会持续自转。
         float initialRoll = random.nextFloat() * Mth.PI;
@@ -337,9 +345,9 @@ public class RVP_MchrSmokeParticle extends SingleQuadParticle {
             }
             this.yd -= RVP_UnderwaterExplosionPhysics.SPLASH_GRAVITY;
         } else {
-            // MCHR diffusible：scale += 0.8/tick（封顶 maxScale），渲染半宽 = 0.1 × scale
+            // 普通烟保持 MCHR 每刻扩散 0.8；小口径炮口烟使用自身尺寸对应的增量。
             if (this.mchrScale < this.maxScale) {
-                this.mchrScale = Math.min(this.maxScale, this.mchrScale + 0.8f);
+                this.mchrScale = Math.min(this.maxScale, this.mchrScale + this.scaleGrowthPerTick);
             }
             this.quadSize = 0.1f * this.mchrScale;
             // MCHR：三轴阻尼 0.96（diffusible），motionY += gravity（0.001 慢升，无上浮相位）
