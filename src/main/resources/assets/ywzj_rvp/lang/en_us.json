@@ -545,14 +545,14 @@
   "gui.ywzj_rvp.auxiliary.entry": "Custom Auxiliary Vehicle",
   "gui.ywzj_rvp.auxiliary.options": "Available Auxiliary Vehicles",
   "gui.ywzj_rvp.auxiliary.profile": "Vehicle Profile and Deployment State",
-  "gui.ywzj_rvp.auxiliary.details": "Spawn offset: {0}; heading: {1}; initial speed: {2} blocks/tick",
+  "gui.ywzj_rvp.auxiliary.details": "Spawn offset: %1$s; heading: %2$s; initial speed: %3$s blocks/tick",
   "gui.ywzj_rvp.auxiliary.waiting": "Waiting for the server to confirm the selection…",
   "gui.ywzj_rvp.auxiliary.syncing": "Syncing parent deployment state…",
   "gui.ywzj_rvp.auxiliary.none": "None",
   "ui.ywzj_rvp.uav.option_title": "Auxiliary Vehicle Configuration",
-  "ui.ywzj_rvp.uav.option_current": "Current configuration: {0}",
-  "ui.ywzj_rvp.uav.option_cooldown": "Change cooldown: {0}s",
+  "ui.ywzj_rvp.uav.option_current": "Current configuration: %1$s",
+  "ui.ywzj_rvp.uav.option_cooldown": "Change cooldown: %1$ss",
   "ui.ywzj_rvp.uav.option_deployed": "An auxiliary vehicle is deployed; selection is locked",
-  "ui.ywzj_rvp.uav.option_locked": "Selection unavailable: {0}",
+  "ui.ywzj_rvp.uav.option_locked": "Selection unavailable: %1$s",
   "ui.ywzj_rvp.uav.option_select": "Request Configuration Change"
 }
