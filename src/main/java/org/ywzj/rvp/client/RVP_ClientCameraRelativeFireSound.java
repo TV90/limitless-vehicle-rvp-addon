@@ -6,6 +6,7 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.event.PlayLevelSoundEvent;
+import net.minecraftforge.event.level.LevelEvent;
 import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
@@ -21,6 +22,7 @@ import org.ywzj.vehicle.vehicle.weapon.VehicleMultiWeapons;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.function.Supplier;
 
 /**
  * [RVP] 开火声"方向机同款"相机相对播放（2026-10-02，用户需求）：
@@ -146,14 +148,9 @@ public final class RVP_ClientCameraRelativeFireSound {
         }
         Vec3 pos = event.getPosition();
         ResourceLocation soundLocation = event.getSound().value().getLocation();
-        Iterator<PendingSuppress> it = PENDING.iterator();
-        while (it.hasNext()) {
-            PendingSuppress pending = it.next();
-            if (pending.matches(soundLocation, pos)) {
-                it.remove();
-                event.setCanceled(true);
-                return;
-            }
+        // 调用一次性消费入口；延迟的本体冷发射声按实际播放时的发射站坐标匹配。
+        if (consumePending(soundLocation, pos, System.currentTimeMillis())) {
+            event.setCanceled(true);
         }
     }
 
@@ -167,7 +164,19 @@ public final class RVP_ClientCameraRelativeFireSound {
 
     /** 登记待抑制键（先清理过期项；超上限丢最旧）。仅客户端主线程调用（观瞄开火声处理器共用）。 */
     static void registerPending(ResourceLocation soundLocation, Vec3 pos) {
-        long now = System.currentTimeMillis();
+        // 调用统一登记入口；普通发射固定使用开火完成时的坐标，不额外等待。
+        registerPending(soundLocation, () -> pos, 0L, System.currentTimeMillis());
+    }
+
+    /** 本体导弹在冷发射时长后才播放原声；须跟随当时炮口坐标，不能套用普通两秒过期键。 */
+    static void registerDelayedPending(ResourceLocation soundLocation, WeaponUnit unit) {
+        // 调用本体武器站配置与坐标 getter，跟随原 onClientFire 的延迟和实际取点方式。
+        registerPending(soundLocation, unit::worldPivotPosition,
+                Math.max(0, unit.getColdLaunchTimeTick()) * 50L, System.currentTimeMillis());
+    }
+
+    /** 共用登记入口；时间与位置供应器可控，便于验证长冷发射和载具移动。 */
+    static void registerPending(ResourceLocation soundLocation, Supplier<Vec3> position, long delayMillis, long now) {
         Iterator<PendingSuppress> it = PENDING.iterator();
         while (it.hasNext()) {
             if (it.next().isExpired(now)) {
@@ -177,23 +186,48 @@ public final class RVP_ClientCameraRelativeFireSound {
         if (PENDING.size() >= PENDING_MAX) {
             PENDING.remove(0);
         }
-        PENDING.add(new PendingSuppress(soundLocation, pos.x, pos.y, pos.z, now + PENDING_EXPIRE_MS));
+        PENDING.add(new PendingSuppress(soundLocation, position, now + delayMillis,
+                now + delayMillis + PENDING_EXPIRE_MS));
     }
 
-    /** 待抑制项：声音 id 必须相同，坐标按 0.01 格容差匹配（同一 tick 同一来源，理论全等）。 */
-    private record PendingSuppress(ResourceLocation soundLocation, double x, double y, double z, long expireAtMillis) {
+    /** 只消费当前时间窗口内声音 ID 与坐标都匹配的一次原声。 */
+    static boolean consumePending(ResourceLocation soundLocation, Vec3 pos, long now) {
+        Iterator<PendingSuppress> iterator = PENDING.iterator();
+        while (iterator.hasNext()) {
+            PendingSuppress pending = iterator.next();
+            if (pending.isExpired(now)) {
+                iterator.remove();
+            } else if (pending.matches(soundLocation, pos, now)) {
+                iterator.remove();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 切换世界时释放延迟抑制键里的武器站引用，避免匹配到新世界的同名声音。 */
+    @SubscribeEvent
+    public static void onLevelUnload(LevelEvent.Unload event) {
+        if (event.getLevel().isClientSide()) {
+            PENDING.clear();
+        }
+    }
+
+    /** 声音、位置供应器与有效时间窗；延迟声保留武器站引用，过期后立即释放。 */
+    private record PendingSuppress(
+            /** 本体实际播放的声音 ID。 */ ResourceLocation soundLocation,
+            /** 固定炮口坐标，或延迟冷发射时的当前炮口坐标。 */ Supplier<Vec3> position,
+            /** 本体允许开始播放的客户端毫秒时间。 */ long readyAtMillis,
+            /** 此条一次性抑制键失效的客户端毫秒时间。 */ long expireAtMillis) {
         boolean isExpired(long now) {
             return now >= expireAtMillis;
         }
 
-        boolean matches(ResourceLocation location, Vec3 pos) {
-            if (!soundLocation.equals(location)) {
+        boolean matches(ResourceLocation location, Vec3 pos, long now) {
+            if (now < readyAtMillis || !soundLocation.equals(location)) {
                 return false;
             }
-            double dx = pos.x - x;
-            double dy = pos.y - y;
-            double dz = pos.z - z;
-            return dx * dx + dy * dy + dz * dz < 1.0E-4;
+            return position.get().distanceToSqr(pos) < 1.0E-4;
         }
     }
 }

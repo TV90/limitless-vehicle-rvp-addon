@@ -211,9 +211,13 @@ public final class RVP_ScreenLightDebugCommands {
                     case engine -> RVP_LightingConfig.missileHaloEnabled();
                     default -> RVP_LightingConfig.bloomEnabled();
                 }) ? 1 : 0)
+                // 调用客户端门槛入口：默认值来自 TOML，不能把代码兜底值当成当前值。
+                : parameter == Parameter.airBurstClearance ? RVP_LightingConfig.airBurstClearance()
                 : RVP_LightRuntimeTuning.get(group, parameter);
+        // 开关与门槛的默认值来自客户端配置，其余参数来自代码默认表。
+        boolean fromConfig = parameter == Parameter.enabled || parameter == Parameter.airBurstClearance;
         send(source, group + "." + parameter + "=" + value + (overridden ? "（临时覆盖）" : "（沿用默认）")
-                + "，默认=" + (parameter == Parameter.enabled ? "客户端配置" : RVP_LightRuntimeTuning.defaultValue(group, parameter))
+                + "，默认=" + (fromConfig ? "客户端配置" : RVP_LightRuntimeTuning.defaultValue(group, parameter))
                 + "，范围=" + parameter.min + "～" + parameter.max + "；" + parameter.description);
         return 1;
     }
@@ -250,6 +254,7 @@ public final class RVP_ScreenLightDebugCommands {
         String reason = RVP_LightingCompatibility.disabledReason();
         mc.player.displayClientMessage(Component.literal("[RVP Light] tracked=" + RVP_ScreenLightManager.INSTANCE.size()
                 + "，screen=" + RVP_LightingConfig.screenEnabled() + "，bloom=" + RVP_LightingConfig.bloomEnabled()
+                + "，airBurstClearance=" + RVP_LightingConfig.airBurstClearance()
                 + "，block=" + RVP_LightingConfig.blockLightEnabled()
                 + "，plumes=" + RVP_RocketPlumeManager.INSTANCE.size()
                 + "，体积尾烟段=" + RVP_RocketTrailManager.INSTANCE.size()

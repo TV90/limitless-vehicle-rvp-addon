@@ -2,6 +2,7 @@ package org.ywzj.rvp.client.visual.cookoff;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.sounds.SoundManager;
 import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.all.RVP_Sounds;
 import org.ywzj.rvp.client.particle.RVP_WreckFlameParticle;
@@ -35,6 +36,10 @@ public final class RVP_WreckCookoffController {
     private static final int LONG_SMOKE_DELAY_MIN_TICKS = 30;
     /** 殉燃完成后允许生成长程击毁烟的最长等待时间，单位 tick。 */
     private static final int LONG_SMOKE_DELAY_MAX_TICKS = 60;
+    /** 殉燃弹药爆响两段之间的最短静默，单位 tick（1 秒）。 */
+    private static final int AMMO_POPS_SILENCE_MIN_TICKS = 20;
+    /** 殉燃弹药爆响两段之间的最长静默，单位 tick（3 秒）。 */
+    private static final int AMMO_POPS_SILENCE_MAX_TICKS = 60;
 
     /** 当前世界绑定，换维度时清理所有实体引用。 */
     private static ClientLevel currentLevel;
@@ -147,6 +152,8 @@ public final class RVP_WreckCookoffController {
         private boolean timedEnding;
         /** 当前地面残骸的循环燃烧声；每个实例最多持有一个。 */
         private VehicleSound burningSound;
+        /** 殉燃期间追加的弹药爆响分段播放器；与持续燃烧声同距离、同起点、同终点。 */
+        private AmmoPopsPlayback ammoPops;
 
         private Instance(AbstractVehicle vehicle, RVP_WreckDestructionState state) {
             this.vehicle = vehicle;
@@ -172,20 +179,20 @@ public final class RVP_WreckCookoffController {
             // 调用本实例生命周期同步：新残骸第一帧从最小火柱开始增长。
             updateLifecycleScale(lastTick);
             if (!previewInstance) {
-                // 调用本体 VehicleSound 通用跟随实现，为真实殉燃残骸启动一条循环声音。
-                startBurningSound();
+                // 调用本类殉燃声音入口：燃烧声循环跟随，弹药爆响按段随机播发，二者共用同一声音距离。
+                startCookoffSounds();
             }
         }
 
-        /** 创建一条循环燃烧声；已有活动声音时不重复创建。 */
-        private void startBurningSound() {
-            if (previewInstance || (burningSound != null && !burningSound.isStopped())) {
+        /**
+         * 创建或补齐殉燃声音。持续燃烧声走本体 {@link VehicleSound}：客户端本地创建、跟随残骸实体、循环播放、
+         * 50 tick 淡入淡出；弹药爆响同样在客户端本地按段播放，距离与生命周期和燃烧声完全一致。
+         */
+        private void startCookoffSounds() {
+            if (previewInstance) {
                 return;
             }
-            float soundDistance = vehicle.getViewInfo() == null ? 1.0F : vehicle.getViewInfo().soundDistance;
-            if (!Float.isFinite(soundDistance) || soundDistance <= 0.0F) {
-                soundDistance = 1.0F;
-            }
+            float soundDistance = cookoffSoundDistance();
             // 调用本项目一次性资格缓存：真实履带坦克首次殉燃时播放，重建实例或重载资源不重播。
             if (vehicle instanceof TrackedVehicle
                     && RVP_ClientWreckDestructionState.claimAmmoBurst(vehicle)) {
@@ -193,23 +200,47 @@ public final class RVP_WreckCookoffController {
                 new VehicleSound(RVP_Sounds.VEHICLE_AMMO_BURST.get(),
                         1.0F, soundDistance, 1.0F, false, 0, false, false, vehicle.getId()).play();
             }
-            // 调用本体 VehicleSound：循环、跟随残骸、使用载具 sound_distance，并保留 50 tick 淡入淡出。
-            burningSound = new VehicleSound(RVP_Sounds.VEHICLE_FIRE_BURNING.get(),
-                    1.0F, soundDistance, 1.0F, true, 50, true, true, vehicle.getId());
-            burningSound.play();
-        }
-
-        /** 实例重新回到活动追踪状态时补建已完全淡出的声音，避免同一残骸叠加多条音轨。 */
-        private void ensureBurningSound() {
-            if (!previewInstance && (burningSound == null || burningSound.isStopped())) {
-                startBurningSound();
+            if (burningSound == null || burningSound.isStopped()) {
+                // 调用本体 VehicleSound：循环、跟随残骸、使用载具 sound_distance，并保留 50 tick 淡入淡出。
+                burningSound = new VehicleSound(RVP_Sounds.VEHICLE_FIRE_BURNING.get(),
+                        1.0F, soundDistance, 1.0F, true, 50, true, true, vehicle.getId());
+                burningSound.play();
+            }
+            if (ammoPops == null) {
+                // 调用本项目分段播放器：每段由事件随机选一个近音变体，段间随机静默 1～3 秒。
+                ammoPops = new AmmoPopsPlayback(soundDistance, vehicle.getId());
             }
         }
 
-        /** 停止当前燃烧声；VehicleSound 自己按 50 tick 淡出并跟随实体移除状态结束。 */
-        private void stopBurningSound() {
+        /** 读取本残骸的殉燃声音距离；缺失或非法时回退 1，与本体默认值一致。 */
+        private float cookoffSoundDistance() {
+            float soundDistance = vehicle.getViewInfo() == null ? 1.0F : vehicle.getViewInfo().soundDistance;
+            return Float.isFinite(soundDistance) && soundDistance > 0.0F ? soundDistance : 1.0F;
+        }
+
+        /** 每 tick 推进殉燃声音；燃烧声由本体 VehicleSound 自行循环，弹药爆响负责分段与静默调度。 */
+        private void tickCookoffSounds(long worldTick) {
+            if (!previewInstance && ammoPops != null) {
+                ammoPops.tick(Minecraft.getInstance(), worldTick);
+            }
+        }
+
+        /** 实例重新回到活动追踪状态时补建已完全淡出的声音，避免同一残骸叠加多条音轨。 */
+        private void ensureCookoffSounds() {
+            if (!previewInstance && (burningSound == null || burningSound.isStopped() || ammoPops == null)) {
+                startCookoffSounds();
+            }
+        }
+
+        /** 停止当前殉燃声音；燃烧声按 50 tick 淡出，弹药爆响立即停掉当前段，不遗留尾音。 */
+        private void stopCookoffSounds() {
             if (burningSound != null) {
                 burningSound.stop();
+            }
+            if (ammoPops != null) {
+                // 调用本项目分段播放器停声入口：非循环单段必须显式停止，否则尾部样本会继续播完。
+                ammoPops.stop(Minecraft.getInstance().getSoundManager());
+                ammoPops = null;
             }
         }
 
@@ -234,14 +265,14 @@ public final class RVP_WreckCookoffController {
         /** 实例重新进入追踪范围时恢复活动状态，不重复播放增长动画。 */
         private void resumeActive(long tick) {
             if (!isEnding()) {
-                ensureBurningSound();
+                ensureCookoffSounds();
                 return;
             }
             if (timedEnding || shouldStartTimedEnding(tick)) return;
             this.endingAt = Long.MIN_VALUE;
             this.endStartScale = 1;
             setLifecycleScale(1);
-            ensureBurningSound();
+            ensureCookoffSounds();
         }
 
         /** 判断结束收缩是否已经完成。 */
@@ -304,6 +335,66 @@ public final class RVP_WreckCookoffController {
             return Math.max(1L, Math.round(ticks));
         }
 
+    }
+
+    /**
+     * 殉燃弹药爆响的客户端本地分段播放。
+     *
+     * <p>每段使用本体 {@link VehicleSound} 跟随残骸、沿用载具 {@code view_info.sound_distance}，
+     * 具体变体由 {@code sounds.json} 的 {@code vehicle_ammo_pops} 事件在 4 个近音样本里随机选择；
+     * 一段播完后随机静默 1～3 秒再播下一段，避免同一残骸每 0.5 秒重复同一段爆裂声。</p>
+     */
+    private static final class AmmoPopsPlayback {
+        /** 提交播放后给声音引擎的启动宽限，单位 tick；宽限内 {@code isActive} 尚不可靠。 */
+        private static final int START_GRACE_TICKS = 2;
+
+        /** 声音距离因子，取载具 {@code view_info.sound_distance}，与持续燃烧声完全相同。 */
+        private final float soundDistance;
+        /** 残骸实体数字 ID，供本体 VehicleSound 跟随定位。 */
+        private final int entityId;
+        /** 当前段的播放实例；为 null 表示正处于段间静默。 */
+        private VehicleSound segment;
+        /** 当前段的提交 tick，用于启动宽限判定。 */
+        private long segmentStartedAt;
+        /** 下一段最早开始的世界 tick；首段在实例创建后的第一个 tick 立即开始。 */
+        private long nextSegmentAt;
+
+        private AmmoPopsPlayback(float soundDistance, int entityId) {
+            this.soundDistance = soundDistance;
+            this.entityId = entityId;
+        }
+
+        /** 每 tick 推进：段自然播完后安排静默，静默结束再随机播下一段。 */
+        private void tick(Minecraft minecraft, long worldTick) {
+            if (segment != null) {
+                if (worldTick - segmentStartedAt <= START_GRACE_TICKS
+                        || minecraft.getSoundManager().isActive(segment)) {
+                    return;
+                }
+                // 段自然结束：显式标记停止，让声音引擎把该 TickableSoundInstance 移出每帧 tick 列表，避免累积。
+                segment.stop();
+                segment = null;
+                // 调用本项目静默映射：段与段之间随机留 1～3 秒，避免同一残骸连续爆响。
+                nextSegmentAt = worldTick + resolveAmmoPopsSilenceTicks(currentLevel.random.nextInt());
+            }
+            if (worldTick < nextSegmentAt) {
+                return;
+            }
+            // 调用本体跟随声音实现：单段非循环、满音量，具体变体由 sounds.json 事件内部随机选择。
+            segment = new VehicleSound(RVP_Sounds.VEHICLE_AMMO_POPS.get(),
+                    1.0F, soundDistance, 1.0F, false, 0, false, false, entityId);
+            segmentStartedAt = worldTick;
+            segment.play();
+        }
+
+        /** 停止当前段并清空调度；非循环单段由声音引擎按样本长度自然结束，切实例时需要显式停声。 */
+        private void stop(SoundManager soundManager) {
+            if (segment != null) {
+                segment.stop();
+                soundManager.stop(segment);
+                segment = null;
+            }
+        }
     }
 
     private RVP_WreckCookoffController() {}
@@ -532,6 +623,12 @@ public final class RVP_WreckCookoffController {
         return LONG_SMOKE_DELAY_MIN_TICKS + Math.floorMod(randomSample, range);
     }
 
+    /** 将随机样本映射到包含边界的 20～60 tick 弹药爆响段间静默，供播放器和单元测试复用。 */
+    static int resolveAmmoPopsSilenceTicks(int randomSample) {
+        int range = AMMO_POPS_SILENCE_MAX_TICKS - AMMO_POPS_SILENCE_MIN_TICKS + 1;
+        return AMMO_POPS_SILENCE_MIN_TICKS + Math.floorMod(randomSample, range);
+    }
+
     /** 判断当前世界 tick 是否已达到该车记录的长程烟解锁 tick。 */
     static boolean isLongSmokeUnlockReached(long unlockTick, long currentTick) {
         return currentTick >= unlockTick;
@@ -565,7 +662,7 @@ public final class RVP_WreckCookoffController {
             // 到期由 end() 按原定时刻完成收缩；立即分支/未知状态不能保留旧预览实例。
             Instance existing = INSTANCES.get(vehicle.getUUID());
             if (existing != null) {
-                existing.stopBurningSound();
+                existing.stopCookoffSounds();
             }
             if (state == null || state.mode() == RVP_WreckDestructionState.Mode.IMMEDIATE) {
                 INSTANCES.remove(vehicle.getUUID());
@@ -580,7 +677,7 @@ public final class RVP_WreckCookoffController {
         if (instance == null || instance.vehicle != vehicle || instance.previewInstance != isPreview
                 || (instance.columns.isEmpty() && lastTick % 20 == 0)) {
             if (instance != null) {
-                instance.stopBurningSound();
+                instance.stopCookoffSounds();
             }
             instance = new Instance(vehicle, state);
             INSTANCES.put(vehicle.getUUID(), instance);
@@ -606,6 +703,8 @@ public final class RVP_WreckCookoffController {
         }
         // 调用本实例生命周期同步：增长阶段与挂点更新在同一 tick 生效。
         instance.updateLifecycleScale(lastTick);
+        // 调用本实例声音推进：弹药爆响按段随机播发，与燃烧声共用同一跟随距离和生命周期。
+        instance.tickCookoffSounds(lastTick);
     }
 
     /** 遍历结束后公平分配全局粒子预算，并移除本 tick 未出现的残骸。 */
@@ -613,7 +712,7 @@ public final class RVP_WreckCookoffController {
         INSTANCES.values().removeIf(instance -> {
             if (instance.seen != lastTick) {
                 // 未在本 tick 被客户端追踪到，进入结束收缩而不是立即消失。
-                instance.stopBurningSound();
+                instance.stopCookoffSounds();
                 if (instance.shouldStartTimedEnding(lastTick)) {
                     instance.startTimedEndingIfNeeded(lastTick);
                 } else {
@@ -624,7 +723,7 @@ public final class RVP_WreckCookoffController {
             instance.startTimedEndingIfNeeded(lastTick);
             instance.updateLifecycleScale(lastTick);
             if (!instance.isExpired(lastTick)) return false;
-            instance.stopBurningSound();
+            instance.stopCookoffSounds();
             if (instance.timedEnding && instance.previewInstance) {
                 // 定时殉燃已完整结束；保留终结标记，直到客户端世界清理，避免实体仍存活时重新创建实例。
                 UUID vehicleId = instance.vehicle.getUUID();
@@ -1102,7 +1201,7 @@ public final class RVP_WreckCookoffController {
     /** 客户端世界退出或资源重载时清空强引用。 */
     public static void clear() {
         // 调用本体 VehicleSound 的淡出入口，切世界或资源重载时不遗留旧残骸音轨。
-        INSTANCES.values().forEach(Instance::stopBurningSound);
+        INSTANCES.values().forEach(Instance::stopCookoffSounds);
         INSTANCES.clear();
         ORDERED.clear();
         COMPLETED.clear();

@@ -21,6 +21,12 @@ import net.minecraft.client.particle.Particle;
 public final class RVP_ClientActions implements RVP_IClientActions {
 
     @Override
+    public void acceptVehicleSound(org.ywzj.rvp.network.S2CVehicleSound message) {
+        // 调用本项目兜底声音播放器，未加载载具实体时也能按世界坐标播放。
+        org.ywzj.rvp.client.RVP_ClientVehicleSound.accept(message);
+    }
+
+    @Override
     public void acceptSmallCaliberSound(org.ywzj.rvp.network.S2CSmallCaliberSound message) {
         // 调用本项目客户端播放器，播放服务端确认的小口径声音。
         org.ywzj.rvp.client.RVP_ClientSmallCaliberSound.accept(message);

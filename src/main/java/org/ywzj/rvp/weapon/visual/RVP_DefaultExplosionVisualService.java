@@ -30,42 +30,47 @@ public final class RVP_DefaultExplosionVisualService {
     /** 大口径炮弹音效的严格阈值，单位毫米；恰好 16 mm 仍使用机枪音效。 */
     static final float CANNON_CALIBER_THRESHOLD_MM = 16.0F;
 
-    /** 空中起爆的高度门槛，单位格：爆心离地至少 35 格才生成 explosion 屏幕光源。 */
-    public static final double MIN_AIR_BURST_CLEARANCE = 35.0D;
-
     private static final RVP_NetworkVisualEventPublisher PUBLISHER = new RVP_NetworkVisualEventPublisher();
 
     private RVP_DefaultExplosionVisualService() {
     }
 
     /**
-     * 纯数值判定：爆心离地高度是否达到空中起爆门槛。
+     * 纯数值事实：爆心离地高度，单位格。
+     *
+     * <p>这里只计算“离地多少”，是否达到空中起爆门槛由客户端按自己的
+     * {@code airBurstClearance} 配置判定；非有限爆心按 0 处理，避免把 NaN 写进载荷。</p>
      *
      * @param explosionY 爆心世界 Y
      * @param groundY 该水平位置的地面高度（原版 heightmap 返回的“地面之上第一格”）
-     * @return 离地高度 ≥ {@link #MIN_AIR_BURST_CLEARANCE} 时为 true；非有限值一律 false
+     * @return 离地高度；负值表示爆心在地面以下（洞穴、山体内部）
      */
-    public static boolean isAirBurstAt(double explosionY, int groundY) {
-        if (!Double.isFinite(explosionY)) { return false; }
-        return explosionY - groundY >= MIN_AIR_BURST_CLEARANCE;
+    public static float clearanceAt(double explosionY, int groundY) {
+        if (!Double.isFinite(explosionY)) { return 0F; }
+        return (float) (explosionY - groundY);
     }
 
     /**
-     * 按真实地形判定一次起爆是否属于空中起爆；只有空中起爆才让客户端生成 explosion 光源。
+     * 取该水平位置的地面高度。
      *
-     * <p>用原版 {@link Heightmap.Types#MOTION_BLOCKING} 取地面高度：树叶、水面也挡住高度图，
-     * 因此在树冠正上方或水面上方不会因为“看起来高”而误判；地下爆心得到负的离地高度，
-     * 自然判为非空中起爆。</p>
+     * <p>用原版 {@link Heightmap.Types#MOTION_BLOCKING}：树叶、水面也挡住高度图，
+     * 因此在树冠正上方或水面上方不会因为“看起来高”而误判。</p>
      *
      * @param level 服务端世界
      * @param pos 爆心
+     * @return 地面之上第一格的 Y；世界或坐标无效时返回 0
      */
-    public static boolean isAirBurst(ServerLevel level, Vec3 pos) {
-        if (level == null || pos == null || !Double.isFinite(pos.y)) { return false; }
+    public static int groundHeightAt(ServerLevel level, Vec3 pos) {
+        if (level == null || pos == null) { return 0; }
         BlockPos center = BlockPos.containing(pos.x, pos.y, pos.z);
         // 调用原版高度图，避免额外扫描方块；区块在弹体起爆时必然已加载。
-        int groundY = level.getHeight(Heightmap.Types.MOTION_BLOCKING, center.getX(), center.getZ());
-        return isAirBurstAt(pos.y, groundY);
+        return level.getHeight(Heightmap.Types.MOTION_BLOCKING, center.getX(), center.getZ());
+    }
+
+    /** 本次爆炸的离地高度事实，单位格；门槛判定在客户端，服务端只提供数值。 */
+    public static float clearance(ServerLevel level, Vec3 pos) {
+        if (level == null || pos == null) { return 0F; }
+        return clearanceAt(pos.y, groundHeightAt(level, pos));
     }
 
     /**
@@ -116,8 +121,8 @@ public final class RVP_DefaultExplosionVisualService {
      */
     public static void spawn(ServerLevel level, Vec3 pos, float radius, RVP_EnumWeaponKind weaponKind,
                              @Nullable String explosionSound) {
-        // 调用统一入口：是否空中起爆由爆心离地高度决定（≥35 格），与武器或载具无关。
-        spawn(level, pos, radius, weaponKind, explosionSound, false, isAirBurst(level, pos));
+        // 调用统一入口：服务端只下发离地高度事实，是否建灯由客户端按 airBurstClearance 判定。
+        spawn(level, pos, radius, weaponKind, explosionSound, false, clearance(level, pos));
     }
 
     /**
@@ -132,12 +137,12 @@ public final class RVP_DefaultExplosionVisualService {
      */
     public static void spawn(ServerLevel level, Vec3 pos, float radius, RVP_EnumWeaponKind weaponKind,
                              @Nullable String explosionSound, boolean cannonSound) {
-        // 调用统一入口：空中起爆按爆心离地高度判定，命中地面/载具的爆点自然低于 35 格。
-        spawn(level, pos, radius, weaponKind, explosionSound, cannonSound, isAirBurst(level, pos));
+        // 调用统一入口：命中地面/载具的爆点离地≈0，会自然低于客户端门槛。
+        spawn(level, pos, radius, weaponKind, explosionSound, cannonSound, clearance(level, pos));
     }
 
     /**
-     * 发布一次默认爆炸视觉与声音事件，并标明是否空中起爆。
+     * 发布一次默认爆炸视觉与声音事件，并携带爆心离地高度事实。
      *
      * @param level 服务端世界
      * @param pos 服务端权威爆心
@@ -145,15 +150,15 @@ public final class RVP_DefaultExplosionVisualService {
      * @param weaponKind RVP 弹体行为类型，用于客户端选择默认爆炸音色
      * @param explosionSound 自定义爆炸音效事件 ID（可空）
      * @param cannonSound 是否使用大口径炮弹音效档案
-     * @param airBurst 是否空中起爆；false 时客户端不生成屏幕光源（照亮/光晕/核心/天空）
+     * @param clearance 爆心离地高度（格）；客户端用它与自己配置的 airBurstClearance 门槛比较
      */
     public static void spawn(ServerLevel level, Vec3 pos, float radius, RVP_EnumWeaponKind weaponKind,
-                             @Nullable String explosionSound, boolean cannonSound, boolean airBurst) {
+                             @Nullable String explosionSound, boolean cannonSound, float clearance) {
         RVP_VisualEffectEvent event = new RVP_VisualEffectEvent(
                 EFFECT_TYPE,
                 new ResourceLocation("rvp", "default"),
-                // 调用 RVP 默认爆炸事件编码器，把类型化武器分类、自定义音效与起爆性质写入受限公共载荷。
-                RVP_DefaultExplosionEventData.encode(weaponKind, explosionSound, cannonSound, airBurst),
+                // 调用 RVP 默认爆炸事件编码器，把类型化武器分类、自定义音效与离地高度写入受限公共载荷。
+                RVP_DefaultExplosionEventData.encode(weaponKind, explosionSound, cannonSound, clearance),
                 level.dimension(),
                 pos,
                 radius,
@@ -174,3 +179,4 @@ public final class RVP_DefaultExplosionVisualService {
         // 水中状态不进入事件参数：客户端按服务端权威 position 处的流体状态自行判定水花。
     }
 }
+

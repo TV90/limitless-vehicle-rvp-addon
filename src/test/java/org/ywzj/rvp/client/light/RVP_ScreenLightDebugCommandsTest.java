@@ -62,6 +62,8 @@ class RVP_ScreenLightDebugCommandsTest {
                 "rvplight set explosion coreRadiusScale 1", "rvplight set explosion coreHaloScale 2",
                 "rvplight set explosion coreShrink 0.5", "rvplight set explosion coreHaloRadius 3",
                 "rvplight reset explosion coreShrink", "rvplight reset explosion coreHaloScale",
+                "rvplight set global airBurstClearance 100", "rvplight set global airBurstClearance 12.5",
+                "rvplight status global airBurstClearance", "rvplight reset global airBurstClearance",
                 "rvplight set global skyDistance 2048", "rvplight status global skyDistance",
                 "rvplight set global ambientEnabled 0", "rvplight set global ambientWorldWeight 0.7",
                 "rvplight set global ambientMinStrength 0.1", "rvplight set global ambientCurve 2",
@@ -92,10 +94,13 @@ class RVP_ScreenLightDebugCommandsTest {
                 "rvplight set explosion coreRadiusScale 9", "rvplight set explosion coreHaloScale 9",
                 "rvplight set explosion coreHaloIntensity 60001", "rvplight set explosion haloIntensity 12",
                 "rvplight set global skyDistance -1", "rvplight set global skyDistance 32769",
-                "rvplight set explosion skyHoldTicks 41", "rvplight set explosion skyFadeTicks 641"}) {
+                "rvplight set explosion skyHoldTicks 41", "rvplight set explosion skyFadeTicks 641",
+                "rvplight set global airBurstClearance 32769", "rvplight set global airBurstClearance -1",
+                "rvplight set explosion airBurstClearance 35"}) {
             var parsed = dispatcher.parse(command, null);
             assertTrue(parsed.getReader().canRead(), command);
         }
     }
 }
+
 

@@ -35,7 +35,9 @@ public class RVP_Network {
     /** 协议 30：通用视觉事件增加可选的八方向冲击波形状；双端必须一同更新。 */
     /** 协议 31：新增 S2CDamageNumber（生物头顶伤害飘字）；旧客户端无法连新服。 */
     /** 协议 32：新增小口径划空与方块命中声音消息；客户端和服务端须同时更新。 */
-    private static final String PROTOCOL = "32";
+    /** 协议 33：新增不依赖实体追踪的导弹与殉燃声音消息；客户端和服务端须同时更新。 */
+    /** 协议 34：殉燃弹药爆响改为客户端本地跟随播放（移除 AMMO_POPS 与截止时刻）；发射声改为客户端本地优先，只向未追踪载具的玩家补发；双端必须一同更新。 */
+    private static final String PROTOCOL = "34";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "main"))
@@ -434,6 +436,12 @@ public class RVP_Network {
                 .encoder(S2CSmallCaliberSound::encode)
                 .decoder(S2CSmallCaliberSound::decode)
                 .consumerMainThread(S2CSmallCaliberSound::handle)
+                .add();
+        // 注册独立载具声音消息，服务端仅发布位置与时间，客户端经安全桥播放已有音频。
+        CHANNEL.messageBuilder(S2CVehicleSound.class, id++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(S2CVehicleSound::encode)
+                .decoder(S2CVehicleSound::decode)
+                .consumerMainThread(S2CVehicleSound::handle)
                 .add();
     }
 }

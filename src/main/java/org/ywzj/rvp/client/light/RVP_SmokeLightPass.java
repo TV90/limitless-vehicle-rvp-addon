@@ -61,9 +61,10 @@ public final class RVP_SmokeLightPass {
                 DefaultVertexFormat.POSITION_TEX_COLOR), loaded -> shader = loaded);
     }
 
-    /** 无环境灯、环境光关闭或热成像时不收集，不依赖粒子数量生成光源。 */
+    /** 无环境灯、环境光或烟雾受光开关关闭、热成像时不收集，不依赖粒子数量生成光源。 */
     private static boolean wanted() {
-        return shader != null && RVP_LightingConfig.screenEnabled() && RVP_LightingConfig.intensity() > 0
+        return shader != null && RVP_LightingConfig.screenEnabled() && RVP_LightingConfig.smokeLightEnabled()
+                && RVP_LightingConfig.intensity() > 0
                 && RVP_LightingConfig.maxLights() > 0 && RVP_ScreenLightManager.INSTANCE.hasActiveLights()
                 && RVP_LightingCompatibility.disabledReason().isEmpty();
     }

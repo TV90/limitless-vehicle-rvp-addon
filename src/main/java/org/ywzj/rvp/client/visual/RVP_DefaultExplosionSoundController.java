@@ -25,6 +25,8 @@ final class RVP_DefaultExplosionSoundController {
     static final double IMMEDIATE_SOUND_DISTANCE = 24.0D;
     /** 至少该距离内播放近音 */
     static final double CLOSE_SOUND_DISTANCE = 200.0D;
+    /** 火箭弹、导弹、航弹与完整载具击毁爆炸的近音边界，单位格；超过即改用远音。 */
+    static final double LARGE_EXPLOSION_NEAR_DISTANCE = 512.0D;
     /** 爆炸事件所属客户端世界。 */
     private final ClientLevel level;
     /** 服务端权威爆心，用于保留声音空间方向。 */
@@ -139,7 +141,8 @@ final class RVP_DefaultExplosionSoundController {
     }
 
     /**
-     * 按听者距离选择声音档位；炮弹档位固定使用 200/512/3560 格三段，其他档位保留旧逻辑。
+     * 按听者距离选择声音档位；炮弹档位固定使用 200/512/3560 格三段，
+     * 火箭弹、导弹、航弹与完整载具击毁固定使用 512 格近远切换，机枪档保留按爆炸半径扩张的近音范围。
      */
     static SoundDistanceBand resolveSoundBand(SoundProfile profile, double listenerDistance,
                                                float explosionRadius) {
@@ -156,8 +159,10 @@ final class RVP_DefaultExplosionSoundController {
             }
             return SoundDistanceBand.VERY_FAR;
         }
-        if (profile == SoundProfile.VEHICLE) {
-            return safeDistance <= CLOSE_SOUND_DISTANCE
+        if (profile == SoundProfile.VEHICLE || profile == SoundProfile.ROCKET
+                || profile == SoundProfile.MISSILE || profile == SoundProfile.BOMB) {
+            // 调用固定近音边界：这四类不再随爆炸半径扩大近音范围，只按 512 格切换近/远音。
+            return safeDistance <= LARGE_EXPLOSION_NEAR_DISTANCE
                     ? SoundDistanceBand.NEAR : SoundDistanceBand.FAR;
         }
         return safeDistance <= resolveNearSoundDistance(explosionRadius)
@@ -211,8 +216,8 @@ final class RVP_DefaultExplosionSoundController {
         MISSILE("mchr_explosion_missile_near", "mchr_explosion_missile_far", 0.90F, 3560.0D, 1),
         /** 航弹：最低沉且传播最远，3560 格。 */
         BOMB("mchr_explosion_bomb_near", "mchr_explosion_bomb_far", 0.80F, 3560.0D, 1),
-        /** 完整载具击毁：200 格内近音，超过 200 格使用远音，最多传播 1536 格。 */
-        VEHICLE("vehicle_explosion_near", "vehicle_explosion_far", 1.00F, 1536.0D, 1);
+        /** 完整载具击毁：512 格内近音，超过 512 格使用远音，最多传播 3560 格。 */
+        VEHICLE("vehicle_explosion_near", "vehicle_explosion_far", 1.00F, 3560.0D, 1);
 
         /** 近距离声音事件资源 ID。 */
         private final ResourceLocation nearSound;

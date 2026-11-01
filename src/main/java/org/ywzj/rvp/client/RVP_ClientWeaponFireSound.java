@@ -33,6 +33,7 @@ import org.ywzj.vehicle.entity.vehicle.WheeledVehicle;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 import org.ywzj.vehicle.vehicle.weapon.VehicleMultiWeapons;
+import org.ywzj.vehicle.vehicle.weapon.VehicleMissile;
 import org.ywzj.vehicle.vehicle.weapon.VehicleRocket;
 import org.ywzj.vehicle.vehicle.weapon.VehicleWeaponAgent;
 
@@ -41,7 +42,7 @@ import java.util.Objects;
 
 /**
  * 客户端武器发射声音管理：优先保留载具包自定义声音，其次接管已实现的默认声音。
- * 当前接管轮式和履带式载具的火箭发射；其余声音继续使用现有播放链。
+ * 地面大口径火箭与导弹默认声都在本地开火完成事件播放；服务端只向追踪范围外的听者补发导弹声。
  */
 @Mod.EventBusSubscriber(value = Dist.CLIENT, modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class RVP_ClientWeaponFireSound {
@@ -78,6 +79,24 @@ public final class RVP_ClientWeaponFireSound {
      */
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void onVehicleFirePost(VehicleFireEvent.Post event) {
+        // 调用客户端本地默认发射声：本客户端已播放时只取消同一发本体声，避免叠音。
+        // 追踪范围外的听者由服务端兜底声音消息播放，二者不会在同一条客户端上重复。
+        if (RVP_ClientVehicleSound.playLocalLaunch(event)) {
+            AbstractVehicleWeapon<?> missile = RVP_WeaponResolveHelper.unwrap(event.getWeapon());
+            SoundEvent original = getOriginalFireSound(event.getWeapon());
+            if (original != null) {
+                if (missile instanceof VehicleMissile && missile.getWeaponUnit().getColdLaunchTimeTick() > 0) {
+                    // 调用延时抑制入口：本体冷发射会等待后才取当前炮口坐标，必须跟随发射站匹配。
+                    RVP_ClientCameraRelativeFireSound.registerDelayedPending(original.getLocation(),
+                            missile.getWeaponUnit());
+                } else {
+                    // 调用既有一次性抑制队列，与本体实际播放位置匹配，不影响其他声音。
+                    RVP_ClientCameraRelativeFireSound.registerPending(original.getLocation(),
+                            missile.getWeaponUnit().worldPivotPosition());
+                }
+            }
+            return;
+        }
         // 调用本管理器选择发声武器：失败时允许现有声音处理器和本体正常工作。
         AbstractVehicleWeapon<?> weapon = resolveGroundRocket(event);
         if (weapon == null) {
@@ -116,7 +135,7 @@ public final class RVP_ClientWeaponFireSound {
     /** 供现有开火声音处理器判断是否应让出此次播放。 */
     static boolean willTakeOver(VehicleFireEvent.Post event) {
         // 调用同一个选择入口，保证让出条件与实际播放条件一致。
-        return resolveGroundRocket(event) != null;
+        return RVP_ClientVehicleSound.willTakeOver(event) || resolveGroundRocket(event) != null;
     }
 
     /** 返回应由 RVP 接管的实际火箭武器；不满足条件时返回 null。 */
@@ -145,12 +164,7 @@ public final class RVP_ClientWeaponFireSound {
 
         // 调用本体武器数据获取 ID，再从客户端表现管理器读取该武器配置的全部声音。
         ResourceLocation weaponId = weapon.getData().getWeaponId();
-        List<ResourceLocation> configuredSounds = weaponId == null ? List.of()
-                : ClientAssetsManager.INSTANCE.getWeaponDisplay(weaponId)
-                .map(BaseDisplay::getSoundEvents)
-                .map(sounds -> sounds.values().stream().filter(Objects::nonNull)
-                        .map(SoundEvent::getLocation).toList())
-                .orElseGet(List::of);
+        List<ResourceLocation> configuredSounds = getConfiguredSounds(weaponId);
         // 调用本项目口径解析：优先根级 caliber，根级缺失时才回退 effects_data.caliber。
         Float caliberMm = resolveRocketCaliber(weapon);
         // 音频不存在时不接管，避免把已配置的本体声音抑制掉。
@@ -159,6 +173,16 @@ public final class RVP_ClientWeaponFireSound {
         // 调用本项目声音策略：只有解析后的有效口径达到 220 mm 且无自定义声音时才接管发射声。
         return RVP_WeaponFireSoundPolicy.useGroundRocketSound(groundVehicle, rocketWeapon,
                 caliberMm, sampleAvailable, configuredSounds) ? weapon : null;
+    }
+
+    /** 读取武器表现文件里的全部声音；火箭和导弹共用同一套自定义声音保护规则。 */
+    static List<ResourceLocation> getConfiguredSounds(@Nullable ResourceLocation weaponId) {
+        // 调用本体客户端表现管理器，缺少表现文件时返回空表，允许 RVP 默认声接管。
+        return weaponId == null ? List.of() : ClientAssetsManager.INSTANCE.getWeaponDisplay(weaponId)
+                .map(BaseDisplay::getSoundEvents)
+                .map(sounds -> sounds.values().stream().filter(Objects::nonNull)
+                        .map(SoundEvent::getLocation).toList())
+                .orElseGet(List::of);
     }
 
     /**

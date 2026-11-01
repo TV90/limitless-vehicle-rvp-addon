@@ -96,7 +96,7 @@ F8在“环境光与光晕总设置”中提供相同四项，支持现有预设
 
 照亮和光晕共同使用原始出生年龄；原曲线在最后20%照亮寿命加一段平滑归零。其它曲线只替换光晕的亮度变化；爆炸默认先高亮保持，再独立平滑归零。低帧率或高帧率不改变游戏刻寿命；迟包扣除已过去的年龄；调参不重置出生时钟。效果包装器等待照亮与光晕均结束，延长光晕不会被原32刻提前取消。
 
-> **爆炸光源只在空中起爆时生成。** 服务端发布爆炸事件时用原版高度图取该水平位置的地面高度，**爆心离地 ≥ 35 格**才视为空中起爆并生成完整光源（照亮 + 光晕 + 白热核心 + 天空染色）；不足 35 格（含命中地面/载具/水面、地下爆心）只保留粒子、烟雾与声音。判定结果写入事件载荷的 `air_burst` 字段，客户端用 `shouldEmitScreenLight(flash, payload)` 统一决定是否建灯；缺失该字段的旧事件按“空中起爆”处理。门槛常量见 `RVP_DefaultExplosionVisualService.MIN_AIR_BURST_CLEARANCE`（35 格，按 `MOTION_BLOCKING` 高度图计算，树叶与水面同样算作地面）。温压、威尔逊等其它视觉工厂的附加光仍走各自事件，不受这条规则约束。
+> **爆炸光源只在空中起爆时生成。** 服务端发布爆炸事件时用原版高度图（`MOTION_BLOCKING`，树叶与水面同样算地面）算出**爆心离地高度**，作为事实写进事件载荷的 `clearance` 字段（单位格，可为负）；客户端用本机门槛 `global airBurstClearance`（默认 **100 格**，可在 `config/ywzj_rvp-lighting-client.toml` 或 `/rvplight set global airBurstClearance` 调整，**0 表示不限制**）比较：`离地高度 ≥ 门槛` 才生成完整光源（照亮 + 光晕 + 白热核心 + 天空染色），否则只保留粒子、烟雾与声音。门槛为 0 时贴地爆炸、洞穴内爆炸也会建灯。旧载荷没有 `clearance` 时回退旧的 `air_burst` 布尔（缺失按“空中起爆”）；温压、威尔逊等其它视觉工厂的附加光仍走各自事件，不受这条规则约束。
 
 ### 光晕亮度曲线：global / explosion / muzzle / engine
 
@@ -279,11 +279,12 @@ F8在“环境光与光晕总设置”中提供相同四项，支持现有预设
 | `distanceScale` | 1（0.0001～128） | 乘在上面的倍率，最终 1～32768 | `/rvplight set global distanceScale` |
 | 单盏地面光允许距离 | `maxDistance + visibleRadius` | `visibleRadius` 取照亮/光晕/核心中仍有效的一路 | `RVP_ScreenLightBudget` |
 | `skyDistance` | **2048 格**（0～32768） | 天空染色专用；0 = 沿用上面的普通预算 | `/rvplight set global skyDistance` |
+| `airBurstClearance` | **100 格**（0～32768，允许小数） | 爆炸屏幕光源的离地高度门槛；0 = 不限制（贴地爆炸也建灯） | `/rvplight set global airBurstClearance` / TOML `airBurstClearance` |
 | 单灯半径上限 | 8192 格 | 照亮/光晕半径调参后的硬上限 | `RVP_LightRuntimeTuning.MAX_TUNED_RADIUS` |
 | 每帧灯数 / 跟踪条目 | 8 / 128 | 超出按“近处优先 + 覆盖评分”截断，或淘汰最旧短光 | `RVP_ScreenLightBudget` / `RVP_ScreenLightManager` |
 | 遮挡几何 | 每灯 64³（±32 格） | 32 格之外没有方块遮挡判定 | `RVP_LightGeometryPass` |
 | 视觉事件广播 | **8192 格** | 服务端把爆炸等视觉/声音事件发给玩家的范围；JSON `broadcast_range` 默认同值 | `RVP_VisualEffectData` / `RVP_DefaultExplosionVisualService` |
-| 爆炸声音传播 | 炮弹·火箭·导弹·航弹 **3560 格**；机枪 512；载具击毁 1536 | 超过上限不播放；按声速延迟 | `RVP_DefaultExplosionSoundController` |
+| 爆炸声音传播 | 炮弹·火箭·导弹·航弹·载具击毁 **3560 格**；机枪 512 | 火箭／导弹／航弹／载具击毁统一 512 格近远切换；超过上限不播放；按声速延迟 | `RVP_DefaultExplosionSoundController` |
 | 喷焰 / 体积尾烟 | 无距离上限 | 仅视锥裁剪 + 可见 128 喷焰 / 2048 烟段 | `RVP_RocketPlumeParameters` / `RVP_RocketTrailParameters` |
 | 冲击波 | 启用门槛 `radius ≥ 8`；半径上限 2048 格；广播 ≥8192 | 自动冲击波 | `RVP_AutomaticShockwaveService` / `RVP_ShockwaveRuntimeTuning` |
 | 客户端效果实例 | 24 个活动 / 4 个复杂 | 超出时关闭最旧效果（会连带取消其光源） | `RVP_ClientVisualEffectDispatcher` |

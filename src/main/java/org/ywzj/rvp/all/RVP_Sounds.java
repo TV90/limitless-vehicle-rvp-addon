@@ -69,6 +69,9 @@ public final class RVP_Sounds {
     /** 地面载具残骸殉燃循环声音。 */
     public static final RegistryObject<SoundEvent> VEHICLE_FIRE_BURNING =
             register("vehicle_fire_burning");
+    /** 地面载具残骸殉燃期间追加的循环弹药爆响；与持续燃烧声同一套客户端本地跟随播放。 */
+    public static final RegistryObject<SoundEvent> VEHICLE_AMMO_POPS =
+            register("vehicle_ammo_pops");
 
     /** 热焰弹抛洒音效（assets/rvp/sounds/misc/flare.ogg）。 */
     public static final RegistryObject<SoundEvent> COUNTERMEASURE_FLARE = register("countermeasure_flare");

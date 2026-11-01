@@ -41,4 +41,13 @@ class RVP_WreckCookoffLifecycleTest {
         assertTrue(RVP_WreckCookoffController.isLongSmokeUnlockReached(130, 130));
         assertTrue(!RVP_WreckCookoffController.isLongSmokeUnlockReached(130, 129));
     }
+
+    @Test
+    void ammoPopsSilenceStaysBetweenOneAndThreeSeconds() {
+        // 调用本项目弹药爆响段间静默映射，确认 20～60 tick 边界包含两端。
+        assertEquals(20, RVP_WreckCookoffController.resolveAmmoPopsSilenceTicks(0));
+        assertEquals(60, RVP_WreckCookoffController.resolveAmmoPopsSilenceTicks(40));
+        assertEquals(20, RVP_WreckCookoffController.resolveAmmoPopsSilenceTicks(41));
+        assertEquals(60, RVP_WreckCookoffController.resolveAmmoPopsSilenceTicks(-1));
+    }
 }

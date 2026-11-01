@@ -4527,7 +4527,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
      * 触发爆炸，并可选发布实体直击或近炸空中目标后的导弹视觉碎片。
      *
      * <p>“是否空中起爆”不在这里判定：发布默认爆炸事件时按爆心真实离地高度计算
-     * （见 {@code RVP_DefaultExplosionVisualService#isAirBurst}），命中与空爆走同一条链。</p>
+     * （见 {@code RVP_DefaultExplosionVisualService#clearance}），命中与空爆走同一条链。</p>
      *
      * @param impactTarget 实体直击或近炸时的碰撞根目标；普通引信路径为空
      * @param impactVelocity 实体直击或近炸瞬间的导弹速度；普通引信路径为空
@@ -4658,7 +4658,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             boolean cannonSound = RVP_DefaultExplosionVisualService.shouldUseCannonSound(
                     weaponKind, resolveWeaponConfig());
             // 调用 RVP 默认爆炸发布端，把类型化武器分类、自定义爆炸音效与炮音效标记交给客户端；
-            // 发布端按爆心真实离地高度决定是否生成 explosion 光源（≥35 格才建灯）。
+            // 发布端只下发爆心离地高度；是否建灯由客户端 airBurstClearance 门槛决定。
             RVP_DefaultExplosionVisualService.spawn(defaultVisualLevel, pos, radius, weaponKind,
                     detonateData == null ? null : detonateData.getExplosionData().getExplosionSound(),
                     cannonSound);
@@ -5945,3 +5945,4 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         }
     }
 }
+

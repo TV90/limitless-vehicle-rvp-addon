@@ -1,6 +1,8 @@
 package org.ywzj.rvp.client.visual;
 
 import org.junit.jupiter.api.Test;
+import org.ywzj.rvp.client.visual.RVP_DefaultExplosionSoundController.SoundDistanceBand;
+import org.ywzj.rvp.client.visual.RVP_DefaultExplosionSoundController.SoundProfile;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -51,7 +53,7 @@ class RVP_DefaultExplosionSoundControllerTest {
                 RVP_DefaultExplosionSoundController.resolveSoundBand(cannon, 512.01D, 4.0F));
         assertEquals(RVP_DefaultExplosionSoundController.SoundDistanceBand.VERY_FAR,
                 RVP_DefaultExplosionSoundController.resolveSoundBand(cannon, 1536.0D, 4.0F));
-        // 炮弹/火箭/导弹/航弹的最大传播距离已放宽到 3560 格；载具击毁仍保持 1536 格。
+        // 炮弹/火箭/导弹/航弹/载具击毁的最大传播距离均为 3560 格。
         assertEquals(RVP_DefaultExplosionSoundController.SoundDistanceBand.VERY_FAR,
                 RVP_DefaultExplosionSoundController.resolveSoundBand(cannon, 3560.0D, 4.0F));
         assertEquals(RVP_DefaultExplosionSoundController.SoundDistanceBand.OUT_OF_RANGE,
@@ -64,18 +66,36 @@ class RVP_DefaultExplosionSoundControllerTest {
     }
 
     @Test
-    void vehicleSoundUsesTwoHundredBlockNearBoundaryAnd1536BlockMaximumRange() {
-        RVP_DefaultExplosionSoundController.SoundProfile vehicle =
-                RVP_DefaultExplosionSoundController.SoundProfile.VEHICLE;
-        assertEquals(RVP_DefaultExplosionSoundController.SoundDistanceBand.NEAR,
-                RVP_DefaultExplosionSoundController.resolveSoundBand(vehicle, 200.0D, 100.0F));
-        assertEquals(RVP_DefaultExplosionSoundController.SoundDistanceBand.FAR,
-                RVP_DefaultExplosionSoundController.resolveSoundBand(vehicle, 200.01D, 100.0F));
-        assertEquals(RVP_DefaultExplosionSoundController.SoundDistanceBand.FAR,
-                RVP_DefaultExplosionSoundController.resolveSoundBand(vehicle, 1536.0D, 100.0F));
-        assertEquals(RVP_DefaultExplosionSoundController.SoundDistanceBand.OUT_OF_RANGE,
-                RVP_DefaultExplosionSoundController.resolveSoundBand(vehicle, 1536.01D, 100.0F));
-        assertEquals(1536.0D, vehicle.maximumRange());
+    void rocketMissileAndBombSwitchAtFiveHundredTwelveBlocksRegardlessOfBlastRadius() {
+        for (SoundProfile profile : new SoundProfile[]{SoundProfile.ROCKET, SoundProfile.MISSILE,
+                SoundProfile.BOMB}) {
+            // 调用固定近音边界：512 格含在近音内，其外使用远音。
+            assertEquals(SoundDistanceBand.NEAR,
+                    RVP_DefaultExplosionSoundController.resolveSoundBand(profile, 0.0D, 4.0F));
+            assertEquals(SoundDistanceBand.NEAR,
+                    RVP_DefaultExplosionSoundController.resolveSoundBand(profile, 512.0D, 4.0F));
+            assertEquals(SoundDistanceBand.FAR,
+                    RVP_DefaultExplosionSoundController.resolveSoundBand(profile, 512.01D, 4.0F));
+            // 大当量爆炸半径不再扩大近音范围，只按固定 512 格切换。
+            assertEquals(SoundDistanceBand.FAR,
+                    RVP_DefaultExplosionSoundController.resolveSoundBand(profile, 600.0D, 100.0F));
+            assertEquals(3560.0D, profile.maximumRange());
+            assertEquals(SoundDistanceBand.OUT_OF_RANGE,
+                    RVP_DefaultExplosionSoundController.resolveSoundBand(profile, 3560.01D, 100.0F));
+        }
     }
 
+    @Test
+    void vehicleSoundUsesFiveHundredTwelveBlockNearBoundaryAnd3560BlockMaximumRange() {
+        SoundProfile vehicle = SoundProfile.VEHICLE;
+        assertEquals(SoundDistanceBand.NEAR,
+                RVP_DefaultExplosionSoundController.resolveSoundBand(vehicle, 512.0D, 100.0F));
+        assertEquals(SoundDistanceBand.FAR,
+                RVP_DefaultExplosionSoundController.resolveSoundBand(vehicle, 512.01D, 100.0F));
+        assertEquals(SoundDistanceBand.FAR,
+                RVP_DefaultExplosionSoundController.resolveSoundBand(vehicle, 3560.0D, 100.0F));
+        assertEquals(SoundDistanceBand.OUT_OF_RANGE,
+                RVP_DefaultExplosionSoundController.resolveSoundBand(vehicle, 3560.01D, 100.0F));
+        assertEquals(3560.0D, vehicle.maximumRange());
+    }
 }

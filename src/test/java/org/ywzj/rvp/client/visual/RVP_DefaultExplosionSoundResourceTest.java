@@ -54,6 +54,12 @@ class RVP_DefaultExplosionSoundResourceTest {
                 "ywzj_rvp:defaultexplosion/vehicle_exp/burst/ammo_burst-001",
                 "ywzj_rvp:defaultexplosion/vehicle_exp/burst/ammo_burst-002",
                 "ywzj_rvp:defaultexplosion/vehicle_exp/burst/ammo_burst-003"));
+        // 殉燃弹药爆响改为与燃烧声同一套客户端本地循环，只引用近音文件。
+        assertEventContains(sounds, "vehicle_ammo_pops", List.of(
+                "ywzj_rvp:defaultexplosion/vehicle_exp/ammopops/near/ammo_crack-001",
+                "ywzj_rvp:defaultexplosion/vehicle_exp/ammopops/near/ammo_crack-002",
+                "ywzj_rvp:defaultexplosion/vehicle_exp/ammopops/near/ammo_crack-003",
+                "ywzj_rvp:defaultexplosion/vehicle_exp/ammopops/near/ammo_crack-004"));
     }
 
     @Test

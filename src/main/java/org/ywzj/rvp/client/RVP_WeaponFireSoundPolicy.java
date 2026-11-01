@@ -35,6 +35,16 @@ final class RVP_WeaponFireSoundPolicy {
                 || !defaultSoundAvailable) {
             return false;
         }
+        // 调用统一优先级判断，使火箭与新增导弹默认声遵守同一套自定义声音保护规则。
+        return allowsDefaultSound(defaultSoundAvailable, configuredSounds);
+    }
+
+    /** 任意非本体声音均保护整套武器声音；缺少可用默认音频时必须让出原播放链。 */
+    static boolean allowsDefaultSound(boolean defaultSoundAvailable,
+                                      @Nullable Iterable<ResourceLocation> configuredSounds) {
+        if (!defaultSoundAvailable) {
+            return false;
+        }
         if (configuredSounds != null) {
             for (ResourceLocation sound : configuredSounds) {
                 if (sound != null && !VEHICLE_NAMESPACE.equals(sound.getNamespace())) {

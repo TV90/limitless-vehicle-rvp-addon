@@ -29,17 +29,17 @@ class RVP_DefaultExplosionVisualServiceTest {
     }
 
     @Test
-    void airBurstRequiresThirtyFiveBlocksOfClearanceAboveGround() {
-        // 恰好 35 格算空中起爆；差 0.1 格就不建灯；地下爆心得到负离地高度同样不建灯。
-        assertTrue(RVP_DefaultExplosionVisualService.isAirBurstAt(99.0D, 64));
-        assertTrue(RVP_DefaultExplosionVisualService.isAirBurstAt(100.0D, 65));
-        assertFalse(RVP_DefaultExplosionVisualService.isAirBurstAt(98.9D, 64));
-        assertFalse(RVP_DefaultExplosionVisualService.isAirBurstAt(64.0D, 64));
-        assertFalse(RVP_DefaultExplosionVisualService.isAirBurstAt(40.0D, 64));
-        // 非有限值一律按非空中起爆，不能把异常坐标当成空爆。
-        assertFalse(RVP_DefaultExplosionVisualService.isAirBurstAt(Double.NaN, 64));
-        assertFalse(RVP_DefaultExplosionVisualService.isAirBurstAt(Double.POSITIVE_INFINITY, 64));
-        assertEquals(35.0D, RVP_DefaultExplosionVisualService.MIN_AIR_BURST_CLEARANCE);
+    void clearanceIsTheOnlyFactSentToTheClient() {
+        // 服务端只算离地高度事实：门槛（默认100格）由客户端配置决定，不在服务端判定。
+        assertEquals(35F, RVP_DefaultExplosionVisualService.clearanceAt(99.0D, 64), 0.00001F);
+        assertEquals(0F, RVP_DefaultExplosionVisualService.clearanceAt(64.0D, 64), 0.00001F);
+        assertEquals(-24F, RVP_DefaultExplosionVisualService.clearanceAt(40.0D, 64), 0.00001F);
+        // 非有限坐标按 0 处理，避免把 NaN 写进事件载荷。
+        assertEquals(0F, RVP_DefaultExplosionVisualService.clearanceAt(Double.NaN, 64), 0.00001F);
+        assertEquals(0F, RVP_DefaultExplosionVisualService.clearanceAt(Double.POSITIVE_INFINITY, 64), 0.00001F);
+        // 世界或坐标缺失时返回 0，不抛异常。
+        assertEquals(0, RVP_DefaultExplosionVisualService.groundHeightAt(null, null));
+        assertEquals(0F, RVP_DefaultExplosionVisualService.clearance(null, null), 0.00001F);
     }
 
     @Test

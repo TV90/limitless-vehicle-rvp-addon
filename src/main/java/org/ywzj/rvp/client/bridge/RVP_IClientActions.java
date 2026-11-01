@@ -7,6 +7,9 @@ import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 /** 公共弹体可安全调用的客户端动作接口；服务端实现不引用任何纯客户端类型。 */
 public interface RVP_IClientActions {
 
+    /** 接收未追踪载具的导弹发射声兜底消息；专用服务端实现为空操作。 */
+    void acceptVehicleSound(org.ywzj.rvp.network.S2CVehicleSound message);
+
     /** 接收服务端小口径划空或方块命中声；专用服务端实现为空操作。 */
     void acceptSmallCaliberSound(org.ywzj.rvp.network.S2CSmallCaliberSound message);
 

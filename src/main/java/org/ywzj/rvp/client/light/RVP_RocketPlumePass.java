@@ -32,8 +32,10 @@ final class RVP_RocketPlumePass {
                 DefaultVertexFormat.POSITION), loaded -> shader = loaded);
     }
 
-    /** 新程序可用且代码总开关开启，才申请相关逐帧工作。 */
-    static boolean available() { return shader != null && RVP_RocketPlumeParameters.ENABLED; }
+    /** 新程序可用、代码总开关开启且客户端配置允许喷焰时，才申请相关逐帧工作。 */
+    static boolean available() {
+        return shader != null && RVP_RocketPlumeParameters.ENABLED && RVP_LightingConfig.plumeEnabled();
+    }
 
     /** 包围完整喷流并补足极远处的像素覆盖，不按环境灯距离截掉可见的远端发动机。 */
     static RVP_PressureWaveGeometry.Bounds bounds(RVP_RocketPlume plume, Matrix4f view,

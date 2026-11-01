@@ -194,6 +194,15 @@
       }
     ]
   },
+  "vehicle_ammo_pops": {
+    "subtitle": "subtitles.ywzj_rvp.explosion",
+    "sounds": [
+      "ywzj_rvp:defaultexplosion/vehicle_exp/ammopops/near/ammo_crack-001",
+      "ywzj_rvp:defaultexplosion/vehicle_exp/ammopops/near/ammo_crack-002",
+      "ywzj_rvp:defaultexplosion/vehicle_exp/ammopops/near/ammo_crack-003",
+      "ywzj_rvp:defaultexplosion/vehicle_exp/ammopops/near/ammo_crack-004"
+    ]
+  },
   "countermeasure_flare": {
     "subtitle": "subtitles.rvp.countermeasure_flare",
     "sounds": [

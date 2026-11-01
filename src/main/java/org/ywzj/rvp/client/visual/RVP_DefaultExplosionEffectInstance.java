@@ -24,20 +24,23 @@ final class RVP_DefaultExplosionEffectInstance implements RVP_ClientVisualEffect
         org.ywzj.rvp.client.light.RVP_ScreenLightManager manager = org.ywzj.rvp.client.light.RVP_ScreenLightManager.INSTANCE;
         // 调用世界检查与短光登记，startGameTime 自动扣除网络延迟。
         manager.beginWorld(level, level.getGameTime());
-        // 调用唯一的光源判定：只有“允许闪光 + 服务端标记空中起爆”才建灯；
-        // 地面/命中起爆保留粒子、烟雾与声音，但不再产生照亮、光晕、白热核心与天空染色。
+        // 调用唯一的光源判定：允许闪光、且爆心离地高度达到本机门槛才建灯；
+        // 门槛取客户端 TOML/调参（默认100格，0=不限制），服务端只下发离地高度事实。
+        float clearanceThreshold = org.ywzj.rvp.config.RVP_LightingConfig.airBurstClearance();
         boolean emitLight = org.ywzj.rvp.weapon.visual.RVP_DefaultExplosionEventData
-                .shouldEmitScreenLight(event.flash(), event.canonicalPresetDataJson());
+                .shouldEmitScreenLight(event.flash(), event.canonicalPresetDataJson(), clearanceThreshold);
         lightHandle = emitLight ? manager.addTransient(event.position(),
                 org.ywzj.rvp.client.light.RVP_LightSourceType.EXPLOSION, null, parameters,
                 event.startGameTime()) : 0;
         // 调用天空散射追踪：未达离地高度门槛不建灯是预期行为，单独记录避免与“光源被剔除”混淆。
         if (!emitLight) {
+            // 调用载荷里的离地高度事实，把“差多少格”写进日志，便于直接对照 airBurstClearance。
+            Float clearance = org.ywzj.rvp.weapon.visual.RVP_DefaultExplosionEventData
+                    .decodeClearance(event.canonicalPresetDataJson());
             org.ywzj.rvp.client.light.RVP_SkyScatterTrace.lightSkipped(event.position(),
-                    event.flash()
-                            ? "爆心离地不足 " + org.ywzj.rvp.weapon.visual.RVP_DefaultExplosionVisualService
-                                    .MIN_AIR_BURST_CLEARANCE + " 格，仅空中起爆生成爆炸光源"
-                            : "事件未允许闪光");
+                    !event.flash() ? "事件未允许闪光"
+                            : clearance == null ? "旧事件缺少离地高度，按旧 air_burst 标记判定"
+                            : "爆心离地 " + clearance + " 格，低于门槛 " + clearanceThreshold + " 格");
         }
         // 调用天空散射追踪，记录光源是否真的登记成功；handle=0 后不会再有任何帧日志。
         org.ywzj.rvp.client.light.RVP_SkyScatterTrace.lightRegistered(event.position(), lightHandle,

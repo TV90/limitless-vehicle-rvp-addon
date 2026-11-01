@@ -112,6 +112,22 @@ class RVP_ScreenSpaceTuningModuleTest {
     }
 
     @Test
+    void airBurstClearanceDefaultsToTomlAndAllowsDecimalOverrides() {
+        RVP_TuningRegistry registry = registry();
+        RVP_TuningOption option = registry.options().get("screen_space/global/airBurstClearance");
+        // 调用客户端 TOML 原值：默认100格，面板显示的默认值必须与 TOML 一致。
+        assertEquals(100, option.value());
+        // 调用真实写入，确认允许小数并即时生效；reset 后回到 TOML 值。
+        option.set(12.5);
+        assertEquals(12.5F, RVP_LightRuntimeTuning.get(RVP_LightRuntimeTuning.Group.global,
+                RVP_LightRuntimeTuning.Parameter.airBurstClearance), 0.00001F);
+        option.reset();
+        assertEquals(100, option.value());
+        assertEquals(100F, RVP_LightRuntimeTuning.defaultValue(RVP_LightRuntimeTuning.Group.global,
+                RVP_LightRuntimeTuning.Parameter.airBurstClearance), 0.00001F);
+    }
+
+    @Test
     void engineSwitchDefaultsToExistingConfigAndOnlyExplicitOverrideEnablesIt() {
         RVP_TuningRegistry registry = registry();
         RVP_TuningOption option = registry.options().get("screen_space/engine/enabled");

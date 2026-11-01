@@ -24,7 +24,7 @@ public final class RVP_LightRuntimeTuning {
     /** 参数元数据；不适用的分组以 NaN 标记，命令不会注册对应节点。 */
     public enum Parameter {
         /** 总开关/光晕/发动机照亮与外晕开关覆盖，未设置时沿用 TOML；不开放真实方块光。 */
-        enabled("开关：0关闭、1开启；engine控制发动机环境光与广域光晕，保留喷焰；未覆盖时沿用客户端配置（默认开启）", 0, 1,
+        enabled("开关：0关闭、1开启；engine只控制发动机广域橙晕（表面照亮见 TOML engineLight），保留喷焰；未覆盖时沿用客户端配置（默认开启）", 0, 1,
                 1, Float.NaN, Float.NaN, 1, 1),
         /** 环境适应总开关；只调照亮、外围光晕和天空闪光，保留发光核心与贴身光团。 */
         ambientEnabled("环境明暗适应；默认1开启、0恢复原效果，只影响照亮、烟雾受光、外围光晕和天空，核心、贴身光团与喷焰保持自身亮度", 0, 1,
@@ -141,7 +141,13 @@ public final class RVP_LightRuntimeTuning {
                 2048, Float.NaN, Float.NaN, Float.NaN, Float.NaN),
         /** 烟雾额外受光亮度，可独立于墙面/地面调节。 */
         smokeBrightness("烟雾及炮口特殊贴图的受光倍率；0关闭这层受光", 0, 256,
-                1, Float.NaN, Float.NaN, Float.NaN, Float.NaN);
+                1, Float.NaN, Float.NaN, Float.NaN, Float.NaN),
+        /**
+         * 空中起爆离地高度门槛：服务端只下发“离地高度”事实，客户端用自己的门槛决定是否建爆炸光源。
+         * 默认100格（可在客户端TOML里改），0表示不限制（贴地爆炸也生成光源）。
+         */
+        airBurstClearance("空中起爆离地高度门槛，单位格；默认100，0表示不限制（贴地爆炸也生成光源）；只控制爆炸屏幕光源是否创建，粒子、声音与其它视觉工厂不受影响", 0, 32768,
+                100, Float.NaN, Float.NaN, Float.NaN, Float.NaN);
 
         /** 中文含义、单位及生效边界。 */
         public final String description;
@@ -397,3 +403,4 @@ public final class RVP_LightRuntimeTuning {
                 base.bloom(), base.volumetricStrength(), base.blockLightLevel());
     }
 }
+

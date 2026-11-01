@@ -88,7 +88,7 @@ public final class RVP_ScreenSpaceTuningModule implements RVP_TuningModule {
     private static RVP_TuningOption lightOption(RVP_LightRuntimeTuning.Group group, Parameter parameter) {
         // 中文名称只属于具体业务适配器，通用界面不会按这些名字分支。
         String title = switch (parameter) {
-            case enabled -> group == RVP_LightRuntimeTuning.Group.engine ? "发动机照亮与外晕开关" : "启用此效果";
+            case enabled -> group == RVP_LightRuntimeTuning.Group.engine ? "发动机广域橙晕开关" : "启用此效果";
             case ambientEnabled -> "按环境明暗适应灯光";
             case ambientWorldWeight -> "游戏光照混合权重";
             case ambientMinStrength -> "最亮环境保留比例";
@@ -121,6 +121,7 @@ public final class RVP_ScreenSpaceTuningModule implements RVP_TuningModule {
             case coreHaloRadius -> "核心外围光团半径";
             case coreHaloScale -> "核心光团当量缩放";
             case worldHaloIntensity -> "广域光晕独立亮度";
+            case airBurstClearance -> "空中起爆离地高度门槛";
             case inputPeak -> "送入柔化光晕的亮度上限";
             case blurScale -> "光晕柔化范围倍率";
             case nearStrength -> "近层光晕强度倍率";
@@ -136,7 +137,8 @@ public final class RVP_ScreenSpaceTuningModule implements RVP_TuningModule {
                         || parameter == Parameter.skyHoldTicks || parameter == Parameter.skyFadeTicks
                 ? "刻（20刻=1秒）"
                 : parameter == Parameter.coreRadius || parameter == Parameter.coreHaloRadius
-                        || parameter == Parameter.skyDistance ? "格"
+                        || parameter == Parameter.skyDistance
+                        || parameter == Parameter.airBurstClearance ? "格"
                 : parameter == Parameter.coreShrink || parameter == Parameter.coreRadiusScale
                         || parameter == Parameter.coreHaloScale
                         || parameter == Parameter.skyPeakBrightness ? "倍"
@@ -154,6 +156,10 @@ public final class RVP_ScreenSpaceTuningModule implements RVP_TuningModule {
     }
 
     private static double lightDefault(RVP_LightRuntimeTuning.Group group, Parameter parameter) {
+        // 调用客户端 TOML 原值：门槛的默认值来自 TOML，不能显示代码兜底值。
+        if (parameter == Parameter.airBurstClearance) {
+            return decimal(RVP_LightingConfig.configuredAirBurstClearance());
+        }
         // 调用业务默认值入口，分组曲线未覆盖时应在面板中显示全局实际选择。
         if (parameter != Parameter.enabled) { return decimal(RVP_LightRuntimeTuning.defaultValue(group, parameter)); }
         // 调用配置原值，避免临时覆盖污染“恢复默认”提示。
@@ -175,3 +181,5 @@ public final class RVP_ScreenSpaceTuningModule implements RVP_TuningModule {
         return engine ? "已生成两秒喷焰预览；环境光与外晕仍受各自开关控制。" : "已生成无伤害爆炸光预览。";
     }
 }
+
+

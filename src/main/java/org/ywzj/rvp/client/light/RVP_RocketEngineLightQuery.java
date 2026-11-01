@@ -74,15 +74,21 @@ public final class RVP_RocketEngineLightQuery {
         RVP_LightParameters phased = RVP_LightParameters.enginePhase(parameters, bullet.isSecondMotorPulseBurningNow(), remaining);
         // 调用持续光更新，喷口先计算再按相机位置转换，避免远坐标浮点抖动。
         Vec3 position = nozzle(bullet, renderOrigin, partialTick);
-        // 关闭导弹光圈时同时停用发动机对周围世界/烟雾的光照；核心喷焰仍由独立喷流通道绘制。
-        if (RVP_LightingConfig.missileHaloEnabled()) {
+        // 调用分组开关：照亮走 engineLight，广域橙晕走 missileHalo；任一开启都需要这盏持续光。
+        boolean surfaceLight = RVP_LightingConfig.engineLightEnabled();
+        boolean halo = RVP_LightingConfig.missileHaloEnabled();
+        if (surfaceLight || halo) {
             RVP_ScreenLightManager.INSTANCE.upsertPersistent(bullet.getUUID(), position, phased);
         } else {
             RVP_ScreenLightManager.INSTANCE.removePersistent(bullet.getUUID());
         }
         // 调用独立喷流登记，只复用旧 flame_scale，亮度使用统一发动机阶段，数量/距离不套用八灯预算。
-        RVP_RocketPlumeManager.INSTANCE.upsert(bullet.getUUID(), position, exhaustDirection(bullet, partialTick),
-                bullet.getResolvedWeaponConfig().getProjectileData().getFlameScale(),
-                caliber, phased.intensity() / RVP_LightParameters.ENGINE_SURFACE_INTENSITY, false);
+        if (RVP_LightingConfig.plumeEnabled()) {
+            RVP_RocketPlumeManager.INSTANCE.upsert(bullet.getUUID(), position, exhaustDirection(bullet, partialTick),
+                    bullet.getResolvedWeaponConfig().getProjectileData().getFlameScale(),
+                    caliber, phased.intensity() / RVP_LightParameters.ENGINE_SURFACE_INTENSITY, false);
+        } else {
+            RVP_RocketPlumeManager.INSTANCE.remove(bullet.getUUID());
+        }
     }
 }

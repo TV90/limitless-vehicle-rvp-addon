@@ -67,6 +67,12 @@ class RVP_LightRuntimeTuningTest {
             assertEquals(original.decay(), actual.decay());
         }
         assertEquals(0.6F, RVP_LightRuntimeTuning.get(Group.explosion, Parameter.worldHaloIntensity), .00001F);
+        // 空中起爆离地门槛：默认100格，0表示不限制；只有全局组支持该参数。
+        assertEquals(100, RVP_LightRuntimeTuning.get(Group.global, Parameter.airBurstClearance));
+        assertFalse(Parameter.airBurstClearance.supports(Group.explosion));
+        assertFalse(Parameter.airBurstClearance.supports(Group.muzzle));
+        assertFalse(Parameter.airBurstClearance.supports(Group.engine));
+        assertFalse(Parameter.airBurstClearance.supports(Group.bloom));
         assertEquals(0.4F, RVP_LightRuntimeTuning.get(Group.engine, Parameter.worldHaloIntensity));
         assertEquals(5, RVP_LightRuntimeTuning.get(Group.engine, Parameter.haloIntensity));
         assertTrue(RVP_LightRuntimeTuning.overrides().isEmpty());
@@ -556,6 +562,7 @@ class RVP_LightRuntimeTuningTest {
         assertTrue(RVP_LightRuntimeTuning.overrides().getOrDefault(Group.explosion, java.util.Map.of()).isEmpty());
     }
 }
+
 
 
 

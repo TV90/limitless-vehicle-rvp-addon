@@ -15,6 +15,12 @@ public final class RVP_ClientActionsAccess {
 
     private RVP_ClientActionsAccess() {}
 
+    /** 经双端安全桥转交载具声音消息，公共网络类不直接引用客户端声音类型。 */
+    public static void acceptVehicleSound(org.ywzj.rvp.network.S2CVehicleSound message) {
+        // 调用按物理端选择的实现；专用服务端为空操作。
+        INSTANCE.acceptVehicleSound(message);
+    }
+
     /** 经双端安全桥转交小口径弹体声音消息，不让公共网络类加载客户端声音类型。 */
     public static void acceptSmallCaliberSound(org.ywzj.rvp.network.S2CSmallCaliberSound message) {
         // 调用按物理端选择的实现；服务端为空操作。
@@ -143,6 +149,11 @@ public final class RVP_ClientActionsAccess {
 
     /** 专用服务端空实现。 */
     private static final class NoopClientActions implements RVP_IClientActions {
+        @Override
+        public void acceptVehicleSound(org.ywzj.rvp.network.S2CVehicleSound message) {
+            // 专用服务端不播放客户端声音。
+        }
+
         /** 专用服务端不保存客户端体积烟。 */
         @Override
         public void addRocketVolumeTrail(RVP_BaseBullet projectile, net.minecraft.world.phys.Vec3 position,

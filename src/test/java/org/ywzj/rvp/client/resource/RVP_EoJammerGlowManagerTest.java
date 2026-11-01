@@ -52,11 +52,11 @@ class RVP_EoJammerGlowManagerTest {
     }
 
     /** 载具包实际配置：玻片骨必须存在于烘焙模型，联动骨必须在 bone_modules 里挂了 jammer 模块。 */
-//    @Test
-//    void packRulesPointToExistingBonesAndJammerModules() throws Exception {
-//        assertPackWiring("t84bm", List.of("ERA1", "ERA3"));
-//        assertPackWiring("m1a1hc", List.of("jammer"));
-//    }
+    @Test
+    void packRulesPointToExistingBonesAndJammerModules() throws Exception {
+        assertPackWiring("t84bm", List.of("ERA1", "ERA3"));
+        assertPackWiring("m1a1hc", List.of("jammer"));
+    }
 
     private static void assertPackWiring(String vehicle, List<String> expectedModuleBones) throws Exception {
         Path display = Path.of("limitless_vehicle/rvp/assets/rvp/display/vehicle", vehicle + ".json");

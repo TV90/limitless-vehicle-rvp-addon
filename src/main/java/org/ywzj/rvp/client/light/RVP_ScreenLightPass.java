@@ -219,10 +219,12 @@ public final class RVP_ScreenLightPass {
         List<RVP_ScreenLight> candidates = !RVP_LightingConfig.screenEnabled() || RVP_LightingConfig.intensity() <= 0
                 ? List.of() : RVP_ScreenLightManager.INSTANCE.collectVisible(camera, event.getPartialTick(),
                 RVP_LightingConfig.maxDistance(), RVP_ScreenLightDebugCommands.limitForDiagnostics(RVP_LightingConfig.maxLights()), light -> {
+                    // 调用分项开关：照亮/光晕/核心/天空全关的灯不占预算槽位，也不做遮挡查询。
+                    if (!hasEnabledChannel(light)) { return false; }
                     // 调用显式单源诊断筛选；默认不影响正常灯数、颜色与生命周期。
                     if (!RVP_ScreenLightDebugCommands.acceptsForDiagnostics(light)) { return false; }
                     // 调用天空散射判断：方向性染色与光心是否在屏幕内无关，爆心在背后的夜空闪光也必须保留。
-                    if (light.skyIntensity() > 0.001F) { return true; }
+                    if (skyEnabled() && light.skyIntensity() > 0.001F) { return true; }
                     Vector3f center = viewPosition(light.position());
                     return RVP_PressureWaveGeometry.screenBounds(PROJECTION, center.x, center.y, center.z,
                             light.visibleRadius()) != null;
@@ -302,7 +304,8 @@ public final class RVP_ScreenLightPass {
                     + (lightShader.getUniform("LightSkySpread0") != null ? "已声明" : "缺失（描述 JSON 未同步，天空项会静默失效）")
                     + "，LightSkyColorIntensity0 "
                     + (lightShader.getUniform("LightSkyColorIntensity0") != null ? "已声明" : "缺失（描述 JSON 未同步，天空项会静默失效）"));
-            if (lights.stream().anyMatch(light -> light.radius() > 0 && light.intensity() > 0 && light.surfaceWeight() > 0)) {
+            if (lights.stream().anyMatch(light -> surfaceEnabled(light.type())
+                    && light.radius() > 0 && light.intensity() > 0 && light.surfaceWeight() > 0)) {
                 // 调用真实方块形状/实体盒采集，不再将缺失背面的相机深度用作投影几何。
                 RVP_LightGeometryPass.prepare(Minecraft.getInstance().level, lights, VIEW, camera, event.getPartialTick());
             }
@@ -310,7 +313,8 @@ public final class RVP_ScreenLightPass {
             RVP_LightGeometryPass.upload(lightShader);
             boolean useBloom = RVP_LightingConfig.bloomEnabled() && bloomShader != null && bloomAvailable
                     && (plumes.stream().anyMatch(plume -> plume.haloRadius() > 0)
-                    || lights.stream().anyMatch(light -> light.bloom() && light.haloRadius() > 0));
+                    || lights.stream().anyMatch(light -> light.bloom() && haloEnabled(light.type())
+                            && light.haloRadius() > 0));
             if (useBloom) {
                 try { FRAME.ensureBloom(); }
                 catch (RuntimeException exception) {
@@ -462,18 +466,21 @@ public final class RVP_ScreenLightPass {
             Vector3f center = viewPosition(light.position());
             // 当前 P5 在代码层关闭；按完整屏幕光强度验证，不再施加两层光叠加时的 0.65 倍补偿。
             lightShader.safeGetUniform("LightPositionRadius" + index).set(center.x, center.y, center.z, light.radius());
+            // 调用分项开关：照亮关闭时只置0强度，位置/半径仍上传，避免影响其它通道读取同一槽位。
+            boolean surface = surfaceEnabled(light.type());
+            boolean halo = haloEnabled(light.type());
             lightShader.safeGetUniform("LightColorIntensity" + index).set(light.red(), light.green(), light.blue(),
-                    light.intensity() * RVP_LightingConfig.intensity());
+                    surface ? light.intensity() * RVP_LightingConfig.intensity() : 0);
             // 调用独立光晕强度；照亮结束或爆炸brightness改动都不会覆盖该时间线和亮度。
             lightShader.safeGetUniform("LightHaloColorIntensity" + index).set(light.red(), light.green(), light.blue(),
-                    light.haloIntensity() * RVP_LightingConfig.intensity());
+                    halo ? light.haloIntensity() * RVP_LightingConfig.intensity() : 0);
             lightShader.safeGetUniform("LightShape" + index).set(light.surfaceWeight(),
                     RVP_LightingConfig.volumetricEnabled() ? light.volumetricStrength() : 0,
                     light.bloom() ? 1F : 0F,
-                    light.type() == RVP_LightSourceType.ROCKET_ENGINE ? 0F : light.haloRadius());
+                    halo ? (light.type() == RVP_LightSourceType.ROCKET_ENGINE ? 0F : light.haloRadius()) : 0F);
             // 调用自发光上传：爆炸白热核心与旧圆形喷口共用同一组 LightEmission 槽位，互不叠加。
-            RVP_LightParameters.EngineEmission emission = light.emission();
-            if (emission == null && RVP_RocketPlumeParameters.ROUND_SOURCE_ENABLED
+            RVP_LightParameters.EngineEmission emission = coreEnabled(light.type()) ? light.emission() : null;
+            if (emission == null && coreEnabled(light.type()) && RVP_RocketPlumeParameters.ROUND_SOURCE_ENABLED
                     && light.type() == RVP_LightSourceType.ROCKET_ENGINE) {
                 // 调用统一代码预设；旧通道只在开关恢复时使用，已采样的强度包含二脉冲与燃尽。
                 emission = RVP_LightParameters.engineEmission(light.radius(), light.intensity());
@@ -487,7 +494,7 @@ public final class RVP_ScreenLightPass {
             }
             // 调用天空散射独立上传；只被没有深度的天空像素读取，不计入光晕提取能量，也不参与八灯预算排序。
             lightShader.safeGetUniform("LightSkyColorIntensity" + index).set(light.red(), light.green(), light.blue(),
-                    light.skyIntensity() * RVP_LightingConfig.intensity());
+                    skyEnabled() ? light.skyIntensity() * RVP_LightingConfig.intensity() : 0);
             lightShader.safeGetUniform("LightSkySpread" + index).set(light.skySpread());
         }
     }
@@ -504,14 +511,56 @@ public final class RVP_ScreenLightPass {
     /** 本帧是否存在需要绕过 0.9 曝光上限的自发光核心：爆炸白热核心优先，旧圆形喷口只在开关恢复时参与。 */
     private static boolean hasEmission() {
         for (RVP_ScreenLight light : lights) {
-            if (light.emission() != null
+            if (coreEnabled(light.type()) && light.emission() != null
                     && (light.emission().coreIntensity() > 0.001F || light.emission().haloIntensity() > 0.001F)) {
                 return true;
             }
         }
-        // 调用旧通道开关；关闭时不再为发动机做一次空绘制。
+        // 调用旧通道开关；发动机没有核心分项开关，只有开关恢复时才参与。
         return RVP_RocketPlumeParameters.ROUND_SOURCE_ENABLED
                 && lights.stream().anyMatch(light -> light.type() == RVP_LightSourceType.ROCKET_ENGINE);
+    }
+
+    /** 照亮通道：按来源类型读取 TOML 分项开关；干扰机小光只受总开关约束。 */
+    private static boolean surfaceEnabled(RVP_LightSourceType type) {
+        return switch (type) {
+            case EXPLOSION -> RVP_LightingConfig.explosionLightEnabled();
+            case MUZZLE -> RVP_LightingConfig.muzzleLightEnabled();
+            case ROCKET_ENGINE -> RVP_LightingConfig.engineLightEnabled();
+            case EO_JAMMER -> true;
+        };
+    }
+
+    /** 光晕通道：爆炸与发动机各有独立开关，炮口与干扰机沿用既有参数控制。 */
+    private static boolean haloEnabled(RVP_LightSourceType type) {
+        return switch (type) {
+            case EXPLOSION -> RVP_LightingConfig.explosionHaloEnabled();
+            case ROCKET_ENGINE -> RVP_LightingConfig.missileHaloEnabled();
+            case MUZZLE, EO_JAMMER -> true;
+        };
+    }
+
+    /** 自发光核心通道：目前只有爆炸白热核心有分项开关，旧圆形喷口仍由代码常量控制。 */
+    private static boolean coreEnabled(RVP_LightSourceType type) {
+        return type != RVP_LightSourceType.EXPLOSION || RVP_LightingConfig.explosionCoreEnabled();
+    }
+
+    /** 天空染色通道：对所有支持天空的短光统一生效。 */
+    private static boolean skyEnabled() { return RVP_LightingConfig.skyScatterEnabled(); }
+
+    /** 该灯是否至少有一个开启的通道；全关时不占八灯预算槽位，也不做遮挡查询。 */
+    private static boolean hasEnabledChannel(RVP_ScreenLight light) {
+        // 调用照亮通道判定；强度为0表示该路本来就没有贡献。
+        if (surfaceEnabled(light.type()) && light.intensity() > 0.001F) { return true; }
+        // 调用光晕通道判定。
+        if (haloEnabled(light.type()) && light.haloIntensity() > 0.001F) { return true; }
+        // 调用自发光核心判定：核心与光团任一有亮度都算贡献。
+        if (coreEnabled(light.type()) && light.emission() != null
+                && (light.emission().coreIntensity() > 0.001F || light.emission().haloIntensity() > 0.001F)) {
+            return true;
+        }
+        // 调用天空通道判定；关闭时不保留只靠天空的灯。
+        return skyEnabled() && light.skyIntensity() > 0.001F;
     }
 
     /** 四层依次缩小并柔化，再从最小层回升；固定基础权重总和为一，强度调节不相互补偿。 */
