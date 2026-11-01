@@ -28,7 +28,8 @@ import java.util.Map;
  * <p>本类只做一件事：扫描 {@code data/<ns>/vehicles/*.json} 的**原始 JSON 字面量**，
  * 把 RVP 自定义字段（{@code ui_preset} / {@code rvp_part_hidden_bones} / {@code deployable_uav_*} /
  * {@code rvp_loiter_*} / {@code launcher_deploy} / {@code rvp_auto_landing_gear*} /
- * {@code rvp_radar_rcs_factor} / {@code rvp_custom_mounts} / 武器过热）解析进各自的静态缓存。</p>
+ * {@code rvp_radar_rcs_factor} / {@code rvp_custom_mounts} / 武器过热 / {@code rvp_hide_in_creative}）
+ * 解析进各自的静态缓存。</p>
  *
  * <p>为什么不再 mixin {@code VehicleDataManager.apply}：本类不依赖本体解析结果（只读 JSON 原文），
  * 因此不需要"贴在 apply 末尾"，只要在数据重载批次里跑一次即可。三条触发路径对应三种场景：</p>
@@ -78,14 +79,19 @@ public final class RVP_VehicleSupplementListener
         }
         Map<ResourceLocation, List<RVP_CustomMountConfig>> customMountsByVehicle = new HashMap<>();
         Map<ResourceLocation, AutoLandingGearCache.AutoLandingGearConfig> autoGearByVehicle = new HashMap<>();
+        Map<ResourceLocation, List<RVP_DeployableUavCatalog.Option>> uavOptionsByParent = new HashMap<>();
+        Map<ResourceLocation, String> uavDefaultByParent = new HashMap<>();
         Map<ResourceLocation, Map<RVP_VehicleWeaponHeatConfigCache.SlotKey, RVP_VehicleWeaponHeatConfig>>
                 weaponHeatByVehicle = new HashMap<>();
         RVP_DeployableUavConfigCache.clear();
+        RVP_DeployableUavCatalog.clear();
         RVP_LauncherDeployConfigCache.clear();
         // 分角度 RCS 雷达隐身：载具剖面缓存随数据包全量重建
         org.ywzj.rvp.radar.RVP_AspectRcs.clear();
         // 残件隐藏骨：rvp_part_hidden_bones 缓存随数据包全量重建
         RVP_PartHiddenBonesCache.clear();
+        // 创造栏隐藏表：rvp_hide_in_creative 随数据包全量重建
+        RVP_CreativeHiddenVehicles.clear();
         for (var entry : resources.entrySet()) {
             ResourceLocation vehicleId = entry.getKey();
             JsonElement json = entry.getValue();
@@ -102,6 +108,11 @@ public final class RVP_VehicleSupplementListener
                 // show_skeleton（观瞄时骨骼俯视图，默认 true）
                 VehicleUIPresetCache.putShowSkeleton(vehicleId,
                         GsonHelper.getAsBoolean(obj, "show_skeleton", true));
+
+                // 创造栏隐藏：仅母车部署的辅助载具（雷达车 / 随车无人机）不给直接刷出入口
+                if (GsonHelper.getAsBoolean(obj, "rvp_hide_in_creative", false)) {
+                    RVP_CreativeHiddenVehicles.add(vehicleId);
+                }
 
                 // 残件隐藏骨：rvp_part_hidden_bones = { "<partId>": ["bone", ...], ... }
                 Map<String, List<String>> partHiddenBones = new HashMap<>();
@@ -122,9 +133,10 @@ public final class RVP_VehicleSupplementListener
                 // 空表也要 put，便于重载时清干净
                 RVP_PartHiddenBonesCache.put(vehicleId, partHiddenBones);
 
-                RVP_DeployableUavConfig deployableUavConfig = parseDeployableUavConfig(obj);
-                if (deployableUavConfig.isConfigured()) {
-                    RVP_DeployableUavConfigCache.put(vehicleId, deployableUavConfig);
+                RVP_DeployableUavOptionsParser.Parsed parsedUavOptions = RVP_DeployableUavOptionsParser.parse(obj);
+                if (!parsedUavOptions.options().isEmpty()) {
+                    uavOptionsByParent.put(vehicleId, parsedUavOptions.options());
+                    uavDefaultByParent.put(vehicleId, parsedUavOptions.defaultOptionId());
                 }
 
                 RVP_LoiterConfig loiterConfig = parseLoiterConfig(obj);
@@ -160,6 +172,7 @@ public final class RVP_VehicleSupplementListener
                 // JSON 解析错误，跳过（与迁移前一致：单台载具出错不影响其它载具）
             }
         }
+        RVP_DeployableUavCatalog.replace(uavOptionsByParent, uavDefaultByParent);
         RVP_CustomMountConfigCache.replace(customMountsByVehicle);
         RVP_VehicleWeaponHeatConfigCache.replace(weaponHeatByVehicle);
         AutoLandingGearCache.replace(autoGearByVehicle);
@@ -184,83 +197,6 @@ public final class RVP_VehicleSupplementListener
     @SubscribeEvent
     public static void onAddReloadListener(AddReloadListenerEvent event) {
         event.addListener(INSTANCE);
-    }
-
-    private static RVP_DeployableUavConfig parseDeployableUavConfig(JsonObject vehicleObj) {
-        boolean enabled = GsonHelper.getAsBoolean(vehicleObj, "deployable_uav_enabled", false);
-        if (!enabled) {
-            return RVP_DeployableUavConfig.DISABLED;
-        }
-
-        ResourceLocation vehicleId = ResourceLocation.tryParse(
-                GsonHelper.getAsString(vehicleObj, "deployable_uav_vehicle_id", "")
-        );
-        if (vehicleId == null) {
-            return RVP_DeployableUavConfig.DISABLED;
-        }
-
-        String role = GsonHelper.getAsString(vehicleObj, "deployable_uav_role", "uav");
-        String spawnYawMode = GsonHelper.getAsString(vehicleObj, "deployable_uav_spawn_yaw_mode", "parent");
-        boolean singleInstance = GsonHelper.getAsBoolean(vehicleObj, "deployable_uav_single_instance", true);
-        boolean allowControlSwitch = GsonHelper.getAsBoolean(vehicleObj, "deployable_uav_allow_control_switch", true);
-        boolean autoLinkDatalink = GsonHelper.getAsBoolean(vehicleObj, "deployable_uav_auto_link_datalink", true);
-        int redeployCooldownTick = Math.max(0, GsonHelper.getAsInt(vehicleObj, "deployable_uav_redeploy_cooldown_tick", 0));
-
-        Vec3 spawnOffset = Vec3.ZERO;
-        if (vehicleObj.has("deployable_uav_spawn_offset")) {
-            JsonElement offsetElement = vehicleObj.get("deployable_uav_spawn_offset");
-            if (offsetElement.isJsonObject()) {
-                JsonObject offsetObj = offsetElement.getAsJsonObject();
-                spawnOffset = new Vec3(
-                        GsonHelper.getAsDouble(offsetObj, "x", 0.0),
-                        GsonHelper.getAsDouble(offsetObj, "y", 0.0),
-                        GsonHelper.getAsDouble(offsetObj, "z", 0.0)
-                );
-            } else if (offsetElement.isJsonArray() && offsetElement.getAsJsonArray().size() >= 3) {
-                spawnOffset = new Vec3(
-                        offsetElement.getAsJsonArray().get(0).getAsDouble(),
-                        offsetElement.getAsJsonArray().get(1).getAsDouble(),
-                        offsetElement.getAsJsonArray().get(2).getAsDouble()
-                );
-            }
-        }
-
-        return new RVP_DeployableUavConfig(
-                true,
-                vehicleId,
-                role,
-                spawnOffset,
-                spawnYawMode,
-                singleInstance,
-                allowControlSwitch,
-                autoLinkDatalink,
-                redeployCooldownTick,
-                GsonHelper.getAsBoolean(vehicleObj, "deployable_uav_auto_loiter_on_switch_back", true),
-                (float) GsonHelper.getAsDouble(vehicleObj, "deployable_uav_initial_speed", 0.0),
-                // 信号范围（格，2026-10-06 新增）：≤0 视为无限
-                GsonHelper.getAsDouble(vehicleObj, "deployable_uav_signal_range", RVP_DeployableUavConfig.DEFAULT_SIGNAL_RANGE),
-                parseAllowedSeatIndexes(vehicleObj)
-        );
-    }
-
-    /**
-     * 解析 {@code deployable_uav_allowed_seat_indexes} 座位索引列表。
-     * 缺省/空数组返回空列表，表示仅驾驶位（座位 0）可部署。
-     */
-    private static List<Integer> parseAllowedSeatIndexes(JsonObject vehicleObj) {
-        List<Integer> result = new ArrayList<>();
-        if (vehicleObj.has("deployable_uav_allowed_seat_indexes")
-                && vehicleObj.get("deployable_uav_allowed_seat_indexes").isJsonArray()) {
-            for (JsonElement element : vehicleObj.get("deployable_uav_allowed_seat_indexes").getAsJsonArray()) {
-                if (element.isJsonPrimitive() && element.getAsJsonPrimitive().isNumber()) {
-                    int seatIndex = element.getAsInt();
-                    if (seatIndex >= 0 && !result.contains(seatIndex)) {
-                        result.add(seatIndex);
-                    }
-                }
-            }
-        }
-        return result;
     }
 
     private static RVP_LoiterConfig parseLoiterConfig(JsonObject vehicleObj) {

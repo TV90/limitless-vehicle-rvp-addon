@@ -379,6 +379,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
      */
     protected int motorIgnitionStartTick = 0;
     protected int secondPulseStartTick = -1;
+    /** 上一 Tick 起始的竖直速度（格/Tick）；二脉冲顶端点火用它判断"由爬升转为到达顶点"。 */
+    private double previousVerticalSpeed;
+    /** previousVerticalSpeed 是否已有一帧历史；生成首 Tick 与复位后为 false，禁止凭空判顶点。 */
+    private boolean previousVerticalSpeedValid;
     /** 是否为本体远程广播创建的客户端视觉克隆；仅用于远程渲染门控，不参与物理、制导或伤害计算。 */
     private boolean remoteVisualClone;
     /** 是否在 HUD 显示 MSL 指示器，从 weapon data 同步到客户端。 */
@@ -748,6 +752,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         this.secondPulseStartTick = -1;
         this.entityData.set(DATA_SECOND_PULSE_START_TICK, -1);
         this.entityData.set(DATA_SECOND_PULSE_BURN_TIME_TICK, 0);
+        // 调用本项目顶点检测复位入口：新弹没有上一帧竖直速度，首 Tick 不能直接判顶点。
+        this.previousVerticalSpeed = 0.0D;
+        this.previousVerticalSpeedValid = false;
         this.showMslIndicator = data.isShowMslIndicator();
         boolean wireEnabled = data.getEffectsData().isWireLinkEnabled();
         this.entityData.set(DATA_WIRE_ENABLED, wireEnabled);
@@ -4487,6 +4494,11 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 : action;
     }
 
+    /** 自爆炸弹使用现有战斗部；排除载体，避免本体 hurt 再触发一次载具死亡爆炸。 */
+    public void detonateAtCarrier(Vec3 pos, AbstractVehicle carrier) {
+        if (!level().isClientSide()) triggerExplosion(pos, FuseDetonation.NORMAL, carrier);
+    }
+
     protected void triggerExplosion(Vec3 pos) {
         triggerExplosion(pos, FuseDetonation.NORMAL, null);
     }
@@ -5062,9 +5074,15 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
 
     protected Vec3 aimPoint(Entity entity) {
         // [RVP] §46（2026-10-01 用户定版）：载具目标 = 最大体积 OBB 中心（长/斜载具不再瞄
-        // 悬空的 AABB 中心）；其余实体保持 position+半高旧口径（零回归）
-        return org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(entity,
-                entity.position().add(0, entity.getBbHeight() * 0.5, 0));
+        // 悬空的 AABB 中心）；其余实体保持 position+半高旧口径（零回归）。
+        Vec3 fallback = entity.position().add(0, entity.getBbHeight() * 0.5, 0);
+        // [RVP] §49（2026-11-01 用户定版）：红外族（IR/AIR）改锁点——舰船仍锁最大 OBB，
+        // 其余目标按 (本弹 ID, 目标 UUID) 种子固定抽一块 OBB；记忆点/惯性点随之同源。
+        if (activeSourceType == RVP_EnumGuidanceType.IR || activeSourceType == RVP_EnumGuidanceType.AIR) {
+            return org.ywzj.rvp.util.RVP_AimPointResolver.resolveIrLockPoint(entity,
+                    org.ywzj.rvp.util.RVP_AimPointResolver.lockSeed(getId(), entity), fallback);
+        }
+        return org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(entity, fallback);
     }
 
     private void resolveRemoteRefs() {
@@ -5543,6 +5561,20 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
 
     public final int getSecondPulseStartTick() {
         return secondPulseStartTick;
+    }
+
+    public final double getPreviousVerticalSpeed() {
+        return previousVerticalSpeed;
+    }
+
+    public final boolean hasPreviousVerticalSpeed() {
+        return previousVerticalSpeedValid;
+    }
+
+    /** 记录本 Tick 起始的竖直速度，供下一 Tick 判断"由爬升转为到达顶点"。 */
+    public final void updatePreviousVerticalSpeed(double verticalSpeed) {
+        this.previousVerticalSpeed = verticalSpeed;
+        this.previousVerticalSpeedValid = true;
     }
 
     protected void broadcastTrailParticles() {

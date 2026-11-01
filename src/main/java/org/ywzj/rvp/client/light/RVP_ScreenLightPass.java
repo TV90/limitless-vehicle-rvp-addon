@@ -390,6 +390,9 @@ public final class RVP_ScreenLightPass {
         // 调用显式遮挡绑定；构建新层级前 ready=false，会安全使用当帧原始深度。
         RVP_LightOcclusionPass.upload(lightShader, FRAME.depth());
         lightShader.safeGetUniform("LightCount").set(lights.size());
+        // 调用观察空间方向换算，把世界竖直方向交给 Shader 作为定向光水平 140° 窗口的参考轴。
+        Vector3f worldUpView = VIEW.transformDirection(new Vector3f(0F, 1F, 0F)).normalize();
+        lightShader.safeGetUniform("WorldUpView").set(worldUpView.x, worldUpView.y, worldUpView.z);
         uploadLightSlots();
     }
 

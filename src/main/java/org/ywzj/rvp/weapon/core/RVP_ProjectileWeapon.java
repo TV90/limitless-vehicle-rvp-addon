@@ -82,6 +82,22 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
             return false;
         }
         RVP_FireData fire = getData().getFireData();
+        if (fire.isSelfDestructVehicle()
+                && getData().getWeaponKind() == org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind.BOMB) {
+            // 自爆只执行一次，不进入 BURST/齐射调度；拒绝时不扣弹、不加热。
+            if (isCoolingDown() || !getFireController().canShootHeat() || getRemainAmmo() <= 0
+                    || aimContexts == null || aimContexts.isEmpty()) return false;
+            getFireController().primeServerShot();
+            if (!canShootOnServer(shooter)) return false;
+            boolean fired = RVP_VehicleSelfDestructService.detonate(getVehicle(), shooter, getData(),
+                    () -> consumeAmmo(new ArrayList<>(List.of(aimContexts.get(0)))),
+                    () -> setRemainAmmo(getRemainAmmo() + 1));
+            if (fired) {
+                this.lastShootTime = System.currentTimeMillis();
+                getFireController().onShotFired();
+            }
+            return fired;
+        }
         if (fire.getFireMode() == RVP_EnumFireMode.BURST) {
             return shootBurstRound(aimContexts, shooter, fire);
         }

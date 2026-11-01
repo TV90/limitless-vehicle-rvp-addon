@@ -15,10 +15,11 @@ import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 /**
- * 激光武器与 DIRCM 干扰激光光束两端的屏幕光：起点半球光、终点球光，颜色与光束本身一致。
+ * 激光武器与 DIRCM 干扰激光光束两端的屏幕光：起点定向光、终点球光，颜色与光束本身一致。
  *
  * <p>灯位取渲染用的已平滑坐标，起点沿光束方向略微外移，避免灯陷进炮口或车壳内部；
- * 半球轴就是光束方向，所以起点只照亮炮口前方，不会把光打回车体。两盏灯每帧心跳续期，
+ * 定向轴就是光束方向，Shader 按水平 140° × 竖直 180° 裁切，所以起点只照亮炮口前方，
+ * 不会把光打回车体，也不会像整圈半球那样往两侧糊出一大片。两盏灯每帧心跳续期，
  * 光束停止绘制后由 {@link RVP_ScreenLightManager} 在过期 tick 内自然回收。</p>
  *
  * <p>归属统一取发射载具 UUID（与干扰机玻片灯同归属），因此需要整车清灯时必须走
@@ -74,7 +75,7 @@ public final class RVP_LaserBeamLights {
         // 夜视仪下换用更大更亮的一档（与光电干扰机同思路）：像增强管把光束散射放大，
         // 同一盏灯在夜视里半径/亮度都要抬一档；普通视角则收成干扰机大小的小光圈。
         boolean nightVision = RVP_NvgHandler.isActive();
-        // 起点半球光：半球轴沿光束方向，能量只投向前方。
+        // 起点定向光：轴向沿光束方向，Shader 内按水平 140° × 竖直 180° 裁切，能量只投向前方。
         upsert(lightKey(beamId, "head"), owner, head, camera, direction,
                 nightVision ? RVP_LightParameters.laserStartNightVision(red, green, blue, strength)
                         : RVP_LightParameters.laserStart(red, green, blue, strength));

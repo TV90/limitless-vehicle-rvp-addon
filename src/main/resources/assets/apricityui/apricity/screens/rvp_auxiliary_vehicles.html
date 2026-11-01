@@ -1,0 +1,69 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="aui-font-mode" content="web">
+    <meta name="aui-viewport" content="mode=browser">
+    <link rel="stylesheet" href="/apricityui/theme/ore/ore.css">
+    <link rel="stylesheet" href="screen-common.css">
+    <style>
+        html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+        .aux-screen { color: var(--ore-ink); background: var(--ore-canvas); display: flex; flex-direction: column; font-family: OreRegular, "Microsoft YaHei", sans-serif; }
+        .aux-screen .navbar { min-height: 38px; padding: 6px 10px 10px; flex: 0 0 auto; }
+        .aux-screen .navbar-brand, .aux-screen .card-header, .aux-screen .button { font-family: OreDisplay, "Microsoft YaHei", sans-serif; }
+        .aux-workspace { display: flex; gap: 7px; padding: 7px; min-height: 0; flex: 1 1 auto; }
+        .aux-panel { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+        .aux-list-panel { width: 31%; flex: 0 0 31%; }
+        .aux-detail-column { min-width: 0; min-height: 0; flex: 1 1 auto; display: flex; flex-direction: column; gap: 7px; }
+        .aux-preview-panel { min-height: 0; flex: 3 1 0; }
+        .aux-info-panel { min-height: 86px; flex: 2 1 0; }
+        .aux-screen .card-header { min-height: 30px; padding: 8px 9px; font-size: 11px; flex: 0 0 auto; }
+        .aux-panel .card-body { flex: 1 1 auto; min-height: 0; padding: 7px; display: flex; flex-direction: column; gap: 6px; overflow: hidden; }
+        .aux-option-list { min-height: 0; overflow-y: auto; flex: 1 1 auto; }
+        .aux-option { width: 100%; min-height: 36px; box-sizing: border-box; padding: 6px 8px; border: 2px solid transparent; background: #363739; color: #fff; cursor: pointer; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; text-align: left; font-size: 14px; }
+        .aux-option + .aux-option { margin-top: 3px; }
+        .aux-option:hover { border-color: #85878b; background: #4a4b4e; }
+        .aux-option.active { border-color: var(--ore-gold); background: #514a35; }
+        .aux-option.current { border-left: 3px solid #4caf50; }
+        .aux-option-name { max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+        .aux-option-id { max-width: 100%; color: var(--ore-ink-muted); font-size: 10px; overflow: hidden; white-space: nowrap; }
+        .aux-preview-panel .card-body { position: relative; padding: 0; background: #252628; overflow: hidden; flex: 1 1 auto; }
+        .aux-preview-viewport { position: absolute; top: 5px; right: 5px; bottom: 5px; left: 5px; border: 2px solid #56585b; background: #303133; box-shadow: inset 3px 3px #222325, inset -3px -3px #444649; }
+        #aux-vehicle-preview { position: absolute; top: 8px; right: 8px; bottom: 8px; left: 8px; cursor: grab; }
+        #aux-selected-name { color: #fff; font-size: 18px; overflow: hidden; white-space: nowrap; }
+        .aux-selected-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; color: var(--ore-ink-muted); font-size: 12px; }
+        #aux-selected-details { min-height: 0; color: var(--ore-ink-muted); font-size: 13px; line-height: 1.3; overflow-y: auto; }
+        .aux-status-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 6px; border-top: 1px solid var(--ore-edge); }
+        #aux-state { min-width: 0; color: var(--ore-gold); font-size: 12px; overflow: hidden; }
+        #aux-apply { min-width: 112px; flex: 0 0 auto; }
+        #aux-apply.disabled { opacity: .55; }
+        #aux-preview-unavailable { position: absolute; top: 8px; right: 8px; left: 8px; color: var(--ore-ink-muted); font-size: 12px; text-align: center; }
+        .aux-screen .close-button { width: 30px; height: 26px; min-height: 26px; padding: 3px 7px 7px; font-size: 14px; line-height: 1; flex: 0 0 30px; }
+        @media (max-width: 560px) { .aux-list-panel { width: 34%; flex-basis: 34%; } #aux-apply { min-width: 88px; } }
+    </style>
+</head>
+<body class="ore-theme aux-screen">
+    <nav class="navbar"><div class="navbar-brand"><translation>gui.ywzj_rvp.auxiliary.title</translation></div><button id="close-button" class="close-button button button-danger" type="button">X</button></nav>
+    <main class="aux-workspace">
+        <aside class="card card-accent-green aux-panel aux-list-panel">
+            <div class="card-header"><translation>gui.ywzj_rvp.auxiliary.options</translation></div>
+            <div class="card-body"><div id="aux-option-list" class="aux-option-list"></div></div>
+        </aside>
+        <div class="aux-detail-column">
+            <section class="card card-accent-purple aux-panel aux-preview-panel">
+                <div class="card-header split"><span><translation>screen.vehicle_weapon_select.preview</translation></span><span class="badge badge-purple">3D</span></div>
+                <div class="card-body"><div class="aux-preview-viewport"><div id="aux-vehicle-preview"></div><div id="aux-preview-unavailable"></div></div></div>
+            </section>
+            <section class="card card-accent-gold aux-panel aux-info-panel">
+                <div class="card-header"><translation>gui.ywzj_rvp.auxiliary.profile</translation></div>
+                <div class="card-body">
+                    <div id="aux-selected-name">--</div>
+                    <div class="aux-selected-meta"><span id="aux-selected-id" class="badge badge-purple">--</span><span id="aux-selected-role" class="badge">--</span></div>
+                    <div id="aux-selected-details"></div>
+                    <div class="aux-status-row"><span id="aux-state"></span><button id="aux-apply" class="button button-primary disabled" type="button" aria-disabled="true"><translation>ui.ywzj_rvp.uav.option_select</translation></button></div>
+                </div>
+            </section>
+        </div>
+    </main>
+</body>
+</html>

@@ -82,6 +82,14 @@ public class RVP_FireData {
     @SerializedName("canister_burst_count")
     private int canisterBurstCount = 1;
 
+    /**
+     * 载具原地自爆开关，无单位，默认 false；仅 rvp:bomb 生效。
+     * true 时消耗一枚弹药并使用该武器战斗部终结当前载具；RVP 部署实例先回传真玩家，
+     * 普通有人载具不保护乘员。回传失败时不消耗弹药、不启动冷却、不起爆。
+     */
+    @SerializedName("self_destruct_vehicle")
+    private boolean selfDestructVehicle = false;
+
     public RVP_EnumFireMode getFireMode() {
         return fireMode == null ? RVP_EnumFireMode.FULL_AUTO : fireMode;
     }
@@ -167,5 +175,10 @@ public class RVP_FireData {
 
     public long getBurstDelay() {
         return Math.max(burstDelay, 0L);
+    }
+
+    /** 是否请求通过 rvp:bomb 终结当前部署载具。 */
+    public boolean isSelfDestructVehicle() {
+        return selfDestructVehicle;
     }
 }

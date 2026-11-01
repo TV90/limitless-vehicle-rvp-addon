@@ -187,6 +187,31 @@ public class RVP_ProjectileData {
     @SerializedName("second_pulse_burn_time")
     private float secondPulseBurnTime = 0f;
 
+    /**
+     * 第二脉冲速度倍率触发阈值，无量纲，默认 0（关闭）；当前速度 ≤ 本值 × 当前生效极速时点火。
+     * <p>当前生效极速 = {@code max_speed × altitude_max_speed_factor(当前高度)}，与 {@code clampSpeed}
+     * 同一口径，因此低空/高空都会按同一"离极速还差多少"的比例触发；{@code max_speed} 未配置（不限速）
+     * 时该条件不生效。与 {@code second_pulse_trigger_speed} 为并集关系。</p>
+     */
+    @SerializedName("second_pulse_trigger_speed_ratio")
+    private float secondPulseTriggerSpeedRatio = 0f;
+
+    /**
+     * 第二脉冲顶端点火开关，默认 false；面向高抛弹道——第一段燃尽后、弹体爬升到接近顶点时点火。
+     * <p>顶点按竖直速度过零判定：上一 Tick 仍在爬升（vy &gt; 0）、本 Tick 竖直速度已降到
+     * {@code second_pulse_trigger_apex_tolerance} 以内即点火。与其它触发条件为并集关系。</p>
+     */
+    @SerializedName("second_pulse_trigger_apex")
+    private boolean secondPulseTriggerApex = false;
+
+    /**
+     * 顶端点火容差，单位格/Tick（竖直速度），默认 0.05；爬升率降到该值即视为到达顶点。
+     * <p>0 表示严格过零（vy 必须降到 0 及以下）；高抛弹道常常不能精确达到理论顶点，
+     * 用正容差让点火提前到顶点前一点点，平滑窗口抖动。</p>
+     */
+    @SerializedName("second_pulse_trigger_apex_tolerance")
+    private float secondPulseTriggerApexTolerance = 0.05f;
+
     /** 发射后的点火延迟，单位 Tick，默认 0；仅火箭发动机启用时生效。 */
     @SerializedName("ignition_delay_tick")
     private int ignitionDelayTick = 0;
@@ -313,6 +338,18 @@ public class RVP_ProjectileData {
         if (!proj.has("second_pulse_burn_time") && weaponRoot.has("second_pulse_burn_time")
                 && weaponRoot.get("second_pulse_burn_time").isJsonPrimitive()) {
             secondPulseBurnTime = weaponRoot.get("second_pulse_burn_time").getAsFloat();
+        }
+        if (!proj.has("second_pulse_trigger_speed_ratio") && weaponRoot.has("second_pulse_trigger_speed_ratio")
+                && weaponRoot.get("second_pulse_trigger_speed_ratio").isJsonPrimitive()) {
+            secondPulseTriggerSpeedRatio = weaponRoot.get("second_pulse_trigger_speed_ratio").getAsFloat();
+        }
+        if (!proj.has("second_pulse_trigger_apex") && weaponRoot.has("second_pulse_trigger_apex")
+                && weaponRoot.get("second_pulse_trigger_apex").isJsonPrimitive()) {
+            secondPulseTriggerApex = weaponRoot.get("second_pulse_trigger_apex").getAsBoolean();
+        }
+        if (!proj.has("second_pulse_trigger_apex_tolerance") && weaponRoot.has("second_pulse_trigger_apex_tolerance")
+                && weaponRoot.get("second_pulse_trigger_apex_tolerance").isJsonPrimitive()) {
+            secondPulseTriggerApexTolerance = weaponRoot.get("second_pulse_trigger_apex_tolerance").getAsFloat();
         }
     }
 
@@ -610,6 +647,21 @@ public class RVP_ProjectileData {
         return hasRocketEngine && secondPulse ? Math.max(secondPulseBurnTime, 0f) : 0f;
     }
 
+    /** @return 当前极速的比例阈值；0 关闭，仅在火箭发动机与二脉冲开关同时启用时有值。 */
+    public float getResolvedSecondPulseTriggerSpeedRatio() {
+        return hasRocketEngine && secondPulse ? Math.max(secondPulseTriggerSpeedRatio, 0f) : 0f;
+    }
+
+    /** @return 是否启用顶端点火；仅在火箭发动机与二脉冲开关同时启用时为 true。 */
+    public boolean isSecondPulseTriggerApex() {
+        return hasRocketEngine && secondPulse && secondPulseTriggerApex;
+    }
+
+    /** @return 顶端点火容差（格/Tick 竖直速度）；未启用顶端点火时恒 0。 */
+    public float getResolvedSecondPulseTriggerApexTolerance() {
+        return isSecondPulseTriggerApex() ? Math.max(secondPulseTriggerApexTolerance, 0f) : 0f;
+    }
+
     public boolean usesSecondPulse() {
         if (!hasRocketEngine || !secondPulse) {
             return false;
@@ -617,7 +669,11 @@ public class RVP_ProjectileData {
         if (getResolvedSecondPulseThrust() <= 0f || getResolvedSecondPulseBurnTime() <= 0f) {
             return false;
         }
-        return getResolvedSecondPulseTriggerSpeed() > 0f || getResolvedSecondPulseTriggerDistance() > 0f;
+        // 四种触发条件任一存在即视为可点火：定速阈值、距离阈值、极速比例、弹道顶点。
+        return getResolvedSecondPulseTriggerSpeed() > 0f
+                || getResolvedSecondPulseTriggerDistance() > 0f
+                || getResolvedSecondPulseTriggerSpeedRatio() > 0f
+                || isSecondPulseTriggerApex();
     }
 
     public int getResolvedIgnitionDelayTick() {

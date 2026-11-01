@@ -36,6 +36,8 @@ public class RVP_UavSeatLockEventHandler {
     @SubscribeEvent
     public static void onPlayerRespawn(PlayerEvent.PlayerRespawnEvent event) {
         if (event.getEntity() instanceof ServerPlayer serverPlayer) {
+            // 调用回传事务清理：真正死亡后的新生命不执行旧传送，离线则仍保留事务。
+            if (!event.isEndConquered()) RVP_DeployableUavService.cancelReturnAfterDeath(serverPlayer);
             RVP_DeployableUavService.unlockSeatForPlayer(serverPlayer.level(), serverPlayer.getId());
         }
     }

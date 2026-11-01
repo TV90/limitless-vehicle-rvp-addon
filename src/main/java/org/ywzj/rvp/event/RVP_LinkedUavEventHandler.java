@@ -12,6 +12,8 @@ import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.EntityMountEvent;
 import net.minecraftforge.event.entity.EntityLeaveLevelEvent;
 import net.minecraftforge.event.entity.EntityJoinLevelEvent;
+import net.minecraftforge.event.entity.living.LivingHurtEvent;
+import net.minecraftforge.event.level.ExplosionEvent;
 import net.minecraftforge.event.server.ServerStoppingEvent;
 import net.minecraftforge.event.server.ServerStoppedEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -59,6 +61,25 @@ public class RVP_LinkedUavEventHandler {
 
     private static final Logger LOGGER = LogUtils.getLogger();
 
+    /** 本体/RVP 车辆爆炸伤害结算前，先同步完成部署子机毁伤引发的真玩家回传。 */
+    @SubscribeEvent
+    public static void beforeExplosionHurt(ExplosionEvent.Start event) {
+        if (event.getLevel() instanceof ServerLevel serverLevel) {
+            // 调用本项目服务：爆炸事件位于车辆爆炸 hurt 前，先同步返回本次终结事务的乘员。
+            RVP_DeployableUavService.beforeNaturalVehicleExplosion(serverLevel,
+                    event.getExplosion().getPosition());
+        }
+    }
+
+    /** 自然毁伤爆心伤害仅豁免本tick刚回传且directEntity就是对应部署child的玩家。 */
+    @SubscribeEvent
+    public static void protectReturnedUavPlayer(LivingHurtEvent event) {
+        if (event.getEntity() instanceof ServerPlayer player
+                && RVP_DeployableUavService.shouldProtectReturnedPlayer(player, event.getSource())) {
+            event.setCanceled(true);
+        }
+    }
+
     @SubscribeEvent
     public static void onServerTick(TickEvent.ServerTickEvent event) {
         if (event.phase != TickEvent.Phase.END) {
@@ -68,6 +89,7 @@ public class RVP_LinkedUavEventHandler {
         if (server == null) {
             return;
         }
+        RVP_DeployableUavService.expireReturnProtection(server);
         for (ServerLevel level : server.getAllLevels()) {
             tickVehicles(level);
             RVP_DeployableUavService.enforceSeatLocks(level);
@@ -85,6 +107,10 @@ public class RVP_LinkedUavEventHandler {
         }
         for (AbstractVehicle vehicle : vehicles) {
             expireWreckEarly(vehicle);
+            if (vehicle.level() instanceof ServerLevel serverLevel) {
+                // 终态清理只由已有载具tick快照驱动，不在每次Explosion.Start扫描全维度实体。
+                RVP_DeployableUavService.finishDestroyedTerminationIfReady(serverLevel, vehicle);
+            }
             if (RVP_LinkedUavStateTable.isDeployableUavInstance(vehicle)) {
                 RVP_DeployableUavService.restoreActivePilotSeatLock(vehicle);
                 Vec3 fakePos = RVP_LinkedUavStateTable.getFakeOperatorPosition(vehicle);
@@ -146,6 +172,11 @@ public class RVP_LinkedUavEventHandler {
         vehicle.getEntityData().set(AbstractVehicle.DESTROYED, true);
         vehicle.setHealth(vehicle.getMaxHealth());
         DESTROYED_SINCE.put(vehicle.getUUID(), System.currentTimeMillis());
+        if (RVP_LinkedUavStateTable.isDeployableUavInstance(vehicle)) {
+            // 调用本项目服务：stopRiding 回调已返回且 DESTROYED 已写入，可在本次终结路径立即回传。
+            RVP_DeployableUavService.flushDestroyedDeployableReturns(
+                    vehicle.level() instanceof ServerLevel serverLevel ? serverLevel : null);
+        }
     }
 
     /**
@@ -366,7 +397,7 @@ public class RVP_LinkedUavEventHandler {
         if (!(passenger instanceof ServerPlayer serverPlayer)) {
             return;
         }
-        ReturnTarget target = resolveReturnPosition(vehicle, serverPlayer);
+        RVP_DeployableUavService.ReturnTarget target = RVP_DeployableUavService.resolveReturnTarget(vehicle);
                 if (RVP_DebugFlags.UAV.isEnabled()) {
             LOGGER.info("[RVP-UAV] {} 离机: uav={} 回传位置={} parentUuid={}",
                 serverPlayer.getName().getString(), vehicle.getVehicleId(), target == null ? null : target.position(),
@@ -377,42 +408,4 @@ public class RVP_LinkedUavEventHandler {
                 target == null ? null : target.position());
     }
 
-    /**
-     * 解析操作员回传位置：优先母车当前实体位置（母车右侧外沿，避免落在车体内），
-     * 母车已卸载时用最近同步到的母车位置兜底，最后回退上车时记录的位置。
-     */
-    private record ReturnTarget(ServerLevel level, Vec3 position) {}
-
-    private static ReturnTarget resolveReturnPosition(AbstractVehicle uav, ServerPlayer player) {
-        UUID parentUuid = RVP_LinkedUavStateTable.getLinkedParentVehicleUuid(uav);
-        if (parentUuid != null && uav.level() instanceof ServerLevel serverLevel) {
-            Entity parent = null;
-            for (ServerLevel level : serverLevel.getServer().getAllLevels()) {
-                parent = level.getEntity(parentUuid);
-                if (parent != null) break;
-            }
-            if (parent instanceof AbstractVehicle parentVehicle) {
-                return new ReturnTarget((ServerLevel) parentVehicle.level(), parentVehicle.relativeRotPos(
-                        parentVehicle.position().add(parentVehicle.getMainCubeOBB().obb().extents().x + 1, 1, 0),
-                        false));
-            }
-            Vec3 lastParentPos = RVP_DeployableUavService.getLinkedParentLastPosition(uav.getUUID());
-            if (lastParentPos != null) {
-                net.minecraft.resources.ResourceLocation parentDim =
-                        RVP_LinkedUavStateTable.getLinkedParentDimension(uav);
-                ServerLevel parentLevel = serverLevel;
-                if (parentDim != null) {
-                    for (ServerLevel candidate : serverLevel.getServer().getAllLevels()) {
-                        if (candidate.dimension().location().equals(parentDim)) {
-                            parentLevel = candidate;
-                            break;
-                        }
-                    }
-                }
-                return new ReturnTarget(parentLevel, lastParentPos.add(0, 1, 0));
-            }
-        }
-        Vec3 fake = RVP_LinkedUavStateTable.getFakeOperatorPosition(uav);
-        return fake == null ? null : new ReturnTarget(player.serverLevel(), fake);
-    }
 }

@@ -58,7 +58,7 @@ class RVP_UavLifecycleStrategyTest {
         ResourceLocation overworld = new ResourceLocation("minecraft", "overworld");
         ResourceLocation nether = new ResourceLocation("minecraft", "the_nether");
         RVP_DeployableUavService.PendingAutoRide pending = new RVP_DeployableUavService.PendingAutoRide(
-                UUID.randomUUID(), overworld, nether, 2, 60, 42, overworld, new Vec3(10, 70, 20));
+                UUID.randomUUID(), UUID.randomUUID(), overworld, nether, 2, 60, 42, overworld, new Vec3(10, 70, 20), false);
 
         assertEquals(RVP_DeployableUavService.PendingRideDecision.WAIT,
                 RVP_DeployableUavService.classifyPendingRide(true, nether, false, false, 41, pending));
@@ -75,7 +75,7 @@ class RVP_UavLifecycleStrategyTest {
                 RVP_DeployableUavService.decrementPendingRetry(pending);
         assertEquals(59, oneLeft.retryLeft());
         assertNull(RVP_DeployableUavService.decrementPendingRetry(new RVP_DeployableUavService.PendingAutoRide(
-                pending.parentUuid(), pending.parentDimension(), pending.playerDimension(), pending.seatIndex(),
-                1, pending.notBeforeTick(), pending.returnDimension(), pending.returnPosition())));
+                pending.childUuid(), pending.parentUuid(), pending.parentDimension(), pending.playerDimension(), pending.seatIndex(),
+                1, pending.notBeforeTick(), pending.returnDimension(), pending.returnPosition(), pending.returned())));
     }
 }

@@ -740,10 +740,18 @@ public class RVP_ClientEvents {
         if (RVP_LoiterConfigCache.get(vehicle.getVehicleId()).isConfigured()) {
             return true;
         }
-        // 场景二：当前载具配置了可部署无人机，且其子机载具配置了盘旋参数
-        RVP_DeployableUavConfig uavConfig = RVP_DeployableUavConfigCache.get(vehicle.getVehicleId());
-        return uavConfig.isConfigured()
-                && RVP_LoiterConfigCache.get(uavConfig.vehicleId()).isConfigured();
+        // 场景二：母车的服务端选项可能不同于默认项；状态未知时只要任一候选可盘旋就发送，
+        // 由服务端按真实选项/子机状态判定，避免客户端缓存未到时误吞合法按键。
+        var options = RVP_DeployableUavConfigCache.getOptions(vehicle.getVehicleId());
+        if (options.isEmpty()) return false;
+        var snapshot = org.ywzj.rvp.client.state.RVP_DeployableUavClientStateCache.get(vehicle.getUUID());
+        if (snapshot != null && snapshot.selectedOptionId() != null) {
+            var selected = options.stream()
+                    .filter(option -> option.id().equals(snapshot.selectedOptionId()))
+                    .findFirst().orElse(null);
+            if (selected != null) return RVP_LoiterConfigCache.get(selected.vehicleId()).isConfigured();
+        }
+        return options.stream().anyMatch(option -> RVP_LoiterConfigCache.get(option.vehicleId()).isConfigured());
     }
 
     private static void ywzj_rvp$fireCountermeasure(RVP_EnumCountermeasureType type) {

@@ -27,7 +27,12 @@ final class RVP_RuntimeActiveSeekerGuidance {
             if (!freeAcquire && designated != null) {
                 missile.setTargetEntity(designated);
                 // [RVP] §46：指定目标点与制导瞄准点同源（最大 OBB 中心）
-                Vec3 point = org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(designated);
+                // [RVP] §49：AIR 属红外族，与 applyIntent 同种子取随机 OBB 中心（舰船仍为最大 OBB）
+                Vec3 point = type == RVP_EnumGuidanceType.AIR
+                        ? org.ywzj.rvp.util.RVP_AimPointResolver.resolveIrLockPoint(designated,
+                                org.ywzj.rvp.util.RVP_AimPointResolver.lockSeed(missile.getId(), designated),
+                                org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(designated))
+                        : org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(designated);
                 missile.setTargetPos(point);
                 return RVP_GuidanceIntent.entity(designated, false, 1.0, type);
             }

@@ -4,6 +4,7 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
+import org.ywzj.rvp.config.RVP_DeployableUavConfig;
 
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -29,6 +30,10 @@ public final class RVP_LinkedUavStateTable {
         String deployableUavRole = "none";
         String datalinkRole = "none";
         Vec3 fakeOperatorPosition;
+        String returnAnchorDimension = "";
+        Vec3 returnAnchorPosition;
+        String deploymentOptionId = "";
+        RVP_DeployableUavConfig deploymentConfig;
     }
 
     private RVP_LinkedUavStateTable() {}
@@ -67,6 +72,31 @@ public final class RVP_LinkedUavStateTable {
             tag.putDouble("fakeZ", s.fakeOperatorPosition.z);
             tag.putBoolean("hasFakePosition", true);
         }
+        if (!s.returnAnchorDimension.isBlank() && s.returnAnchorPosition != null) {
+            tag.putString("returnAnchorDimension", s.returnAnchorDimension);
+            tag.putDouble("returnAnchorX", s.returnAnchorPosition.x);
+            tag.putDouble("returnAnchorY", s.returnAnchorPosition.y);
+            tag.putDouble("returnAnchorZ", s.returnAnchorPosition.z);
+        }
+        if (s.deploymentConfig != null && s.deploymentConfig.isConfigured()) {
+            RVP_DeployableUavConfig c = s.deploymentConfig;
+            tag.putString("deploymentOptionId", s.deploymentOptionId == null ? "" : s.deploymentOptionId);
+            tag.putString("deploymentVehicleId", c.vehicleId().toString());
+            tag.putString("deploymentRole", c.role());
+            tag.putDouble("deploymentSpawnX", c.spawnOffset().x);
+            tag.putDouble("deploymentSpawnY", c.spawnOffset().y);
+            tag.putDouble("deploymentSpawnZ", c.spawnOffset().z);
+            tag.putString("deploymentSpawnYaw", c.spawnYawMode());
+            tag.putBoolean("deploymentSingle", c.singleInstance());
+            tag.putBoolean("deploymentSwitch", c.allowControlSwitch());
+            tag.putBoolean("deploymentLink", c.autoLinkDatalink());
+            tag.putInt("deploymentCooldown", c.redeployCooldownTick());
+            tag.putBoolean("deploymentLoiter", c.autoLoiterOnSwitchBack());
+            tag.putFloat("deploymentSpeed", c.initialSpeed());
+            tag.putDouble("deploymentSignalRange", c.signalRange());
+            tag.putIntArray("deploymentSeats", c.allowedSeatIndexes() == null ? new int[0]
+                    : c.allowedSeatIndexes().stream().mapToInt(Integer::intValue).toArray());
+        }
         vehicle.getPersistentData().put("rvpLinkedUav", tag);
     }
 
@@ -87,6 +117,22 @@ public final class RVP_LinkedUavStateTable {
         s.datalinkRole = tag.contains("datalinkRole") ? tag.getString("datalinkRole") : "none";
         s.fakeOperatorPosition = tag.getBoolean("hasFakePosition")
                 ? new Vec3(tag.getDouble("fakeX"), tag.getDouble("fakeY"), tag.getDouble("fakeZ")) : null;
+        s.returnAnchorDimension = tag.getString("returnAnchorDimension");
+        s.returnAnchorPosition = s.returnAnchorDimension.isBlank() ? null
+                : new Vec3(tag.getDouble("returnAnchorX"), tag.getDouble("returnAnchorY"), tag.getDouble("returnAnchorZ"));
+        s.deploymentOptionId = tag.getString("deploymentOptionId");
+        ResourceLocation vehicleId = ResourceLocation.tryParse(tag.getString("deploymentVehicleId"));
+        if (vehicleId != null) {
+            int[] seats = tag.getIntArray("deploymentSeats");
+            s.deploymentConfig = new RVP_DeployableUavConfig(true, vehicleId,
+                    tag.getString("deploymentRole"), new Vec3(tag.getDouble("deploymentSpawnX"),
+                    tag.getDouble("deploymentSpawnY"), tag.getDouble("deploymentSpawnZ")),
+                    tag.getString("deploymentSpawnYaw"), tag.getBoolean("deploymentSingle"),
+                    tag.getBoolean("deploymentSwitch"), tag.getBoolean("deploymentLink"),
+                    tag.getInt("deploymentCooldown"), tag.getBoolean("deploymentLoiter"),
+                    tag.getFloat("deploymentSpeed"), tag.getDouble("deploymentSignalRange"),
+                    java.util.Arrays.stream(seats).boxed().toList());
+        }
     }
 
     /** 服务器切换前清除内存缓存，实体 NBT 已在 unload path 保存。 */
@@ -105,8 +151,12 @@ public final class RVP_LinkedUavStateTable {
         s.deployableUavInstance = false;
         s.returnSeatIndex = -1;
         s.fakeOperatorPosition = null;
+        s.returnAnchorDimension = "";
+        s.returnAnchorPosition = null;
         s.deployableUavRole = "none";
         s.datalinkRole = "none";
+        s.deploymentOptionId = "";
+        s.deploymentConfig = null;
         persist(vehicle);
     }
 
@@ -181,6 +231,29 @@ public final class RVP_LinkedUavStateTable {
         }
     }
 
+    /** 保存部署时的候选 ID 与完整配置快照，避免母车选项后续变化影响已放飞子机。 */
+    public static void setDeploymentSnapshot(AbstractVehicle vehicle, String optionId,
+                                             RVP_DeployableUavConfig config) {
+        State state = of(vehicle);
+        if (state != null) {
+            state.deploymentOptionId = optionId == null ? "" : optionId;
+            state.deploymentConfig = config;
+            persist(vehicle);
+        }
+    }
+
+    /** 读取部署时固定的完整配置快照；旧实体无快照时返回 null。 */
+    public static RVP_DeployableUavConfig getDeploymentConfig(AbstractVehicle vehicle) {
+        State state = of(vehicle);
+        return state == null ? null : state.deploymentConfig;
+    }
+
+    /** 读取部署时固定的候选 ID。 */
+    public static String getDeploymentOptionId(AbstractVehicle vehicle) {
+        State state = of(vehicle);
+        return state == null ? "" : state.deploymentOptionId;
+    }
+
     public static boolean isDeployableUavControlSwitchAllowed(AbstractVehicle vehicle) {
         State state = of(vehicle);
         return state == null || state.deployableUavAllowControlSwitch;
@@ -244,5 +317,28 @@ public final class RVP_LinkedUavStateTable {
             state.fakeOperatorPosition = position;
             persist(vehicle);
         }
+    }
+
+    /** 持久化部署载具的放飞/回传锚点，母车卸载后仍能跨维返回到可靠位置。 */
+    public static void setReturnAnchor(AbstractVehicle vehicle, ResourceLocation dimension, Vec3 position) {
+        State state = of(vehicle);
+        if (state != null) {
+            state.returnAnchorDimension = dimension == null ? "" : dimension.toString();
+            state.returnAnchorPosition = position;
+            persist(vehicle);
+        }
+    }
+
+    /** 读取部署载具固定回传维度。 */
+    public static ResourceLocation getReturnAnchorDimension(AbstractVehicle vehicle) {
+        State state = vehicle == null ? null : STATES.get(vehicle.getUUID());
+        return state == null || state.returnAnchorDimension.isBlank()
+                ? null : ResourceLocation.tryParse(state.returnAnchorDimension);
+    }
+
+    /** 读取部署载具固定回传位置。 */
+    public static Vec3 getReturnAnchorPosition(AbstractVehicle vehicle) {
+        State state = vehicle == null ? null : STATES.get(vehicle.getUUID());
+        return state == null ? null : state.returnAnchorPosition;
     }
 }
