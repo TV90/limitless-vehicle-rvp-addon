@@ -11,6 +11,8 @@ import org.ywzj.rvp.uav.RVP_DeployableUavService;
 import org.ywzj.rvp.uav.RVP_LinkedUavStateTable;
 import org.ywzj.rvp.uav.RVP_UavLoiterManager;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
+import org.ywzj.vehicle.entity.vehicle.FixedWingVehicle;
+import org.ywzj.vehicle.entity.vehicle.RotaryWingVehicle;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -50,14 +52,18 @@ public class C2SSetLoiterCenter {
             if (player == null) {
                 return;
             }
+            if (!Double.isFinite(msg.x) || !Double.isFinite(msg.y) || !Double.isFinite(msg.z)
+                    || Math.abs(msg.x) > 30_000_000.0 || Math.abs(msg.z) > 30_000_000.0
+                    || msg.y < -2048.0 || msg.y > 4096.0) {
+                return;
+            }
             if (!(player.getVehicle() instanceof AbstractVehicle vehicle)) {
                 player.displayClientMessage(Component.translatable("message.ywzj_rvp.uav_loiter.not_in_vehicle"), true);
                 return;
             }
-
             // 解析目标无人机：当前驾驶的是无人机则返回它，否则查关联的子无人机
             AbstractVehicle uav = resolveTargetUav(vehicle);
-            if (uav == null) {
+            if (uav == null || !RVP_DeployableUavService.isLoiterControlOperator(player, vehicle, uav)) {
                 return;
             }
             // 信号范围守卫（2026-10-06）：失联的无人机不可标记圆心
@@ -85,26 +91,39 @@ public class C2SSetLoiterCenter {
                 // 未盘旋：以标记点为固定圆心激活
                 RVP_UavLoiterManager.enableMarkedCenter(uavUuid, center, config.loiterRadius(), center.y);
             }
+            RVP_UavLoiterManager.persist(uav);
             player.displayClientMessage(Component.translatable("message.ywzj_rvp.uav_loiter.center_set"), true);
         });
         ctx.setPacketHandled(true);
     }
 
     private static AbstractVehicle resolveTargetUav(AbstractVehicle vehicle) {
-        if (RVP_LinkedUavStateTable.isDeployableUavInstance(vehicle)) {
+        if (isLoiterCapable(vehicle) && RVP_LinkedUavStateTable.isDeployableUavInstance(vehicle)) {
             return vehicle;
         }
-        // AC130 等自身带盘旋配置的固定翼载具，直接对自身盘旋
+        // 只有本身为飞行载具时才优先使用自身配置；运输车/母车上的 loiter 参数不接管子机。
         RVP_LoiterConfig selfConfig = RVP_LoiterConfigCache.get(vehicle.getVehicleId());
-        if (selfConfig.isConfigured()) {
+        if (isLoiterCapable(vehicle) && selfConfig.isConfigured()) {
             return vehicle;
         }
         Optional<AbstractVehicle> child = RVP_DeployableUavService.getLinkedChild(vehicle);
-        return child.orElse(null);
+        AbstractVehicle linked = child.orElse(null);
+        return linked != null && isLoiterCapable(linked) ? linked : null;
+    }
+
+    private static boolean isLoiterCapable(AbstractVehicle vehicle) {
+        return vehicle instanceof FixedWingVehicle || vehicle instanceof RotaryWingVehicle;
     }
 
     private static RVP_LoiterConfig resolveLoiterConfig(AbstractVehicle vehicle, AbstractVehicle uav) {
         if (vehicle == uav) {
+            if (RVP_LinkedUavStateTable.isDeployableUavInstance(uav)) {
+                AbstractVehicle parent = RVP_DeployableUavService.getLinkedParent(uav).orElse(null);
+                if (parent != null) {
+                    RVP_LoiterConfig parentConfig = RVP_LoiterConfigCache.get(parent.getVehicleId());
+                    if (parentConfig.isConfigured()) return parentConfig;
+                }
+            }
             return RVP_LoiterConfigCache.get(uav.getVehicleId());
         }
         if (!RVP_LinkedUavStateTable.isDeployableUavInstance(vehicle)) {

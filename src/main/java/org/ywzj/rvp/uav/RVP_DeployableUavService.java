@@ -8,6 +8,8 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.level.Level;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
@@ -46,13 +48,35 @@ public final class RVP_DeployableUavService {
     /** 母车实体不可用（被卸载/已销毁）时自动上车的最大重试 tick 数，3 秒。 */
     private static final int AUTO_RIDE_MAX_RETRY = 60;
 
-    private record PendingAutoRide(UUID parentUuid, int seatIndex, int retryLeft) {}
+    record PendingAutoRide(UUID parentUuid, ResourceLocation parentDimension,
+                           ResourceLocation playerDimension, int seatIndex, int retryLeft,
+                           long notBeforeTick, @Nullable ResourceLocation returnDimension,
+                           @Nullable Vec3 returnPosition) {}
+
+    enum PendingRideDecision { CANCEL, ALREADY_PARENT, WAIT, READY }
 
     /** 待自动上车队列（key = 玩家 UUID）：玩家离开无人机后，母车实体不可用时延迟重试。 */
     private static final Map<UUID, PendingAutoRide> PENDING_AUTO_RIDE = new HashMap<>();
 
+    static PendingRideDecision classifyPendingRide(boolean playerAlive, ResourceLocation currentDimension,
+                                                  boolean mounted, boolean mountedParent,
+                                                  long currentTick, PendingAutoRide pending) {
+        if (!playerAlive) return PendingRideDecision.CANCEL;
+        if (mounted) return mountedParent ? PendingRideDecision.ALREADY_PARENT : PendingRideDecision.CANCEL;
+        if (!pending.playerDimension().equals(currentDimension)) return PendingRideDecision.CANCEL;
+        return currentTick < pending.notBeforeTick() ? PendingRideDecision.WAIT : PendingRideDecision.READY;
+    }
+
+    static @Nullable PendingAutoRide decrementPendingRetry(PendingAutoRide pending) {
+        int retryLeft = pending.retryLeft() - 1;
+        if (retryLeft <= 0) return null;
+        return new PendingAutoRide(pending.parentUuid(), pending.parentDimension(), pending.playerDimension(),
+                pending.seatIndex(), retryLeft, pending.notBeforeTick(), pending.returnDimension(),
+                pending.returnPosition());
+    }
+
     /** 母车座位锁信息（玩家驾驶无人机期间锁定母车座位）。 */
-    public record SeatLockInfo(int seatIndex, int ownerPlayerId) {}
+    public record SeatLockInfo(int seatIndex, int ownerPlayerId, UUID ownerPlayerUuid) {}
 
     /** 母车座位锁注册表（key = 母车实体 UUID）。 */
     private static final Map<UUID, SeatLockInfo> PARENT_SEAT_LOCKS = new HashMap<>();
@@ -89,7 +113,10 @@ public final class RVP_DeployableUavService {
             if (existing != null && existing.isAlive() && !existing.isRemoved() && !existing.isDestroyed()) {
                 return DeployResult.ALREADY_DEPLOYED;
             }
-            clearLinkedChild(parent);
+            // Entity 不在当前内存不等于已销毁：保留已持久化的 child UUID，防重复部署。
+            if (RVP_LinkedUavStateTable.getLinkedChildVehicleUuid(parent) != null) {
+                return DeployResult.ALREADY_DEPLOYED;
+            }
         }
 
         ResourceLocation childVehicleId = config.vehicleId();
@@ -104,8 +131,10 @@ public final class RVP_DeployableUavService {
         if (child == null) {
             return DeployResult.SPAWN_FAILED;
         }
+        if (!serverLevel.addFreshEntity(child)) {
+            return DeployResult.SPAWN_FAILED;
+        }
         configureLink(parent, child, operator, config);
-        serverLevel.addFreshEntity(child);
         applyInitialSpeed(child, spawnYaw, config.initialSpeed());
         applyTakeoffBehavior(child, parent);
         return DeployResult.SUCCESS;
@@ -115,9 +144,11 @@ public final class RVP_DeployableUavService {
         if (!(player.getVehicle() instanceof AbstractVehicle parent)) {
             return false;
         }
+        if (!isDeployableControlOperator(parent, player)) {
+            return false;
+        }
         AbstractVehicle child = getLinkedChild(parent).orElse(null);
         if (child == null || child.isRemoved() || !child.isAlive() || child.isDestroyed()) {
-            clearLinkedChild(parent);
             return false;
         }
         // 信号范围守卫（2026-10-06）：失联的无人机不可切入驾驶
@@ -129,18 +160,22 @@ public final class RVP_DeployableUavService {
         if (!RVP_LinkedUavStateTable.isDeployableUavControlSwitchAllowed(child)) {
             return false;
         }
-        RVP_LinkedUavStateTable.setReturnSeatIndex(child, findSeatIndex(parent, player));
+        int returnSeatIndex = findOccupiedSeatIndex(parent, player);
+        if (returnSeatIndex < 0) {
+            return false;
+        }
         boolean riding = player.startRiding(child);
         if (!riding) {
             return false;
         }
+        RVP_LinkedUavStateTable.setReturnSeatIndex(child, returnSeatIndex);
         if (!child.seats.isEmpty() && child.seats.get(0).passengerId != player.getId()) {
             child.changeSeat(player, 0);
         }
         // 锁定母车上玩家离开前的座位（通常为驾驶位），防止他人占用/开走母车。
         // 玩家切回母车或自动上车成功时由 clearSeatLock 解除。
         // 锁状态存于静态注册表（不在实体上新增接口方法，避免 mixin 接口注入风险）。
-        setSeatLock(parent, RVP_LinkedUavStateTable.getReturnSeatIndex(child), player.getId());
+        setSeatLock(parent, returnSeatIndex, player.getId());
         // 玩家进入无人机后盘旋继续（运动输入由 ControlUnitMixin 屏蔽）；
         // 玩家可按 F 键手动切换盘旋开/关
         return true;
@@ -182,6 +217,11 @@ public final class RVP_DeployableUavService {
                 LOGGER.info("[RVP-UAV] 切回失败：控制切换被禁用 child={}", child.getVehicleId());
             }
             return false;
+        }
+        if (parent.level() != player.level()) {
+            // 跨维 stopRiding/teleport/startRiding 由 dismount 请求队列在关系清空后分两 tick 完成。
+            player.stopRiding();
+            return true;
         }
         boolean riding = player.startRiding(parent);
         if (!riding) {
@@ -254,6 +294,9 @@ public final class RVP_DeployableUavService {
         if (!RVP_LinkedUavStateTable.isDeployableUavInstance(child)) {
             return;
         }
+        if (child.level() instanceof ServerLevel serverLevel) {
+            RVP_UavTerminalEntitySavedData.get(serverLevel).markTerminal(child.getUUID());
+        }
         // 清除盘旋状态
         RVP_UavLoiterManager.remove(child.getUUID());
         OUT_OF_SIGNAL_RANGE_TICKS.remove(child.getUUID());
@@ -270,6 +313,8 @@ public final class RVP_DeployableUavService {
                 }
             }
         }
+        RVP_LinkedUavStateTable.clearLinks(child);
+        RVP_UavLoiterManager.clearPersistent(child);
         RVP_DeployableUavLinkRegistry.clearByChild(child.getUUID());
     }
 
@@ -290,10 +335,14 @@ public final class RVP_DeployableUavService {
         if (uav == null || !RVP_LinkedUavStateTable.isDeployableUavInstance(uav)) {
             return false;
         }
+        if (uav.isDestroyed()) {
+            return true;
+        }
         AbstractVehicle parent = resolveVehicleByUuid(uav.level(), RVP_LinkedUavStateTable.getLinkedParentVehicleUuid(uav));
         if (parent == null) {
             return false;
         }
+        if (parent.level() != uav.level()) return true;
         RVP_DeployableUavConfig config = RVP_DeployableUavConfigCache.get(parent.getVehicleId());
         if (!config.isConfigured()) {
             return false;
@@ -311,15 +360,20 @@ public final class RVP_DeployableUavService {
      * UAV discard、清链接并进入重部署冷却。
      */
     public static void checkSignalRange(AbstractVehicle uav) {
+        if (uav == null || uav.isDestroyed() || uav.isRemoved()) return;
         UUID uavUuid = uav.getUUID();
         if (!isUavOutOfSignalRange(uav)) {
             OUT_OF_SIGNAL_RANGE_TICKS.remove(uavUuid);
+            RVP_UavLoiterManager.resumeAfterSignal(uavUuid);
+            RVP_UavLoiterManager.persist(uav);
             return;
         }
         int ticks = OUT_OF_SIGNAL_RANGE_TICKS.merge(uavUuid, 1, Integer::sum);
         if (ticks == 1) {
             // 失联瞬间：关盘旋 + 清 controlUnit（防最后一次制导的油门/航向锁存直飞）
-            RVP_UavLoiterTickService.stopLoiterAndResetControls(uav);
+            RVP_UavLoiterManager.pauseForSignal(uavUuid);
+            RVP_UavLoiterManager.persist(uav);
+            uav.controlUnit.reset();
             messageEntity(uav.getDriver(), "message.ywzj_rvp.uav.signal_lost");
             notifyParentOperator(uav, "message.ywzj_rvp.uav.signal_lost");
         }
@@ -364,6 +418,7 @@ public final class RVP_DeployableUavService {
         RVP_DeployableUavLinkRegistry.link(parent.getUUID(), child.getUUID());
         RVP_LinkedUavStateTable.setDeployableUavInstance(child, true);
         RVP_LinkedUavStateTable.setLinkedParentVehicleUuid(child, parent.getUUID());
+        RVP_LinkedUavStateTable.setLinkedParentDimension(child, parent.level().dimension().location());
         RVP_LinkedUavStateTable.setLinkedLauncherVehicleUuid(child, config.autoLinkDatalink() ? parent.getUUID() : null);
         RVP_LinkedUavStateTable.setReturnSeatIndex(child, findSeatIndex(parent, operator));
         RVP_LinkedUavStateTable.setDeployableUavRole(child, config.role());
@@ -381,6 +436,46 @@ public final class RVP_DeployableUavService {
             }
         }
         return 0;
+    }
+
+    /** 当前母车操作者必须实际占据配置允许的座位，不能用默认座位掩盖未找到座位的情况。 */
+    public static boolean isDeployableControlOperator(AbstractVehicle parent, ServerPlayer player) {
+        if (parent == null || player == null || player.getVehicle() != parent) {
+            return false;
+        }
+        int seatIndex = findOccupiedSeatIndex(parent, player);
+        RVP_DeployableUavConfig config = RVP_DeployableUavConfigCache.get(parent.getVehicleId());
+        return config.isConfigured() && isDeployableControlSeatAllowed(config, seatIndex);
+    }
+
+    /** 盤旋命令可由实际驾驶载具的操作者使用；母车向子机下发时还须满足母车部署座位权限。 */
+    public static boolean isLoiterControlOperator(ServerPlayer player, AbstractVehicle commandVehicle,
+                                                  AbstractVehicle targetUav) {
+        if (player == null || commandVehicle == null || targetUav == null
+                || player.getVehicle() != commandVehicle) {
+            return false;
+        }
+        if (commandVehicle != targetUav) {
+            return isDeployableControlOperator(commandVehicle, player);
+        }
+        return commandVehicle.getDriver() == player || commandVehicle.controlUnit.getOperator() == player;
+    }
+
+    /** 纯座位策略：索引必须真实存在；空配置只允许驾驶位0。 */
+    public static boolean isDeployableControlSeatAllowed(RVP_DeployableUavConfig config, int seatIndex) {
+        return config != null && seatIndex >= 0 && config.isSeatAllowed(seatIndex);
+    }
+
+    private static int findOccupiedSeatIndex(AbstractVehicle vehicle, ServerPlayer player) {
+        if (vehicle == null || player == null) {
+            return -1;
+        }
+        for (AbstractVehicle.Seat seat : vehicle.seats) {
+            if (seat.passengerId != null && seat.passengerId == player.getId()) {
+                return seat.seatIndex;
+            }
+        }
+        return -1;
     }
 
     private static float resolveSpawnYaw(AbstractVehicle parent, @Nullable LivingEntity operator, RVP_DeployableUavConfig config) {
@@ -443,43 +538,29 @@ public final class RVP_DeployableUavService {
     }
 
     private static AbstractVehicle resolveVehicleByUuid(net.minecraft.world.level.Level level, UUID uuid) {
-        if (uuid == null || !(level instanceof ServerLevel serverLevel)) {
+        if (uuid == null || level.getServer() == null) {
             return null;
         }
-        Entity entity = serverLevel.getEntity(uuid);
-        return entity instanceof AbstractVehicle vehicle ? vehicle : null;
+        for (ServerLevel serverLevel : level.getServer().getAllLevels()) {
+            Entity entity = serverLevel.getEntity(uuid);
+            if (entity instanceof AbstractVehicle vehicle) return vehicle;
+        }
+        return null;
     }
 
     // ==================== 自动上车 + 母车座位锁 ====================
 
     /**
-     * tryAutoRideParent 重入保护（服务端单线程，静态标志足够）。
-     *
-     * <p>Forge 的 {@code Entity#removeVehicle()}（即 stopRiding）在置空 vehicle 字段<strong>之前</strong>
-     * 就触发 dismount 事件（canMountEntity），因此 dismount 事件处理时 {@code player.getVehicle()} 仍是
-     * 旧坐骑（非 null）。本方法内部的 {@code player.startRiding(parent)} 会触发旧坐骑 stopRiding → 再触发
-     * dismount 事件 → 再回到本方法，形成递归链。</p>
-     *
-     * <p>旧守卫（{@code player.getVehicle() != null} 时跳过）虽能拦截递归，但同样误伤无人机被击毁/移除的
-     * 死亡离机场景（该场景 dismount 事件同样发生在 vehicle 置空前），导致只传回母车旁、自动上车失效。
-     * 改为统一的重入保护：递归链由最外层调用完成自动上车。</p>
+     * 玩家离开无人机后仅登记返回请求；Forge dismount 回调发生在 passenger 关系清空前，
+     * 因此跨维传送和 startRiding 均交给后续服务器 tick 执行，避免事件递归。
      */
-    private static boolean autoRideInProgress = false;
-
-    /**
-     * 玩家离开无人机（被击毁/主动切回）后：传送回母车旁并自动坐上母车座位。
-     * 母车实体不可用（区块卸载）时进入延迟重试队列，等待母车重新加载后自动上车。
-     */
-    public static void tryAutoRideParent(ServerPlayer player, AbstractVehicle uav) {
+    public static void tryAutoRideParent(ServerPlayer player, AbstractVehicle uav,
+                                         @Nullable ResourceLocation returnDimension,
+                                         @Nullable Vec3 returnPosition) {
         if (player == null || uav == null || player.level().isClientSide()) {
             return;
         }
         if (!RVP_LinkedUavStateTable.isDeployableUavInstance(uav)) {
-            return;
-        }
-        if (autoRideInProgress) {
-            // 重入：本方法内部 startRiding → 旧坐骑 stopRiding → dismount 事件 再触发本方法。
-            // 交给最外层调用完成自动上车，避免无限递归。
             return;
         }
         UUID parentUuid = RVP_LinkedUavStateTable.getLinkedParentVehicleUuid(uav);
@@ -487,35 +568,7 @@ public final class RVP_DeployableUavService {
             return;
         }
         int seatIndex = Math.max(0, RVP_LinkedUavStateTable.getReturnSeatIndex(uav));
-        autoRideInProgress = true;
-        try {
-            AbstractVehicle parent = resolveVehicleByUuid(uav.level(), parentUuid);
-            if (parent == null || parent.isRemoved() || !parent.isAlive() || parent.isDestroyed()) {
-                scheduleAutoRide(player.getUUID(), parentUuid, seatIndex);
-                return;
-            }
-            if (player.getVehicle() == parent) {
-                // 已回到母车（主动切回时 onLeaveVehicle 先于 startRiding 触发）
-                restoreSeatAndUnlock(player, parent, seatIndex);
-                return;
-            }
-            if (player.getVehicle() == uav) {
-                // dismount 事件尚未完成移除（vehicle 字段仍指向无人机）时同步 startRiding 母车，
-                // 会嵌套触发旧坐骑 stopRiding → 再次 dismount 事件 → 递归返回后外层 stopRiding 因
-                // getVehicle()!=this 守卫失败，留下：① 母车 onEnterVehicle 二次执行占两个座位
-                // （两个座位栏目显示同一玩家）；② 无人机乘客列表残留幻影乘客。
-                // 改为延迟到下一 tick（removePassenger 完成后 player.getVehicle()==null）再自动上车。
-                scheduleAutoRide(player.getUUID(), parentUuid, seatIndex);
-                return;
-            }
-            if (player.startRiding(parent)) {
-                restoreSeatAndUnlock(player, parent, seatIndex);
-            } else {
-                scheduleAutoRide(player.getUUID(), parentUuid, seatIndex);
-            }
-        } finally {
-            autoRideInProgress = false;
-        }
+        scheduleAutoRide(player, uav, parentUuid, seatIndex, returnDimension, returnPosition);
     }
 
     private static void restoreSeatAndUnlock(ServerPlayer player, AbstractVehicle parent, int seatIndex) {
@@ -531,8 +584,10 @@ public final class RVP_DeployableUavService {
     /** 清除母车上属于该玩家的座位锁（玩家已回到母车）。 */
     public static void clearSeatLock(AbstractVehicle parent, ServerPlayer owner) {
         SeatLockInfo lock = PARENT_SEAT_LOCKS.get(parent.getUUID());
-        if (lock != null && lock.ownerPlayerId() == owner.getId()) {
+        if (lock != null && (lock.ownerPlayerUuid() != null
+                ? lock.ownerPlayerUuid().equals(owner.getUUID()) : lock.ownerPlayerId() == owner.getId())) {
             PARENT_SEAT_LOCKS.remove(parent.getUUID());
+            parent.getPersistentData().remove("rvpUavSeatLock");
                         if (RVP_DebugFlags.UAV.isEnabled()) {
                 LOGGER.info("[RVP-UAV-LOCK] 解锁母车 {} seat={} owner={}",
                     parent.getVehicleId(), lock.seatIndex(), lock.ownerPlayerId());
@@ -542,6 +597,14 @@ public final class RVP_DeployableUavService {
 
     /** 设置母车座位锁（玩家切至无人机期间，防止他人占用/开走母车）。 */
     public static void setSeatLock(AbstractVehicle parent, int seatIndex, int ownerPlayerId) {
+        UUID ownerUuid = parent != null && parent.level() instanceof ServerLevel serverLevel
+                && serverLevel.getEntity(ownerPlayerId) instanceof ServerPlayer player
+                ? player.getUUID() : null;
+        setSeatLock(parent, seatIndex, ownerPlayerId, ownerUuid);
+    }
+
+    /** 设置带明确玩家 UUID 的母车座位锁，支持玩家已离开母车或跨维重载恢复。 */
+    private static void setSeatLock(AbstractVehicle parent, int seatIndex, int ownerPlayerId, @Nullable UUID ownerUuid) {
         if (parent == null || seatIndex < 0) {
                         if (RVP_DebugFlags.UAV.isEnabled()) {
                 LOGGER.info("[RVP-UAV-LOCK] setSeatLock 跳过 parent={} seatIndex={}",
@@ -549,11 +612,31 @@ public final class RVP_DeployableUavService {
             }
             return;
         }
-        PARENT_SEAT_LOCKS.put(parent.getUUID(), new SeatLockInfo(seatIndex, ownerPlayerId));
+        PARENT_SEAT_LOCKS.put(parent.getUUID(), new SeatLockInfo(seatIndex, ownerPlayerId, ownerUuid));
                 if (RVP_DebugFlags.UAV.isEnabled()) {
             LOGGER.info("[RVP-UAV-LOCK] 锁母车 {} seat={} owner={}",
                 parent.getVehicleId(), seatIndex, ownerPlayerId);
         }
+    }
+
+    /** 无人机载具每 tick 检查正在驾驶的玩家；服务重启后只重建缺失的临时母车锁。 */
+    public static void restoreActivePilotSeatLock(AbstractVehicle child) {
+        if (child == null || !RVP_LinkedUavStateTable.isDeployableUavInstance(child)
+                || !(child.getDriver() instanceof ServerPlayer player)
+                || player.getVehicle() != child) {
+            return;
+        }
+        UUID parentUuid = RVP_LinkedUavStateTable.getLinkedParentVehicleUuid(child);
+        AbstractVehicle parent = resolveVehicleByUuid(child.level(), parentUuid);
+        if (parent == null || parent.isRemoved() || !parent.isAlive() || parent.isDestroyed()
+                || PARENT_SEAT_LOCKS.containsKey(parent.getUUID())) {
+            return;
+        }
+        int returnSeat = Math.max(0, RVP_LinkedUavStateTable.getReturnSeatIndex(child));
+        if (returnSeat >= parent.seats.size()) {
+            return;
+        }
+        setSeatLock(parent, returnSeat, player.getId(), player.getUUID());
     }
 
     /**
@@ -586,7 +669,9 @@ public final class RVP_DeployableUavService {
         if (lock == null) {
             return false;
         }
-        boolean reject = passenger == null || passenger.getId() != lock.ownerPlayerId();
+        boolean reject = passenger == null || (lock.ownerPlayerUuid() != null
+                ? !passenger.getUUID().equals(lock.ownerPlayerUuid())
+                : passenger.getId() != lock.ownerPlayerId());
         if (reject) {
                         if (RVP_DebugFlags.UAV.isEnabled()) {
                 LOGGER.info("[RVP-UAV-LOCK] 拒绝 {} 上母车 {}（锁 owner={} seat={}）",
@@ -606,7 +691,7 @@ public final class RVP_DeployableUavService {
         return PARENT_SEAT_LOCKS.get(parent.getUUID());
     }
 
-    /** 母车实体移除时清理其座位锁。 */
+    /** 母车永久移除时清理其座位锁；暂时卸载保留静态会话锁。 */
     public static void cleanupSeatLock(AbstractVehicle parent) {
         if (parent != null) {
             PARENT_SEAT_LOCKS.remove(parent.getUUID());
@@ -615,7 +700,24 @@ public final class RVP_DeployableUavService {
 
     /** 玩家重生/离开时解锁其锁定的所有母车座位（防止座位被永久锁死）。 */
     public static void unlockSeatForPlayer(Level level, int playerId) {
-        PARENT_SEAT_LOCKS.entrySet().removeIf(entry -> entry.getValue().ownerPlayerId() == playerId);
+        UUID playerUuid = level.getEntity(playerId) == null ? null : level.getEntity(playerId).getUUID();
+        releaseSeatLockForPlayer(playerId, playerUuid, level.getServer());
+    }
+
+    private static void releaseSeatLockForPlayer(int playerId, UUID playerUuid, MinecraftServer server) {
+        PARENT_SEAT_LOCKS.entrySet().removeIf(entry -> {
+            SeatLockInfo lock = entry.getValue();
+            boolean match = lock.ownerPlayerUuid() != null
+                    ? lock.ownerPlayerUuid().equals(playerUuid)
+                    : playerId >= 0 && lock.ownerPlayerId() == playerId;
+            if (match) {
+                for (ServerLevel serverLevel : server.getAllLevels()) {
+                    Entity entity = serverLevel.getEntity(entry.getKey());
+                    if (entity instanceof AbstractVehicle parent) parent.getPersistentData().remove("rvpUavSeatLock");
+                }
+            }
+            return match;
+        });
     }
 
     /** 服务端每 tick 强制母车座位锁（替代被删 mixin 的 onEnterVehicle/changeSeat 注入）： */
@@ -628,7 +730,7 @@ public final class RVP_DeployableUavService {
             // 注意：ServerLevel.getEntity 只返回本维度内的实体。母车不在本维度时直接跳过，
             // 绝不能当 stale 清理——否则多维度世界（overworld/nether/end 每个维度都会执行本方法）
             // 会在母车所在维度之外的维度把锁误删，导致"锁刚设置就被清除"。
-            // 母车实体真正移除/卸载时由 RVP_LinkedUavEventHandler.onEntityLeaveWorld -> cleanupSeatLock 清理。
+            // 母车永久移除时由 RVP_LinkedUavEventHandler 清理；暂时卸载保留 UUID 锁等待母车重载。
             if (!(serverLevel.getEntity(entry.getKey()) instanceof AbstractVehicle parent)) {
                 continue;
             }
@@ -638,11 +740,13 @@ public final class RVP_DeployableUavService {
             if (lockedSeat.isEmpty() || lockedSeat.get().passengerId == -1) {
                 continue;
             }
-            if (lockedSeat.get().passengerId == lock.ownerPlayerId()) {
-                continue; // 持有者放行
-            }
             if (!(parent.level().getEntity(lockedSeat.get().passengerId) instanceof ServerPlayer serverPlayer)) {
                 continue;
+            }
+            if (lock.ownerPlayerUuid() != null
+                    ? lock.ownerPlayerUuid().equals(serverPlayer.getUUID())
+                    : lock.ownerPlayerId() >= 0 && lock.ownerPlayerId() == serverPlayer.getId()) {
+                continue; // 持有者 UUID 匹配，避免重连后 entityId 改变而踢出真正操作者
             }
             // 直接踢出而非换座：母车锁定的语义是"锁住母车"，入侵者不应留在母车任意座位上
             // （配合 onMount 上车事件拦截，此处的每 tick 强制定位为兜底）。
@@ -683,37 +787,113 @@ public final class RVP_DeployableUavService {
         }
     }
 
-    private static void scheduleAutoRide(UUID playerUuid, UUID parentUuid, int seatIndex) {
-        if (playerUuid == null || parentUuid == null) {
+    private static void scheduleAutoRide(ServerPlayer player, AbstractVehicle uav, UUID parentUuid, int seatIndex,
+                                         @Nullable ResourceLocation returnDimension,
+                                         @Nullable Vec3 returnPosition) {
+        if (player == null || uav == null || parentUuid == null) {
             return;
         }
-        PENDING_AUTO_RIDE.put(playerUuid, new PendingAutoRide(parentUuid, seatIndex, AUTO_RIDE_MAX_RETRY));
+        ResourceLocation parentDimension = RVP_LinkedUavStateTable.getLinkedParentDimension(uav);
+        if (parentDimension == null) parentDimension = player.level().dimension().location();
+        long nextTick = player.level().getServer().getTickCount() + 1L;
+        PENDING_AUTO_RIDE.put(player.getUUID(), new PendingAutoRide(parentUuid, parentDimension,
+                player.level().dimension().location(), seatIndex, AUTO_RIDE_MAX_RETRY, nextTick,
+                returnDimension, returnPosition));
     }
 
-    /** 服务端每 tick 驱动自动上车重试（由 {@link org.ywzj.rvp.event.RVP_UavSeatLockEventHandler} 调用）。 */
-    public static void onServerTick(ServerLevel serverLevel) {
+    /** 服务端每 tick 驱动自动上车重试；跨维查父车并检查玩家仍在发起维度。 */
+    public static void onServerTick(MinecraftServer server) {
         if (PENDING_AUTO_RIDE.isEmpty()) {
             return;
         }
-        PENDING_AUTO_RIDE.entrySet().removeIf(entry -> {
+        var iterator = PENDING_AUTO_RIDE.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<UUID, PendingAutoRide> entry = iterator.next();
             UUID playerUuid = entry.getKey();
             PendingAutoRide pending = entry.getValue();
-            ServerPlayer player = serverLevel.getServer().getPlayerList().getPlayer(playerUuid);
-            if (player == null || player.isRemoved()) {
-                return true; // 玩家离线/移除，放弃重试
+            ServerPlayer player = server.getPlayerList().getPlayer(playerUuid);
+            if (player == null || player.isRemoved() || !player.isAlive()) {
+                releaseSeatLockForPlayer(-1, playerUuid, server);
+                iterator.remove();
+                continue;
             }
-            if (player.getVehicle() != null) {
-                return true; // 已骑乘（手动上车/切回），不再处理
+            AbstractVehicle parent = resolveVehicleByUuid(server.overworld(), pending.parentUuid());
+            PendingRideDecision decision = classifyPendingRide(true, player.level().dimension().location(),
+                    player.getVehicle() != null, player.getVehicle() == parent && parent != null,
+                    server.getTickCount(), pending);
+            if (decision == PendingRideDecision.CANCEL) {
+                unlockSeatForPlayer(player.level(), player.getId());
+                iterator.remove();
+                continue;
             }
-            AbstractVehicle parent = resolveVehicleByUuid(serverLevel, pending.parentUuid());
-            if (parent == null || parent.isRemoved() || !parent.isAlive() || parent.isDestroyed()) {
-                return pending.retryLeft() <= 1;
-            }
-            if (player.startRiding(parent)) {
+            if (decision == PendingRideDecision.ALREADY_PARENT) {
                 restoreSeatAndUnlock(player, parent, pending.seatIndex());
-                return true;
+                iterator.remove();
+                continue;
             }
-            return pending.retryLeft() <= 1;
-        });
+            if (decision == PendingRideDecision.WAIT) {
+                continue;
+            }
+            if (parent != null && parent.level().dimension().location().equals(pending.parentDimension())
+                    && !parent.isRemoved() && parent.isAlive() && !parent.isDestroyed()) {
+                if (player.level() != parent.level() && parent.level() instanceof ServerLevel parentLevel) {
+                    Vec3 transferPos = pending.returnPosition() != null
+                            && parentLevel.dimension().location().equals(pending.returnDimension())
+                            ? pending.returnPosition() : parent.position().add(0, 1.0, 0);
+                    player.teleportTo(parentLevel, transferPos.x, transferPos.y, transferPos.z,
+                            java.util.Set.of(), player.getYRot(), player.getXRot());
+                    pending = new PendingAutoRide(pending.parentUuid(), pending.parentDimension(),
+                            parent.level().dimension().location(), pending.seatIndex(), pending.retryLeft(),
+                            server.getTickCount() + 1L, pending.returnDimension(), pending.returnPosition());
+                    entry.setValue(pending);
+                    continue;
+                }
+                if (pending.returnPosition() != null && player.level().dimension().location().equals(pending.returnDimension())
+                        && player.position().distanceToSqr(pending.returnPosition()) > 4.0) {
+                    player.teleportTo(pending.returnPosition().x, pending.returnPosition().y, pending.returnPosition().z);
+                }
+                if (player.startRiding(parent)) {
+                    restoreSeatAndUnlock(player, parent, pending.seatIndex());
+                    iterator.remove();
+                    continue;
+                }
+            }
+            PendingAutoRide nextRetry = decrementPendingRetry(pending);
+            if (nextRetry == null) {
+                if (pending.returnPosition() != null) {
+                    ServerLevel returnLevel = findServerLevel(server, pending.returnDimension());
+                    if (returnLevel != null) {
+                        if (player.level() == returnLevel) {
+                            player.teleportTo(pending.returnPosition().x, pending.returnPosition().y,
+                                    pending.returnPosition().z);
+                        } else {
+                            player.teleportTo(returnLevel, pending.returnPosition().x, pending.returnPosition().y,
+                                    pending.returnPosition().z, java.util.Set.of(), player.getYRot(), player.getXRot());
+                        }
+                    }
+                }
+                unlockSeatForPlayer(player.level(), player.getId());
+                iterator.remove();
+            } else {
+                entry.setValue(nextRetry);
+            }
+        }
+    }
+
+    /** 服务器更换时清空座位与延迟控制队列，避免跨世界复用 UUID/tick。 */
+    public static void clearRuntime() {
+        PENDING_AUTO_RIDE.clear();
+        PARENT_SEAT_LOCKS.clear();
+        PARENT_LAST_POSITIONS.clear();
+        OUT_OF_SIGNAL_RANGE_TICKS.clear();
+    }
+
+    @Nullable
+    private static ServerLevel findServerLevel(MinecraftServer server, @Nullable ResourceLocation dimension) {
+        if (server == null || dimension == null) return null;
+        for (ServerLevel level : server.getAllLevels()) {
+            if (level.dimension().location().equals(dimension)) return level;
+        }
+        return null;
     }
 }

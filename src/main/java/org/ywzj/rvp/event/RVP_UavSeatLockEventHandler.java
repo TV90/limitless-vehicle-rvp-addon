@@ -30,10 +30,7 @@ public class RVP_UavSeatLockEventHandler {
         if (server == null) {
             return;
         }
-        ServerLevel serverLevel = server.overworld();
-        if (serverLevel != null) {
-            RVP_DeployableUavService.onServerTick(serverLevel);
-        }
+        RVP_DeployableUavService.onServerTick(server);
     }
 
     @SubscribeEvent

@@ -40,4 +40,8 @@ public final class RVP_DeployableUavCooldownRegistry {
             PARENT_REDEPLOY_END_TICK.remove(parentUuid);
         }
     }
+
+    public static void clearRuntime() {
+        PARENT_REDEPLOY_END_TICK.clear();
+    }
 }

@@ -47,15 +47,10 @@ public final class RVP_UavLoiterTickService {
     private static final int CLIMB_TIMEOUT_TICKS = 200;
     private static final int TRANSIT_TIMEOUT_TICKS = 1200;
     private static final int APPROACH_TIMEOUT_TICKS = 400;
-    /** 实体暂时查不到（区块卸载/维度切换中）的宽限（tick）：宽限内保留盘旋状态，实体回来无缝续飞。 */
-    private static final int ENTITY_MISSING_GRACE_TICKS = 100;
-
-    /** 实体缺失宽限计数（key = UAV UUID）。 */
-    private static final Map<UUID, Integer> ENTITY_MISSING_TICKS = new ConcurrentHashMap<>();
 
     @SubscribeEvent
     public static void onServerTick(TickEvent.ServerTickEvent event) {
-        if (event.phase != TickEvent.Phase.END) {
+        if (event.phase != TickEvent.Phase.START) {
             return;
         }
         MinecraftServer server = event.getServer();
@@ -65,21 +60,19 @@ public final class RVP_UavLoiterTickService {
         for (Map.Entry<UUID, MutableState> entry : RVP_UavLoiterManager.getAllInternal().entrySet()) {
             UUID uavUuid = entry.getKey();
             MutableState state = entry.getValue();
-            if (!state.active) {
+            if (!state.active || state.signalPaused) {
                 continue;
             }
-            // 查找 UAV 实体：查不到不立即删状态（区块卸载/换维度是瞬时的），给宽限期防止
-            // "飞远→卸载→盘旋静默消失"（2026-10-06 修复）；宽限内实体回来直接续飞
+            // 查找 UAV 实体：EntityLeaveLevelEvent 会仅清理 runtime；盘旋计划保存在实体 persistentData。
             AbstractVehicle uav = resolveVehicle(server, uavUuid);
             if (uav == null || !uav.isAlive() || uav.isRemoved()) {
-                int missing = ENTITY_MISSING_TICKS.merge(uavUuid, 1, Integer::sum);
-                if (missing > ENTITY_MISSING_GRACE_TICKS) {
-                    ENTITY_MISSING_TICKS.remove(uavUuid);
-                    RVP_UavLoiterManager.remove(uavUuid);
-                }
                 continue;
             }
-            ENTITY_MISSING_TICKS.remove(uavUuid);
+            if (uav.isDestroyed() || !(uav instanceof FixedWingVehicle || uav instanceof RotaryWingVehicle)) {
+                stopLoiterAndResetControls(uav);
+                RVP_UavLoiterManager.persist(uav);
+                continue;
+            }
             // 盘旋激活时制导优先；玩家运动输入由 ControlUnitMixin 屏蔽，
             // 玩家仍可操作武器（functional 输入）和按 F 键退出盘旋
             // 获取配置
@@ -95,10 +88,9 @@ public final class RVP_UavLoiterTickService {
             applyControlUnit(uav, out);
             // 阶段切换
             updatePhase(state, out, tickCount);
+            RVP_UavLoiterManager.persist(uav);
             // UAV 自身当前与速度前探区块由 RVP 远距载具租约服务统一提交，避免盘旋服务重复加票。
         }
-        ENTITY_MISSING_TICKS.keySet().removeIf(uuid -> RVP_UavLoiterManager.get(uuid) == null);
-
         // 定期同步盘旋状态到客户端
         if (server.getTickCount() % SYNC_INTERVAL_TICKS == 0) {
             syncLoiterStateToClients(server);
@@ -116,6 +108,7 @@ public final class RVP_UavLoiterTickService {
         }
         RVP_UavLoiterManager.disable(uav.getUUID());
         uav.controlUnit.reset();
+        RVP_UavLoiterManager.persist(uav);
     }
 
     /** 同步活跃盘旋圆到所有客户端，供战术地图渲染。 */
@@ -133,7 +126,7 @@ public final class RVP_UavLoiterTickService {
             }
             ResourceLocation dim = uav.level().dimension().location();
             circles.add(new RVP_ClientLoiterState.LoiterCircle(
-                    dim, state.centerX, state.centerZ, state.radius, state.active, uav.getId()));
+                    dim, state.centerX, state.centerZ, state.effectiveRadius, state.active, uav.getId()));
         }
         S2CLoiterStateSync msg = new S2CLoiterStateSync();
         msg.circles = circles;
@@ -155,6 +148,7 @@ public final class RVP_UavLoiterTickService {
         double climbRateMps = uav.getDeltaMovement().y * 20.0;
         double hSpeedMps = Math.sqrt(uav.getDeltaMovement().horizontalDistanceSqr()) * 20.0;
         double hSpeedBlocks = hSpeedMps / 20.0;
+        double airSpeedBlocks = uav.getDeltaMovement().length();
 
         double radius = state.radius;
         double solutionBank = 0;
@@ -168,29 +162,38 @@ public final class RVP_UavLoiterTickService {
             radius = solution.actualRadius();
             solutionBank = solution.targetBankDeg();
             solutionSpeed = solution.targetSpeedMps();
-            // 半径解算只依赖气动常量（v_min/配置半径），结果稳定——同步回 state 供战术地图圆环如实显示
-            state.radius = radius;
+            state.effectiveRadius = radius;
+            // requested radius 不被实际可行半径覆盖，避免高度/失速变化造成半径只增不减。
         }
 
         return switch (state.phase) {
             case CLIMB -> RVP_UavLoiterGuidance.computeClimb(
                     uavX, uavY, uavZ, uavYaw,
                     state.centerX, state.centerY, state.centerZ,
-                    targetAltitude, climbRateMps, hSpeedMps, solutionSpeed, isRotaryWing, tickCount);
+                    targetAltitude, climbRateMps, hSpeedMps, solutionSpeed, isRotaryWing, tickCount,
+                    uav.getZRot());
             case TRANSIT -> RVP_UavLoiterGuidance.computeTransit(
                     uavX, uavY, uavZ, uavYaw,
                     state.centerX, state.centerY, state.centerZ,
-                    radius, targetAltitude, climbRateMps, hSpeedMps, solutionSpeed, isRotaryWing, tickCount);
+                    radius, targetAltitude, climbRateMps, hSpeedMps, solutionSpeed, isRotaryWing, tickCount,
+                    uav.getZRot());
             case APPROACH -> RVP_UavLoiterGuidance.computeApproach(
                     uavX, uavY, uavZ, uavYaw,
                     state.centerX, state.centerY, state.centerZ,
                     radius, targetAltitude, climbRateMps,
-                    RVP_LoiterConfig.LOITER_DIRECTION, isRotaryWing, tickCount);
+                    RVP_LoiterConfig.LOITER_DIRECTION, isRotaryWing, tickCount, uav.getZRot(),
+                    hSpeedMps, solutionSpeed);
             case LOITER -> RVP_UavLoiterGuidance.computeLoiter(
                     uavX, uavY, uavZ, uavYaw,
                     state.centerX, state.centerY, state.centerZ,
                     radius, targetAltitude, climbRateMps, isRotaryWing, tickCount,
-                    uav.getZRot(), hSpeedMps, solutionBank, solutionSpeed);
+                    uav.getZRot(), hSpeedMps, solutionBank, solutionSpeed,
+                    resolveAxisRatePerInput(uav, airSpeedBlocks, true),
+                    resolveAxisRatePerInput(uav, airSpeedBlocks, false));
+            case RECOVERY -> RVP_UavLoiterGuidance.computeRecovery(
+                    uavX, uavY, uavZ, uavYaw, state.centerX, state.centerY, state.centerZ,
+                    radius, targetAltitude, climbRateMps, RVP_LoiterConfig.LOITER_DIRECTION,
+                    tickCount, uav.getZRot(), hSpeedMps, solutionBank, solutionSpeed);
         };
     }
 
@@ -205,15 +208,41 @@ public final class RVP_UavLoiterTickService {
                 || uav.physicsEngine.physicsInfo.mass <= 0) {
             return 0;
         }
-        double vMinBlocks = Math.sqrt(
-                org.ywzj.vehicle.vehicle.PhysicsEngine.G * uav.physicsEngine.physicsInfo.mass
-                        / (fw.airDragKMin * fw.liftToDragK));
-        return vMinBlocks * 20.0;
+        double scaleAir = uav.getY() < 64.0 ? 1.0
+                : Math.sqrt(Math.max(0.0, fw.ceiling - uav.getY()) / Math.max(1.0, fw.ceiling - 64.0));
+        scaleAir = Math.max(0.001, scaleAir);
+        // FixedWingVehicle.tickMove：f=v²·400·k，升力系数为 L/D·scaleAir 加迎角修正；
+        // angleOfAttack 取温和正迎角，另留 12% 速度余量覆盖操纵阻力与数值耦合。
+        double aoaDeg = Math.max(0.0, Math.min(5.0, fw.angleOfAttackMax));
+        return RVP_UavLoiterGuidance.estimateFixedWingMinSpeedMps(
+                uav.physicsEngine.physicsInfo.mass, fw.airDragKMin, fw.airDragKMax,
+                fw.liftToDragK, scaleAir, aoaDeg, fw.angleOfAttackMax);
+    }
+
+    /** 本体 tickMove 每单位持续输入实际能提供的单 tick 旋转角。 */
+    private static double resolveAxisRatePerInput(AbstractVehicle uav, double speedBlocksPerTick,
+                                                  boolean pitchAxis) {
+        if (!(uav instanceof FixedWingVehicle fw)) {
+            return 0.0;
+        }
+        double scaleAir = uav.getY() < 64.0 ? 1.0
+                : Math.sqrt(Math.max(0.0, fw.ceiling - uav.getY()) / Math.max(1.0, fw.ceiling - 64.0));
+        scaleAir = Math.max(0.001, scaleAir);
+        double rate = pitchAxis ? fw.xTurnRate : fw.yTurnRate;
+        return Math.min(rate, scaleAir * speedBlocksPerTick * fw.turnRateBySpeed * rate);
     }
 
     /** 写入 ControlUnit。 */
     private static void applyControlUnit(AbstractVehicle uav, GuidanceOutput out) {
+        boolean functionalUp = uav.controlUnit.functionalUp;
+        boolean functionalDown = uav.controlUnit.functionalDown;
+        boolean functionalLeft = uav.controlUnit.functionalLeft;
+        boolean functionalRight = uav.controlUnit.functionalRight;
         uav.controlUnit.reset();
+        uav.controlUnit.functionalUp = functionalUp;
+        uav.controlUnit.functionalDown = functionalDown;
+        uav.controlUnit.functionalLeft = functionalLeft;
+        uav.controlUnit.functionalRight = functionalRight;
         uav.controlUnit.forward = out.forward();
         uav.controlUnit.backward = out.backward();
         uav.controlUnit.up = out.up();
@@ -224,10 +253,23 @@ public final class RVP_UavLoiterTickService {
             // 旋翼机：设置目标偏航角，物理引擎自动平滑追踪（yawAimControl 无 driver 检查，无人可用）
             uav.controlUnit.yRot = out.targetYRot();
             uav.controlUnit.yRotKeep = false;
+        } else if (uav instanceof FixedWingVehicle fixedWing) {
+            // 每个轴都持续指定正向键并在 setter 预减 inputStep；tickMove 消费后得到目标杆量。
+            // up/leftYaw/left 非空挡输入阻断本体自动俯仰/偏航/滚转控制；零yaw仍保留气动尾舵回正。
+            float xStep = fixedWing.xRotInputStep;
+            float yStep = fixedWing.yRotInputStep;
+            float zStep = fixedWing.zRotInputStep;
+            float pitchTarget = out.pitchInput();
+            float rollTarget = out.rollInput();
+            uav.controlUnit.up = true;
+            uav.controlUnit.leftYaw = true;
+            uav.controlUnit.left = true;
+            fixedWing.setPitchInput(RVP_UavLoiterGuidance.compensateInput(pitchTarget, -xStep).setterValue());
+            fixedWing.setYawInput(RVP_UavLoiterGuidance.compensateInput(out.yawInput(), yStep).setterValue());
+            fixedWing.setRollInput(RVP_UavLoiterGuidance.compensateInput(rollTarget, -zStep).setterValue());
+            uav.controlUnit.yRot = out.targetYRot();
+            uav.controlUnit.yRotKeep = false;
         } else {
-            // 固定翼（2026-10-06 重构）：布尔杆量闭环——leftYaw/rightYaw 偏航强对齐 + left/right
-            // 坡度脉冲，无人驾驶时全部有效（本体 getDriver()==null 只覆写 xRot/yRot 浮点）。
-            // yRot 仍写期望航向：无人时被本体覆写无副作用；玩家在机时（不覆写）供瞄准协调逻辑使用
             uav.controlUnit.leftYaw = out.leftYaw();
             uav.controlUnit.rightYaw = out.rightYaw();
             uav.controlUnit.yRot = out.targetYRot();
@@ -235,7 +277,7 @@ public final class RVP_UavLoiterTickService {
         }
     }
 
-    /** 阶段切换 + 超时降级。 */
+    /** 只按传感器判据切换阶段；阶段计时器不跳过捕获或恢复条件。 */
     private static void updatePhase(MutableState state, GuidanceOutput out, int tickCount) {
         LoiterPhase current = state.phase;
         LoiterPhase next = out.nextPhase();
@@ -245,11 +287,9 @@ public final class RVP_UavLoiterTickService {
             state.phaseTimeout = resolvePhaseTimeout(next);
         } else {
             state.phaseTickCounter++;
-            // 超时降级
+            // 超时仅重新评估当前阶段；不可跳过捕获条件盲进盘旋。
             if (state.phaseTickCounter > state.phaseTimeout) {
-                state.phase = nextPhase(current);
                 state.phaseTickCounter = 0;
-                state.phaseTimeout = resolvePhaseTimeout(state.phase);
             }
         }
     }
@@ -273,31 +313,31 @@ public final class RVP_UavLoiterTickService {
         double altFromCenter = state.centerY + config.loiterAltitudeOffset();
         // 地形高度（当前正下方）
         double terrainY = sampleTerrainAt(uav.level(), uav.getX(), uav.getZ());
-        return Math.max(altFromCenter, terrainY + TERRAIN_CLEARANCE);
+        double speed = Math.sqrt(uav.getDeltaMovement().horizontalDistanceSqr());
+        double lookAhead = Math.min(80.0, Math.max(24.0, speed * 20.0 * 2.0));
+        Vec3 forward = uav.getLookAngle().scale(lookAhead);
+        double aheadX = uav.getX() + forward.x;
+        double aheadZ = uav.getZ() + forward.z;
+        double aheadTerrain = uav.level().hasChunkAt(
+                net.minecraft.core.BlockPos.containing(aheadX, uav.getY(), aheadZ))
+                ? sampleTerrainAt(uav.level(), aheadX, aheadZ) : terrainY;
+        return Math.max(altFromCenter, Math.max(terrainY, aheadTerrain) + TERRAIN_CLEARANCE);
     }
 
     /** 采样正下方地形高度。 */
     private static double sampleTerrainAt(Level level, double x, double z) {
-        return level.getHeight(Heightmap.Types.WORLD_SURFACE, (int) x, (int) z);
+        return level.getHeight(Heightmap.Types.WORLD_SURFACE,
+                net.minecraft.util.Mth.floor(x), net.minecraft.util.Mth.floor(z));
     }
 
-    /** 阶段超时阈值。 */
+    /** 阶段最长计数仅用于周期性计数回绕，不改变制导阶段或捕获条件。 */
     private static int resolvePhaseTimeout(LoiterPhase phase) {
         return switch (phase) {
             case CLIMB -> CLIMB_TIMEOUT_TICKS;
             case TRANSIT -> TRANSIT_TIMEOUT_TICKS;
             case APPROACH -> APPROACH_TIMEOUT_TICKS;
-            case LOITER -> Integer.MAX_VALUE; // 盘旋不超时
-        };
-    }
-
-    /** 下一阶段（超时降级用）。 */
-    private static LoiterPhase nextPhase(LoiterPhase current) {
-        return switch (current) {
-            case CLIMB -> LoiterPhase.TRANSIT;
-            case TRANSIT -> LoiterPhase.LOITER; // 航渡超时直接进盘旋
-            case APPROACH -> LoiterPhase.LOITER;
-            case LOITER -> LoiterPhase.LOITER;
+            case LOITER -> Integer.MAX_VALUE;
+            case RECOVERY -> 600;
         };
     }
 

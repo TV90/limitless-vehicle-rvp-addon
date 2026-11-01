@@ -13,6 +13,8 @@ public final class RVP_DeployableUavLinkRegistry {
         if (parentUuid == null || childUuid == null) {
             return;
         }
+        clearByParent(parentUuid);
+        clearByChild(childUuid);
         PARENT_TO_CHILD.put(parentUuid, childUuid);
         CHILD_TO_PARENT.put(childUuid, parentUuid);
     }
@@ -31,7 +33,7 @@ public final class RVP_DeployableUavLinkRegistry {
         }
         UUID childUuid = PARENT_TO_CHILD.remove(parentUuid);
         if (childUuid != null) {
-            CHILD_TO_PARENT.remove(childUuid);
+            CHILD_TO_PARENT.remove(childUuid, parentUuid);
         }
     }
 
@@ -41,8 +43,14 @@ public final class RVP_DeployableUavLinkRegistry {
         }
         UUID parentUuid = CHILD_TO_PARENT.remove(childUuid);
         if (parentUuid != null) {
-            PARENT_TO_CHILD.remove(parentUuid);
+            PARENT_TO_CHILD.remove(parentUuid, childUuid);
         }
+    }
+
+    /** 世界卸载或停服时清空纯运行期双向索引。 */
+    public static void clearRuntime() {
+        PARENT_TO_CHILD.clear();
+        CHILD_TO_PARENT.clear();
     }
 }
 

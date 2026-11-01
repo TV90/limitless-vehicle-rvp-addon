@@ -44,9 +44,8 @@ public class C2SToggleUavLoiter {
             if (!(player.getVehicle() instanceof AbstractVehicle vehicle)) {
                 return;
             }
-
             AbstractVehicle uav = resolveTargetUav(vehicle);
-            if (uav == null) {
+            if (uav == null || !RVP_DeployableUavService.isLoiterControlOperator(player, vehicle, uav)) {
                 return;
             }
             // 信号范围守卫（2026-10-06）：失联的无人机不可操作盘旋
@@ -59,8 +58,14 @@ public class C2SToggleUavLoiter {
             if (RVP_UavLoiterManager.isLoitering(uavUuid)) {
                 // 关盘旋同时清空 ControlUnit（2026-10-06 修复油门/航向锁存直飞）
                 RVP_UavLoiterTickService.stopLoiterAndResetControls(uav);
+                RVP_UavLoiterManager.persist(uav);
                 player.displayClientMessage(Component.translatable("message.ywzj_rvp.uav_loiter.disabled"), true);
             } else {
+                if (RVP_UavLoiterManager.resumeExistingPlan(uavUuid)) {
+                    RVP_UavLoiterManager.persist(uav);
+                    player.displayClientMessage(Component.translatable("message.ywzj_rvp.uav_loiter.enabled"), true);
+                    return;
+                }
                 RVP_LoiterConfig config = resolveLoiterConfig(vehicle, uav);
                 // [RVP] 无盘旋配置：不适用场景，静默（目标载具是否支持盘旋已由
                 // resolveTargetUav 的判型 + 客户端 F 键守卫双重过滤，此处仅兜底）
@@ -87,6 +92,7 @@ public class C2SToggleUavLoiter {
                             config.loiterRadius(), uav.getY()
                     );
                 }
+                RVP_UavLoiterManager.persist(uav);
                 player.displayClientMessage(Component.translatable("message.ywzj_rvp.uav_loiter.enabled"), true);
             }
         });
@@ -122,7 +128,8 @@ public class C2SToggleUavLoiter {
     /** 解析母车：目标就是当前载具自身时无母车，否则按原逻辑。 */
     private static AbstractVehicle resolveParent(AbstractVehicle vehicle, AbstractVehicle uav) {
         if (vehicle == uav) {
-            return null;
+            return RVP_LinkedUavStateTable.isDeployableUavInstance(uav)
+                    ? RVP_DeployableUavService.getLinkedParent(uav).orElse(null) : null;
         }
         if (!RVP_LinkedUavStateTable.isDeployableUavInstance(vehicle)) {
             return vehicle;

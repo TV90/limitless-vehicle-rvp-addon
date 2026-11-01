@@ -39,10 +39,14 @@ public abstract class ControlUnitMixin {
         if (!(entity instanceof AbstractVehicle vehicle)) {
             return;
         }
+        // 保持本体 onClientMessageReceived 的操作者校验；旁观乘客的伪造包不能改功能杆量。
+        if (vehicle.controlUnit.getOperator() != ctx.getSender()) {
+            return;
+        }
         // 守卫（2026-10-07 修复：此条件曾写反导致全载具运动包被 cancel）：非盘旋且非着舰/接管
         // → return 放行原方法（正常写入运动输入）；盘旋中 或 直升机着舰/接管流程中 → 落到下方
         // 屏蔽段（保留 functional 武器操作，吞运动输入）
-        if (!RVP_UavLoiterManager.isLoitering(vehicle.getUUID())
+        if (!RVP_UavLoiterManager.isControlLocked(vehicle.getUUID())
                 && !org.ywzj.rvp.helidock.RVP_HeliDockManager.isControlLocked(vehicle.getUUID())) {
             return;
         }

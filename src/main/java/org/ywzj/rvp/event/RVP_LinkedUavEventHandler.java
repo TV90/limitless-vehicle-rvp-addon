@@ -11,6 +11,9 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.EntityMountEvent;
 import net.minecraftforge.event.entity.EntityLeaveLevelEvent;
+import net.minecraftforge.event.entity.EntityJoinLevelEvent;
+import net.minecraftforge.event.server.ServerStoppingEvent;
+import net.minecraftforge.event.server.ServerStoppedEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.server.ServerLifecycleHooks;
@@ -20,6 +23,9 @@ import org.ywzj.rvp.config.RVP_CommonConfig;
 import org.ywzj.rvp.uav.RVP_DeployableUavService;
 import org.ywzj.rvp.uav.RVP_LinkedUavStateTable;
 import org.ywzj.rvp.uav.RVP_UavLoiterManager;
+import org.ywzj.rvp.uav.RVP_DeployableUavLinkRegistry;
+import org.ywzj.rvp.uav.RVP_UavTerminalEntitySavedData;
+import org.ywzj.rvp.uav.RVP_DeployableUavCooldownRegistry;
 import org.ywzj.rvp.debug.RVP_DebugFlags;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.EntityUtil;
@@ -80,6 +86,7 @@ public class RVP_LinkedUavEventHandler {
         for (AbstractVehicle vehicle : vehicles) {
             expireWreckEarly(vehicle);
             if (RVP_LinkedUavStateTable.isDeployableUavInstance(vehicle)) {
+                RVP_DeployableUavService.restoreActivePilotSeatLock(vehicle);
                 Vec3 fakePos = RVP_LinkedUavStateTable.getFakeOperatorPosition(vehicle);
                 if (fakePos != null) {
                     // 调用本体临时 Ticket，仅保护 UAV 假操作员位置；UAV 自身路径由 RVP 远距载具租约服务统一负责。
@@ -117,9 +124,16 @@ public class RVP_LinkedUavEventHandler {
         if (parentUuid == null || !(uav.level() instanceof ServerLevel serverLevel)) {
             return;
         }
-        Entity parent = serverLevel.getEntity(parentUuid);
-        if (parent instanceof AbstractVehicle parentVehicle && parentVehicle.isDestroyed()) {
+        if (RVP_UavTerminalEntitySavedData.get(serverLevel).isTerminal(parentUuid)) {
             destroyVehicle(uav);
+            return;
+        }
+        for (ServerLevel level : serverLevel.getServer().getAllLevels()) {
+            Entity parent = level.getEntity(parentUuid);
+            if (parent instanceof AbstractVehicle parentVehicle && parentVehicle.isDestroyed()) {
+                destroyVehicle(uav);
+                return;
+            }
         }
     }
 
@@ -201,23 +215,86 @@ public class RVP_LinkedUavEventHandler {
                 vehicle.isRemoved());
         }
         DESTROYED_SINCE.remove(vehicle.getUUID());
-        RVP_DeployableUavService.cleanupSeatLock(vehicle);
-        RVP_DeployableUavService.clearLinkedParentLastPosition(vehicle.getUUID());
-        if (!RVP_LinkedUavStateTable.isDeployableUavInstance(vehicle)) {
-            RVP_LinkedUavStateTable.remove(vehicle);
-            return;
+        RVP_LinkedUavStateTable.persist(vehicle);
+        RVP_UavLoiterManager.persist(vehicle);
+        Entity.RemovalReason reason = vehicle.getRemovalReason();
+        boolean terminalRemoval = vehicle.isDestroyed() || reason == Entity.RemovalReason.KILLED
+                || reason == Entity.RemovalReason.DISCARDED;
+        boolean linkedEntity = RVP_LinkedUavStateTable.isDeployableUavInstance(vehicle)
+                || RVP_LinkedUavStateTable.getLinkedChildVehicleUuid(vehicle) != null
+                || RVP_LinkedUavStateTable.getLinkedParentVehicleUuid(vehicle) != null;
+        boolean terminal = terminalRemoval && linkedEntity;
+        if (terminal && vehicle.level() instanceof ServerLevel serverLevel) {
+            RVP_UavTerminalEntitySavedData.get(serverLevel).markTerminal(vehicle.getUUID());
         }
-        RVP_DeployableUavService.handleDeployableUavRemoved(vehicle);
-        if (vehicle.getDriver() instanceof ServerPlayer serverPlayer) {
-            vehicle.onLeaveVehicle(serverPlayer);
-            serverPlayer.stopRiding();
-            Vec3 target = resolveReturnPosition(vehicle, serverPlayer);
-            if (target != null) {
-                serverPlayer.teleportTo(target.x, target.y, target.z);
+        if (terminalRemoval) {
+            RVP_UavLoiterManager.clearPersistent(vehicle);
+            RVP_UavLoiterManager.remove(vehicle.getUUID());
+        }
+        if (terminal) {
+            RVP_DeployableUavService.cleanupSeatLock(vehicle);
+            vehicle.getPersistentData().remove("rvpUavSeatLock");
+            RVP_DeployableUavService.clearLinkedParentLastPosition(vehicle.getUUID());
+            if (RVP_LinkedUavStateTable.isDeployableUavInstance(vehicle)) {
+                RVP_DeployableUavService.handleDeployableUavRemoved(vehicle);
             }
-            RVP_DeployableUavService.tryAutoRideParent(serverPlayer, vehicle);
+        } else {
+            // 暂卸载/换维度对所有飞机都只移除运行缓存；计划已持久化到 entity persistentData。
+            RVP_UavLoiterManager.remove(vehicle.getUUID());
         }
         RVP_LinkedUavStateTable.remove(vehicle);
+        if (terminal) {
+            RVP_DeployableUavLinkRegistry.clearByChild(vehicle.getUUID());
+            RVP_DeployableUavLinkRegistry.clearByParent(vehicle.getUUID());
+        }
+    }
+
+    @SubscribeEvent
+    public static void onEntityJoinLevel(EntityJoinLevelEvent event) {
+        if (!(event.getEntity() instanceof AbstractVehicle vehicle) || vehicle.level().isClientSide()
+                || !(vehicle.level() instanceof ServerLevel level)) return;
+        RVP_LinkedUavStateTable.restore(vehicle);
+        UUID parentUuid = RVP_LinkedUavStateTable.getLinkedParentVehicleUuid(vehicle);
+        UUID childUuid = RVP_LinkedUavStateTable.getLinkedChildVehicleUuid(vehicle);
+        RVP_UavTerminalEntitySavedData terminal = RVP_UavTerminalEntitySavedData.get(level);
+        if (terminal.isTerminal(vehicle.getUUID())) {
+            // UUID 终态标记可跨越另一端未加载的时间窗；已回收的父/子不再恢复为可部署关系。
+            RVP_UavLoiterManager.clearPersistent(vehicle);
+            RVP_UavLoiterManager.remove(vehicle.getUUID());
+            RVP_LinkedUavStateTable.clearLinks(vehicle);
+            return;
+        }
+        // 母车 terminal 时保留 child 身份；后续服务端 tick 按终态墓碑执行联动自毁，避免形成孤儿 UAV。
+        if (childUuid != null && terminal.isTerminal(childUuid)) {
+            RVP_LinkedUavStateTable.setLinkedChildVehicleUuid(vehicle, null);
+            childUuid = null;
+        }
+        if (parentUuid != null) RVP_DeployableUavLinkRegistry.link(parentUuid, vehicle.getUUID());
+        if (childUuid != null) RVP_DeployableUavLinkRegistry.link(vehicle.getUUID(), childUuid);
+        RVP_UavLoiterManager.restore(vehicle);
+        // 此事件早于本体 initData/parts；座位、飞控和部件相关处理留给后续服务端 tick。
+    }
+
+    @SubscribeEvent
+    public static void onServerStopping(ServerStoppingEvent event) {
+        for (ServerLevel level : event.getServer().getAllLevels()) {
+            for (Entity entity : level.getEntities().getAll()) {
+                if (entity instanceof AbstractVehicle vehicle) {
+                    RVP_LinkedUavStateTable.persist(vehicle);
+                    RVP_UavLoiterManager.persist(vehicle);
+                }
+            }
+        }
+    }
+
+    @SubscribeEvent
+    public static void onServerStopped(ServerStoppedEvent event) {
+        RVP_LinkedUavStateTable.clearRuntime();
+        RVP_DeployableUavLinkRegistry.clearRuntime();
+        RVP_UavLoiterManager.clearRuntime();
+        RVP_DeployableUavService.clearRuntime();
+        RVP_DeployableUavCooldownRegistry.clearRuntime();
+        DESTROYED_SINCE.clear();
     }
 
     @SubscribeEvent
@@ -289,36 +366,53 @@ public class RVP_LinkedUavEventHandler {
         if (!(passenger instanceof ServerPlayer serverPlayer)) {
             return;
         }
-        Vec3 target = resolveReturnPosition(vehicle, serverPlayer);
-        if (target != null) {
-            serverPlayer.teleportTo(target.x, target.y, target.z);
-        }
+        ReturnTarget target = resolveReturnPosition(vehicle, serverPlayer);
                 if (RVP_DebugFlags.UAV.isEnabled()) {
             LOGGER.info("[RVP-UAV] {} 离机: uav={} 回传位置={} parentUuid={}",
-                serverPlayer.getName().getString(), vehicle.getVehicleId(), target,
+                serverPlayer.getName().getString(), vehicle.getVehicleId(), target == null ? null : target.position(),
                 RVP_LinkedUavStateTable.getLinkedParentVehicleUuid(vehicle));
         }
-        RVP_DeployableUavService.tryAutoRideParent(serverPlayer, vehicle);
+        RVP_DeployableUavService.tryAutoRideParent(serverPlayer, vehicle,
+                target == null ? null : target.level().dimension().location(),
+                target == null ? null : target.position());
     }
 
     /**
      * 解析操作员回传位置：优先母车当前实体位置（母车右侧外沿，避免落在车体内），
      * 母车已卸载时用最近同步到的母车位置兜底，最后回退上车时记录的位置。
      */
-    private static Vec3 resolveReturnPosition(AbstractVehicle uav, ServerPlayer player) {
+    private record ReturnTarget(ServerLevel level, Vec3 position) {}
+
+    private static ReturnTarget resolveReturnPosition(AbstractVehicle uav, ServerPlayer player) {
         UUID parentUuid = RVP_LinkedUavStateTable.getLinkedParentVehicleUuid(uav);
         if (parentUuid != null && uav.level() instanceof ServerLevel serverLevel) {
-            Entity parent = serverLevel.getEntity(parentUuid);
+            Entity parent = null;
+            for (ServerLevel level : serverLevel.getServer().getAllLevels()) {
+                parent = level.getEntity(parentUuid);
+                if (parent != null) break;
+            }
             if (parent instanceof AbstractVehicle parentVehicle) {
-                return parentVehicle.relativeRotPos(
+                return new ReturnTarget((ServerLevel) parentVehicle.level(), parentVehicle.relativeRotPos(
                         parentVehicle.position().add(parentVehicle.getMainCubeOBB().obb().extents().x + 1, 1, 0),
-                        false);
+                        false));
             }
             Vec3 lastParentPos = RVP_DeployableUavService.getLinkedParentLastPosition(uav.getUUID());
             if (lastParentPos != null) {
-                return lastParentPos.add(0, 1, 0);
+                net.minecraft.resources.ResourceLocation parentDim =
+                        RVP_LinkedUavStateTable.getLinkedParentDimension(uav);
+                ServerLevel parentLevel = serverLevel;
+                if (parentDim != null) {
+                    for (ServerLevel candidate : serverLevel.getServer().getAllLevels()) {
+                        if (candidate.dimension().location().equals(parentDim)) {
+                            parentLevel = candidate;
+                            break;
+                        }
+                    }
+                }
+                return new ReturnTarget(parentLevel, lastParentPos.add(0, 1, 0));
             }
         }
-        return RVP_LinkedUavStateTable.getFakeOperatorPosition(uav);
+        Vec3 fake = RVP_LinkedUavStateTable.getFakeOperatorPosition(uav);
+        return fake == null ? null : new ReturnTarget(player.serverLevel(), fake);
     }
 }
