@@ -24,6 +24,7 @@ import org.ywzj.vehicle.custom.CommonAssetsManager;
 import org.ywzj.vehicle.custom.vehicle.BaseVehicleData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.entity.vehicle.FixedWingVehicle;
+import org.ywzj.vehicle.entity.vehicle.RotaryWingVehicle;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -203,6 +204,8 @@ public final class RVP_DeployableUavService {
         // 玩家切回母车或自动上车成功时由 clearSeatLock 解除。
         // 锁状态存于静态注册表（不在实体上新增接口方法，避免 mixin 接口注入风险）。
         setSeatLock(parent, returnSeatIndex, player.getId());
+        // 成功入座后才释放自动悬停，避免失败切换影响子机姿态；固定翼盘旋保持原逻辑。
+        RVP_DeployableUavHoverService.tick(child);
         // 玩家进入无人机后盘旋继续（运动输入由 ControlUnitMixin 屏蔽）；
         // 玩家可按 F 键手动切换盘旋开/关
         return true;
@@ -237,6 +240,8 @@ public final class RVP_DeployableUavService {
             if (player.getVehicle() == child) {
                 player.stopRiding();
             }
+            // 母车暂卸载时也先稳定无人旋翼机，回传事务继续由原队列执行。
+            RVP_DeployableUavHoverService.tick(child);
             return true;
         }
         if (!RVP_LinkedUavStateTable.isDeployableUavControlSwitchAllowed(child)) {
@@ -248,6 +253,7 @@ public final class RVP_DeployableUavService {
         if (parent.level() != player.level()) {
             // 跨维 stopRiding/teleport/startRiding 由 dismount 请求队列在关系清空后分两 tick 完成。
             player.stopRiding();
+            RVP_DeployableUavHoverService.tick(child);
             return true;
         }
         boolean riding = player.startRiding(parent);
@@ -268,9 +274,12 @@ public final class RVP_DeployableUavService {
         // 该延迟任务会因玩家已骑乘（player.getVehicle()!=null）被丢弃，restoreSeatAndUnlock
         // 不再执行，因此这里必须显式解锁，避免座位锁残留导致他人无法占用母车。
         clearSeatLock(parent, player);
-        // 切回母车 → 自动激活盘旋
+        // 调用旋翼无人值守服务：完成回乘后进入悬停；地面子车不接管飞控。
+        RVP_DeployableUavHoverService.tick(child);
+        // 切回母车仅对固定翼自动激活盘旋。
         RVP_DeployableUavConfig uavConfig = resolveInstanceConfig(child, parent);
-        if (uavConfig.isConfigured() && uavConfig.autoLoiterOnSwitchBack()) {
+        if (RVP_UavLoiterManager.supportsLoiter(child)
+                && uavConfig.isConfigured() && uavConfig.autoLoiterOnSwitchBack()) {
             // 盘旋参数从通用 LoiterConfig 读取（优先母车，其次子载具自身）
             RVP_LoiterConfig loiterConfig = RVP_LoiterConfigCache.get(parent.getVehicleId());
             if (!loiterConfig.isConfigured()) {
@@ -568,9 +577,15 @@ public final class RVP_DeployableUavService {
     }
 
     /**
-     * 释放子载具后根据 LoiterConfig 配置起飞行为：自动进入盘旋（固定翼同时启动引擎并满油门）。
+     * 部署旋翼机启动悬停；固定翼按 LoiterConfig 起飞并盘旋；地面子车不接管飞控。
      */
     private static void applyTakeoffBehavior(AbstractVehicle child, AbstractVehicle parent) {
+        if (child instanceof RotaryWingVehicle rotaryWing) {
+            // addFreshEntity 已完成本体 initData，按当前质量/旋翼参数初始化部署悬停。
+            RVP_DeployableUavHoverService.initializeDeployment(rotaryWing);
+            return;
+        }
+        if (!RVP_UavLoiterManager.supportsLoiter(child)) return;
         RVP_LoiterConfig loiterConfig = RVP_LoiterConfigCache.get(child.getVehicleId());
         if (!loiterConfig.isConfigured()) {
             return;

@@ -12,8 +12,6 @@ import org.ywzj.rvp.uav.RVP_LinkedUavStateTable;
 import org.ywzj.rvp.uav.RVP_UavLoiterManager;
 import org.ywzj.rvp.uav.RVP_UavLoiterTickService;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
-import org.ywzj.vehicle.entity.vehicle.FixedWingVehicle;
-import org.ywzj.vehicle.entity.vehicle.RotaryWingVehicle;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -101,7 +99,7 @@ public class C2SToggleUavLoiter {
 
     /** 解析目标盘旋载具（2026-10-06 用户定版：F 键只在骑乘盘旋载具时可用，母车不再遥控子机盘旋）。 */
     private static AbstractVehicle resolveTargetUav(AbstractVehicle vehicle) {
-        // [RVP] 各分支统一判型：仅固定翼/旋翼可盘旋。地面子机（如 Buk-M3 / IRIS-T 的
+        // [RVP] 各分支统一判型：仅固定翼可盘旋。地面子机（如 Buk-M3 / IRIS-T 的
         // 96l6、irist_slm_tads 轮式雷达车）无盘旋语义，静默返回 null，不再误报"未配置盘旋参数"。
         if (RVP_LinkedUavStateTable.isDeployableUavInstance(vehicle) && isLoiterCapable(vehicle)) {
             return vehicle;
@@ -117,12 +115,10 @@ public class C2SToggleUavLoiter {
     }
 
     /**
-     * [RVP] 盘旋能力判型：仅固定翼与旋翼载具具备盘旋语义。
-     * 本体车型恰为 fixed_wing / rotary_wing / wheeled / tracked / custom 几类，
-     * 地面轮式/履带载具（含可部署的雷达 relay 子机）一律不参与盘旋。
+     * 调用统一盘旋判型，服务端拒绝旋翼和地面子车的开关请求。
      */
     private static boolean isLoiterCapable(AbstractVehicle vehicle) {
-        return vehicle instanceof FixedWingVehicle || vehicle instanceof RotaryWingVehicle;
+        return RVP_UavLoiterManager.supportsLoiter(vehicle);
     }
 
     /** 解析母车：目标就是当前载具自身时无母车，否则按原逻辑。 */

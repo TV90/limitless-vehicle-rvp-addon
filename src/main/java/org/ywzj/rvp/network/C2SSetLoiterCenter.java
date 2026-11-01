@@ -11,8 +11,6 @@ import org.ywzj.rvp.uav.RVP_DeployableUavService;
 import org.ywzj.rvp.uav.RVP_LinkedUavStateTable;
 import org.ywzj.rvp.uav.RVP_UavLoiterManager;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
-import org.ywzj.vehicle.entity.vehicle.FixedWingVehicle;
-import org.ywzj.vehicle.entity.vehicle.RotaryWingVehicle;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -112,7 +110,8 @@ public class C2SSetLoiterCenter {
     }
 
     private static boolean isLoiterCapable(AbstractVehicle vehicle) {
-        return vehicle instanceof FixedWingVehicle || vehicle instanceof RotaryWingVehicle;
+        // 地图标点和按键共用类型限制，不能绕过旋翼禁用盘旋的规则。
+        return RVP_UavLoiterManager.supportsLoiter(vehicle);
     }
 
     private static RVP_LoiterConfig resolveLoiterConfig(AbstractVehicle vehicle, AbstractVehicle uav) {

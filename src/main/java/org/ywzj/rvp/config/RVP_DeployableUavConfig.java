@@ -7,7 +7,8 @@ import java.util.List;
 
 /**
  * 母车可部署 UAV 的配置。盘旋参数已移至 {@link RVP_LoiterConfig}（通用），
- * 本类仅保留 {@code autoLoiterOnSwitchBack} 作为 UAV 切回母车时的触发开关。
+ * 本类仅保留 {@code autoLoiterOnSwitchBack} 作为固定翼 UAV 切回母车时的触发开关。
+ * 旋翼部署实例无人驾驶时直接使用本体悬停，不受盘旋开关影响。
  *
  * <p>{@code initialSpeed} 为释放时赋予子载具的初速度（blocks/tick），
  * 方向沿子载具生成朝向（spawnYaw）的水平前进方向。不填或 ≤0 时不赋予初速度。</p>
@@ -24,7 +25,7 @@ import java.util.List;
  * @param allowControlSwitch 是否允许切换控制到子机
  * @param autoLinkDatalink 是否自动连接母子数据链
  * @param redeployCooldownTick 终结开始时启动的冷却长度（tick）
- * @param autoLoiterOnSwitchBack 切回母车时是否触发盘旋
+ * @param autoLoiterOnSwitchBack 固定翼切回母车时是否触发盘旋；旋翼/地面载具不使用
  * @param initialSpeed 释放初速度（blocks/tick，≤0不赋予）
  * @param signalRange 信号范围（格，≤0表示无限）
  * @param allowedSeatIndexes 允许部署的座位索引，空列表表示驾驶位

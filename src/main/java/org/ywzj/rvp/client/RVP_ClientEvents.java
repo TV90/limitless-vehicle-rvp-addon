@@ -736,6 +736,8 @@ public class RVP_ClientEvents {
      * VehicleDataManagerMixin 填充的配置缓存（子机载具 JSON 的 rvp_loiter_* 字段）判定。
      */
     private static boolean ywzj_rvp$loiterKeyApplicable(AbstractVehicle vehicle) {
+        // 旋翼使用本体悬停/自动总距，不发送固定翼盘旋按键包；服务端仍独立校验。
+        if (vehicle instanceof RotaryWingVehicle) return false;
         // 场景一：当前载具自身配置了盘旋参数（rvp_loiter_enabled）
         if (RVP_LoiterConfigCache.get(vehicle.getVehicleId()).isConfigured()) {
             return true;

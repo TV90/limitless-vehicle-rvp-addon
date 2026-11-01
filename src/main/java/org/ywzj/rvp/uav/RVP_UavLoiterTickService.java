@@ -68,7 +68,7 @@ public final class RVP_UavLoiterTickService {
             if (uav == null || !uav.isAlive() || uav.isRemoved()) {
                 continue;
             }
-            if (uav.isDestroyed() || !(uav instanceof FixedWingVehicle || uav instanceof RotaryWingVehicle)) {
+            if (uav.isDestroyed() || !RVP_UavLoiterManager.supportsLoiter(uav)) {
                 stopLoiterAndResetControls(uav);
                 RVP_UavLoiterManager.persist(uav);
                 continue;

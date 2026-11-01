@@ -3,6 +3,7 @@ package org.ywzj.rvp.uav;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.nbt.CompoundTag;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
+import org.ywzj.vehicle.entity.vehicle.FixedWingVehicle;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Map;
@@ -16,6 +17,11 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class RVP_UavLoiterManager {
 
     private RVP_UavLoiterManager() {}
+
+    /** 盘旋仅用于固定翼；旋翼部署实例由独立悬停逻辑管理，地面子车不接入飞控。 */
+    public static boolean supportsLoiter(AbstractVehicle vehicle) {
+        return vehicle instanceof FixedWingVehicle;
+    }
 
     /** 盘旋阶段。 */
     public enum LoiterPhase {
@@ -210,6 +216,12 @@ public final class RVP_UavLoiterManager {
     /** 从载具持久数据恢复巡航计划；无有效字段时不创建状态。 */
     public static void restore(AbstractVehicle vehicle) {
         if (vehicle == null) return;
+        // 旧存档里的旋翼/地面盘旋计划不能在加载后锁住人工输入。
+        if (!supportsLoiter(vehicle)) {
+            remove(vehicle.getUUID());
+            clearPersistent(vehicle);
+            return;
+        }
         CompoundTag tag = vehicle.getPersistentData().getCompound("rvpLoiterPlan");
         if (!tag.isEmpty()) restore(vehicle.getUUID(), tag);
     }

@@ -23,6 +23,7 @@ import org.slf4j.Logger;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.config.RVP_CommonConfig;
 import org.ywzj.rvp.uav.RVP_DeployableUavService;
+import org.ywzj.rvp.uav.RVP_DeployableUavHoverService;
 import org.ywzj.rvp.uav.RVP_LinkedUavStateTable;
 import org.ywzj.rvp.uav.RVP_UavLoiterManager;
 import org.ywzj.rvp.uav.RVP_DeployableUavLinkRegistry;
@@ -122,6 +123,8 @@ public class RVP_LinkedUavEventHandler {
                 checkParentDestroyed(vehicle);
                 // 信号范围检查（2026-10-06）：超范围失联 → 持续超范围回收进冷却
                 RVP_DeployableUavService.checkSignalRange(vehicle);
+                // 读取完成本 tick 上下车后的真实驾驶关系，覆盖回传、离线和重载后的旋翼悬停。
+                RVP_DeployableUavHoverService.tick(vehicle);
             }
         }
     }
