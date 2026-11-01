@@ -19,7 +19,7 @@ import org.lwjgl.opengl.GL30;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.client.light.RVP_LightingCompatibility;
 
-/** 玻璃在全部实体之后混合：正常玩家先写深度，玻璃只读深度，不补画或隐藏乘员。 */
+/** 玻璃在全部实体之后混合：正常玩家先写深度，玻璃在该阶段读写深度，不补画或隐藏乘员。 */
 @Mod.EventBusSubscriber(modid = RVP_MOD.MOD_ID, value = Dist.CLIENT)
 public final class RVP_CockpitTransparencyPass {
     /** 帧内透明几何，数组和顶点接收器跨帧复用。 */
@@ -73,9 +73,9 @@ public final class RVP_CockpitTransparencyPass {
     public static MultiBufferSource defer(MultiBufferSource source) {
         Minecraft mc = Minecraft.getInstance();
         if (!collecting || level != mc.level || RVP_LightingCompatibility.shadowPass()) return source;
-        // 调用现有载具上下文，仅处理主世界中的真实载具；远距代理和界面模型保持各自管线。
+        // 调用现有载具上下文，同世界可见代理也需要正确遮挡；界面/离屏仍由目标和投影隔离。
         var context = RVP_CockpitPassengerRenderContext.current();
-        if (context == null || level.getEntity(context.vehicle().getId()) != context.vehicle()
+        if (context == null || context.vehicle().level() != level
                 || framebuffer != GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING)
                 || !projection.equals(RenderSystem.getProjectionMatrix())) return source;
         if (hasModelView && !modelView.equals(RenderSystem.getModelViewMatrix())) return source;
@@ -101,7 +101,8 @@ public final class RVP_CockpitTransparencyPass {
             GEOMETRY.sortBackToFront();
             RenderType active = null;
             for (int i = 0; i < GEOMETRY.faceCount(); i++) {
-                RenderType material = GEOMETRY.materialAtSorted(i);
+                // 调用延后专用材质：实体都已提交，现在可以写深度而不吞掉尚未绘制的乘员。
+                RenderType material = RVP_RenderTypes.cockpitComposite(GEOMETRY.materialAtSorted(i));
                 if (material != active) {
                     if (active != null) active.end(BUFFER, RenderSystem.getVertexSorting());
                     BUFFER.begin(material.mode(), material.format());
