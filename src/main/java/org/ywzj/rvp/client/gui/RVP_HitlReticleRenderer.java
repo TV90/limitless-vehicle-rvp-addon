@@ -30,10 +30,10 @@ public final class RVP_HitlReticleRenderer {
     private static final int DIAMOND_CORNER = 13;
     /** 可动准星内部短十字的半长，参考画布像素。 */
     private static final int AIM_CROSS_HALF = 14;
-    /** 已指定目标使用方形四角框，与操作用菱形区分。 */
-    private static final int TARGET_HALF = 22;
-    /** 已指定目标框的每条角边长度，参考画布像素。 */
-    private static final int TARGET_CORNER = 10;
+    /** 已指定目标使用斜十字，顶点距中心的参考画布像素。 */
+    private static final int TARGET_RADIUS = 18;
+    /** 斜十字中心留白，避免盖住精确命中位置。 */
+    private static final int TARGET_GAP = 5;
 
     /** TV 四角框的半边长，参考录像约为画面宽度的 5%，与指令线菱形区别。 */
     private static final int TV_HALF = 50;
@@ -44,26 +44,13 @@ public final class RVP_HitlReticleRenderer {
 
     private RVP_HitlReticleRenderer() { }
 
-    /** 弹轴中心只保留轻微短刻线，显示离轴参照；TV 不再使用装饰大圆及长十字。 */
+    /** TV 四角框固定在视口中心，始终标示弹轴；只有独立短十字随瞄准点离轴。 */
     public static void drawTvReference(GuiGraphics graphics) {
         float scale = scale(graphics);
         if (scale <= 0) return;
         var pose = graphics.pose();
         pose.pushPose();
         pose.translate(graphics.guiWidth() * 0.5, graphics.guiHeight() * 0.5, 0);
-        pose.scale(scale, scale, 1);
-        graphics.fill(-3, -1, 3, 1, 0x80FFFFFF);
-        graphics.fill(-1, -3, 1, 3, 0x80FFFFFF);
-        pose.popPose();
-    }
-
-    /** TV 独有四角框及断开短十字；位置由真实瞄准点投影传入，不改变制导/离轴角度。 */
-    public static void drawTvAim(GuiGraphics graphics, double x, double y) {
-        float scale = scale(graphics);
-        if (scale <= 0 || !Double.isFinite(x) || !Double.isFinite(y)) return;
-        var pose = graphics.pose();
-        pose.pushPose();
-        pose.translate(x, y, 0);
         pose.scale(scale, scale, 1);
         for (int sign = -1; sign <= 1; sign += 2) {
             int edge = sign < 0 ? -TV_HALF : TV_HALF - STROKE;
@@ -72,6 +59,17 @@ public final class RVP_HitlReticleRenderer {
             graphics.fill(edge, -TV_HALF, edge + STROKE, -TV_HALF + TV_CORNER, HUD_COLOR);
             graphics.fill(edge, TV_HALF - TV_CORNER, edge + STROKE, TV_HALF, HUD_COLOR);
         }
+        pose.popPose();
+    }
+
+    /** 可动短十字跟随真实瞄准点投影，不带动固定四角框，也不改变制导/离轴角度。 */
+    public static void drawTvAim(GuiGraphics graphics, double x, double y) {
+        float scale = scale(graphics);
+        if (scale <= 0 || !Double.isFinite(x) || !Double.isFinite(y)) return;
+        var pose = graphics.pose();
+        pose.pushPose();
+        pose.translate(x, y, 0);
+        pose.scale(scale, scale, 1);
         graphics.fill(-TV_CROSS, -1, -TV_GAP, 1, HUD_COLOR);
         graphics.fill(TV_GAP, -1, TV_CROSS, 1, HUD_COLOR);
         graphics.fill(-1, -TV_CROSS, 1, -TV_GAP, HUD_COLOR);
@@ -123,7 +121,7 @@ public final class RVP_HitlReticleRenderer {
         pose.popPose();
     }
 
-    /** 独立的已指定目标角框，仅消费既有目标投影，不修改目标选择状态。 */
+    /** 锁定目标使用独立斜十字，沿用目标的真实屏幕投影，与操作十字区分。 */
     public static void drawDesignation(GuiGraphics graphics, double x, double y) {
         float scale = scale(graphics);
         if (scale <= 0.0F || !Double.isFinite(x) || !Double.isFinite(y)) return;
@@ -131,13 +129,12 @@ public final class RVP_HitlReticleRenderer {
         pose.pushPose();
         pose.translate(x, y, 0);
         pose.scale(scale, scale, 1.0F);
-        for (int sign = -1; sign <= 1; sign += 2) {
-            int top = sign < 0 ? -TARGET_HALF : TARGET_HALF - STROKE;
-            graphics.fill(-TARGET_HALF, top, -TARGET_HALF + TARGET_CORNER, top + STROKE, HUD_COLOR);
-            graphics.fill(TARGET_HALF - TARGET_CORNER, top, TARGET_HALF, top + STROKE, HUD_COLOR);
-            int left = sign < 0 ? -TARGET_HALF : TARGET_HALF - STROKE;
-            graphics.fill(left, -TARGET_HALF, left + STROKE, -TARGET_HALF + TARGET_CORNER, HUD_COLOR);
-            graphics.fill(left, TARGET_HALF - TARGET_CORNER, left + STROKE, TARGET_HALF, HUD_COLOR);
+        // 调用共用线段绘制四条斜臂；中心留白，目标与操作十字重合时也能识别锁定。
+        for (int sx = -1; sx <= 1; sx += 2) {
+            for (int sy = -1; sy <= 1; sy += 2) {
+                line(graphics, sx * TARGET_GAP, sy * TARGET_GAP,
+                        sx * TARGET_RADIUS, sy * TARGET_RADIUS);
+            }
         }
         pose.popPose();
     }

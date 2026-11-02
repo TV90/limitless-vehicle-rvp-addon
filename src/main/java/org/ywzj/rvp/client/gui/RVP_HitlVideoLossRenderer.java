@@ -29,14 +29,12 @@ public final class RVP_HitlVideoLossRenderer {
         drawCaption(graphics, font);
     }
 
-    /** 文字使用准星相同的分辨率缩放，在黑底上保持可读。 */
+    /** 仅居中位置随视口变化，失图提示也沿用原生 GUI 字号。 */
     public static void drawCaption(GuiGraphics graphics, Font font) {
-        float scale = RVP_HitlReticleRenderer.scale(graphics);
-        if (scale <= 0) return;
+        if (graphics.guiWidth() <= 0 || graphics.guiHeight() <= 0) return;
         var pose = graphics.pose();
         pose.pushPose();
-        pose.translate(graphics.guiWidth() * 0.5, graphics.guiHeight() * 0.5, 0);
-        pose.scale(scale * 2.4F, scale * 2.4F, 1);
+        pose.translate(graphics.guiWidth() * 0.5, graphics.guiHeight() * 0.5 - font.lineHeight * 0.5, 0);
         int half = font.width("NO IMAGE") / 2;
         graphics.fill(-half - 7, -7, half + 7, 15, 0xE6000000);
         graphics.drawString(font, "NO IMAGE", -half, 0, 0xFFFF6060, true);

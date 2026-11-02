@@ -55,7 +55,7 @@ public final class RVP_HitlDesignateOverlay {
         }
 
         GuiGraphics gg = event.getGuiGraphics();
-        // 调用 TV 独有的四角框和断开短十字，继续使用真实瞄准点投影及既有小范围离轴。
+        // 调用可动的断开短十字，四角框由固定参照层居中绘制，继续使用真实瞄准点投影及既有小范围离轴。
         RVP_HitlReticleRenderer.drawTvAim(gg, crosshair.x, crosshair.y);
 
         Vec3 designated = RVP_ClientSaclosState.getLaserHudPos();
@@ -73,12 +73,7 @@ public final class RVP_HitlDesignateOverlay {
         if (lockScreen.x < 0 || lockScreen.y < 0 || lockScreen.x > width || lockScreen.y > height) {
             return;
         }
-        double separation = 16.0D * RVP_HitlReticleRenderer.scale(gg);
-        if (lockScreen.distanceToSqr(crosshair.x, crosshair.y, 0.0D) < separation * separation) {
-            return;
-        }
-
-        // 调用独立目标角框，继续沿用既有指定目标与屏幕可见性判定。
+        // 调用独立目标斜十字，继续沿用既有指定目标与屏幕可见性判定。
         RVP_HitlReticleRenderer.drawDesignation(gg, lockScreen.x, lockScreen.y);
     }
 }
