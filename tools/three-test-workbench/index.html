@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0d1920">
+  <title>RVP · Three.js 测试工作台</title>
+  <link rel="stylesheet" href="/style.css">
+  <script type="importmap">{"imports":{"three":"/vendor/three/build/three.module.js","three/addons/":"/vendor/three/examples/jsm/"}}</script>
+</head>
+<body>
+  <header>
+    <div class="brand"><span class="brand-icon" aria-hidden="true">⌖</span><div><h1>RVP <span>/ 三维测试工作台</span></h1><p>独立测试接入 · 统一观察与回放</p></div></div>
+    <div class="sources">
+      <label class="sr-only" for="scenario">测试场景</label><select id="scenario"><option value="">正在发现测试…</option></select>
+      <button id="refresh" title="重新发现插件和测试记录">刷新目录</button>
+      <label class="sr-only" for="import-plugin">导入格式</label><select id="import-plugin" aria-label="导入格式"><option value="">导入格式：自动识别</option></select>
+      <label class="button" for="file">导入 JSON ↗</label><input id="file" type="file" accept=".json,application/json" hidden>
+    </div>
+  </header>
+  <div id="error" class="error" role="alert" hidden></div>
+  <div id="render-error" class="error" role="status" hidden></div>
+  <details id="plugin-notices" class="notices" hidden><summary id="plugin-status">插件提示</summary><div id="warnings"></div></details>
+  <main>
+    <section class="viewport" aria-label="三维测试画面">
+      <div id="canvas-host"></div>
+      <div class="scene-heading"><div class="eyebrow" id="plugin-name">等待测试</div><h2 id="scene-name">从一个测试开始</h2><p id="scene-description">选择已有记录，或导入测试进程生成的 JSON。</p></div>
+      <div class="view-controls" role="group" aria-label="相机视角"><button id="iso" class="active">三维</button><button id="top">俯视</button><button id="follow" aria-pressed="false">跟随对象</button><button id="reset">复位 ↺</button></div>
+      <div id="empty" class="empty"><strong>准备观察测试</strong><p>插件和场景会自动加入目录。</p></div>
+      <div class="scene-readout"><span id="object-state">等待记录</span><code id="coordinates">X —　Y —　Z —</code></div>
+      <div class="scene-options"><label><input id="trails" type="checkbox" checked> 已走轨迹</label><label><input id="ranges" type="checkbox"> 对象范围</label><label><input id="links" type="checkbox" checked> 目标连线</label></div>
+    </section>
+    <aside>
+      <div class="panel-title">对象观察 <small id="frame-info">当前时间</small></div>
+      <label class="sr-only" for="object">观察对象</label><select id="object" disabled></select>
+      <dl id="inspector" class="rows"><div><dt>状态</dt><dd>等待记录</dd></div></dl>
+      <details><summary>原始观察值</summary><pre id="raw-values">{}</pre></details>
+      <div class="panel-title">事件记录 <small id="event-count">0 条已发生</small></div>
+      <div id="events" class="events"><p class="muted">当前时间暂无事件</p></div>
+      <details class="scope"><summary>测试范围与限制</summary><div id="scope"></div></details>
+    </aside>
+  </main>
+  <section class="results" aria-label="整场结果"><div id="summary" class="metrics"><span class="muted">整场汇总在载入后显示</span></div><div id="checks" class="checks"></div></section>
+  <footer>
+    <div class="transport"><button id="play" disabled aria-label="播放">▶</button><button id="previous" disabled aria-label="上一刻">❮</button><button id="next" disabled aria-label="下一刻">❯</button><strong id="time">0.00 s</strong><span id="duration">/ 0.00 s</span><code id="tick">刻 0</code><label for="rate">播放速度</label><select id="rate"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option><option value="8">8×</option></select></div>
+    <div class="scrubber"><div id="markers" aria-hidden="true"></div><label class="sr-only" for="timeline">时间轴刻号</label><input id="timeline" type="range" min="0" max="1" step="1" value="0" disabled></div>
+    <p class="timeline-hint">空格 播放/暂停　·　← → 逐刻　·　Home/End 首尾　·　拖动旋转 / 滚轮缩放 <span>刻线和汇总展示整场；观察值与事件跟随当前时间。</span></p>
+  </footer>
+  <script type="module" src="/main.js"></script>
+</body>
+</html>

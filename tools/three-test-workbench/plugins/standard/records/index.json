@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "replays": [
+    {
+      "id": "analytic_projectile",
+      "name": "解析抛体 · 扩展接入示例",
+      "file": "analytic_projectile.json"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "name": "rvp-three-test-workbench",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "通过独立插件扩展的本地 Three.js 测试工作台",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node server.mjs",
+    "check": "node scripts/check.mjs",
+    "test": "node --test test/*.test.mjs",
+    "demo": "node scripts/generate-demo.mjs"
+  },
+  "dependencies": { "three": "0.180.0" }
+}

@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "gunner",
+  "name": "Gunner · 生产算法仿真",
+  "module": "adapter.js",
+  "sources": [{
+    "id": "simulation",
+    "root": "build/gunner-simulation",
+    "rootEnv": "RVP_REPLAY_DIR",
+    "index": "index.json",
+    "hint": "请在项目根运行 ./gradlew gunnerSimulation"
+  }]
+}

@@ -2,6 +2,8 @@
 
 面向在 `limitless-vehicle-rvp-addon` 与 `limitless_vehicle/rvp` 载具包上配置武器、载具的开发者。
 
+新增：[Three.js 测试工作台与扩展指南](../tools/ThreeJS测试工作台扩展指南.md) — 独立新工具，自动发现测试插件；新增场景只加数据，特殊格式、模型和面板放独立插件，播放/相机主体无需跟改；接入现有 Gunner 记录并附解析抛体示例，旧工具保持原样。
+
 Gunner专题入口：[Gunner文档索引](RVP_gunner/README.md) — 行为配置、驾驶与公共飞控、寻路方案、武器/雷达和历史交接统一放在 `docs/RVP_gunner/`。
 新增：[Gunner 无客户端仿真与 Three.js 回放](RVP_gunner/RVP_Gunner无客户端仿真与ThreeJS回放_20261102.md) — 复用当前地面策略、同层评分、意图仲裁与新公共固定翼分支，Java 逐刻导出五类场景，浏览器按时间轴查看轨迹、目标、操作与事件；含运行命令和简化环境边界。
 新增：[Gunner通用A*寻路设计计划](RVP_gunner/RVP_Gunner通用AStar寻路设计计划_20261102.md) — 当前Gunner载具驾驶尚无A*；规划独立公共寻路层，覆盖地面、固定翼与旋翼的体积/转弯约束、尽量执行、性能预算及新旧开关；目前仅方案，未实现代码。

@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "standard",
+  "name": "通用格式 · 独立测试",
+  "module": "adapter.js",
+  "sources": [{
+    "id": "examples",
+    "root": "tools/three-test-workbench/plugins/standard/records",
+    "index": "index.json"
+  }]
+}
