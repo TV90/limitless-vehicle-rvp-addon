@@ -141,5 +141,11 @@
     
     ]
   },
-  "name_CN": "霹雳-10 红外格斗弹"
+  "name_CN": "霹雳-10 红外格斗弹",
+  "fire_sound_data": {
+    "sound": "rvp:launch_air",
+    "max_distance": 150,
+    "volume": 1,
+    "pitch": 1
+  }
 }

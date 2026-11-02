@@ -85,5 +85,11 @@
   "collision_data": {
     "direct_damage": 60
   },
-  "name_CN": "鹰击-80 红外制导空对地导弹"
+  "name_CN": "鹰击-80 红外制导空对地导弹",
+  "fire_sound_data": {
+    "sound": "rvp:launch_air",
+    "max_distance": 150,
+    "volume": 1,
+    "pitch": 1
+  }
 }

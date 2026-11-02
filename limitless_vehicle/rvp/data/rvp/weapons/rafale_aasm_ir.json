@@ -94,5 +94,11 @@
       1
     ]
   },
-  "name_CN": "铁锤-64 红外制导空对地导弹"
+  "name_CN": "铁锤-64 红外制导空对地导弹",
+  "fire_sound_data": {
+    "sound": "rvp:launch_air",
+    "max_distance": 150,
+    "volume": 1,
+    "pitch": 1
+  }
 }

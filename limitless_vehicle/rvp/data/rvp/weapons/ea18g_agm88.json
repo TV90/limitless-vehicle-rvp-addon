@@ -96,5 +96,11 @@
   "collision_data": {
     "direct_damage": 80
   },
-  "name_CN": "AGM-88E 反辐射导弹"
+  "name_CN": "AGM-88E 反辐射导弹",
+  "fire_sound_data": {
+    "sound": "rvp:launch_air",
+    "max_distance": 150,
+    "volume": 1,
+    "pitch": 1
+  }
 }

@@ -311,5 +311,11 @@
       1
     ]
   },
-  "name_CN": "RGM-109C 巡航导弹"
+  "name_CN": "RGM-109C 巡航导弹",
+  "fire_sound_data": {
+    "sound": "rvp:launch_surface",
+    "max_distance": 2048,
+    "volume": 1,
+    "pitch": 1
+  }
 }

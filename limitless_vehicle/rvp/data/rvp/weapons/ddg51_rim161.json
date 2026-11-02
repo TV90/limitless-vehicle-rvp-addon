@@ -141,5 +141,13 @@
     
     ]
   },
-  "name_CN": "RIM-161 重型主动雷达弹"
+  "name_CN": "RIM-161 重型主动雷达弹",
+  "fire_sound_data": {
+    "sound": "rvp:launch_cold",
+    "far_sound": "rvp:launch_cold_far",
+    "far_distance": 512,
+    "max_distance": 2048,
+    "volume": 1,
+    "pitch": 1
+  }
 }

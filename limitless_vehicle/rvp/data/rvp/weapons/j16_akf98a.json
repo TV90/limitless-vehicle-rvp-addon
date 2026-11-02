@@ -125,5 +125,11 @@
       }
     ]
   },
-  "name_CN": "AKF-98A GPS制导巡航导弹"
+  "name_CN": "AKF-98A GPS制导巡航导弹",
+  "fire_sound_data": {
+    "sound": "rvp:launch_air",
+    "max_distance": 150,
+    "volume": 1,
+    "pitch": 1
+  }
 }

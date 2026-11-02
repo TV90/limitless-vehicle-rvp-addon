@@ -102,5 +102,11 @@
   },
   "seeker_color": "0xFFFFFF",
   "parent_weapon_unit_aim_override": false,
-  "name_CN": "RGM-84 主动雷达制导反舰导弹（左舷）"
+  "name_CN": "RGM-84 主动雷达制导反舰导弹（左舷）",
+  "fire_sound_data": {
+    "sound": "rvp:launch_surface",
+    "max_distance": 2048,
+    "volume": 1,
+    "pitch": 1
+  }
 }

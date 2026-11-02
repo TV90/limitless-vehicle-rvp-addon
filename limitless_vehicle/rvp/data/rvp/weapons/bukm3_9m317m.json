@@ -142,5 +142,11 @@
     
     ]
   },
-  "name_CN": "9M317M 半主动雷达弹"
+  "name_CN": "9M317M 半主动雷达弹",
+  "fire_sound_data": {
+    "sound": "rvp:launch_surface",
+    "max_distance": 2048,
+    "volume": 1,
+    "pitch": 1
+  }
 }

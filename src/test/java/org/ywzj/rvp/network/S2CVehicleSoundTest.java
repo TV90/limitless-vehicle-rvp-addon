@@ -5,44 +5,34 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
-
+import org.ywzj.rvp.weapon.data.RVP_FireSoundData;
 import java.util.UUID;
+import static org.junit.jupiter.api.Assertions.*;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-
-/** 兜底声音消息必须独立保留位置、载具身份与武器 ID，不依赖客户端生成实体。 */
+/** 可配置事件和近远参数完整通过网络，不再把固定类型枚举当作声音配置。 */
 class S2CVehicleSoundTest {
-
-    @Test
-    void everySoundKindRoundTripsWithoutAnEntityOrWorld() {
-        for (S2CVehicleSound.Kind kind : S2CVehicleSound.Kind.values()) {
-            S2CVehicleSound original = new S2CVehicleSound(
-                    ResourceLocation.fromNamespaceAndPath("minecraft", "overworld"), kind,
-                    UUID.randomUUID(), 42,
-                    ResourceLocation.fromNamespaceAndPath("test", "missile"),
-                    new Vec3(-12.25, 78.5, 2047.125));
-            FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
+    @Test void explicitSingleAndTwoBandSoundConfigsRoundTrip() {
+        var near=new ResourceLocation("example","launch"); var far=new ResourceLocation("example","far");
+        for(var distant:new ResourceLocation[]{null,far}) {
+            var c=new RVP_FireSoundData(near,distant,distant==null?0:137.5F,950,2.5F,.85F);
+            var original=new S2CVehicleSound(new ResourceLocation("minecraft","overworld"),UUID.randomUUID(),37,new Vec3(1,2,3),c);
+            var b=new FriendlyByteBuf(Unpooled.buffer());
             try {
-                // 调用生产编解码，验证各发射声分类的消息均完整往返。
-                S2CVehicleSound.encode(original, buffer);
-                assertEquals(original, S2CVehicleSound.decode(buffer));
-                assertEquals(0, buffer.readableBytes());
-            } finally {
-                buffer.release();
-            }
+                S2CVehicleSound.encode(original,b); var decoded=S2CVehicleSound.decode(b);
+                assertEquals(original.dimension(),decoded.dimension()); assertEquals(original.vehicleId(),decoded.vehicleId());
+                assertEquals(original.entityId(),decoded.entityId()); assertEquals(original.position(),decoded.position());
+                assertEquals(c.getSound(),decoded.config().getSound()); assertEquals(c.getFarSound(),decoded.config().getFarSound());
+                assertEquals(c.getFarDistance(),decoded.config().getFarDistance()); assertEquals(c.getMaxDistance(),decoded.config().getMaxDistance());
+                assertEquals(c.getVolume(),decoded.config().getVolume()); assertEquals(c.getPitch(),decoded.config().getPitch());
+                assertEquals(0,b.readableBytes());
+            } finally { b.release(); }
         }
     }
-
-    @Test
-    void rejectsNonFinitePositionAndMissileWithoutWeaponIdentity() {
-        ResourceLocation dimension = ResourceLocation.fromNamespaceAndPath("minecraft", "overworld");
-        UUID vehicle = UUID.randomUUID();
-        // 调用生产构造校验：不能把非法坐标送进声音引擎，也不能跳过武器自定义声音保护。
-        assertThrows(IllegalArgumentException.class, () -> new S2CVehicleSound(dimension,
-                S2CVehicleSound.Kind.COLD_LAUNCH, vehicle, 1,
-                ResourceLocation.fromNamespaceAndPath("test", "missile"), new Vec3(Double.NaN, 0, 0)));
-        assertThrows(NullPointerException.class, () -> new S2CVehicleSound(dimension,
-                S2CVehicleSound.Kind.AIR2AIR, vehicle, 1, null, Vec3.ZERO));
+    @Test void invalidPositionsAndMissingOrInvalidSoundConfigsAreRejected() {
+        var dimension=new ResourceLocation("minecraft","overworld"); var uuid=UUID.randomUUID();
+        var c=new RVP_FireSoundData(new ResourceLocation("example","sound"),null,0,100,1,1);
+        assertThrows(IllegalArgumentException.class,()->new S2CVehicleSound(dimension,uuid,1,new Vec3(Double.NaN,0,0),c));
+        assertThrows(NullPointerException.class,()->new S2CVehicleSound(dimension,uuid,1,Vec3.ZERO,null));
+        assertThrows(IllegalArgumentException.class,()->new S2CVehicleSound(dimension,uuid,1,Vec3.ZERO,new RVP_FireSoundData()));
     }
 }

@@ -133,5 +133,11 @@
     
     ]
   },
-  "name_CN": "MIM-146 激光架束制导多用途导弹"
+  "name_CN": "MIM-146 激光架束制导多用途导弹",
+  "fire_sound_data": {
+    "sound": "rvp:launch_surface",
+    "max_distance": 2048,
+    "volume": 1,
+    "pitch": 1
+  }
 }

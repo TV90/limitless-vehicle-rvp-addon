@@ -156,5 +156,11 @@
   "misc_data": {
     "artillery_map": true
   },
-  "name_CN": "M30 反装甲集束火箭弹"
+  "name_CN": "M30 反装甲集束火箭弹",
+  "fire_sound_data": {
+    "sound": "rvp:launch_large_rocket",
+    "max_distance": 64,
+    "volume": 4,
+    "pitch": 1
+  }
 }

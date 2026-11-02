@@ -149,5 +149,11 @@
     
     ]
   },
-  "name_CN": "春秋肠"
+  "name_CN": "春秋肠",
+  "fire_sound_data": {
+    "sound": "rvp:launch_air",
+    "max_distance": 150,
+    "volume": 1,
+    "pitch": 1
+  }
 }

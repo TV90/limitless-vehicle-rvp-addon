@@ -293,5 +293,13 @@
       1
     ]
   },
-  "name_CN": "9M723 伊斯坎德尔M 弹道导弹"
+  "name_CN": "9M723 伊斯坎德尔M 弹道导弹",
+  "fire_sound_data": {
+    "sound": "rvp:launch_cold",
+    "far_sound": "rvp:launch_cold_far",
+    "far_distance": 512,
+    "max_distance": 2048,
+    "volume": 1,
+    "pitch": 1
+  }
 }

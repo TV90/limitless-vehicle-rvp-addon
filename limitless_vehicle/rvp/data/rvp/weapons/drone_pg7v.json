@@ -22,7 +22,7 @@
   },
   "projectile_data": {
     "velocity": 0.1,
-    "gravity": -0.03,
+    "gravity": -0.15,
     "inherit_vehicle_velocity": true,
     "rotate_to_motion": true,
     "max_speed": 3,
@@ -60,7 +60,7 @@
     }
   },
   "collision_data": {
-    "direct_damage": 400
+    "direct_damage": 700
   },
   "misc_data": {
     "ammo_radar_rcs_factor": [

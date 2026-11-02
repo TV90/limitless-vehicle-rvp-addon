@@ -106,5 +106,13 @@
   },
   "seeker_color": "0xFFFFFF",
   "parent_weapon_unit_aim_override": false,
-  "name_CN": "鹰击-19 主动雷达制导反舰导弹"
+  "name_CN": "鹰击-19 主动雷达制导反舰导弹",
+  "fire_sound_data": {
+    "sound": "rvp:launch_cold",
+    "far_sound": "rvp:launch_cold_far",
+    "far_distance": 512,
+    "max_distance": 2048,
+    "volume": 1,
+    "pitch": 1
+  }
 }

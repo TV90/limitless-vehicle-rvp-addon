@@ -140,5 +140,13 @@
     
     ]
   },
-  "name_CN": "IRIS-T SL 主动红外制导防空导弹"
+  "name_CN": "IRIS-T SL 主动红外制导防空导弹",
+  "fire_sound_data": {
+    "sound": "rvp:launch_cold",
+    "far_sound": "rvp:launch_cold_far",
+    "far_distance": 512,
+    "max_distance": 2048,
+    "volume": 1,
+    "pitch": 1
+  }
 }

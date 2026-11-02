@@ -139,5 +139,11 @@
     
     ]
   },
-  "name_CN": "海红旗10 主动红外弹"
+  "name_CN": "海红旗10 主动红外弹",
+  "fire_sound_data": {
+    "sound": "rvp:launch_surface",
+    "max_distance": 2048,
+    "volume": 1,
+    "pitch": 1
+  }
 }

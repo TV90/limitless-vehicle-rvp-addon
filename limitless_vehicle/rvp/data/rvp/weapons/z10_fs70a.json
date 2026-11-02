@@ -73,5 +73,11 @@
       }
     }
   },
-  "name_CN": "FS70A 激光制导火箭弹"
+  "name_CN": "FS70A 激光制导火箭弹",
+  "fire_sound_data": {
+    "sound": "rvp:launch_air",
+    "max_distance": 150,
+    "volume": 1,
+    "pitch": 1
+  }
 }

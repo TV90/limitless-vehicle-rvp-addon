@@ -138,5 +138,11 @@
     
     ]
   },
-  "name_CN": "霹雳-12 主动雷达弹"
+  "name_CN": "霹雳-12 主动雷达弹",
+  "fire_sound_data": {
+    "sound": "rvp:launch_air",
+    "max_distance": 150,
+    "volume": 1,
+    "pitch": 1
+  }
 }
