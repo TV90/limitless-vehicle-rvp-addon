@@ -574,5 +574,6 @@
   "hud.ywzj_rvp.action.deploy_auxiliary": "部署",
   "hud.ywzj_rvp.action.switch_auxiliary": "切换",
   "hud.ywzj_rvp.action.tactical_map": "地图",
-  "hud.ywzj_rvp.action.vehicle_status": "状态"
+  "hud.ywzj_rvp.action.vehicle_status": "状态",
+  "hud.ywzj_rvp.action.deployed_auxiliary": "已部署"
 }

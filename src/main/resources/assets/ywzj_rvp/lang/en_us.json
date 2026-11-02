@@ -574,5 +574,6 @@
   "hud.ywzj_rvp.action.deploy_auxiliary": "Deploy",
   "hud.ywzj_rvp.action.switch_auxiliary": "Switch",
   "hud.ywzj_rvp.action.tactical_map": "Map",
-  "hud.ywzj_rvp.action.vehicle_status": "Status"
+  "hud.ywzj_rvp.action.vehicle_status": "Status",
+  "hud.ywzj_rvp.action.deployed_auxiliary": "Deployed"
 }

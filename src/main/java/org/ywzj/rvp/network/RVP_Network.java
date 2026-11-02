@@ -39,7 +39,7 @@ public class RVP_Network {
     /** 协议 34：殉燃弹药爆响改为客户端本地跟随播放（移除 AMMO_POPS 与截止时刻）；发射声改为客户端本地优先，只向未追踪载具的玩家补发；双端必须一同更新。 */
     /** 协议 35：新增母车辅助载具候选选择请求和权威状态同步。 */
     /** 协议 36：显式配置的 HITL 远程观察窗口、区块、心跳及导弹 spawn 标志。 */
-    private static final String PROTOCOL = "38";
+    private static final String PROTOCOL = "39";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "main"))
@@ -475,6 +475,12 @@ public class RVP_Network {
                 .encoder(S2CDeployableUavState::encode)
                 .decoder(S2CDeployableUavState::decode)
                 .consumerMainThread(S2CDeployableUavState::handle)
+                .add();
+        // 当前乘员的辅助载具 HUD 身份；追加注册，保持既有消息 ID 顺序。
+        CHANNEL.messageBuilder(S2CAuxiliaryHudContext.class, id++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(S2CAuxiliaryHudContext::encode)
+                .decoder(S2CAuxiliaryHudContext::decode)
+                .consumerMainThread(S2CAuxiliaryHudContext::handle)
                 .add();
     }
 }
