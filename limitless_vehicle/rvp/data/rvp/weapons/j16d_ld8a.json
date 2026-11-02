@@ -96,11 +96,5 @@
     "direct_damage": 60
   },
   "fire_control_sensor_type_override": "rf",
-  "name_CN": "雷电-8 反辐射导弹",
-  "fire_sound_data": {
-    "sound": "rvp:launch_air",
-    "max_distance": 150,
-    "volume": 1,
-    "pitch": 1
-  }
+  "name_CN": "雷电-8 反辐射导弹"
 }

@@ -56,8 +56,8 @@ public final class RVP_VehicleFireSoundAttenuator {
         if (!event.isClientSide()) {
             return;
         }
-        // 调用 RVP 武器声音管理器：替换声不会经过本体开火声，避免登记无用的衰减项。
-        if (RVP_ClientWeaponFireSound.willTakeOver(event)) {
+        // display 已指定播放范围时让出，避免旧的固定500格衰减再次覆盖包参数。
+        if (RVP_ClientVehicleSound.willTakeOver(event)) {
             return;
         }
         AbstractVehicleWeapon<?> weapon = event.getWeapon();

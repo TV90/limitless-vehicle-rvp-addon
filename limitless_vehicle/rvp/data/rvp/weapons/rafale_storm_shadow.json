@@ -88,11 +88,5 @@
       0.18
     ]
   },
-  "name_CN": "风暴阴影 GPS制导巡航导弹",
-  "fire_sound_data": {
-    "sound": "rvp:launch_air",
-    "max_distance": 150,
-    "volume": 1,
-    "pitch": 1
-  }
+  "name_CN": "风暴阴影 GPS制导巡航导弹"
 }

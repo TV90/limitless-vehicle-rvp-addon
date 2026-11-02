@@ -165,11 +165,5 @@
   "misc_data": {
     "artillery_map": true
   },
-  "name_CN": "M30-白磷空爆火箭弹",
-  "fire_sound_data": {
-    "sound": "rvp:launch_large_rocket",
-    "max_distance": 64,
-    "volume": 4,
-    "pitch": 1
-  }
+  "name_CN": "M30-白磷空爆火箭弹"
 }

@@ -7,6 +7,10 @@ import java.util.List;
 
 public class RVP_BaseDisplayPojo extends VehicleDisplayPojo {
 
+    /** 武器发射声音表现参数；音轨复用原生 sounds.fire 与 sounds.fire_far。 */
+    @SerializedName("fire_sound")
+    public org.ywzj.rvp.config.RVP_DisplayFireSound.Settings fireSound;
+
     @SerializedName("bedrock_backend")
     public String bedrockBackend = "vehicle";
 

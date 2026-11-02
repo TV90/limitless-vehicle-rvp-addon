@@ -85,11 +85,5 @@
   "collision_data": {
     "direct_damage": 60
   },
-  "name_CN": "天龙-17 人在回路指令线制导导弹",
-  "fire_sound_data": {
-    "sound": "rvp:launch_air",
-    "max_distance": 150,
-    "volume": 1,
-    "pitch": 1
-  }
+  "name_CN": "天龙-17 人在回路指令线制导导弹"
 }

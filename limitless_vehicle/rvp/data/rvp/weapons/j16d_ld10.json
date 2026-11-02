@@ -96,11 +96,5 @@
   "collision_data": {
     "direct_damage": 80
   },
-  "name_CN": "雷电-10 反辐射导弹",
-  "fire_sound_data": {
-    "sound": "rvp:launch_air",
-    "max_distance": 150,
-    "volume": 1,
-    "pitch": 1
-  }
+  "name_CN": "雷电-10 反辐射导弹"
 }

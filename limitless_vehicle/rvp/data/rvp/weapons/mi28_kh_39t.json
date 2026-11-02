@@ -98,11 +98,5 @@
   "collision_data": {
     "direct_damage": 10
   },
-  "name_CN": "KH-39T 红外制导空对地导弹",
-  "fire_sound_data": {
-    "sound": "rvp:launch_air",
-    "max_distance": 150,
-    "volume": 1,
-    "pitch": 1
-  }
+  "name_CN": "KH-39T 红外制导空对地导弹"
 }

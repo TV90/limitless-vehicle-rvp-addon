@@ -86,11 +86,5 @@
   "fire_data": {
     "require_lock": true
   },
-  "name_CN": "YJ-91A 反辐射导弹",
-  "fire_sound_data": {
-    "sound": "rvp:launch_air",
-    "max_distance": 150,
-    "volume": 1,
-    "pitch": 1
-  }
+  "name_CN": "YJ-91A 反辐射导弹"
 }

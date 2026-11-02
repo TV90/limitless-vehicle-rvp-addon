@@ -85,8 +85,17 @@ public final class RVP_ClientCameraRelativeFireSound {
         if (!event.isClientSide()) {
             return;
         }
-        // 调用 RVP 武器声音管理器：已由默认音接管时，本处理器不能重复重放本体声音。
-        if (RVP_ClientWeaponFireSound.willTakeOver(event)) {
+        // display 声音参数沿用本处理器和原生 display 解析结果，不再另开武器数据声音通道。
+        if (RVP_ClientSightFireSound.resolveSightFireSound(event) == null
+                && RVP_ClientVehicleSound.playLocalLaunch(event)) {
+            var weapon = resolveSoundWeapon(event.getWeapon());
+            var original = weapon == null ? null : weapon.getFireSound();
+            if (original != null) {
+                if (weapon instanceof org.ywzj.vehicle.vehicle.weapon.VehicleMissile
+                        && weapon.getWeaponUnit().getColdLaunchTimeTick() > 0)
+                    registerDelayedPending(original.getLocation(), weapon.getWeaponUnit());
+                else registerPending(original.getLocation(), weapon.getWeaponUnit().worldPivotPosition());
+            }
             return;
         }
         // 本车（本地玩家乘坐的载具）且武器配置了 sight_fire 时，开火声整体由

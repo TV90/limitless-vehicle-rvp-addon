@@ -136,14 +136,7 @@
         "start_factor": 0.2,
         "end_factor": 0.1
       }
-    
     ]
   },
-  "name_CN": "米卡-NG 双脉冲 主动雷达弹",
-  "fire_sound_data": {
-    "sound": "rvp:launch_air",
-    "max_distance": 150,
-    "volume": 1,
-    "pitch": 1
-  }
+  "name_CN": "米卡-NG 双脉冲 主动雷达弹"
 }

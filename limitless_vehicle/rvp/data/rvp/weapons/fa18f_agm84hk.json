@@ -80,11 +80,5 @@
   "collision_data": {
     "direct_damage": 60
   },
-  "name_CN": "AGM-84H/K 人在回路电视制导导弹",
-  "fire_sound_data": {
-    "sound": "rvp:launch_air",
-    "max_distance": 150,
-    "volume": 1,
-    "pitch": 1
-  }
+  "name_CN": "AGM-84H/K 人在回路电视制导导弹"
 }

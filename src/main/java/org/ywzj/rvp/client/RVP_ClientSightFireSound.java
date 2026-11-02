@@ -86,10 +86,6 @@ public final class RVP_ClientSightFireSound {
         if (!event.isClientSide()) {
             return;
         }
-        // 调用 RVP 武器声音管理器：默认音接管时不再同时启动原本的视角音轨。
-        if (RVP_ClientWeaponFireSound.willTakeOver(event)) {
-            return;
-        }
         Shot shot = createShot(event);
         if (shot == null) {
             return;

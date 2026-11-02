@@ -6,6 +6,10 @@ import java.util.List;
 
 public class RVP_BaseDisplay extends BaseDisplay {
 
+    private final org.ywzj.rvp.config.RVP_DisplayFireSound fireSound;
+
+    public org.ywzj.rvp.config.RVP_DisplayFireSound getFireSoundSettings() { return fireSound; }
+
     protected final RVP_BedrockBackend bedrockBackend;
 
     protected final List<String> noCullBones;
@@ -22,6 +26,10 @@ public class RVP_BaseDisplay extends BaseDisplay {
 
     protected RVP_BaseDisplay(RVP_BaseDisplayPojo pojo, RVP_BedrockBackend backend) {
         super(pojo);
+        var fire = getSoundEvents().get("fire");
+        var far = getSoundEvents().get("fire_far");
+        this.fireSound = org.ywzj.rvp.config.RVP_DisplayFireSound.bind(pojo.fireSound,
+                fire == null ? null : fire.getLocation(), far == null ? null : far.getLocation());
         this.bedrockBackend = backend == null ? RVP_BedrockBackend.VEHICLE : backend;
         this.noCullBones = pojo.noCullBones == null ? List.of() : List.copyOf(pojo.noCullBones);
         this.stateHiddenBones = pojo.stateHiddenBones == null ? List.of()

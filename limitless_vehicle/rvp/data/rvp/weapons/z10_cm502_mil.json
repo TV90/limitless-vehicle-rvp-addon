@@ -88,11 +88,5 @@
       1
     ]
   },
-  "name_CN": "CM-502KG 人在回路指令线制导空对地导弹",
-  "fire_sound_data": {
-    "sound": "rvp:launch_air",
-    "max_distance": 150,
-    "volume": 1,
-    "pitch": 1
-  }
+  "name_CN": "CM-502KG 人在回路指令线制导空对地导弹"
 }

@@ -25,13 +25,6 @@ import java.util.List;
  */
 public class RVP_WeaponData extends BaseVehicleWeaponData {
 
-    /** 显式发射音效组；缺省 null 走原表现声音，不按类型/口径隐式填充。 */
-    @SerializedName("fire_sound_data")
-    private RVP_FireSoundData fireSoundData;
-
-    /** 调用包内声明；有效性由共用播放服务校验。 */
-    @Nullable public RVP_FireSoundData getFireSoundData() { return fireSoundData; }
-
     /** 是否在 HUD 中显示 MSL 导弹指示器（菱形框+距离）。 */
     @SerializedName("show_msl_indicator")
     private boolean showMslIndicator = false;

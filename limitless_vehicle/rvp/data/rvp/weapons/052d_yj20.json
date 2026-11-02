@@ -301,7 +301,6 @@
         "start_factor": 0.2,
         "end_factor": 0.1
       }
-    
     ]
   },
   "misc_data": {
@@ -311,13 +310,5 @@
       1
     ]
   },
-  "name_CN": "鹰击20 弹道导弹",
-  "fire_sound_data": {
-    "sound": "rvp:launch_cold",
-    "far_sound": "rvp:launch_cold_far",
-    "far_distance": 512,
-    "max_distance": 2048,
-    "volume": 1,
-    "pitch": 1
-  }
+  "name_CN": "鹰击20 弹道导弹"
 }

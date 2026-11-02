@@ -125,11 +125,5 @@
       }
     ]
   },
-  "name_CN": "TOW-2B 半自动指令线制导反坦克导弹[攻顶]",
-  "fire_sound_data": {
-    "sound": "rvp:launch_air",
-    "max_distance": 150,
-    "volume": 1,
-    "pitch": 1
-  }
+  "name_CN": "TOW-2B 半自动指令线制导反坦克导弹[攻顶]"
 }

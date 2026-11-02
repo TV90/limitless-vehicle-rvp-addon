@@ -136,11 +136,5 @@
       }
     ]
   },
-  "name_CN": "红箭73E2 激光架束反坦克导弹",
-  "fire_sound_data": {
-    "sound": "rvp:launch_surface",
-    "max_distance": 2048,
-    "volume": 1,
-    "pitch": 1
-  }
+  "name_CN": "红箭73E2 激光架束反坦克导弹"
 }

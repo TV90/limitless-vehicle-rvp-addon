@@ -145,11 +145,5 @@
       }
     ]
   },
-  "name_CN": "TKB-1055 半主动指令线防空导弹",
-  "fire_sound_data": {
-    "sound": "rvp:launch_surface",
-    "max_distance": 2048,
-    "volume": 1,
-    "pitch": 1
-  }
+  "name_CN": "TKB-1055 半主动指令线防空导弹"
 }
