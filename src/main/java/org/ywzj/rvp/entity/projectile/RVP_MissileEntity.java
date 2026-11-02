@@ -91,6 +91,15 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     private int hitlEnterViewResendTicks;
     /** 武器配置 {@code hitl_right_click_detonate}：HITL 视角下右键 = 提前引爆（客户端通过 spawn 数据读取）。 */
     private boolean hitlRightClickDetonate;
+    /** 显式远程观察配置，仅服务端持有完整参数；客户端只接收 enabled 标志。 */
+    private org.ywzj.rvp.weapon.data.RVP_HitlRemoteViewData hitlRemoteView;
+    /** 本发弹体是否启用了远程观察，随 spawn 数据同步。 */
+    private boolean hitlRemoteConfigured;
+    /** 每发导弹只申请一次会话，防止主动退出后被后续 tick 自动重开。 */
+    private boolean hitlRemoteAttempted;
+    /** 有限频率的非加载无线电遮挡检测结果和下一次检测时刻。 */
+    private boolean hitlRemoteRadioBlocked;
+    private int hitlRemoteNextRadioCheck;
     private int activeSeekerDesignatedTargetId = Integer.MIN_VALUE;
     /**
      * 中继失援标志（2026-10-06 实时语义，替代旧版永久锁存 {@code activeSeekerSupportReleased}）：
@@ -149,6 +158,8 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
                 ? HitlSignalSource.FIBER
                 : HitlSignalSource.RADIO;
         this.hitlRightClickDetonate = hitl.isHitlRightClickDetonate();
+        this.hitlRemoteConfigured = hitl.isRemoteViewEnabled();
+        this.hitlRemoteView = hitlRemoteConfigured ? hitl.getHitlRemoteView() : null;
         this.hitlEnabled = true;
         this.hitlEnterViewResendTicks = 5;
         this.hitlInputYaw = 0;
@@ -177,6 +188,13 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
 
     @Override
     protected void tickGuidance() {
+        if (!level().isClientSide() && hitlRemoteConfigured && !hitlRemoteAttempted && hitlEnabled) {
+            hitlRemoteAttempted = true;
+            // 只有显式配置的弹体申请额外观察，服务端负责人数/距离/母车身份门控。
+            if (!org.ywzj.rvp.server.hitl.RVP_HitlRemoteViewService.start(this, hitlRemoteView, hitlControlRange)) {
+                hitlEnabled = false;
+            }
+        }
         maybeSyncEnterHitlView();
         tickHitlRadioLink();
         if (hitlLinkSevered || hitlLinkBlocked) {
@@ -679,6 +697,8 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
             hitlEnabled = false;
             return;
         }
+        // 远程模式由独立会话心跳和距离门控决定生命期；静止观看不会因没有鼠标输入超时。
+        if (hitlRemoteConfigured) return;
         if (hitlLife <= 0) {
             return;
         }
@@ -722,7 +742,9 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         // 视距门控：无线链路只在玩家可见视距内维持，超出视距的导弹已离开发射者可视范围，
         // 不执行 level().clip 否则超长射线会逐 tick 同步加载射线沿途未加载区块，导致服务端
         // 区块生成风暴和严重 TPS 掉刻（目标点在视距外时与经验现象完全吻合）。
-        double viewRange = resolveRadioLinkViewDistance();
+        double viewRange = hitlRemoteConfigured
+                ? Math.min(hitlControlRange, org.ywzj.rvp.config.RVP_HitlRemoteConfig.range())
+                : resolveRadioLinkViewDistance();
         if (start.distanceToSqr(end) > viewRange * viewRange) {
             hitlLinkBlocked = true;
             hitlLinkBlockedTicks++;
@@ -734,8 +756,24 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
             maybeSyncHitlLinkState();
             return;
         }
-        BlockHitResult hit = level().clip(new ClipContext(start, end, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, this));
-        boolean blockedNow = hit.getType() == HitResult.Type.BLOCK;
+        boolean blockedNow;
+        if (hitlRemoteConfigured && hitlRemoteView != null && level() instanceof ServerLevel serverLevel) {
+            if (tickCount >= hitlRemoteNextRadioCheck) {
+                var result = org.ywzj.rvp.server.hitl.RVP_HitlRadioPath.check(serverLevel, this, start, end);
+                hitlRemoteRadioBlocked = org.ywzj.rvp.server.hitl.RVP_HitlRadioPath.blocks(
+                        result, hitlRemoteView.isRequireLoadedRadioPath());
+                hitlRemoteNextRadioCheck = tickCount + hitlRemoteView.getLinkCheckIntervalTicks();
+                if (org.ywzj.rvp.debug.RVP_DebugFlags.HITL.isEnabled() && tickCount % 100 == 0) {
+                    com.mojang.logging.LogUtils.getLogger().info(
+                            "[RVP-HITL-STREAM] missile={} radioPath={} requireLoaded={} blocked={}",
+                            getId(), result, hitlRemoteView.isRequireLoadedRadioPath(), hitlRemoteRadioBlocked);
+                }
+            }
+            blockedNow = hitlRemoteRadioBlocked;
+        } else {
+            BlockHitResult hit = level().clip(new ClipContext(start, end, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, this));
+            blockedNow = hit.getType() == HitResult.Type.BLOCK;
+        }
 
         if (blockedNow) {
             hitlLinkBlockedTicks++;
@@ -839,12 +877,15 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     }
 
     public void rvp$setHitlSteeringInput(float yaw, float pitch, int seq) {
+        // 远程能力只接受仍有效的观察会话输入；未配置武器沿用原有流程。
+        if (hitlRemoteConfigured && !org.ywzj.rvp.server.hitl.RVP_HitlRemoteViewService.isControlling(this)) return;
         if (hitlSignalSource == HitlSignalSource.RADIO && (hitlLinkBlocked || hitlLinkSevered)) {
             return;
         }
         if (hitlControlMode != RVP_EnumHitlControlMode.MOUSE || seq <= hitlInputSeq) {
             return;
         }
+        if (hitlRemoteConfigured && (!Float.isFinite(yaw) || !Float.isFinite(pitch))) return;
         this.hitlInputYaw = yaw;
         this.hitlInputPitch = pitch;
         this.hitlInputSeq = seq;
@@ -854,6 +895,8 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     }
 
     public void rvp$setHitlDesignatedTarget(Vec3 target) {
+        // 远程能力只接受仍有效的观察会话输入；未配置武器沿用原有流程。
+        if (hitlRemoteConfigured && !org.ywzj.rvp.server.hitl.RVP_HitlRemoteViewService.isControlling(this)) return;
         if (hitlSignalSource == HitlSignalSource.RADIO && (hitlLinkBlocked || hitlLinkSevered)) {
             return;
         }
@@ -864,6 +907,8 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         if (hitlControlMode != RVP_EnumHitlControlMode.DESIGNATE || target == null) {
             return;
         }
+        if (hitlRemoteConfigured && (!Double.isFinite(target.x) || !Double.isFinite(target.y)
+                || !Double.isFinite(target.z))) return;
         setTargetPos(target);
         setTargetEntity(null);
         // 指定目标同样是有效操作：重置指令生命期（与转向输入同语义）
@@ -871,6 +916,8 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     }
 
     public void rvp$clearHitlDesignation() {
+        // 远程能力只接受仍有效的观察会话输入；未配置武器沿用原有流程。
+        if (hitlRemoteConfigured && !org.ywzj.rvp.server.hitl.RVP_HitlRemoteViewService.isControlling(this)) return;
         if (hitlSignalSource == HitlSignalSource.RADIO && (hitlLinkBlocked || hitlLinkSevered)) {
             return;
         }
@@ -881,6 +928,8 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     }
 
     public void rvp$setHitlDesignatedEntity(net.minecraft.world.entity.Entity target) {
+        // 远程能力只接受仍有效的观察会话输入；未配置武器沿用原有流程。
+        if (hitlRemoteConfigured && !org.ywzj.rvp.server.hitl.RVP_HitlRemoteViewService.isControlling(this)) return;
         if (hitlSignalSource == HitlSignalSource.RADIO && (hitlLinkBlocked || hitlLinkSevered)) {
             return;
         }
@@ -920,12 +969,17 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
 
     /** 人在回路模式下玩家右键提前引爆（仅服务端）：在导弹当前位置走正常爆炸链。 */
     public void rvp$hitlDetonate() {
+        // 远程能力只接受仍有效的观察会话输入；未配置武器沿用原有流程。
+        if (hitlRemoteConfigured && !org.ywzj.rvp.server.hitl.RVP_HitlRemoteViewService.isControlling(this)) return;
         if (level().isClientSide() || !hitlEnabled) {
             return;
         }
         hitlEnabled = false;
         explodeAndDiscard(position());
     }
+
+    /** 仅显式配置的两类 HITL 会话获得远程同步能力。 */
+    public boolean rvp$isRemoteHitlConfigured() { return hitlRemoteConfigured; }
 
     public boolean rvp$isHitlActive() {
         return hitlEnabled && hitlLife > 0;
@@ -967,6 +1021,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         buffer.writeFloat(hitlMaxLookOffsetDeg);
         buffer.writeEnum(hitlSignalSource);
         buffer.writeBoolean(hitlRightClickDetonate);
+        buffer.writeBoolean(hitlRemoteConfigured);
     }
 
     @Override
@@ -989,6 +1044,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         if (buffer.readableBytes() >= 1) {
             this.hitlRightClickDetonate = buffer.readBoolean();
         }
+        this.hitlRemoteConfigured = buffer.readBoolean();
         this.hitlSteeringYaw = getYRot();
         this.hitlSteeringPitch = getXRot();
         this.hitlInputYaw = hitlSteeringYaw;

@@ -299,6 +299,22 @@ tasks.named('test', Test).configure {
     }
 }
 
+// 调用测试源码中的仿真入口生成回放；不启动 Minecraft，也不打入发布 jar。
+tasks.register('gunnerSimulation', JavaExec) {
+    description = '生成 Gunner 仿真场景的 JSON 回放与索引。'
+    group = 'verification'
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'org.ywzj.rvp.entity.gunner.simulation.RVP_GunnerSimulationMain'
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+    workingDir projectDir
+    // 与使用文档保持一致：支持单场景或目录，并允许单独指定输出目录。
+    args project.findProperty('gunnerScenario') ?: 'src/test/resources/gunner-simulation',
+            project.findProperty('gunnerOutput') ?: 'build/gunner-simulation'
+}
+
 tasks.register('manualTrajectoryTest', Test) {
     description = '运行带 XChart 实时轨迹窗口的手动虚拟飞行测试。'
     group = 'verification'

@@ -38,7 +38,8 @@ public class RVP_Network {
     /** 协议 33：新增不依赖实体追踪的导弹与殉燃声音消息；客户端和服务端须同时更新。 */
     /** 协议 34：殉燃弹药爆响改为客户端本地跟随播放（移除 AMMO_POPS 与截止时刻）；发射声改为客户端本地优先，只向未追踪载具的玩家补发；双端必须一同更新。 */
     /** 协议 35：新增母车辅助载具候选选择请求和权威状态同步。 */
-    private static final String PROTOCOL = "35";
+    /** 协议 36：显式配置的 HITL 远程观察窗口、区块、心跳及导弹 spawn 标志。 */
+    private static final String PROTOCOL = "37";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "main"))
@@ -54,6 +55,19 @@ public class RVP_Network {
         }
         initialized = true;
         int id = 0;
+        // 服务端权威的 HITL 观察会话；消息处理均在主线程并明确传输方向。
+        CHANNEL.messageBuilder(org.ywzj.rvp.network.hitl.S2CHitlRemoteView.class, id++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(org.ywzj.rvp.network.hitl.S2CHitlRemoteView::encode)
+                .decoder(org.ywzj.rvp.network.hitl.S2CHitlRemoteView::decode)
+                .consumerMainThread(org.ywzj.rvp.network.hitl.S2CHitlRemoteView::handle).add();
+        CHANNEL.messageBuilder(org.ywzj.rvp.network.hitl.S2CHitlRemoteChunk.class, id++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(org.ywzj.rvp.network.hitl.S2CHitlRemoteChunk::encode)
+                .decoder(org.ywzj.rvp.network.hitl.S2CHitlRemoteChunk::decode)
+                .consumerMainThread(org.ywzj.rvp.network.hitl.S2CHitlRemoteChunk::handle).add();
+        CHANNEL.messageBuilder(org.ywzj.rvp.network.hitl.C2SHitlRemoteHeartbeat.class, id++, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(org.ywzj.rvp.network.hitl.C2SHitlRemoteHeartbeat::encode)
+                .decoder(org.ywzj.rvp.network.hitl.C2SHitlRemoteHeartbeat::decode)
+                .consumerMainThread(org.ywzj.rvp.network.hitl.C2SHitlRemoteHeartbeat::handle).add();
         CHANNEL.messageBuilder(C2SSetGPSTarget.class, id++)
                 .encoder(C2SSetGPSTarget::encode)
                 .decoder(C2SSetGPSTarget::decode)
