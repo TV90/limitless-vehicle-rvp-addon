@@ -17,6 +17,7 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.client.state.RVP_ClientHitlState;
+import org.ywzj.rvp.client.state.RVP_ClientRemoteAmmoState;
 import org.ywzj.rvp.guidance.RVP_EnumHitlControlMode;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.vehicle.client.render.util.Color;
@@ -84,7 +85,12 @@ public class RVP_TVMissileOverlay {
         Component header = Component.translatable("overlay.ywzj_rvp.tv_missile.header", mode);
         // 转向率显式格式化保留一位小数（避免翻译占位符浮点精度差异），并追加当前速度（km/h）
         String turnRateText = String.format("%.1f", lastRateDegPerSec);
-        double speedKmh = missile.getDeltaMovement().length() * 72.0;
+        // 客户端弹体只插值位置且关闭常规速度同步，deltaMovement 会停在出生值；
+        // 复用每 5 tick 下发的服务端弹药快照，显示真实加速、转弯与燃尽后的当前速度。
+        var snapshot = RVP_ClientRemoteAmmoState.getEntry(mc.level.dimension().location(), missile.getId());
+        // 首份快照尚未到达时沿用出生速度；读数不反写实体，保持既有插值与制导行为。
+        double speedKmh = snapshot != null && Double.isFinite(snapshot.speedKmh()) && snapshot.speedKmh() >= 0.0
+                ? snapshot.speedKmh() : missile.getDeltaMovement().length() * 72.0;
         String speedText = String.format("%.0f", speedKmh);
         Component turnRate = Component.translatable("overlay.ywzj_rvp.tv_missile.turn_rate", turnRateText, speedText);
         gg.drawString(font, header, x, y, Color.GREEN, true);
