@@ -29,6 +29,19 @@ public class RVP_GuidanceDataHITL extends RVP_GuidanceData {
     @SerializedName("hitl_right_click_detonate")
     private boolean hitlRightClickDetonate;
 
+    /** 远程观察附加窗口；默认 null（关闭），仅两类 HITL 在 enabled=true 时启用。 */
+    @SerializedName("hitl_remote_view")
+    private RVP_HitlRemoteViewData hitlRemoteView;
+
+    public RVP_HitlRemoteViewData getHitlRemoteView() { return hitlRemoteView; }
+
+    /** 显式配置并属于两类人在回路制导才可开启；普通 TV 不会被隐式升级。 */
+    public boolean isRemoteViewEnabled() {
+        return hitlRemoteView != null && hitlRemoteView.isEnabled()
+                && (getGuidanceType() == org.ywzj.rvp.guidance.RVP_EnumGuidanceType.HITL_TV
+                || getGuidanceType() == org.ywzj.rvp.guidance.RVP_EnumGuidanceType.HITL_CLOS_TV);
+    }
+
     public boolean isHitlRightClickDetonate() {
         return hitlRightClickDetonate;
     }
