@@ -1,0 +1,16 @@
+{
+  "name": "rvp-gunner-replay",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "本地 Three.js Gunner 仿真回放工具",
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node server.mjs",
+    "test": "node --test test/*.test.mjs",
+    "check": "node --check main.js"
+  },
+  "dependencies": {
+    "three": "0.180.0"
+  }
+}

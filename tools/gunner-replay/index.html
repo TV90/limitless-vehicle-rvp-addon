@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0b1218">
+  <title>Gunner · 仿真回放</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">{"imports":{"three":"./node_modules/three/build/three.module.js","three/addons/":"./node_modules/three/examples/jsm/"}}</script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark" aria-hidden="true">⌖</span><div><h1>GUNNER <span>/ 仿真回放</span></h1><p>RVP · 行为观察台</p></div></div>
+    <div class="source-controls"><label class="sr-only" for="scenario">选择回放场景</label><select id="scenario"><option value="">正在读取场景…</option></select>
+      <label class="button import-button" for="file">导入 JSON <span>↗</span></label><input id="file" type="file" accept=".json,application/json" hidden></div>
+  </header>
+  <div id="error" class="error" role="alert" hidden></div>
+  <main>
+    <section class="viewport" aria-label="三维仿真场景">
+      <div id="canvas-host"></div>
+      <div class="scene-heading"><div class="eyebrow"><span class="status-dot"></span>HEADLESS SIMULATION <span id="record-badge">等待数据</span></div><h2 id="scene-name">从一个场景开始</h2><p id="scene-description">读取 Java 导出的逐刻记录，观察每一次决策。</p></div>
+      <div class="view-controls" role="group" aria-label="相机视角"><button id="iso" class="active" title="三维视角">三维</button><button id="top" title="俯视场景">俯视</button><button id="follow" aria-pressed="false">跟随</button><button id="reset" title="让整个场景回到画面中">复位 ↺</button></div>
+      <div class="scene-readout"><span>当前行为</span><strong id="phase">—</strong><code id="behavior">等待回放</code></div>
+      <div class="scene-options"><label><input id="trails" type="checkbox" checked> 已走轨迹</label><label><input id="vision" type="checkbox"> 感知范围</label><label><input id="target-line" type="checkbox" checked> 目标连线</label></div>
+      <div class="compass" aria-label="世界高度">+Y <span>↑</span><small>世界高度</small></div>
+      <div class="scene-legend"><span><i class="blue"></i>受测载具</span><span><i class="red"></i>敌方</span><span><i class="green"></i>友方</span><span><i class="gray"></i>障碍</span></div>
+      <div id="empty" class="empty"><div class="empty-mark">⌖</div><strong>准备观察 Gunner</strong><p>先运行 <code>./gradlew gunnerSimulation</code><br>然后选择场景，或导入已生成的回放 JSON。</p></div>
+    </section>
+    <aside class="inspector">
+      <div class="panel-title"><span>对象观察</span><small>LIVE AT PLAYHEAD</small></div>
+      <label class="sr-only" for="actor">观察对象</label><select id="actor" disabled></select>
+      <div class="telemetry"><div><span>速度 · 格/秒</span><strong id="speed">—</strong></div><div><span>航向 · 度</span><strong id="yaw">—</strong></div></div>
+      <div class="coordinates"><span>世界坐标</span><code id="coordinates">X —　Y —　Z —</code></div>
+      <dl class="state-list"><div><dt>目标</dt><dd id="target">—</dd></div><div><dt>弹药</dt><dd id="ammo">—</dd></div><div><dt>运动</dt><dd id="motion">—</dd></div></dl>
+      <div class="input-title">本刻操作 <span id="flight-label"></span></div><div class="keys" aria-label="地面输入"><span id="key-forward">前进 W</span><span id="key-backward">后退 S</span><span id="key-left">左转 A</span><span id="key-right">右转 D</span></div><code id="axes" class="axes" hidden></code>
+      <details class="diagnostics"><summary>决策反馈</summary><p id="diagnostics">—</p></details>
+      <div class="panel-title event-title"><span>事件记录</span><small id="event-count">0 EVENTS</small></div><div id="events" class="events"><p class="muted">当前刻暂无事件</p></div>
+      <details class="scope"><summary>本次测试范围 <span>↗</span></summary><div id="scope"></div></details>
+    </aside>
+  </main>
+  <footer class="timeline-panel">
+    <div class="transport"><button id="play" class="play-button" disabled aria-label="播放">▶</button><button id="previous" disabled aria-label="上一刻" title="上一刻（←）">❮</button><button id="next" disabled aria-label="下一刻" title="下一刻（→）">❯</button><div class="time"><strong id="time">0.00 s</strong><span id="duration">/ 0.00 s</span></div><code id="tick">TICK 00000</code><div class="transport-right"><label for="rate">播放速度</label><select id="rate"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option><option value="8">8×</option></select></div></div>
+    <div class="scrubber"><div id="markers" class="markers" aria-hidden="true"></div><label class="sr-only" for="timeline">时间轴刻号</label><input id="timeline" type="range" min="0" max="1" value="0" step="1" disabled></div>
+    <div class="timeline-caption"><span>空格 播放 / 暂停 <b>·</b> ← → 逐刻 <b>·</b> 拖动旋转 / 滚轮缩放</span><span id="summary">20 TICKS / SECOND</span></div>
+  </footer>
+  <script type="module" src="main.js"></script>
+</body>
+</html>

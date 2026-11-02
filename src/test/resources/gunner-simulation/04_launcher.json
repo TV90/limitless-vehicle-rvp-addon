@@ -1,0 +1,34 @@
+{
+  "id": "04_launcher",
+  "name": "04 · 发射架装填走位",
+  "description": "第120到520刻模拟缺弹；观察有弹停车、缺弹接近与重新装弹后停车。",
+  "ticks": 800,
+  "actors": [
+    {
+      "id": "blue",
+      "name": "发射架",
+      "mode": "launcher",
+      "position": [
+        0,
+        64,
+        0
+      ],
+      "reloadFrom": 120,
+      "reloadUntil": 520
+    },
+    {
+      "id": "enemy",
+      "name": "敌方目标",
+      "team": "red",
+      "mode": "scripted",
+      "position": [
+        0,
+        64,
+        45
+      ]
+    }
+  ],
+  "schemaVersion": 1,
+  "seed": 721,
+  "groundY": 64
+}

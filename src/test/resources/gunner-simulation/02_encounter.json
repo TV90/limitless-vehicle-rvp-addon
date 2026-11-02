@@ -1,0 +1,49 @@
+{
+  "id": "02_encounter",
+  "name": "02 · 巡逻遇敌",
+  "description": "敌车第160刻出场、第700刻离场；观察发现、接近、停车、侧移和恢复巡逻。绿色目标为友军。",
+  "ticks": 1000,
+  "actors": [
+    {
+      "id": "blue",
+      "name": "Gunner 01",
+      "position": [
+        0,
+        64,
+        0
+      ],
+      "searchRadius": 250
+    },
+    {
+      "id": "enemy",
+      "name": "敌方目标",
+      "team": "red",
+      "mode": "scripted",
+      "position": [
+        -25,
+        64,
+        -40
+      ],
+      "velocity": [
+        0.25,
+        0,
+        0
+      ],
+      "spawnTick": 160,
+      "despawnTick": 700
+    },
+    {
+      "id": "friendly",
+      "name": "友方目标",
+      "mode": "scripted",
+      "position": [
+        12,
+        64,
+        0
+      ]
+    }
+  ],
+  "schemaVersion": 1,
+  "seed": 721,
+  "groundY": 64
+}

@@ -1,0 +1,44 @@
+{
+  "id": "05_fixed_wing",
+  "name": "05 · 公共固定翼接敌",
+  "description": "显式测试新公共飞控分支：巡逻、遇敌、攻击与脱离、越界返回。游戏中的此分支默认关闭。",
+  "ticks": 2400,
+  "actors": [
+    {
+      "id": "blue",
+      "name": "试验飞机",
+      "mode": "fixed_wing",
+      "position": [
+        100,
+        300,
+        0
+      ],
+      "speed": 35,
+      "searchRadius": 1800,
+      "fireRange": 700,
+      "radius": 5,
+      "height": 4
+    },
+    {
+      "id": "enemy",
+      "name": "空中目标",
+      "team": "red",
+      "mode": "scripted",
+      "position": [
+        0,
+        300,
+        450
+      ],
+      "velocity": [
+        4,
+        0,
+        -2
+      ],
+      "spawnTick": 300,
+      "despawnTick": 1500
+    }
+  ],
+  "schemaVersion": 1,
+  "seed": 721,
+  "groundY": 64
+}

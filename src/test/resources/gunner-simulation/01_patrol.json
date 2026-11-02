@@ -1,0 +1,20 @@
+{
+  "id": "01_patrol",
+  "name": "01 · 无敌巡逻",
+  "description": "观察现行随机大转弯、停车旋转与前进轨迹。",
+  "ticks": 800,
+  "actors": [
+    {
+      "id": "blue",
+      "name": "巡逻车",
+      "position": [
+        0,
+        64,
+        0
+      ]
+    }
+  ],
+  "schemaVersion": 1,
+  "seed": 721,
+  "groundY": 64
+}

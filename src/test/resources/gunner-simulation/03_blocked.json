@@ -1,0 +1,47 @@
+{
+  "id": "03_blocked",
+  "name": "03 · 薄墙受阻与脱困",
+  "description": "模拟感知不要求视线；让现行算法对墙后目标行驶，记录碰撞与倒车。此场景不预设能绕墙成功。",
+  "ticks": 1200,
+  "obstacles": [
+    {
+      "name": "横向薄墙",
+      "min": [
+        -30,
+        64,
+        35
+      ],
+      "max": [
+        30,
+        74,
+        36
+      ]
+    }
+  ],
+  "actors": [
+    {
+      "id": "blue",
+      "name": "受测车辆",
+      "position": [
+        0,
+        64,
+        0
+      ],
+      "searchRadius": 200
+    },
+    {
+      "id": "enemy",
+      "name": "墙后目标",
+      "team": "red",
+      "mode": "scripted",
+      "position": [
+        0,
+        64,
+        120
+      ]
+    }
+  ],
+  "schemaVersion": 1,
+  "seed": 721,
+  "groundY": 64
+}

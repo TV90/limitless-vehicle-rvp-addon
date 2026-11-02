@@ -853,13 +853,15 @@ public final class GunnerTargeting {
                 .subtract(weaponUnit.worldPivotPosition());
         double distance = toTarget.length();
         if (noAnglePenalty) {
-            return distance;
+            // 调用共用评分公式，发射架保持只比较距离。
+            return RVP_GunnerTargetScore.score(distance, 0, true);
         }
         Vec3 forward = weaponUnit.worldVec();
         if (forward.lengthSqr() < 1.0E-4) {
             forward = VectorUtil.rotToVec(vehicle.getXRot(), vehicle.getYRot());
         }
         double angle = VectorUtil.angleBetween(forward.normalize(), toTarget.normalize());
-        return distance + angle * 32.0;
+        // 调用游戏与无客户端仿真共用的同层评分，不改变前面的敌我、层级和雷达过滤。
+        return RVP_GunnerTargetScore.score(distance, angle, false);
     }
 }
