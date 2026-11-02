@@ -40,6 +40,8 @@ public class RVP_MOD {
     public RVP_MOD(FMLJavaModLoadingContext context) {
         RVP_Config.register(context);
         RVP_CommonConfig.register(context);
+        // 注册仅由服务端读取的 HITL 远程观察预算；武器仍须显式启用。
+        org.ywzj.rvp.config.RVP_HitlRemoteConfig.register(context);
         RVP_ClientConfig.register(context);
         // 调用客户端屏幕光画质注册；具体光参数由 Java 控制，P5 服务端方块光固定关闭。
         org.ywzj.rvp.config.RVP_LightingConfig.register(context);

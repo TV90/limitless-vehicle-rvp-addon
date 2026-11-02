@@ -35,7 +35,8 @@ public final class RVP_GuidanceDataAdapter
             "hitl_max_control_dist",
             "hitl_max_control_tick",
             "hitl_max_look_offset",
-            "hitl_video_modes"
+            "hitl_video_modes",
+            "hitl_remote_view"
     );
     private static final Set<String> SACLOS_FIELDS = Set.of(
             "semi_correction_enabled",
@@ -143,6 +144,10 @@ public final class RVP_GuidanceDataAdapter
         }
         if (type != RVP_EnumGuidanceType.ARM && containsAny(object, ARM_FIELDS)) {
             throw new JsonParseException("ARM subtype fields require guidance_type ARM");
+        }
+        if (object.has("hitl_remote_view") && type != RVP_EnumGuidanceType.HITL_TV
+                && type != RVP_EnumGuidanceType.HITL_CLOS_TV) {
+            throw new JsonParseException("hitl_remote_view requires HITL_TV or HITL_CLOS_TV");
         }
         if (!HITL_TYPES.contains(type) && containsAny(object, HITL_FIELDS)) {
             throw new JsonParseException("HITL subtype fields require a HITL guidance_type");

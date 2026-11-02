@@ -204,6 +204,8 @@ public class RVP_ClientHitlState {
     }
 
     public static void enter(int missileEntityId, RVP_EnumHitlControlMode mode) {
+        // 同弹重发不清额外地图，切弹则先通知服务端释放旧会话。
+        org.ywzj.rvp.client.hitl.RVP_ClientHitlRemoteView.onEnter(missileEntityId);
         boolean missileChanged = activeMissileId != missileEntityId;
         RVP_ClientHitlCamera.reset();
         if (activeMissileId < 0 && missileEntityId >= 0 && !viewTypeCaptured) {
@@ -245,6 +247,8 @@ public class RVP_ClientHitlState {
     }
 
     public static void clear() {
+        // 退出镜头时回收额外缓存并发送当前会话的退出心跳，未启用时为空操作。
+        org.ywzj.rvp.client.hitl.RVP_ClientHitlRemoteView.clear(true);
         RVP_ClientHitlCamera.reset();
         activeMissileId = -1;
         controlMode = RVP_EnumHitlControlMode.VIEW;
@@ -328,6 +332,8 @@ public class RVP_ClientHitlState {
                     : resolveInitialVideoMode(missile);
             updateParticleSuppressCache(missile);
         } else if (missileEntitySeen) {
+            // 远程会话短暂缺包时保留最后镜头；真实销毁仍由服务端立即结束。
+            if (org.ywzj.rvp.client.hitl.RVP_ClientHitlRemoteView.waitForMissile(activeMissileId)) return;
             clear();
             return;
         } else {
