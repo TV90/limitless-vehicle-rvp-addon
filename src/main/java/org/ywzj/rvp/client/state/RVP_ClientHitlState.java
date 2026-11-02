@@ -174,7 +174,13 @@ public class RVP_ClientHitlState {
     }
 
     public static boolean shouldHideActiveMissileVfx(Entity entity) {
-        return entity != null && isActive() && entity.getId() == activeMissileId;
+        // 调用共用 ID 门，远程克隆和本地实体使用同一 HITL 身份。
+        return entity != null && shouldHideActiveMissileVfx(entity.getId());
+    }
+
+    /** 缓存喷焰也按实体 ID 排除自身，不依赖本帧相机是否已拿到本地或远端实体对象。 */
+    public static boolean shouldHideActiveMissileVfx(int entityId) {
+        return isActive() && entityId == activeMissileId;
     }
 
     public static boolean shouldSuppressParticleNearActiveMissile(double x, double y, double z) {

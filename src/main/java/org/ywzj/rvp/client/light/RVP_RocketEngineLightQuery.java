@@ -56,7 +56,10 @@ public final class RVP_RocketEngineLightQuery {
         // 调用喷焰世界检查，远端更新也不依赖本地发动机是否存在。
         RVP_RocketPlumeManager.INSTANCE.beginWorld(bullet.level(), bullet.level().getGameTime());
         // 调用燃烧查询，模型尾焰与环境光共用相同窗口。
-        if (!isBurning(bullet)) {
+        // 调用已有 HITL 自身屏蔽门，停止登记并清除缓存的程序喷焰及发动机光晕。
+        // 本地实体和超视距克隆都经过本入口，外部观察其它导弹的效果保持原状。
+        if (org.ywzj.rvp.client.state.RVP_ClientHitlState.shouldHideActiveMissileVfx(bullet)
+                || !isBurning(bullet)) {
             RVP_ScreenLightManager.INSTANCE.removePersistent(entity.getUUID());
             RVP_RocketPlumeManager.INSTANCE.remove(entity.getUUID());
             return;
@@ -86,7 +89,7 @@ public final class RVP_RocketEngineLightQuery {
         if (RVP_LightingConfig.plumeEnabled()) {
             RVP_RocketPlumeManager.INSTANCE.upsert(bullet.getUUID(), position, exhaustDirection(bullet, partialTick),
                     bullet.getResolvedWeaponConfig().getProjectileData().getFlameScale(),
-                    caliber, phased.intensity() / RVP_LightParameters.ENGINE_SURFACE_INTENSITY, false);
+                    caliber, phased.intensity() / RVP_LightParameters.ENGINE_SURFACE_INTENSITY, false, bullet.getId());
         } else {
             RVP_RocketPlumeManager.INSTANCE.remove(bullet.getUUID());
         }

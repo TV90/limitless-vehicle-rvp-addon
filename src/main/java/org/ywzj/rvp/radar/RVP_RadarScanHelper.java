@@ -247,7 +247,8 @@ public final class RVP_RadarScanHelper {
         List<Entity> out = new ArrayList<>();
         double maxSqr = maxScanDistance * maxScanDistance;
         for (Entity entity : allEntities) {
-            if (entity == radarOwner
+            // 调用 ID 身份校验，排除与本地对象引用不同的自身广播克隆。
+            if (RVP_RadarSelfFilter.isSelf(radarOwner, entity)
                     || entity.getVehicle() != null
                     || !entity.isAlive()
                     || entity instanceof net.minecraftforge.entity.PartEntity<?>

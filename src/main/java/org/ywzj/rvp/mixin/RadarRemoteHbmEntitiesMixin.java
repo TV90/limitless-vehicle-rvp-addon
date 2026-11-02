@@ -8,6 +8,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import org.ywzj.rvp.client.state.RVP_ClientHbmMissileState;
+import org.ywzj.rvp.radar.RVP_RadarSelfFilter;
 import org.ywzj.vehicle.vehicle.weapon.seeker.Radar;
 
 import java.util.ArrayList;
@@ -30,6 +31,8 @@ public class RadarRemoteHbmEntitiesMixin {
                 entities.add(proxy);
             }
         }
+        // 调用统一自身过滤：本体合并广播列表时可能把刚排除的自身以克隆对象补回来。
+        RVP_RadarSelfFilter.removeSelfTargets(radarOwner, entities);
         cir.setReturnValue(entities);
     }
 }

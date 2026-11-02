@@ -105,6 +105,8 @@ public final class RVP_ClientRadarTickHandler {
                 || !(player.vehicle.level() instanceof net.minecraft.client.multiplayer.ClientLevel level)) {
             return;
         }
+        // 调用统一清理，先移除旧版本遗留的自身航迹/硬锁，再进行本地与广播对象接管。
+        RVP_RadarSelfFilter.purgeVehicle(player.vehicle);
         // 调用本体武器站入口，确认当前玩家拥有火控权限。
         WeaponUnit weapon = player.getWeaponUnit();
         if (weapon == null || weapon.getOwner() != player.getPlayer()) {
@@ -142,6 +144,8 @@ public final class RVP_ClientRadarTickHandler {
         // 与服务端 RVP_RadarModuleEnforcer 巡检对称：查客户端失效侧表（S2C 已推送），
         // on=true 且模块失效 → toggle(false) 压回。此压回同时让 syncRadarPowerStates
         // 的快照比对捕获到变化，向服务端补发 off 包，两端状态自然合拢。
+        // 调用统一清理，覆盖本体本 tick 扫描后留下的自身条目，避免 phase 保活延续错误接触。
+        RVP_RadarSelfFilter.purgeVehicle(vehicle);
         enforceDisabledRadars(vehicle);
         if (vehicle.isDestroyed() || !vehicle.hasPower()) {
             return;

@@ -37,6 +37,10 @@ public final class RVP_ClientWarnRelay {
     private RVP_ClientWarnRelay() {}
 
     public static void handle(int fromEntityId, int toEntityId, WarnType warnType, String info, boolean audible) {
+        // 拒绝旧服务器或残留队列中的自告警；不影响不同 ID 的同型号/友军雷达。
+        if (fromEntityId == toEntityId) {
+            return;
+        }
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null || mc.player == null) {
             return;

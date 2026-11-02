@@ -38,7 +38,9 @@ public class WarningReceiverSearchWarnMixin {
 
     @Inject(method = "handle", at = @At("HEAD"), cancellable = true, remap = false)
     private static void ywzj_rvp$cancelRadarWarn(ServerVehicleWarn message, CallbackInfo ci) {
-        if (message.warnType == WarnType.RADAR_SEARCH || message.warnType == WarnType.RADAR_LOCK) {
+        // 本体剩余 MISSILE_LAUNCH 通道也不能把同一载具作为自己的告警来源。
+        if (message.fromEntityId == message.toEntityId
+                || message.warnType == WarnType.RADAR_SEARCH || message.warnType == WarnType.RADAR_LOCK) {
             ci.cancel();
         }
     }

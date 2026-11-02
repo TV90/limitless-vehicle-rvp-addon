@@ -34,6 +34,13 @@ public final class RVP_RocketPlumeManager {
     /** 正常喷流两 tick 无心跳失效；预览最多四十 tick，使用同一形状程序。 */
     public void upsert(UUID key, Vec3 position, Vec3 direction, Float configuredScale,
             float caliber, float strength, boolean preview) {
+        // 调用无实体归属的预览入口；真实弹体使用带 ownerEntityId 的重载。
+        upsert(key, position, direction, configuredScale, caliber, strength, preview, -1);
+    }
+
+    /** 记录真实弹体 ID，切入 HITL 的首帧也能过滤上一帧缓存，无需等待两 tick 过期。 */
+    public void upsert(UUID key, Vec3 position, Vec3 direction, Float configuredScale,
+            float caliber, float strength, boolean preview, int ownerEntityId) {
         if (world == null || key == null || !finite(position) || !finite(direction)
                 || !Double.isFinite(direction.lengthSqr()) || direction.lengthSqr() < 1.0E-12
                 || !Float.isFinite(strength) || strength <= 0) {
@@ -49,7 +56,7 @@ public final class RVP_RocketPlumeManager {
         if (!entries.containsKey(key) && entries.size() >= RVP_RocketPlumeParameters.MAX_TRACKED) {
             entries.remove(entries.keySet().iterator().next());
         }
-        entries.put(key, new Tracked(plume, gameTime, gameTime + (preview ? 40 : 2), preview));
+        entries.put(key, new Tracked(plume, gameTime, gameTime + (preview ? 40 : 2), preview, ownerEntityId));
     }
 
     /** 只做视锥与独立数量筛选，不受环境光 maxLights/maxDistance/总强度开关控制。 */
@@ -57,6 +64,8 @@ public final class RVP_RocketPlumeManager {
         double now = gameTime + Math.max(0, Math.min(1, Float.isFinite(partialTick) ? partialTick : 0));
         List<RVP_RocketPlume> result = new ArrayList<>();
         for (Tracked entry : entries.values()) {
+            // 调用 ID 屏蔽门，覆盖暂停/切视角首帧以及远端 UUID 不同的同 ID 克隆。
+            if (org.ywzj.rvp.client.state.RVP_ClientHitlState.shouldHideActiveMissileVfx(entry.ownerEntityId)) continue;
             if (endTime(entry) <= now) { continue; }
             float fade = entry.preview ? (float) Math.max(0, 1 - (now - entry.start) / 40.0) : 1;
             // 调用共用光晕曲线；只替换有限预览的光晕包络，真实持续喷焰仍跟随发动机燃烧事实。
@@ -99,6 +108,7 @@ public final class RVP_RocketPlumeManager {
      * @param start 预览开始游戏 tick
      * @param expires 到期游戏 tick
      * @param preview 是否按四十 tick 衰减的命令预览
+     * @param ownerEntityId 喷焰所属弹体 ID；无实体归属的预览使用 -1
      */
-    private record Tracked(RVP_RocketPlume plume, long start, long expires, boolean preview) { }
+    private record Tracked(RVP_RocketPlume plume, long start, long expires, boolean preview, int ownerEntityId) { }
 }

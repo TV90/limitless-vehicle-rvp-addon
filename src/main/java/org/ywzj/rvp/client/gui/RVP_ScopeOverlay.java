@@ -78,6 +78,8 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
 
     @Override
     public void render(ForgeGui gui, GuiGraphics guiGraphics, float partialTick, int screenWidth, int screenHeight) {
+        // 调用 HITL 状态门，必须先于非观瞄分支，避免母车航迹/硬锁框投到弹上画面。
+        if (org.ywzj.rvp.client.state.RVP_ClientHitlState.isActive()) return;
         if (!LocalVehiclePlayer.instance.onVehicle()) {
             return;
         }
@@ -103,9 +105,6 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
         AbstractVehicle vehicle = LocalVehiclePlayer.instance.vehicle;
         // [RVP] 仅在有 ui_preset 时渲染
         if (vehicle.getVehicleId() == null) return;
-        // HITL 视角激活时不渲染 scope 准星：TV 弹由 RVP_TVMissileOverlay 提供专用准星，
-        // scope 的 CRT 落点框会与之重叠形成"双准星"
-        if (org.ywzj.rvp.client.state.RVP_ClientHitlState.isActive()) return;
         String presetName = VehicleUIPresetCache.get(vehicle.getVehicleId());
         if (presetName == null || presetName.isEmpty()) return;
         // 准心（IR 寻的器模式跳过，HMD cueing 由雷达 overlay 提供）
@@ -363,9 +362,11 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
      *
      * <p>非观瞄视角沿用原 {@link #hudLockTakeoverActive()} 门控；观瞄视角下 RVP 的两条补画路径
      * （有 preset 走 {@link #render} 的 scope 分支、无 preset 走 {@code RVP_OverlayCancelHandler} 补画）
-     * 都会画，故一律接管，仅 HITL（TV 弹专用准星）与无载具时放行本体。</p>
+     * 都会画，故一律接管，HITL 则两套都隐藏，无载具时放行本体。</p>
      */
     public static boolean shouldSkipVanillaAimLockTarget() {
+        // 调用 HITL 状态门，让既有重定向同时拦住本体目标框，避免放行第二套绘制。
+        if (org.ywzj.rvp.client.state.RVP_ClientHitlState.isActive()) return true;
         if (hudLockTakeoverActive()) {
             return true;
         }
@@ -386,7 +387,7 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
      * 于是本体每帧又多画一套 ⇒ 双框重影。</p>
      *
      * <p>结论：观瞄视角下 preset 有无都已被 RVP 接管（有 preset 走 {@link #render} 的 scope 分支，
-     * 无 preset 走 CancelHandler 补画），因此这里一律接管；只有 HITL（TV 弹专用准星）、无载具时放行本体。</p>
+     * 无 preset 走 CancelHandler 补画），因此这里一律接管；HITL 两套都隐藏，无载具时放行本体。</p>
      */
     private static boolean scopeDrawsLockTarget() {
         if (!LocalVehiclePlayer.instance.onVehicle()) {
@@ -403,6 +404,8 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
     }
 
     public static void renderAimLockTarget(GuiGraphics guiGraphics, float partialTick) {
+        // 调用 HITL 状态门，兼顾无 UI 预设时 CancelHandler 直接补画的入口。
+        if (org.ywzj.rvp.client.state.RVP_ClientHitlState.isActive()) return;
         // 调试（BVR 扫描框排查，默认关闭）：无条件节流日志，定位外置扫描框不渲染
         if (RVP_BVR_DEBUG) {
             AbstractVehicle dbgVehicle = LocalVehiclePlayer.instance.vehicle;

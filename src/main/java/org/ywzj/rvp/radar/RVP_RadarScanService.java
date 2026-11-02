@@ -77,8 +77,12 @@ public final class RVP_RadarScanService {
      */
     private static void tickAllContactHold(ServerLevel level) {
         for (Entity entity : level.getEntities().getAll()) {
-            if (!(entity instanceof AbstractVehicle vehicle)
-                    || vehicle.isDestroyed() || !vehicle.hasPower()) {
+            if (!(entity instanceof AbstractVehicle vehicle)) {
+                continue;
+            }
+            // 调用统一清理：关机或失去动力也不能保留旧版本写入的自身硬锁。
+            RVP_RadarSelfFilter.purgeVehicle(vehicle);
+            if (vehicle.isDestroyed() || !vehicle.hasPower()) {
                 continue;
             }
             for (PartUnit<?> partUnit : vehicle.getPartUnits()) {

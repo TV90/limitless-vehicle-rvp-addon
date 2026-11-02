@@ -137,7 +137,8 @@ public final class RVP_WarnRelayService {
         String statePrefix = source.getId() + ":" + radar.getId() + ":";
         Set<String> liveKeys = new HashSet<>();
         for (RadarUnit.DetectedObject detected : radar.getDetectedEntities().values()) {
-            if (!(detected.entity instanceof AbstractVehicle target) || !target.isAlive()) {
+            if (!(detected.entity instanceof AbstractVehicle target) || !target.isAlive()
+                    || source.getId() == target.getId()) {
                 continue;
             }
             String stateKey = statePrefix + target.getId();
@@ -177,7 +178,8 @@ public final class RVP_WarnRelayService {
 
     /** 向目标载具的所有乘客玩家发送 RVP 无钳制告警包。 */
     private static void broadcastWarn(AbstractVehicle source, AbstractVehicle target, S2CRvpWarn packet) {
-        if (target == null || !target.isAlive()) {
+        // 最后一层收发身份门：任何探测/锁定来源都不得向自身乘员发送自告警。
+        if (target == null || !target.isAlive() || source.getId() == target.getId()) {
             return;
         }
         for (Entity passenger : target.getPassengers()) {

@@ -67,6 +67,8 @@ public class RVP_RadarOverlay implements IGuiOverlay {
 
     @Override
     public void render(ForgeGui gui, GuiGraphics guiGraphics, float partialTick, int screenWidth, int screenHeight) {
+        // 调用 HITL 状态门：弹上相机不绘制母车雷达、外置雷达和 RWR，退出后自然恢复。
+        if (org.ywzj.rvp.client.state.RVP_ClientHitlState.isActive()) return;
         WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
         if (weaponUnit == null) {
             return;

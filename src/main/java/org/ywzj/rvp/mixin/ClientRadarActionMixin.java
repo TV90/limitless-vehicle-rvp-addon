@@ -10,6 +10,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.ywzj.rvp.countermeasure.RVP_ChaffJamState;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
+import org.ywzj.rvp.radar.RVP_RadarSelfFilter;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.network.message.ClientRadarAction;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
@@ -22,7 +23,8 @@ import java.util.function.Supplier;
 public class ClientRadarActionMixin {
     @Inject(method = "onClientMessageReceived", at = @At("HEAD"), cancellable = true, remap = false)
     private static void ywzj_rvp$routeLockToPreferredRadar(ClientRadarAction message, Supplier<NetworkEvent.Context> ctxSupplier, CallbackInfo ci) {
-        if (message.action != ClientRadarAction.Action.LOCK) {
+        if (message.action != ClientRadarAction.Action.LOCK
+                && message.action != ClientRadarAction.Action.DETECT) {
             return;
         }
         NetworkEvent.Context context = ctxSupplier.get();
@@ -36,13 +38,20 @@ public class ClientRadarActionMixin {
             if (!(partUnit instanceof WeaponUnit weaponUnit)) {
                 return;
             }
+            Level level = player.level();
+            Entity target = message.toEntityId < 0 ? null : level.getEntity(message.toEntityId);
+            if (message.action == ClientRadarAction.Action.DETECT) {
+                // 调用本体兼容的探测写入，仅额外拒绝自身，防旧客户端重新污染服务端表。
+                RVP_RadarSelfFilter.detectNonSelf(weaponUnit, target);
+                return;
+            }
             RadarUnit lockRadar = RVP_RadarRoleHelper.getPreferredLockRadar(weaponUnit);
             if (lockRadar == null) {
                 return;
             }
-            Level level = player.level();
-            Entity target = message.toEntityId < 0 ? null : level.getEntity(message.toEntityId);
-            if (target == null) {
+            // 自身锁定按无效目标处理，沿用既有解锁路径并清除待定锁。
+            if (target == null || RVP_RadarSelfFilter.isSelf(vehicle, target)) {
+                RVP_RadarRoleHelper.clearPendingRadarLock(weaponUnit);
                 RVP_RadarRoleHelper.clearAllRadarLocks(weaponUnit);
                 weaponUnit.setLockedEntity(null);
                 return;

@@ -44,6 +44,8 @@ public class RVP_EcmFakeRwrOverlay implements IGuiOverlay {
     @Override
     public void render(ForgeGui gui, GuiGraphics guiGraphics, float partialTick,
                        int screenWidth, int screenHeight) {
+        // 调用 HITL 状态门，与被隐藏的 RWR 表盘一起隐藏 ECM 伪造威胁符号。
+        if (org.ywzj.rvp.client.state.RVP_ClientHitlState.isActive()) return;
         if (!RVP_ClientEcmVictimState.isLocked()) {
             return;
         }
