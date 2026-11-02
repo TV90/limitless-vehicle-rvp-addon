@@ -3,6 +3,7 @@ package org.ywzj.rvp.server.hitl;
 import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
+import net.minecraft.network.protocol.game.ClientboundSetChunkCacheRadiusPacket;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerEntity;
 import net.minecraft.server.level.ServerLevel;
@@ -51,8 +52,8 @@ public final class RVP_HitlRemoteViewService {
         State state = STATES.computeIfAbsent(level.getServer(), ignored -> new State());
         Session previous = state.sessions.remove(player.getUUID());
         if (previous != null) finish(previous, "replaced", true);
-        int radius = Math.min(config.getRadiusChunks(), Math.min(RVP_HitlRemoteConfig.radius(),
-                level.getServer().getPlayerList().getViewDistance()));
+        // 远程窗口由专用服务器上限约束，允许相机看得比母车普通视距远。
+        int radius = Math.min(config.getRadiusChunks(), RVP_HitlRemoteConfig.radius());
         Session session = new Session(player, missile, config, radius,
                 Math.min(Math.max(1, range), RVP_HitlRemoteConfig.range()));
         if (state.sessions.size() >= RVP_HitlRemoteConfig.sessions() || !valid(session)) {
@@ -247,6 +248,11 @@ public final class RVP_HitlRemoteViewService {
     }
 
     private static void sendWindow(Session session, boolean active) {
+        // 原版有效渲染距离受服务器通告限制；只放宽本观察者的客户端网格，
+        // 服务端身体订阅范围不变。结束时用服务器当前普通视距恢复，避免残留。
+        int ordinaryRadius = session.level.getServer().getPlayerList().getViewDistance();
+        session.player.connection.send(new ClientboundSetChunkCacheRadiusPacket(
+                active ? Math.max(ordinaryRadius, session.radius) : ordinaryRadius));
         RVP_Network.CHANNEL.send(PacketDistributor.PLAYER.with(() -> session.player),
                 new S2CHitlRemoteView(session.id, session.missile.getUUID(), session.missile.getId(),
                         session.level.dimension().location(), active, session.window.x(), session.window.z(), session.radius));

@@ -4,6 +4,11 @@ import com.google.gson.Gson;
 import com.google.gson.JsonParseException;
 import com.google.gson.annotations.JsonAdapter;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.resources.ResourceLocation;
+import io.netty.buffer.Unpooled;
+import java.util.UUID;
+import org.ywzj.rvp.network.hitl.S2CHitlRemoteView;
 import org.junit.jupiter.api.Test;
 import org.ywzj.rvp.server.hitl.RVP_HitlRadioPath;
 import org.ywzj.rvp.weapon.data.RVP_GuidanceData;
@@ -65,9 +70,9 @@ class RVP_HitlRemoteViewTest {
                 ,"hitl_remote_view":{"enabled":true,"radius_chunks":999,"load_chunks_per_tick":999,
                 "send_chunks_per_tick":999,"prefetch_chunks":999,"link_check_interval_ticks":999}
                 """).getHitlRemoteView();
-        assertEquals(12, high.getRadiusChunks());
-        assertEquals(4, high.getLoadChunksPerTick());
-        assertEquals(8, high.getSendChunksPerTick());
+        assertEquals(32, high.getRadiusChunks());
+        assertEquals(32, high.getLoadChunksPerTick());
+        assertEquals(32, high.getSendChunksPerTick());
         assertEquals(2, high.getPrefetchChunks());
         assertEquals(20, high.getLinkCheckIntervalTicks());
     }
@@ -121,6 +126,35 @@ class RVP_HitlRemoteViewTest {
         }
         assertFalse(RVP_HitlRadioPath.blocks(RVP_HitlRadioPath.Result.UNKNOWN, false));
         assertTrue(RVP_HitlRadioPath.blocks(RVP_HitlRadioPath.Result.UNKNOWN, true));
+    }
+
+    @Test void radiusThirtyTwoRetainsOuterTerrainAndBoundedPrefetch() {
+        var window = new RVP_HitlRemoteWindow(-100, 50, 32);
+        assertEquals(4225, window.chunks().size());
+        assertEquals(4225, new HashSet<>(window.chunks()).size());
+        assertTrue(window.contains(-132, 82));
+        assertFalse(window.contains(-133, 82));
+        assertEquals(4290, window.leases(1, 0, 1).size());
+        assertEquals(4354, window.leases(1, 1, 1).size());
+        var moved = new RVP_HitlRemoteWindow(-99, 50, 32);
+        assertEquals(65, moved.chunks().stream().filter(key -> !window.contains(key)).count());
+    }
+
+    @Test void windowPacketPreservesRadiusThirtyTwoAndClampsInvalidRadii() {
+        for (int requested : new int[]{32, Integer.MAX_VALUE, -1}) {
+            var message = new S2CHitlRemoteView(UUID.randomUUID(), UUID.randomUUID(), 7,
+                    new ResourceLocation("minecraft", "overworld"), true, -100, 50, requested);
+            var buffer = new FriendlyByteBuf(Unpooled.buffer());
+            try {
+                S2CHitlRemoteView.encode(message, buffer);
+                var decoded = S2CHitlRemoteView.decode(buffer);
+                assertEquals(Math.max(0, Math.min(32, requested)), decoded.radius());
+                assertEquals(message.session(), decoded.session());
+                assertEquals(message.missileUuid(), decoded.missileUuid());
+                assertEquals(message.x(), decoded.x());
+                assertEquals(message.z(), decoded.z());
+            } finally { buffer.release(); }
+        }
     }
 
     private RVP_GuidanceDataHITL parse(String type, String fields) {

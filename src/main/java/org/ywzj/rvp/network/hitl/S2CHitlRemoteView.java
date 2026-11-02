@@ -2,6 +2,7 @@ package org.ywzj.rvp.network.hitl;
 
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
+import org.ywzj.rvp.hitl.RVP_HitlRemoteLimits;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.fml.DistExecutor;
 import net.minecraftforge.network.NetworkEvent;
@@ -25,7 +26,7 @@ public record S2CHitlRemoteView(UUID session, UUID missileUuid, int missileId, R
     public static S2CHitlRemoteView decode(FriendlyByteBuf buffer) {
         return new S2CHitlRemoteView(buffer.readUUID(), buffer.readUUID(), buffer.readVarInt(),
                 buffer.readResourceLocation(), buffer.readBoolean(), buffer.readInt(), buffer.readInt(),
-                Math.max(0, Math.min(12, buffer.readVarInt())));
+                Math.max(0, Math.min(RVP_HitlRemoteLimits.MAX_RADIUS_CHUNKS, buffer.readVarInt())));
     }
 
     public static void handle(S2CHitlRemoteView message, Supplier<NetworkEvent.Context> supplier) {

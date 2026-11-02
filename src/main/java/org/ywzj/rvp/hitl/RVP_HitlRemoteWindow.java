@@ -8,7 +8,7 @@ import java.util.List;
 /** 远程观察方形窗口的纯几何运算；不访问世界，不申请区块。 */
 public record RVP_HitlRemoteWindow(int x, int z, int radius) {
     public RVP_HitlRemoteWindow {
-        radius = Math.max(0, Math.min(12, radius));
+        radius = Math.max(0, Math.min(RVP_HitlRemoteLimits.MAX_RADIUS_CHUNKS, radius));
     }
 
     /** 是否位于观察区域；使用 long 做差，避免非法坐标溢出。 */
