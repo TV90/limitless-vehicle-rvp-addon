@@ -69,6 +69,8 @@ public class RVP_TVMissileOverlay {
         if (RVP_ClientHitlState.isHitlLinkBlocked()) {
             drawSnow(gg, mc.level);
         }
+        // 调用固定居中的装饰层；与可动准星、已有制导和离轴角限制相互独立。
+        RVP_HitlReticleRenderer.drawReference(gg);
         int x = 6;
         int y = 6;
 
@@ -93,20 +95,20 @@ public class RVP_TVMissileOverlay {
                 ? snapshot.speedKmh() : missile.getDeltaMovement().length() * 72.0;
         String speedText = String.format("%.0f", speedKmh);
         Component turnRate = Component.translatable("overlay.ywzj_rvp.tv_missile.turn_rate", turnRateText, speedText);
-        gg.drawString(font, header, x, y, Color.GREEN, true);
-        gg.drawString(font, control, x, y + 10, Color.GREEN, true);
-        gg.drawString(font, turnRate, x, y + 20, Color.GREEN, true);
+        gg.drawString(font, header, x, y, RVP_HitlReticleRenderer.HUD_COLOR, true);
+        gg.drawString(font, control, x, y + 10, RVP_HitlReticleRenderer.HUD_COLOR, true);
+        gg.drawString(font, turnRate, x, y + 20, RVP_HitlReticleRenderer.HUD_COLOR, true);
 
         if (RVP_ClientHitlState.getControlMode() == RVP_EnumHitlControlMode.DESIGNATE) {
             int targetId = RVP_ClientHitlState.getClientDesignatedEntityId();
             if (targetId >= 0) {
                 gg.drawString(font,
                         Component.translatable("overlay.ywzj_rvp.hitl.designate.intercept"),
-                        x, y + 30, Color.GREEN, true);
+                        x, y + 30, RVP_HitlReticleRenderer.HUD_COLOR, true);
             }
         }
 
-        // 指令线人在回路（MOUSE 驾控）：准星固定在屏幕中央，样式与电视人在回路（CRT 武器准星）一致
+        // 指令线人在回路（MOUSE 驾控）沿用固定中心，只复用新的菱形外观。
         if (RVP_ClientHitlState.getControlMode() == RVP_EnumHitlControlMode.MOUSE) {
             drawCenterCrosshair(gg, font);
         }
@@ -117,20 +119,16 @@ public class RVP_TVMissileOverlay {
         }
     }
 
-    /** 屏幕中央 CRT 样式准星（指令线弹：弹头指向即准星，固定屏幕中央）。 */
+    /** 指令线弹头指向即瞄准方向；菱形固定居中，距离仍使用原观瞄读数。 */
     private static void drawCenterCrosshair(GuiGraphics gg, Font font) {
         int cx = gg.guiWidth() / 2;
         int cy = gg.guiHeight() / 2;
-        int color = Color.GREEN;
-        // 中央空心方块（5px，与电视弹 CRT 准星一致）
-        // 上下左右延伸线（样式对齐 RVP_ScopeOverlay CRT 准星分支）
-        gg.fill(cx - 1, cy - 32, cx + 1, cy - 8, color);
-        gg.fill(cx - 1, cy + 8, cx + 1, cy + 32, color);
-        gg.fill(cx - 32, cy - 1, cx - 8, cy + 1, color);
-        gg.fill(cx + 8, cy - 1, cx + 32, cy + 1, color);
-        // 距离
+        // 调用相同的菱形部件，避免两种 HITL 模式使用不一致的视觉样式。
+        RVP_HitlReticleRenderer.drawAim(gg, cx, cy);
         double dist = LocalVehiclePlayer.instance.aimLocationDistance;
-        gg.drawCenteredString(font, Component.literal((int) dist + " m"), cx, cy + 40, color);
+        // 调用按视口缩放的标签偏移，将原有距离读数移至装饰圆下方。
+        gg.drawCenteredString(font, Component.literal((int) dist + " m"), cx,
+                cy + RVP_HitlReticleRenderer.distanceLabelOffset(gg), RVP_HitlReticleRenderer.HUD_COLOR);
     }
 
     /** 链路被阻时的干扰滤镜：黑底 + 整屏贴一张预生成雪花噪点纹理。

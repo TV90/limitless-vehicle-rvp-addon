@@ -1,7 +1,5 @@
 package org.ywzj.rvp.client.gui;
 
-import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.math.Axis;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.world.entity.Entity;
@@ -16,11 +14,7 @@ import org.ywzj.rvp.client.state.RVP_ClientHitlState;
 import org.ywzj.rvp.client.state.RVP_ClientHitlUtil;
 import org.ywzj.rvp.client.state.RVP_ClientSaclosState;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
-import org.ywzj.vehicle.client.render.util.Color;
-import org.ywzj.vehicle.util.RenderHelper;
 import org.ywzj.vehicle.util.VectorUtil;
-
-import static org.ywzj.vehicle.util.RenderHelper.drawSquare;
 
 /**
  * TV SACLOS (DESIGNATE): crosshair projected from the same 3D aim point as designation.
@@ -61,16 +55,8 @@ public final class RVP_HitlDesignateOverlay {
         }
 
         GuiGraphics gg = event.getGuiGraphics();
-        PoseStack poseStack = gg.pose();
-
-        poseStack.pushPose();
-        poseStack.translate(crosshair.x, crosshair.y, 0.0D);
-        drawSquare(gg, 0, 0, 5, Color.GREEN);
-        gg.vLine(0, -24, -6, Color.GREEN);
-        gg.vLine(0, 6, 24, Color.GREEN);
-        gg.hLine(-24, -6, 0, Color.GREEN);
-        gg.hLine(6, 24, 0, Color.GREEN);
-        poseStack.popPose();
+        // 调用统一菱形描绘；坐标仍来自同一个真实瞄准点投影，装饰圈不限制它的位置。
+        RVP_HitlReticleRenderer.drawAim(gg, crosshair.x, crosshair.y);
 
         Vec3 designated = RVP_ClientSaclosState.getLaserHudPos();
         if (designated == null) {
@@ -91,29 +77,7 @@ public final class RVP_HitlDesignateOverlay {
             return;
         }
 
-        poseStack.pushPose();
-        poseStack.translate(lockScreen.x, lockScreen.y, 0.0D);
-        drawHollowDiagonalCross(gg, 0, 0, 28, 2, 5, Color.GREEN);
-        poseStack.popPose();
-    }
-
-    private static void drawHollowDiagonalCross(GuiGraphics gg, int x, int y, int size, int thickness, int gap, int color) {
-        int len = Math.max(2, size / 2);
-        int halfThickness = thickness / 2;
-        PoseStack pose = gg.pose();
-
-        pose.pushPose();
-        pose.translate(x, y - 0.5D, 0.0D);
-        pose.mulPose(Axis.ZP.rotationDegrees(45.0F));
-        gg.fill(gap, -halfThickness, gap + len, thickness - halfThickness, color);
-        gg.fill(-gap - len, -halfThickness, -gap, thickness - halfThickness, color);
-        pose.popPose();
-
-        pose.pushPose();
-        pose.translate(x, y - 0.5D, 0.0D);
-        pose.mulPose(Axis.ZP.rotationDegrees(-45.0F));
-        gg.fill(gap, -halfThickness, gap + len, thickness - halfThickness, color);
-        gg.fill(-gap - len, -halfThickness, -gap, thickness - halfThickness, color);
-        pose.popPose();
+        // 调用独立目标角框，继续沿用既有指定目标与屏幕可见性判定。
+        RVP_HitlReticleRenderer.drawDesignation(gg, lockScreen.x, lockScreen.y);
     }
 }
