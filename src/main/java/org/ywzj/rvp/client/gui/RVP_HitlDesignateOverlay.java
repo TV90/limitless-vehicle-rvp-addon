@@ -73,7 +73,8 @@ public final class RVP_HitlDesignateOverlay {
         if (lockScreen.x < 0 || lockScreen.y < 0 || lockScreen.x > width || lockScreen.y > height) {
             return;
         }
-        if (lockScreen.distanceToSqr(crosshair.x, crosshair.y, 0.0D) < 64.0D) {
+        double separation = 16.0D * RVP_HitlReticleRenderer.scale(gg);
+        if (lockScreen.distanceToSqr(crosshair.x, crosshair.y, 0.0D) < separation * separation) {
             return;
         }
 

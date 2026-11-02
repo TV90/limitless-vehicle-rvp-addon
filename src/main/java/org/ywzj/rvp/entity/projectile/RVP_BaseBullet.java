@@ -5464,6 +5464,11 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
      * 用本值——旧版直接用 {@code getFlightTickCount()}（= 本地 tickCount − 区块等待），
      * 对飞行途中才进入追踪范围的导弹会把燃烧窗口从 0 重放，动力段结束仍喷焰。
      */
+    /** HUD 飞行时钟：客户端沿用生成包飞行刻偏移，避免远端新追踪时从零计时。 */
+    public final int getDisplayFlightTickCount() {
+        return level().isClientSide() ? clientVisualFlightTickCount() : getFlightTickCount();
+    }
+
     protected final int clientVisualFlightTickCount() {
         return clientSpawnFlightTick + this.tickCount;
     }

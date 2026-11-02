@@ -5,7 +5,6 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import com.mojang.blaze3d.platform.NativeImage;
 import net.minecraft.client.renderer.texture.DynamicTexture;
-import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
@@ -18,14 +17,17 @@ import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.client.state.RVP_ClientHitlState;
 import org.ywzj.rvp.client.state.RVP_ClientRemoteAmmoState;
-import org.ywzj.rvp.guidance.RVP_EnumHitlControlMode;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
-import org.ywzj.vehicle.client.render.util.Color;
-import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 
 @Mod.EventBusSubscriber(value = Dist.CLIENT, modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public class RVP_TVMissileOverlay {
 
+    /** 仅作视觉阻尼，不回写实际舵量。 */
+    private static final RVP_HitlCursorMotion cursor = new RVP_HitlCursorMotion();
+    /** 当前弹体编号，切弹清理视觉状态。 */
+    private static int lastMissileId = -1;
+    /** 上一绘制帧时间，单位纳秒。 */
+    private static long lastFrameNanos;
     private static int lastTickCount = Integer.MIN_VALUE;
     private static float lastYaw;
     private static float lastPitch;
@@ -62,6 +64,7 @@ public class RVP_TVMissileOverlay {
             return;
         }
 
+        if (lastMissileId != missile.getId()) { reset(); lastMissileId = missile.getId(); }
         updateRate(missile);
 
         GuiGraphics gg = event.getGuiGraphics();
@@ -71,64 +74,46 @@ public class RVP_TVMissileOverlay {
         }
         // 调用固定居中的装饰层；与可动准星、已有制导和离轴角限制相互独立。
         RVP_HitlReticleRenderer.drawReference(gg);
-        int x = 6;
-        int y = 6;
-
-        Component mode = switch (RVP_ClientHitlState.getVideoMode()) {
-            case COLOR -> Component.translatable("overlay.ywzj_rvp.tv_missile.mode.color");
-            case BW -> Component.translatable("overlay.ywzj_rvp.tv_missile.mode.bw");
-            case THERMAL -> Component.translatable("overlay.ywzj_rvp.tv_missile.mode.thermal");
+        String video = switch (RVP_ClientHitlState.getVideoMode()) {
+            case COLOR -> "VIS"; case BW -> "B/W"; case THERMAL -> "IR";
         };
-        Component control = switch (RVP_ClientHitlState.getControlMode()) {
-            case MOUSE -> Component.translatable("overlay.ywzj_rvp.hitl.control.mouse");
-            case DESIGNATE -> Component.translatable("overlay.ywzj_rvp.hitl.control.designate");
-            case VIEW -> Component.translatable("overlay.ywzj_rvp.hitl.control.view");
+        String control = switch (RVP_ClientHitlState.getControlMode()) {
+            case MOUSE -> "WIRE"; case DESIGNATE -> "TV"; case VIEW -> "OBS";
         };
-        Component header = Component.translatable("overlay.ywzj_rvp.tv_missile.header", mode);
-        // 转向率显式格式化保留一位小数（避免翻译占位符浮点精度差异），并追加当前速度（km/h）
-        String turnRateText = String.format("%.1f", lastRateDegPerSec);
         // 客户端弹体只插值位置且关闭常规速度同步，deltaMovement 会停在出生值；
         // 复用每 5 tick 下发的服务端弹药快照，显示真实加速、转弯与燃尽后的当前速度。
         var snapshot = RVP_ClientRemoteAmmoState.getEntry(mc.level.dimension().location(), missile.getId());
         // 首份快照尚未到达时沿用出生速度；读数不反写实体，保持既有插值与制导行为。
         double speedKmh = snapshot != null && Double.isFinite(snapshot.speedKmh()) && snapshot.speedKmh() >= 0.0
                 ? snapshot.speedKmh() : missile.getDeltaMovement().length() * 72.0;
-        String speedText = String.format("%.0f", speedKmh);
-        Component turnRate = Component.translatable("overlay.ywzj_rvp.tv_missile.turn_rate", turnRateText, speedText);
-        gg.drawString(font, header, x, y, RVP_HitlReticleRenderer.HUD_COLOR, true);
-        gg.drawString(font, control, x, y + 10, RVP_HitlReticleRenderer.HUD_COLOR, true);
-        gg.drawString(font, turnRate, x, y + 20, RVP_HitlReticleRenderer.HUD_COLOR, true);
-
-        if (RVP_ClientHitlState.getControlMode() == RVP_EnumHitlControlMode.DESIGNATE) {
-            int targetId = RVP_ClientHitlState.getClientDesignatedEntityId();
-            if (targetId >= 0) {
-                gg.drawString(font,
-                        Component.translatable("overlay.ywzj_rvp.hitl.designate.intercept"),
-                        x, y + 30, RVP_HitlReticleRenderer.HUD_COLOR, true);
-            }
-        }
-
-        // 指令线人在回路（MOUSE 驾控）沿用固定中心，只复用新的菱形外观。
-        if (RVP_ClientHitlState.getControlMode() == RVP_EnumHitlControlMode.MOUSE) {
-            drawCenterCrosshair(gg, font);
-        }
-        // 右键空爆弹头提示
-        if (missile.rvp$isHitlRightClickDetonate()) {
-            Component hint = Component.translatable("overlay.ywzj_rvp.hitl.airburst_hint");
-            gg.drawString(font, hint, gg.guiWidth() - font.width(hint) - 6, 6, Color.RED, true);
-        }
+        boolean designated = RVP_ClientHitlState.isDesignateMode()
+                && RVP_ClientHitlState.getClientDesignatedPos() != null;
+        // 调用既有目标/实时瞄准点，天空的虚拟射线终点不作为真实测距显示。
+        var point = designated ? org.ywzj.rvp.client.state.RVP_ClientSaclosState.getLaserHudPos()
+                : RVP_ClientHitlState.getClientAimPoint();
+        double range = point == null ? Double.NaN : point.distanceTo(missile.position());
+        if (!designated && range >= RVP_ClientHitlState.DESIGNATE_AIM_RANGE - 1) range = Double.NaN;
+        String track = RVP_ClientHitlState.getClientDesignatedEntityId() >= 0 ? "ENT" : designated ? "PNT" : "--";
+        // 调用统一缩放的紧凑侧栏；飞行时间复用生成包飞行刻与客户端后续刻的既有视觉时钟。
+        RVP_HitlInstrumentRenderer.draw(gg, font, speedKmh, missile.getY(), range,
+                missile.getDisplayFlightTickCount() / 20.0, lastRateDegPerSec, video, control, track,
+                missile.rvp$isHitlRightClickDetonate());
+        if (RVP_ClientHitlState.isMouseSteering()) drawSteeringCursor(gg);
+        else { cursor.reset(); lastFrameNanos = 0; }
     }
 
-    /** 指令线弹头指向即瞄准方向；菱形固定居中，距离仍使用原观瞄读数。 */
-    private static void drawCenterCrosshair(GuiGraphics gg, Font font) {
-        int cx = gg.guiWidth() / 2;
-        int cy = gg.guiHeight() / 2;
-        // 调用相同的菱形部件，避免两种 HITL 模式使用不一致的视觉样式。
-        RVP_HitlReticleRenderer.drawAim(gg, cx, cy);
-        double dist = LocalVehiclePlayer.instance.aimLocationDistance;
-        // 调用按视口缩放的标签偏移，将原有距离读数移至装饰圆下方。
-        gg.drawCenteredString(font, Component.literal((int) dist + " m"), cx,
-                cy + RVP_HitlReticleRenderer.distanceLabelOffset(gg), RVP_HitlReticleRenderer.HUD_COLOR);
+    /** 指令线模式的视觉游标跟随既有舵量，并以临界阻尼跟随其原有回中过程。 */
+    private static void drawSteeringCursor(GuiGraphics gg) {
+        long now = System.nanoTime();
+        double dt = lastFrameNanos == 0 ? 0 : Math.min(0.1, (now - lastFrameNanos) / 1.0e9);
+        lastFrameNanos = now;
+        if (!Minecraft.getInstance().isPaused()) {
+            // 调用只读视觉阻尼；不更改 getHitlYaw/getHitlPitch 或发送到服务端的输入。
+            cursor.update(RVP_ClientHitlState.getHitlYaw(), RVP_ClientHitlState.getHitlPitch(), dt);
+        }
+        float scale = RVP_HitlReticleRenderer.scale(gg);
+        RVP_HitlReticleRenderer.drawAim(gg, gg.guiWidth() * 0.5 + cursor.x() * scale,
+                gg.guiHeight() * 0.5 + cursor.y() * scale);
     }
 
     /** 链路被阻时的干扰滤镜：黑底 + 整屏贴一张预生成雪花噪点纹理。
@@ -208,6 +193,9 @@ public class RVP_TVMissileOverlay {
     }
 
     private static void reset() {
+        cursor.reset();
+        lastFrameNanos = 0;
+        lastMissileId = -1;
         lastTickCount = Integer.MIN_VALUE;
         lastRateDegPerSec = 0f;
         lastYaw = 0f;
