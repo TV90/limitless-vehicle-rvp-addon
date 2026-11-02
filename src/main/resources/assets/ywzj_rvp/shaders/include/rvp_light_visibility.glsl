@@ -121,8 +121,9 @@ vec3 rvpTraceGeometry(int lightIndex, vec3 viewStart, vec3 viewLight) {
         vec3 extents = vec3(GeometryBodies[b + 3], GeometryBodies[b + 4], GeometryBodies[b + 5]);
         vec4 rotation = vec4(GeometryBodies[b + 6], GeometryBodies[b + 7], GeometryBodies[b + 8], GeometryBodies[b + 9]);
         vec3 a = rvpInverseRotate(start - center, rotation), z = rvpInverseRotate(light - center, rotation);
-        // 接收面或喷口自身在该碰撞盒中时不以这个盒遮挡自己，避免车底/炮口被大外框封死。
-        if (all(lessThanEqual(abs(a), extents)) || all(lessThanEqual(abs(z), extents))) { continue; }
+        // 光心是否在盒内/贴面已由 CPU 用 double 世界坐标写入灯位标记，不能在这里用 float 再判一次。
+        // 接收面自身在该碰撞盒中时仍豁免，避免车底/炮口被结构盒封死。
+        if (all(lessThanEqual(abs(a), extents))) { continue; }
         vec2 hit = rvpSegmentBox(a, z - a, -extents, extents);
         queries += 1.0;
         if (hit.x <= hit.y && hit.y > 0.0001 && hit.x < 0.9999) { return vec3(0.0, 1.0, queries); }

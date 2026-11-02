@@ -15,7 +15,9 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.client.renderer.ShaderInstance;
 import org.joml.Matrix4f;
+import org.joml.Quaterniond;
 import org.joml.Quaternionf;
+import org.joml.Vector3d;
 import org.joml.Vector3f;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.*;
@@ -41,6 +43,8 @@ final class RVP_LightGeometryPass {
     private static final int MAX_BODIES = 48;
     /** 一个实体盒的数据：中心3、半长3、旋转四元数4、适用光源位掩码1。 */
     private static final int BODY_STRIDE = 11;
+    /** 光心贴住实体盒时的接触容差，单位格；2毫米只吸收坐标/姿态误差，不扩大整个遮挡盒。 */
+    static final double SOURCE_CONTACT_MARGIN = 0.002;
     /** 空区段共用零数组，避免对空中数十万个方块逐一查询。 */
     private static final short[] AIR = new short[4096];
     /** 当逻辑刻的区段快照，多个光源覆盖同一区段时只读取一次。 */
@@ -252,7 +256,8 @@ final class RVP_LightGeometryPass {
                 for (VehicleCubeOBB cube : cubes) {
                     if (bodyCount >= MAX_BODIES || cube.position == null || cube.rotation == null) { continue; }
                     Vec3 center = cube.positionO == null ? cube.position : cube.positionO.lerp(cube.position, partialTick);
-                    Quaternionf rotation = cube.rotationO == null ? new Quaternionf(cube.rotation) : new Quaternionf(cube.rotationO).slerp(cube.rotation, partialTick);
+                    // 调用稳定姿态插值：静止车体不做相同旋转之间的浮点混合，避免贴面爆心反复进出碰撞盒。
+                    Quaternionf rotation = interpolateBodyRotation(cube.rotationO, cube.rotation, partialTick);
                     // 调用已有结构盒半长，与车身/炮塔当前插值姿态一起提交；发出该灯的载具默认不遮自己的灯。
                     addBody(center, cube.obb().extents(), rotation, lights, camera, vehicle.getUUID());
                 }
@@ -265,6 +270,21 @@ final class RVP_LightGeometryPass {
         }
     }
 
+    /** 相同姿态直接复制；变化的姿态正常插值，统一归一化后供实体盒求交使用。 */
+    static Quaternionf interpolateBodyRotation(Quaternionf previous, Quaternionf current, float partialTick) {
+        return (previous == null || previous.equals(current)
+                ? new Quaternionf(current) : new Quaternionf(previous).slerp(current, partialTick)).normalize();
+    }
+
+    /** 光心在实体盒内或贴着盒面时豁免该盒；先用 double 相减，判定不随相机位置和观察矩阵改变。 */
+    static boolean sourceTouchesBody(Vec3 source, Vec3 center, Vector3f extents, Quaternionf rotation) {
+        Vector3d local = new Vector3d(source.x - center.x, source.y - center.y, source.z - center.z);
+        new Quaterniond(rotation).transformInverse(local);
+        return Math.abs(local.x) <= extents.x + SOURCE_CONTACT_MARGIN
+                && Math.abs(local.y) <= extents.y + SOURCE_CONTACT_MARGIN
+                && Math.abs(local.z) <= extents.z + SOURCE_CONTACT_MARGIN;
+    }
+
     /** 每个盒只关联能照到它的光源；先做 CPU 半径过滤，显卡避免遍历所有无关实体。 */
     private static void addBody(Vec3 center, Vector3f extents, Quaternionf rotation, List<RVP_ScreenLight> lights,
             Vec3 camera, UUID sourceVehicle) {
@@ -274,7 +294,10 @@ final class RVP_LightGeometryPass {
             RVP_ScreenLight light = lights.get(index);
             // 调用本车遮灯开关；关闭时发出这盏灯的载具结构盒不参与该灯的光路，避免车体把自己的灯埋进盒子里。
             if (!occludeOwn && sourceVehicle != null && sourceVehicle.equals(light.persistentKey())) { continue; }
-            if (center.distanceTo(light.position()) <= light.radius() + extents.length()) { mask |= 1 << index; }
+            if (center.distanceTo(light.position()) > light.radius() + extents.length()) { continue; }
+            // 调用世界坐标中的光心接触判定，再写入灯位标记；显卡不能用低精度观察坐标重新翻转此决定。
+            if (sourceTouchesBody(light.position(), center, extents, rotation)) { continue; }
+            mask |= 1 << index;
         }
         if (mask == 0) { return; }
         int at = bodyCount++ * BODY_STRIDE;

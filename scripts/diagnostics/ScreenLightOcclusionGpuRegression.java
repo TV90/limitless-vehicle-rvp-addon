@@ -5,6 +5,9 @@ import net.minecraft.client.renderer.ShaderInstance;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.ResourceProvider;
 import org.joml.Matrix4f;
+import org.joml.Quaternionf;
+import org.joml.Vector3f;
+import net.minecraft.world.phys.Vec3;
 import org.lwjgl.opengl.*;
 import org.ywzj.rvp.light.RVP_LightParameters;
 
@@ -55,6 +58,8 @@ final class ScreenLightOcclusionGpuRegression {
                 checkSolidBoxScene(shader, preset, false);
                 checkSolidBoxScene(shader, preset, true);
             }
+            // 调用固定相机/车体/贴面爆心的连续帧验证；静态箱体单帧正确不能证明不会闪烁。
+            checkStationaryVehicleContact(shader);
             benchmark(shader, 1);
             benchmark(shader, 8);
             benchmarkGeometry(shader, 1);
@@ -65,6 +70,86 @@ final class ScreenLightOcclusionGpuRegression {
             for (int texture : TEXTURES) { GL11.glDeleteTextures(texture); }
             TEXTURES.clear();
         }
+    }
+
+    /** 真实 CPU 实体灯位标记加正式表面材质：接触豁免稳定，另一辆车和明确分离的源仍挡光。 */
+    private static void checkStationaryVehicleContact(ShaderInstance shader) throws Exception {
+        int size = 32;
+        Matrix4f projection = new Matrix4f().perspective((float) Math.PI / 2, 1, .1F, 100);
+        float[] depths = new float[size * size];
+        Arrays.fill(depths, (float) ((-projection.m22() + projection.m32() / 10) * .5 + .5));
+        int depth = texture(size, size, true, depths);
+        int color = texture(size, size, false, new float[size * size * 4]);
+        int world = GL30.glGenFramebuffers();
+        RVP_ScreenFrameResources frame = new RVP_ScreenFrameResources();
+        try (RVP_ScreenFrameResources.State ignored = new RVP_ScreenFrameResources.State()) {
+            GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, world);
+            GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0, GL11.GL_TEXTURE_2D, color, 0);
+            GL11.glDrawBuffer(GL30.GL_COLOR_ATTACHMENT0); GL11.glReadBuffer(GL30.GL_COLOR_ATTACHMENT0);
+            require(frame.captureDepth(world, depth, size, size), "contact depth capture");
+            require(frame.captureColor(world, size, size), "contact color capture");
+            configure(shader, frame, projection, null, false);
+            lights(shader, RVP_LightParameters.explosion(4), 0, 1);
+            shader.safeGetUniform("OutputMode").set(4);
+            Vector3f extents = new Vector3f(1.25F, .75F, 1F);
+            Vec3 relativeCenter = new Vec3(.174F, -.125F, -4.365F);
+            float[] pixel = new float[4];
+            int frames = 0;
+            for (Vec3 camera : new Vec3[] {Vec3.ZERO, new Vec3(25_000_000, 150, -25_000_000)}) {
+                Vec3 center = camera.add(relativeCenter);
+                for (int angle = 1; angle <= 80; angle++) {
+                    Quaternionf fixed = new Quaternionf().rotationXYZ(.13F, (float) Math.toRadians(angle), .07F);
+                    Vector3f contact = fixed.transform(new Vector3f(.17F, .11F, 1F)).add(relativeCenter.toVector3f());
+                    Vec3 source = camera.add(contact.x, contact.y, contact.z);
+                    RVP_ScreenLight light = new RVP_ScreenLight(source, 1, 1, 1, 16, 0, 1, 0, 32,
+                            RVP_LightSourceType.EXPLOSION, null, 1, false, 0);
+                    shader.safeGetUniform("LightPositionRadius0").set(contact.x, contact.y, contact.z, 16F);
+                    for (int partial = 0; partial <= 16; partial++) {
+                        // 调用生产插值与生产灯位标记，测试光源/车体没有实际位移的各显示帧。
+                        Quaternionf rotation = RVP_LightGeometryPass.interpolateBodyRotation(fixed, fixed, partial / 16F);
+                        uploadContactBody(shader, center, extents, rotation, List.of(light), camera);
+                        frame.bind(world, size, size); frame.draw(shader);
+                        GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, world);
+                        GL11.glReadPixels(size / 2, size / 2, 1, 1, GL11.GL_RGBA, GL11.GL_FLOAT, pixel);
+                        require(pixel[0] == 0, "stationary vehicle source contact toggled shadow: angle=" + angle + " partial=" + partial);
+                        frames++;
+                    }
+                    // 向盒外明确移开2厘米后，穿车光路必须恢复遮挡，不能靠取消实体阴影消除闪烁。
+                    Vector3f outside = fixed.transform(new Vector3f(.17F, .11F, 1.02F)).add(relativeCenter.toVector3f());
+                    RVP_ScreenLight separated = new RVP_ScreenLight(camera.add(outside.x, outside.y, outside.z),
+                            1, 1, 1, 16, 0, 1, 0, 32, RVP_LightSourceType.EXPLOSION, null, 1, false, 0);
+                    shader.safeGetUniform("LightPositionRadius0").set(outside.x, outside.y, outside.z, 16F);
+                    uploadContactBody(shader, center, extents,
+                            RVP_LightGeometryPass.interpolateBodyRotation(fixed, fixed, .5F), List.of(separated), camera);
+                    frame.bind(world, size, size); frame.draw(shader);
+                    GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, world);
+                    GL11.glReadPixels(size / 2, size / 2, 1, 1, GL11.GL_RGBA, GL11.GL_FLOAT, pixel);
+                    require(pixel[0] == 1, "separated vehicle body stopped casting its real shadow: angle=" + angle);
+                }
+            }
+            require(GL11.glGetError() == GL11.GL_NO_ERROR, "stationary vehicle contact GL error");
+            System.out.println("PASS stationary vehicle explosion contact: " + frames
+                    + " frames, 80 rotations, near/25-million world origins, zero shadow toggles; separated bodies still occlude");
+        } finally { frame.release(); GL30.glDeleteFramebuffers(world); }
+    }
+
+    /** 不构造虚假游戏世界；直接调用正式实体盒登记，再读取其真实灯位标记供正式材质验证。 */
+    private static void uploadContactBody(ShaderInstance shader, Vec3 center, Vector3f extents, Quaternionf rotation,
+            List<RVP_ScreenLight> lights, Vec3 camera) throws Exception {
+        var bodiesField = RVP_LightGeometryPass.class.getDeclaredField("BODIES");
+        var countField = RVP_LightGeometryPass.class.getDeclaredField("bodyCount");
+        var addBody = RVP_LightGeometryPass.class.getDeclaredMethod("addBody", Vec3.class, Vector3f.class,
+                Quaternionf.class, List.class, Vec3.class, java.util.UUID.class);
+        bodiesField.setAccessible(true); countField.setAccessible(true); addBody.setAccessible(true);
+        Arrays.fill((float[]) bodiesField.get(null), 0); countField.setInt(null, 0);
+        // 调用真实半径/归属/光心接触过滤；不在测试中复制一套豁免逻辑。
+        addBody.invoke(null, center, extents, rotation, lights, camera, null);
+        RVP_LightGeometryPass.upload(shader);
+        // 上面仅省略客户端区块采集，因此显式提交已由真实登记器写好的实体盒，方块区域保持空。
+        shader.safeGetUniform("GeometryBodyCount").set(countField.getInt(null));
+        shader.safeGetUniform("GeometryMode").set(1);
+        shader.safeGetUniform("GeometryOrigins").set(new float[32]);
+        shader.safeGetUniform("GeometryViewToWorld").set(new Matrix4f());
     }
 
     /** 对比箱体完整几何与单层相机深度；仅诊断输出，不把失败图案当作已经修好的结果。 */
