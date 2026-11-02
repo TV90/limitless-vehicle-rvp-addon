@@ -155,6 +155,22 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         return cfg.resolve(model, vehicle, explosionPos, targetCenter, true).factor();
     }
 
+    /** 无受爆弱点配置时跳过命中射线扫描，避免普通动能弹增加整车几何开销。 */
+    public boolean hasHitboxExplosionDamageFactors(AbstractVehicle vehicle) {
+        VehicleHitboxConfig cfg = configs.get(vehicle.getVehicleId());
+        return cfg != null && !cfg.hitboxExplosionFactorByBoneName().isEmpty();
+    }
+
+    /** 新增受击 OBB 爆炸倍率：未配置时快速返回 1，选面不复用直击倍率或旧爆炸射线。 */
+    public float resolveHitboxExplosionDamageFactor(AbstractVehicle vehicle, Vec3 center) {
+        VehicleHitboxConfig cfg = configs.get(vehicle.getVehicleId());
+        if (cfg == null || cfg.hitboxExplosionFactorByBoneName().isEmpty()) return 1F;
+        // 调用同源具名几何与当前直击上下文；未配置骨参与最近距离竞争但倍率仍为 1。
+        return RVP_ExplosionHitboxContext.factor(vehicle.getUUID(),
+                org.ywzj.rvp.util.RVP_NamedVehicleObbs.collect(vehicle),
+                cfg.hitboxExplosionFactorByBoneName(), center, RVP_ExplosionHitboxContext.current());
+    }
+
     /**
      * [RVP] 命中箱入射角上界查询（2026-10-22 扩展）：优先命中骨的骨级上界
      * （{@code hitbox_max_incidence_angle}），骨未配置或未归属时回退全车缺省
@@ -1974,6 +1990,8 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             float defaultFactor,
             Map<String, Float> factorByBoneName,
             Map<String, Float> vehicleExplosionFactorByBoneName,
+            /** 独立受击 OBB 爆炸弱点倍率，缺省 1，不替代旧爆心射线倍率。 */
+            Map<String, Float> hitboxExplosionFactorByBoneName,
             float vehicleExplosionFactorDefault,
             Map<String, BoneModuleConfig> moduleByBoneName,
             Map<String, String> aliasByBoneName,
@@ -2000,6 +2018,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                     || (factorByBoneName != null && !factorByBoneName.isEmpty())
                     || (vehicleExplosionFactorByBoneName != null && !vehicleExplosionFactorByBoneName.isEmpty())
                     || vehicleExplosionFactorDefault != 1f
+                    || !hitboxExplosionFactorByBoneName.isEmpty()
                     || (aliasByBoneName != null && !aliasByBoneName.isEmpty())
                     || (moduleByBoneName != null && !moduleByBoneName.isEmpty())
                     || (maxIncidenceAngleByBone != null && !maxIncidenceAngleByBone.isEmpty())
@@ -2135,6 +2154,8 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             // 爆炸伤害倍率（2026-09-20 拆分）：与直击 hitbox_damage_factor 同构，独立配置
             float explosionDef = GsonHelper.getAsFloat(obj, "vehicle_vehicle_explosion_damage_factor_default", 1f);
             Map<String, Float> explosionMap = parseFactorMap(obj.get("vehicle_explosion_damage_factor"));
+            // 用户新增：实际直击骨 / 最近 OBB 的受爆倍率，与原爆心到车体中心射线倍率独立。
+            Map<String, Float> blastHitboxMap = parseFactorMap(obj.get("hitbox_explosion_damage_factor"));
             // 新配置 bone_modules：骨骼模块体系（模块/门槛/爆炸档位/设备子对象）；
             // 命中倍率统一由 hitbox_damage_factor 提供（2026-09-27 统合，条目不再带 damage_factor）
             Map<String, BoneModuleConfig> moduleMap = parseBoneModuleMap(obj.get("bone_modules"));
@@ -2182,6 +2203,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                     && def == 1f
                     && (explosionMap == null || explosionMap.isEmpty())
                     && explosionDef == 1f
+                    && (blastHitboxMap == null || blastHitboxMap.isEmpty())
                     && coreM == 1f
                     && armorMin <= 0f
                     && armorMax <= 0f
@@ -2195,6 +2217,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                     def,
                     map == null ? Map.of() : Map.copyOf(map),
                     explosionMap == null ? Map.of() : Map.copyOf(explosionMap),
+                    blastHitboxMap == null ? Map.of() : Map.copyOf(blastHitboxMap),
                     explosionDef,
                     moduleMap == null ? Map.of() : Map.copyOf(moduleMap),
                     aliasMap == null ? Map.of() : Map.copyOf(aliasMap),

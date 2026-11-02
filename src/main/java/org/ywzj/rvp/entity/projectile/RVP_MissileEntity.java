@@ -894,6 +894,63 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         ywzj_rvp$refreshHitlLife();
     }
 
+    @Override
+    protected void addAdditionalSaveData(net.minecraft.nbt.CompoundTag tag) {
+        // 调用弹体存档，再保存 TV 骨身份，重载后不退回车体中心。
+        super.addAdditionalSaveData(tag);
+        if (hitlTargetObb != null && hitlObbTargetUuid != null) {
+            tag.putString("rvp_hitl_target_bone", hitlTargetObb.bone());
+            tag.putInt("rvp_hitl_target_cube", hitlTargetObb.index());
+            tag.putUUID("rvp_hitl_target_uuid", hitlObbTargetUuid);
+        }
+    }
+
+    @Override
+    protected void readAdditionalSaveData(net.minecraft.nbt.CompoundTag tag) {
+        super.readAdditionalSaveData(tag);
+        hitlTargetObb = null; hitlObbTargetUuid = null;
+        if (tag.hasUUID("rvp_hitl_target_uuid")) {
+            String bone = tag.getString("rvp_hitl_target_bone");
+            int index = tag.getInt("rvp_hitl_target_cube");
+            if (!bone.isBlank() && bone.length() <= 128 && index >= 0 && index <= 4096) {
+                hitlTargetObb = new org.ywzj.rvp.util.RVP_NamedVehicleObbs.Key(bone, index);
+                hitlObbTargetUuid = tag.getUUID("rvp_hitl_target_uuid");
+            }
+        }
+    }
+
+    /** TV 选定的目标骨与目标 UUID，防止换目标后复用上一载具的骨。 */
+    private org.ywzj.rvp.util.RVP_NamedVehicleObbs.Key hitlTargetObb;
+    /** 上述骨所属目标身份。 */
+    private java.util.UUID hitlObbTargetUuid;
+
+    public Vec3 rvp$resolveHitlAimPoint(Entity target) {
+        if (target instanceof AbstractVehicle vehicle && hitlTargetObb != null
+                && target.getUUID().equals(hitlObbTargetUuid)) {
+            // 调用单骨实时解析，炮塔转动后仍追踪同一块，失去该骨时保留最后坐标。
+            var box = org.ywzj.rvp.util.RVP_NamedVehicleObbs.resolve(vehicle, hitlTargetObb);
+            if (box != null) return box.center();
+            if (getTargetPos() != null) return getTargetPos();
+        }
+        return org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(target);
+    }
+
+    public void rvp$setHitlDesignatedEntity(Entity target, org.ywzj.rvp.util.RVP_NamedVehicleObbs.Key key) {
+        if (!(target instanceof AbstractVehicle vehicle)) return;
+        // 同一实体改选骨也必须通过权限门，不能因旧实体锁仍存在而绕过 DIRCM 或无线电阻断。
+        if (hitlRemoteConfigured && !org.ywzj.rvp.server.hitl.RVP_HitlRemoteViewService.isControlling(this)) return;
+        if (hitlSignalSource == HitlSignalSource.RADIO && (hitlLinkBlocked || hitlLinkSevered)) return;
+        if (dircmJammed || dircmNoRedesignateTick > 0 || hitlControlMode != RVP_EnumHitlControlMode.DESIGNATE) return;
+        var box = org.ywzj.rvp.util.RVP_NamedVehicleObbs.resolve(vehicle, key);
+        if (box == null) return;
+        // 调用原有范围/链路/DIRCM/模式门，再核实实体实际被接纳后才写入骨身份。
+        rvp$setHitlDesignatedEntity(target);
+        if (getTargetEntity() == target) {
+            hitlTargetObb = key; hitlObbTargetUuid = target.getUUID();
+            setTargetPos(box.center());
+        }
+    }
+
     public void rvp$setHitlDesignatedTarget(Vec3 target) {
         // 远程能力只接受仍有效的观察会话输入；未配置武器沿用原有流程。
         if (hitlRemoteConfigured && !org.ywzj.rvp.server.hitl.RVP_HitlRemoteViewService.isControlling(this)) return;
@@ -909,6 +966,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         }
         if (hitlRemoteConfigured && (!Double.isFinite(target.x) || !Double.isFinite(target.y)
                 || !Double.isFinite(target.z))) return;
+        hitlTargetObb = null; hitlObbTargetUuid = null;
         setTargetPos(target);
         setTargetEntity(null);
         // 指定目标同样是有效操作：重置指令生命期（与转向输入同语义）
@@ -924,6 +982,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         if (hitlControlMode != RVP_EnumHitlControlMode.DESIGNATE) {
             return;
         }
+        hitlTargetObb = null; hitlObbTargetUuid = null;
         clearTarget();
     }
 
@@ -940,6 +999,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         if (hitlControlMode != RVP_EnumHitlControlMode.DESIGNATE || target == null || !target.isAlive()) {
             return;
         }
+        hitlTargetObb = null; hitlObbTargetUuid = null;
         setTargetEntity(target);
         setTargetPos(target.getBoundingBox().getCenter());
         // 指定目标实体同样是有效操作：重置指令生命期（与转向输入同语义）

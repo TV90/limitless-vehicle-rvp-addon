@@ -79,7 +79,8 @@ public final class RVP_ClientSaclosState {
             Entity target = mc.level.getEntity(designatedEntityId);
             if (target != null && target.isAlive()) {
                 // [RVP] §46：HITL 指定 HUD 点与制导目标点同源（最大 OBB 中心）
-                laserHudPos = org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(target);
+                // 调用 TV 选骨锁点，目标标记与服务端制导保持同一骨身份。
+                laserHudPos = RVP_ClientHitlState.resolveClientDesignatedPoint(target);
                 return;
             }
         }

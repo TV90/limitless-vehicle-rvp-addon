@@ -44,8 +44,8 @@ public final class RVP_RuntimeHitlTvGuidanceSource implements RVP_RuntimeGuidanc
                 // 只把实体放回，本闸门每 tick 复查，再锁超速目标会立刻再脱锁，无需额外挂钩。
                 float breakKph = RVP_Config.getHitlTvBreakLockTargetSpeedKph();
                 if (breakKph > 0 && valid.getDeltaMovement().length() * 72.0 > breakKph) {
-                    // [RVP] §46：脱锁跟踪点与瞄准点同源（最大 OBB 中心）
-                    Vec3 lastTracked = org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(valid);
+                    // [RVP] §46：脱锁跟踪点与瞄准点同源（已选 OBB，无弱点选择时沿用原中心）
+                    Vec3 lastTracked = missile.rvp$resolveHitlAimPoint(valid);
                     missile.rvp$markHitlSpeedBreak(lastTracked);
                     if (missile.getOwner() instanceof ServerPlayer operator) {
                         operator.displayClientMessage(
@@ -55,7 +55,9 @@ public final class RVP_RuntimeHitlTvGuidanceSource implements RVP_RuntimeGuidanc
                     // 指定点（指方块/地面/新目标）即恢复正常接管，重锁超速实体则再次进本闸门
                     return RVP_GuidanceIntent.point(lastTracked, false, 1.0, RVP_EnumGuidanceType.HITL_TV);
                 }
-                return RVP_GuidanceIntent.entity(valid, false, 1.0, RVP_EnumGuidanceType.HITL_TV);
+                // 意图方向和最终转向都使用相同的弱点位置，保留实体跟踪与速度反制。
+                return new RVP_GuidanceIntent(true, missile.rvp$resolveHitlAimPoint(valid), valid,
+                        false, 1.0, RVP_EnumGuidanceType.HITL_TV);
             }
         }
         // 无存活实体目标时：HITL 仍激活则继续解析实时指定点（吊舱瞄准/操作手指定），

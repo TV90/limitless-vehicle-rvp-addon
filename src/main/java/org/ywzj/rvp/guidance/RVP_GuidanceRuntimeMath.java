@@ -288,6 +288,10 @@ public final class RVP_GuidanceRuntimeMath {
             Entity entity,
             RVP_EnumGuidanceType sourceType
     ) {
+        if (sourceType == RVP_EnumGuidanceType.HITL_TV && projectile instanceof org.ywzj.rvp.entity.projectile.RVP_MissileEntity missile) {
+            // 调用 TV 独立骨锁点，实体运动/PIP 仍消费同一目标实体和实际选定点。
+            return missile.rvp$resolveHitlAimPoint(entity);
+        }
         if (sourceType == RVP_EnumGuidanceType.IR || sourceType == RVP_EnumGuidanceType.AIR) {
             return org.ywzj.rvp.util.RVP_AimPointResolver.resolveIrLockPoint(entity,
                     org.ywzj.rvp.util.RVP_AimPointResolver.lockSeed(projectile.getId(), entity),

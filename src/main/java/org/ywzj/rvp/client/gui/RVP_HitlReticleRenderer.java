@@ -37,6 +37,8 @@ public final class RVP_HitlReticleRenderer {
 
     /** TV 四角框的半边长，参考录像约为画面宽度的 5%，与指令线菱形区别。 */
     private static final int TV_HALF = 50;
+    /** TV 框、操作十字、目标标记统一放大 1.3 倍，不改参考画布和文字字号。 */
+    private static final float TV_ELEMENT_SCALE = 1.3F;
     /** TV 每个角的短边长度，中央留给实际目标。 */
     private static final int TV_CORNER = 27;
     /** TV 断开十字的半长与中心缺口，避免实心交叉挡住小目标。 */
@@ -51,7 +53,7 @@ public final class RVP_HitlReticleRenderer {
         var pose = graphics.pose();
         pose.pushPose();
         pose.translate(graphics.guiWidth() * 0.5, graphics.guiHeight() * 0.5, 0);
-        pose.scale(scale, scale, 1);
+        pose.scale(scale * TV_ELEMENT_SCALE, scale * TV_ELEMENT_SCALE, 1);
         for (int sign = -1; sign <= 1; sign += 2) {
             int edge = sign < 0 ? -TV_HALF : TV_HALF - STROKE;
             graphics.fill(-TV_HALF, edge, -TV_HALF + TV_CORNER, edge + STROKE, HUD_COLOR);
@@ -69,7 +71,7 @@ public final class RVP_HitlReticleRenderer {
         var pose = graphics.pose();
         pose.pushPose();
         pose.translate(x, y, 0);
-        pose.scale(scale, scale, 1);
+        pose.scale(scale * TV_ELEMENT_SCALE, scale * TV_ELEMENT_SCALE, 1);
         graphics.fill(-TV_CROSS, -1, -TV_GAP, 1, HUD_COLOR);
         graphics.fill(TV_GAP, -1, TV_CROSS, 1, HUD_COLOR);
         graphics.fill(-1, -TV_CROSS, 1, -TV_GAP, HUD_COLOR);
@@ -128,7 +130,7 @@ public final class RVP_HitlReticleRenderer {
         var pose = graphics.pose();
         pose.pushPose();
         pose.translate(x, y, 0);
-        pose.scale(scale, scale, 1.0F);
+        pose.scale(scale * TV_ELEMENT_SCALE, scale * TV_ELEMENT_SCALE, 1.0F);
         // 调用共用线段绘制四条斜臂；中心留白，目标与操作十字重合时也能识别锁定。
         for (int sx = -1; sx <= 1; sx += 2) {
             for (int sy = -1; sy <= 1; sy += 2) {

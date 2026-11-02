@@ -398,6 +398,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
 
     /** 本 tick 内直击命中的载具 ID 集合，用于区分 HE 直击与非直击爆炸的 ERA 破坏。 */
     protected final java.util.Set<Integer> directHitVehicleIds = new java.util.HashSet<>();
+    /** 只记录最近一次真实实体碰撞，近炸查询不写入；用于同 tick 直击爆炸的精确骨归属。 */
+    private org.ywzj.rvp.weapon.damage.RVP_ExplosionHitboxContext.Impact directExplosionHitbox;
 
     /** 尾焰粒子上帧位置（对标本体 MissileEntity.particlePosO）。 */
     @Nullable
@@ -3846,6 +3848,15 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         if (tryBounceFromEntityHit(result, impactAngleCap)) {
             return;
         }
+        if (impactTarget instanceof AbstractVehicle vehicle && explosion != null && explosion.explode
+                && RVP_VehicleHitboxFactorManager.INSTANCE.hasHitboxExplosionDamageFactors(vehicle)) {
+            // 调用真实射线选骨，零直击伤害的 HE 弹也记录 OBB；跳弹在此之前已经返回。
+            var selected = org.ywzj.rvp.util.RVP_NamedVehicleObbs.raycast(
+                    org.ywzj.rvp.util.RVP_NamedVehicleObbs.collect(vehicle), collisionSegmentStart(), collisionSegmentEnd());
+            directExplosionHitbox = selected == null ? null
+                    : new org.ywzj.rvp.weapon.damage.RVP_ExplosionHitboxContext.Impact(
+                            vehicle.getUUID(), selected.box().key(), level().getGameTime());
+        } else directExplosionHitbox = null;
         boolean hbmFuseTriggered = RVP_RadarContactHelper.triggerHbmMissileFuze(entity, result.getLocation());
         if (!hbmFuseTriggered) {
             applyEntityHitDamage(entity, result);
@@ -4735,9 +4746,14 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         // excluded 供两处 lambda 捕获（本体爆炸与地形爆炸），Java 要求捕获变量为事实上最终值，
         // 故组装完成后不再原地修改（后续新增排除目标应先加进 excluded 再到达本行）。
         Set<Entity> excludedSnapshot = Set.copyOf(excluded);
-        Runnable explosionAction = wrapImmediatePath(wrapExplosionDamageFactor(!excludedSnapshot.isEmpty()
+        Runnable baseExplosionAction = wrapImmediatePath(wrapExplosionDamageFactor(!excludedSnapshot.isEmpty()
                 ? () -> ex.explode(List.copyOf(excludedSnapshot))
                 : ex::explode, explosionDamageFactor));
+        var directObb = directExplosionHitbox != null && impactTarget instanceof AbstractVehicle
+                && directExplosionHitbox.vehicle().equals(impactTarget.getUUID())
+                && directExplosionHitbox.tick() == level().getGameTime() ? directExplosionHitbox : null;
+        // 调用可嵌套的直击爆炸窗口；外层载具身份不得泄漏给波及载具或下次近炸。
+        Runnable explosionAction = () -> org.ywzj.rvp.weapon.damage.RVP_ExplosionHitboxContext.run(directObb, baseExplosionAction);
         Runnable terrainExplosionAction = terrainExplosionFinal == null ? null
                 : wrapImmediatePath(wrapExplosionDamageFactor(!excludedSnapshot.isEmpty()
                         ? () -> terrainExplosionFinal.explode(List.copyOf(excludedSnapshot))

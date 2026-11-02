@@ -71,6 +71,8 @@ public class RVP_ClientHitlState {
     private static int dircmJamTotalTick;
     @Nullable
     private static Vec3 clientAimPoint;
+    /** 当前 TV 实体锁点的稳定 OBB 身份，与目标实体 ID 一并使用。 */
+    private static org.ywzj.rvp.util.RVP_NamedVehicleObbs.Key clientDesignatedObb;
     /** Updated once per client tick for hot-path particle suppression (no getEntity in particle spawn). */
     private static boolean particleSuppressActive;
     private static double particleSuppressX;
@@ -239,6 +241,7 @@ public class RVP_ClientHitlState {
         initialDesignateSent = false;
         clientDesignatedPos = null;
         clientDesignatedEntityId = -1;
+        clientDesignatedObb = null;
         hitlLinkBlocked = false;
         hitlLinkSevered = false;
         dircmJam = false;
@@ -296,6 +299,7 @@ public class RVP_ClientHitlState {
         initialDesignateSent = false;
         clientDesignatedPos = null;
         clientDesignatedEntityId = -1;
+        clientDesignatedObb = null;
         hitlLinkBlocked = false;
         hitlLinkSevered = false;
         dircmJam = false;
@@ -451,6 +455,16 @@ public class RVP_ClientHitlState {
     }
 
     @Nullable
+    /** HUD 以相同 OBB 身份逐帧取点，不再回到载具中心；骨消失则保留最后一点。 */
+    public static Vec3 resolveClientDesignatedPoint(Entity target) {
+        if (target instanceof AbstractVehicle vehicle && clientDesignatedObb != null) {
+            var box = org.ywzj.rvp.util.RVP_NamedVehicleObbs.resolve(vehicle, clientDesignatedObb);
+            if (box != null) clientDesignatedPos = box.center();
+            return clientDesignatedPos;
+        }
+        return org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(target);
+    }
+
     public static Vec3 getClientAimPoint() {
         return clientAimPoint;
     }
@@ -464,16 +478,31 @@ public class RVP_ClientHitlState {
         if (hit != null && hit.getType() == HitResult.Type.ENTITY && hit instanceof EntityHitResult entityHit
                 && entityHit.getEntity() != null) {
             int entityId = entityHit.getEntity().getId();
-            // [RVP] §46：HITL 指定点与制导目标点同源（最大 OBB 中心，非载具回退 AABB 中心）
+            // 具名载具优先锁定离轴射线命中的 OBB；无结构模型的实体沿用原选点。
             Vec3 point = org.ywzj.rvp.util.RVP_AimPointResolver
                     .resolveLargestObbCenter(entityHit.getEntity());
             clientDesignatedPos = point;
+            if (entityHit instanceof RVP_HitlVehicleHitResult precise
+                    && entityHit.getEntity() instanceof AbstractVehicle vehicle) {
+                // 同一载具按 R 可直接改选另一 OBB，不沿用旧的“同目标切回中心点”分支。
+                var box = org.ywzj.rvp.util.RVP_NamedVehicleObbs.resolve(vehicle, precise.key());
+                if (box != null) {
+                    clientDesignatedObb = precise.key();
+                    clientDesignatedPos = box.center();
+                    clientDesignatedEntityId = entityId;
+                    RVP_Network.CHANNEL.sendToServer(C2SHitlDesignate.entity(
+                            activeMissileId, entityId, box.center(), precise.key()));
+                    return;
+                }
+            }
             if (clientDesignatedEntityId == entityId) {
                 clientDesignatedEntityId = -1;
+                clientDesignatedObb = null;
                 RVP_Network.CHANNEL.sendToServer(C2SHitlDesignate.point(activeMissileId, point));
                 return;
             }
             clientDesignatedEntityId = entityId;
+            clientDesignatedObb = null;
             RVP_Network.CHANNEL.sendToServer(C2SHitlDesignate.entity(activeMissileId, entityId, point));
             return;
         }
@@ -483,6 +512,7 @@ public class RVP_ClientHitlState {
         }
         clientDesignatedPos = point;
         clientDesignatedEntityId = -1;
+        clientDesignatedObb = null;
         RVP_Network.CHANNEL.sendToServer(C2SHitlDesignate.point(activeMissileId, point));
     }
 

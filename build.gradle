@@ -131,8 +131,8 @@ repositories {
 dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
     // 独立弹体仿真直接构造本体 AmmoEntity；JUnit 不经过 Forge 的内嵌 jar 加载器。
-    // 仅补齐测试/仿真运行期的 MAE，生产包仍由 SBM 提供同版依赖。
-    testRuntimeOnly('com.maydaymemory:mae:1.1.2') {
+    // 仅补齐测试/仿真编译与运行期的 MAE（具名 OBB 回归使用真实结构模型），生产包仍由 SBM 提供同版依赖。
+    testImplementation('com.maydaymemory:mae:1.1.2') {
         exclude group: 'com.google.code.findbugs', module: 'jsr305'
         exclude group: 'it.unimi.dsi', module: 'fastutil'
         exclude group: 'org.joml', module: 'joml'

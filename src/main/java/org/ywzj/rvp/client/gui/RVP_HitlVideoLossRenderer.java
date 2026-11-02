@@ -36,7 +36,6 @@ public final class RVP_HitlVideoLossRenderer {
         pose.pushPose();
         pose.translate(graphics.guiWidth() * 0.5, graphics.guiHeight() * 0.5 - font.lineHeight * 0.5, 0);
         int half = font.width("NO IMAGE") / 2;
-        graphics.fill(-half - 7, -7, half + 7, 15, 0xE6000000);
         graphics.drawString(font, "NO IMAGE", -half, 0, 0xFFFF6060, true);
         pose.popPose();
     }

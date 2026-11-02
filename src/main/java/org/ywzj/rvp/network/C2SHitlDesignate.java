@@ -15,6 +15,8 @@ public class C2SHitlDesignate {
     public int targetEntityId = -1;
     public Vec3 targetPos;
     public boolean clearDesignation;
+    /** 载具弱点的稳定骨名/cube 索引；非载具和点指定为空。 */
+    public org.ywzj.rvp.util.RVP_NamedVehicleObbs.Key targetObb;
 
     public static C2SHitlDesignate clear(int missileEntityId) {
         C2SHitlDesignate msg = new C2SHitlDesignate();
@@ -38,6 +40,13 @@ public class C2SHitlDesignate {
         return msg;
     }
 
+    public static C2SHitlDesignate entity(int missileId, int targetId, Vec3 point,
+            org.ywzj.rvp.util.RVP_NamedVehicleObbs.Key key) {
+        C2SHitlDesignate msg = entity(missileId, targetId, point);
+        msg.targetObb = key;
+        return msg;
+    }
+
     public static void encode(C2SHitlDesignate msg, FriendlyByteBuf buf) {
         buf.writeInt(msg.missileEntityId);
         buf.writeBoolean(msg.clearDesignation);
@@ -50,6 +59,11 @@ public class C2SHitlDesignate {
             buf.writeDouble(msg.targetPos.x);
             buf.writeDouble(msg.targetPos.y);
             buf.writeDouble(msg.targetPos.z);
+        }
+        buf.writeBoolean(msg.targetObb != null);
+        if (msg.targetObb != null) {
+            buf.writeUtf(msg.targetObb.bone(), 128);
+            buf.writeVarInt(msg.targetObb.index());
         }
     }
 
@@ -64,6 +78,7 @@ public class C2SHitlDesignate {
         if (buf.readBoolean()) {
             msg.targetPos = new Vec3(buf.readDouble(), buf.readDouble(), buf.readDouble());
         }
+        if (buf.readBoolean()) msg.targetObb = new org.ywzj.rvp.util.RVP_NamedVehicleObbs.Key(buf.readUtf(128), buf.readVarInt());
         return msg;
     }
 
@@ -89,6 +104,11 @@ public class C2SHitlDesignate {
             if (msg.targetEntityId >= 0) {
                 Entity target = player.level().getEntity(msg.targetEntityId);
                 if (target != null && target.isAlive()) {
+                    if (target instanceof org.ywzj.vehicle.entity.vehicle.AbstractVehicle && msg.targetObb != null) {
+                        // 调用服务端模型校验和同一权限门，不能把客户端任意坐标当作车体弱点。
+                        missile.rvp$setHitlDesignatedEntity(target, msg.targetObb);
+                        return;
+                    }
                     Entity current = missile.getTargetEntity();
                     if (current != null && current.isAlive() && current.getId() == target.getId()) {
                         missile.rvp$setHitlDesignatedTarget(target.getBoundingBox().getCenter());

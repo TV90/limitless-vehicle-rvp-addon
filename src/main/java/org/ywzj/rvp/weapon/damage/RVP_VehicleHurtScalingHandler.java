@@ -128,6 +128,25 @@ public final class RVP_VehicleHurtScalingHandler {
             return; // RVP 弹体/激光已自行结算命中箱系数
         }
 
+        if ((source.is(net.minecraft.tags.DamageTypeTags.IS_EXPLOSION)
+                || "ywzj_vehicle.explosion".equals(source.getMsgId()))
+                && (!"ywzj_vehicle.explosion".equals(source.getMsgId())
+                || source.getDirectEntity() == null && source.getEntity() == null)) {
+            Vec3 center = source.getSourcePosition();
+            float multiplier = center == null ? 1F
+                    : RVP_VehicleHitboxFactorManager.INSTANCE.resolveHitboxExplosionDamageFactor(self, center);
+            if (multiplier != 1F) {
+                event.setCanceled(true);
+                if (multiplier > 0 && Float.isFinite(amount * multiplier)) {
+                    REAPPLY_GUARD.add(self.getId());
+                    try { self.hurt(source, amount * multiplier); }
+                    finally { REAPPLY_GUARD.remove(self.getId()); }
+                }
+            }
+            // 带爆炸标签的外源伤害也不得吃直击命中箱倍率或直击装甲扣减。
+            return;
+        }
+
         Entity direct = source.getDirectEntity();
         Entity attacker = source.getEntity();
         if (direct == null && attacker == null) {
@@ -181,8 +200,14 @@ public final class RVP_VehicleHurtScalingHandler {
             res = RVP_VehicleHitboxFactorManager.INSTANCE.resolveHitboxDamage(self, segment[0], segment[1]);
         }
         boolean hitboxEnabled = res != null && res.enabled();
+        // 调用新增受爆弱点规则；其它现有倍率、装甲和距离衰减仍按原路径结算。
+        boolean taggedBlast = explosion || source.is(net.minecraft.tags.DamageTypeTags.IS_EXPLOSION);
+        Vec3 blastCenter = taggedBlast ? source.getSourcePosition() : null;
+        float blastWeakpointMult = blastCenter == null ? 1F
+                : RVP_VehicleHitboxFactorManager.INSTANCE.resolveHitboxExplosionDamageFactor(self, blastCenter);
         // 无任何覆盖时完全放行（与原 mixin 净效果一致）；爆炸任一侧倍率 ≠1 时进入重放
         if (!hitboxEnabled && !vehicleExplosionHitboxEnabled && weaponExplosionDamageFactor == 1f
+                && blastWeakpointMult == 1F
                 && (coreMult == 1f || explosion)) {
             // [RVP] 辅助设备爆炸损伤·本体武器无倍率路（§38）：实收 = amount；
             // §43 取消 §41.5 的 inRvpDamage 门（见钩子 1 处注释）
@@ -218,6 +243,12 @@ public final class RVP_VehicleHurtScalingHandler {
         float desiredFinal = explosion
                 ? deltaAfterCore * weaponExplosionDamageFactor * vehicleExplosionHitboxMult
                 : applyArmor(self, deltaAfterCore, hitboxMult);
+        // 新的 OBB 受爆倍率只乘一次，不进入直击装甲分支、也不因重放再次叠加。
+        desiredFinal *= blastWeakpointMult;
+        if (explosion && blastWeakpointMult == 0F) {
+            event.setCanceled(true);
+            return;
+        }
         if (!(desiredFinal > 0f) || !Float.isFinite(desiredFinal)) {
             return;
         }

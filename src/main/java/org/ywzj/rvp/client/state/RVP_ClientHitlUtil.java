@@ -119,6 +119,18 @@ public final class RVP_ClientHitlUtil {
         Entity owner = missile instanceof RVP_BaseBullet bullet ? bullet.getOwner() : null;
         for (Entity entity : mc.level.getEntities(missile, missile.getBoundingBox().expandTowards(end.subtract(start)).inflate(1.0),
                 e -> e.isPickable() && e != missile && (owner == null || !e.is(owner)))) {
+            if (entity instanceof org.ywzj.vehicle.entity.vehicle.AbstractVehicle vehicle) {
+                // 调用真实受击 OBB，AABB 仅作候选粗筛，空洞不会选到载具实体中心。
+                var boxes = org.ywzj.rvp.util.RVP_NamedVehicleObbs.collect(vehicle);
+                if (!boxes.isEmpty()) {
+                    var selected = org.ywzj.rvp.util.RVP_NamedVehicleObbs.raycast(boxes, start, end);
+                    if (selected != null && selected.distanceSquared() < closestDist) {
+                        closestDist = selected.distanceSquared();
+                        closest = new RVP_HitlVehicleHitResult(vehicle, selected);
+                    }
+                    continue;
+                }
+            }
             var box = entity.getBoundingBox().inflate(0.3);
             var hit = box.clip(start, end);
             if (hit.isPresent()) {
