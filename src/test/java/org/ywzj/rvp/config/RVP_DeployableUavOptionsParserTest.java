@@ -39,6 +39,48 @@ class RVP_DeployableUavOptionsParserTest {
         assertEquals("parent", parsed.options().get(0).spawnYawMode());
     }
 
+    @Test
+    void nullSpeedKeepsBothStationaryRadarOptionsAndInheritedDeploymentPolicies() {
+        // 对应 BUK-M3 与 IRIS-T SLM 当前候选：显式 null 表示地面雷达车不赋予初速度。
+        for (String vehicle : new String[] {"rvp:96l6", "rvp:irist_slm_tads"}) {
+            JsonObject parent = JsonParser.parseString("""
+                    {"deployable_uav_enabled":true,
+                     "deployable_uav_default_option":"radar",
+                     "deployable_uav_allow_control_switch":true,
+                     "deployable_uav_auto_link_datalink":true,
+                     "deployable_uav_redeploy_cooldown_tick":1200,
+                     "deployable_uav_options":[{"id":"radar","role":"radar_relay",
+                       "spawn_offset":{"x":0,"y":0.5,"z":-12},
+                       "spawn_yaw_mode":"parent","initial_speed":null}]}
+                    """).getAsJsonObject();
+            parent.getAsJsonArray("deployable_uav_options").get(0).getAsJsonObject().addProperty("vehicle_id", vehicle);
+            var parsed = RVP_DeployableUavOptionsParser.parse(parent);
+            assertEquals(1, parsed.options().size(), vehicle);
+            var option = parsed.options().get(0);
+            assertEquals("radar", parsed.defaultOptionId());
+            assertEquals(vehicle, option.vehicleId().toString());
+            assertEquals(0F, option.initialSpeed());
+            assertEquals(0F, option.effectiveConfig().initialSpeed());
+            assertTrue(option.effectiveConfig().isConfigured());
+            assertEquals("radar_relay", option.role());
+            assertTrue(option.effectiveConfig().autoLinkDatalink());
+            assertEquals(1200, option.effectiveConfig().redeployCooldownTick());
+        }
+    }
+
+    @Test
+    void malformedSpeedStillRejectsCandidateInsteadOfSilentlyBecomingZero() {
+        for (String malformed : new String[] {"true", "{}", "[]", "-1", "1e999"}) {
+            JsonObject parent = new JsonObject();
+            parent.addProperty("deployable_uav_enabled", true);
+            JsonObject option = candidate("radar", "rvp:96l6");
+            option.add("initial_speed", JsonParser.parseString(malformed));
+            JsonArray options = new JsonArray(); options.add(option);
+            parent.add("deployable_uav_options", options);
+            assertTrue(RVP_DeployableUavOptionsParser.parse(parent).options().isEmpty(), malformed);
+        }
+    }
+
     private static JsonObject candidate(String id, String vehicleId) {
         JsonObject option = new JsonObject();
         option.addProperty("id", id);

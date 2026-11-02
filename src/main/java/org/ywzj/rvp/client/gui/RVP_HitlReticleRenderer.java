@@ -35,7 +35,49 @@ public final class RVP_HitlReticleRenderer {
     /** 已指定目标框的每条角边长度，参考画布像素。 */
     private static final int TARGET_CORNER = 10;
 
+    /** TV 四角框的半边长，参考录像约为画面宽度的 5%，与指令线菱形区别。 */
+    private static final int TV_HALF = 50;
+    /** TV 每个角的短边长度，中央留给实际目标。 */
+    private static final int TV_CORNER = 27;
+    /** TV 断开十字的半长与中心缺口，避免实心交叉挡住小目标。 */
+    private static final int TV_CROSS = 42, TV_GAP = 10;
+
     private RVP_HitlReticleRenderer() { }
+
+    /** 弹轴中心只保留轻微短刻线，显示离轴参照；TV 不再使用装饰大圆及长十字。 */
+    public static void drawTvReference(GuiGraphics graphics) {
+        float scale = scale(graphics);
+        if (scale <= 0) return;
+        var pose = graphics.pose();
+        pose.pushPose();
+        pose.translate(graphics.guiWidth() * 0.5, graphics.guiHeight() * 0.5, 0);
+        pose.scale(scale, scale, 1);
+        graphics.fill(-3, -1, 3, 1, 0x80FFFFFF);
+        graphics.fill(-1, -3, 1, 3, 0x80FFFFFF);
+        pose.popPose();
+    }
+
+    /** TV 独有四角框及断开短十字；位置由真实瞄准点投影传入，不改变制导/离轴角度。 */
+    public static void drawTvAim(GuiGraphics graphics, double x, double y) {
+        float scale = scale(graphics);
+        if (scale <= 0 || !Double.isFinite(x) || !Double.isFinite(y)) return;
+        var pose = graphics.pose();
+        pose.pushPose();
+        pose.translate(x, y, 0);
+        pose.scale(scale, scale, 1);
+        for (int sign = -1; sign <= 1; sign += 2) {
+            int edge = sign < 0 ? -TV_HALF : TV_HALF - STROKE;
+            graphics.fill(-TV_HALF, edge, -TV_HALF + TV_CORNER, edge + STROKE, HUD_COLOR);
+            graphics.fill(TV_HALF - TV_CORNER, edge, TV_HALF, edge + STROKE, HUD_COLOR);
+            graphics.fill(edge, -TV_HALF, edge + STROKE, -TV_HALF + TV_CORNER, HUD_COLOR);
+            graphics.fill(edge, TV_HALF - TV_CORNER, edge + STROKE, TV_HALF, HUD_COLOR);
+        }
+        graphics.fill(-TV_CROSS, -1, -TV_GAP, 1, HUD_COLOR);
+        graphics.fill(TV_GAP, -1, TV_CROSS, 1, HUD_COLOR);
+        graphics.fill(-1, -TV_CROSS, 1, -TV_GAP, HUD_COLOR);
+        graphics.fill(-1, TV_GAP, 1, TV_CROSS, HUD_COLOR);
+        pose.popPose();
+    }
 
     /** 按实际 GUI 视口缩放，抵消 GUI scale，且不随鼠标偏移改变装饰尺寸。 */
     public static float scale(GuiGraphics graphics) {

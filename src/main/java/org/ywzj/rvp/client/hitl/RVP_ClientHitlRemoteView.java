@@ -53,7 +53,8 @@ public final class RVP_ClientHitlRemoteView {
         Session session = current;
         if (!message.active()) {
             if (session != null && session.id.equals(message.session())) clear(false);
-            if (RVP_ClientHitlState.getActiveMissileId() == message.missileId()) RVP_ClientHitlState.clear();
+            // 服务端真结束必须即时释放窗口；失图显示由独立计时接管，不继续强载。
+            RVP_ClientHitlState.endFeed(message.missileId());
             return;
         }
         if (session == null || !session.id.equals(message.session())) {
@@ -189,7 +190,7 @@ public final class RVP_ClientHitlRemoteView {
         if (missile != null) {
             if (!missile.getUUID().equals(session.missileUuid)) {
                 clear(true);
-                RVP_ClientHitlState.clear();
+                RVP_ClientHitlState.endFeed(session.missileId);
                 return;
             }
             session.missingTicks = 0;

@@ -39,6 +39,8 @@ public class RVP_ClientHitlState {
     /** Shared range for HUD crosshair, designation, and virtual sky aim points. */
     public static final double DESIGNATE_AIM_RANGE = 1200.0;
 
+    /** 视频终结后的独立显示计时，不延长远程地图或导弹控制会话。 */
+    private static final RVP_HitlSignalLossPresentation signalLoss = new RVP_HitlSignalLossPresentation();
     private static int activeMissileId = -1;
     private static RVP_EnumHitlControlMode controlMode = RVP_EnumHitlControlMode.VIEW;
     private static int entityWaitTicks;
@@ -145,7 +147,8 @@ public class RVP_ClientHitlState {
         hitlLinkBlocked = blocked;
         hitlLinkSevered = severed;
         if (hitlLinkSevered) {
-            clear();
+            // 调用视频终结入口，永久断联与命中销毁共用短暂失图画面。
+            endFeed(missileEntityId);
         }
     }
 
@@ -210,6 +213,8 @@ public class RVP_ClientHitlState {
     }
 
     public static void enter(int missileEntityId, RVP_EnumHitlControlMode mode) {
+        // 新视频优先，不能被上一发导弹的失图计时遮挡。
+        signalLoss.clear();
         // 同弹重发不清额外地图，切弹则先通知服务端释放旧会话。
         org.ywzj.rvp.client.hitl.RVP_ClientHitlRemoteView.onEnter(missileEntityId);
         boolean missileChanged = activeMissileId != missileEntityId;
@@ -252,7 +257,22 @@ public class RVP_ClientHitlState {
         }
     }
 
+    /** 视频结束先完全释放远程会话，再显示独立 NO IMAGE；过期旧弹消息不能影响新弹。 */
+    public static void endFeed(int missileEntityId) {
+        if (missileEntityId < 0 || missileEntityId != activeMissileId) return;
+        Minecraft mc = Minecraft.getInstance();
+        // 调用原有退出流程，立即归还相机/热成像/区块，提示不保留导弹实体。
+        clear();
+        if (mc.level != null && mc.player != null) signalLoss.begin(mc.level, System.nanoTime());
+    }
+
+    /** GUI 查询独立失图状态；世界改变或一秒到期自动失效。 */
+    public static boolean isNoImage(Object currentWorld) {
+        return signalLoss.isVisible(currentWorld, System.nanoTime());
+    }
+
     public static void clear() {
+        signalLoss.clear();
         // 退出镜头时回收额外缓存并发送当前会话的退出心跳，未启用时为空操作。
         org.ywzj.rvp.client.hitl.RVP_ClientHitlRemoteView.clear(true);
         RVP_ClientHitlCamera.reset();
@@ -314,7 +334,7 @@ public class RVP_ClientHitlState {
         RVP_MissileEntity missile = e instanceof RVP_MissileEntity m ? m : null;
         if (missile != null) {
             if (missile.isRemoved()) {
-                clear();
+                endFeed(activeMissileId);
                 return;
             }
             if (!missileEntitySeen) {
@@ -340,7 +360,7 @@ public class RVP_ClientHitlState {
         } else if (missileEntitySeen) {
             // 远程会话短暂缺包时保留最后镜头；真实销毁仍由服务端立即结束。
             if (org.ywzj.rvp.client.hitl.RVP_ClientHitlRemoteView.waitForMissile(activeMissileId)) return;
-            clear();
+            endFeed(activeMissileId);
             return;
         } else {
             // 导弹实体同步等待窗口：保留 enter() 预激活的发射点抑制球，
@@ -364,10 +384,12 @@ public class RVP_ClientHitlState {
             if (hitlMissile instanceof RVP_MissileEntity rvpMissile
                     && rvpMissile.rvp$isHitlRightClickDetonate()) {
                 RVP_Network.CHANNEL.sendToServer(C2SHitlDetonate.of(activeMissileId));
+                // 主动引爆也会失去视频；普通退出仍然立即返回且不显示失图。
+                endFeed(activeMissileId);
             } else {
                 RVP_Network.CHANNEL.sendToServer(C2SExitHitlView.of(activeMissileId));
+                clear();
             }
-            clear();
             return;
         }
         if (missile != null) {

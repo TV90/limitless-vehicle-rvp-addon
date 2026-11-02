@@ -26,7 +26,7 @@ public final class RVP_HitlDesignateOverlay {
 
     @SubscribeEvent
     public static void onRenderGui(RenderGuiEvent.Post event) {
-        if (!RVP_ClientHitlState.isDesignateMode()) {
+        if (!RVP_ClientHitlState.isDesignateMode() || RVP_ClientHitlState.isHitlLinkBlocked()) {
             return;
         }
         Minecraft mc = Minecraft.getInstance();
@@ -55,8 +55,8 @@ public final class RVP_HitlDesignateOverlay {
         }
 
         GuiGraphics gg = event.getGuiGraphics();
-        // 调用统一菱形描绘；坐标仍来自同一个真实瞄准点投影，装饰圈不限制它的位置。
-        RVP_HitlReticleRenderer.drawAim(gg, crosshair.x, crosshair.y);
+        // 调用 TV 独有的四角框和断开短十字，继续使用真实瞄准点投影及既有小范围离轴。
+        RVP_HitlReticleRenderer.drawTvAim(gg, crosshair.x, crosshair.y);
 
         Vec3 designated = RVP_ClientSaclosState.getLaserHudPos();
         if (designated == null) {

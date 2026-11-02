@@ -49,7 +49,11 @@ public final class RVP_DeployableUavOptionsParser {
                     || vehicleId.getPath().isBlank()) return null;
             Vec3 offset = parseOffset(option.get("spawn_offset"));
             if (offset == null) return null;
-            double speed = GsonHelper.getAsDouble(option, "initial_speed", 0.0);
+            // null 与未填写都表示不赋予初速度；地面雷达车的当前 schema 允许显式留空。
+            // 保留 GsonHelper 对非数字类型的校验，不把其它格式错误悄悄当成零。
+            JsonElement speedElement = option.get("initial_speed");
+            double speed = speedElement == null || speedElement.isJsonNull()
+                    ? 0.0 : GsonHelper.getAsDouble(option, "initial_speed");
             if (!Double.isFinite(speed) || speed < 0.0 || speed > Float.MAX_VALUE) return null;
             double signalRange = GsonHelper.getAsDouble(option, "signal_range",
                     GsonHelper.getAsDouble(parent, "deployable_uav_signal_range", RVP_DeployableUavConfig.DEFAULT_SIGNAL_RANGE));
