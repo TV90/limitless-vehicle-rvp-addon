@@ -37,6 +37,8 @@ uniform vec4 LightHemisphereAxis4;
 uniform vec4 LightHemisphereAxis5;
 uniform vec4 LightHemisphereAxis6;
 uniform vec4 LightHemisphereAxis7;
+// 世界竖直方向在观察空间的方向；定向光用它定义水平 140° 窗口（竖直仍为 180°）的参考轴。
+uniform vec3 WorldUpView;
 // 独立光晕颜色和已采样强度；不读取照亮brightness或照亮寿命。
 uniform vec4 LightHaloColorIntensity0;
 uniform vec4 LightHaloColorIntensity1;
@@ -283,6 +285,29 @@ vec4 occlusionDepthOutput() {
     return vec4(result, 0.0, 0.0);
 }
 
+// 定向光的发射形状：水平 140° × 竖直 180°。
+// 纯半球会把光洒满光源两侧，干扰机玻片和激光起点像罩了半个天空；
+// 这里只收横轴：以世界竖直方向为参考，把水平方位收成 ±70°，竖直方向仍保持整圈（180°）。
+float directedMask(vec3 toSurface, vec4 dir) {
+    // 180° 轴：保留原半球的软边，背面片元直接不受光。
+    float theta = smoothstep(-0.12, 0.12, dot(toSurface, dir.xyz));
+    float upLength = length(WorldUpView);
+    if (upLength < 0.1) { return theta; }
+    vec3 up = WorldUpView / upLength;
+    // 光轴的水平投影；光轴接近竖直时横轴窗口没有意义，退回半空间。
+    vec3 forwardH = dir.xyz - up * dot(dir.xyz, up);
+    float forwardLength = length(forwardH);
+    if (forwardLength < 0.1) { return theta; }
+    forwardH /= forwardLength;
+    // 表面方向的水平投影；方向接近正上/正下时横轴无约束，竖直方向保持 180°。
+    vec3 surfaceH = toSurface - up * dot(toSurface, up);
+    float surfaceLength = length(surfaceH);
+    if (surfaceLength < 0.15) { return theta; }
+    surfaceH /= surfaceLength;
+    // cos 70° ≈ 0.342，柔边取 0.28～0.40（约 74°～66°），窗口两端各 70°。
+    return theta * smoothstep(0.28, 0.40, dot(surfaceH, forwardH));
+}
+
 void main() {
     vec4 hemisphereAxes[8] = vec4[8](LightHemisphereAxis0, LightHemisphereAxis1, LightHemisphereAxis2, LightHemisphereAxis3,
             LightHemisphereAxis4, LightHemisphereAxis5, LightHemisphereAxis6, LightHemisphereAxis7);
@@ -353,10 +378,10 @@ void main() {
         vec3 delta = light.xyz - position;
         float distanceToLight = length(delta);
         vec4 axis = hemisphereAxes[index];
-        // 半球边缘沿用平滑过渡，方向参数仍使用本地上传链，天空与环境适应保持独立。
+        // 沿用新光轴字段，保留本地水平 140°、竖直 180° 定向光窗口。
         float hemisphere = 1.0;
         if (axis.w > 0.5 && distanceToLight > 0.0001) {
-            hemisphere = smoothstep(-0.12, 0.12, dot(-delta / distanceToLight, axis.xyz));
+            hemisphere = directedMask(-delta / distanceToLight, axis);
         }
         if (hasSurface && distanceToLight < light.w && shape.x > 0.0) {
             float radial = distanceToLight / light.w;

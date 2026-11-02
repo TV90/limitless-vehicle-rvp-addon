@@ -1,7 +1,10 @@
 package org.ywzj.rvp.uav;
 
 import net.minecraft.util.Mth;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
+import org.ywzj.rvp.config.RVP_DeployableUavConfig;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -9,27 +12,208 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * 固定翼布尔杆量闭环制导与可持续盘旋解算的单元测试。
- * 符号约定：航向误差正值 = 需向左转（MC yaw 增方向）；zRot 负值 = 左坡度。
+ * 符号约定：航向误差正值 = 期望 MC yaw 增大；zRot 负值 = 左坡度。
  */
 class RVP_UavLoiterGuidanceTest {
 
     @Test
-    void largeLeftHeadingErrorPressesLeftYawAndLeftRoll() {
-        // 误差 +60°（需大幅左转）：偏航杆 leftYaw 置位；目标坡度 -40°，当前平飞 0° → rollLeft
+    void headingToVectorMatchesVanillaYawInAllQuadrants() {
+        double[][] vectors = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}, {1, 1}, {-1, 1}, {1, -1}, {-1, -1}};
+        for (double[] vector : vectors) {
+            double yaw = Math.toRadians(RVP_UavLoiterGuidance.yawTo(vector[0], vector[1]));
+            double lookX = -Math.sin(yaw);
+            double lookZ = Math.cos(yaw);
+            double dot = lookX * vector[0] + lookZ * vector[1];
+            assertTrue(dot > 0, "目标航向必须朝向向量 " + vector[0] + "," + vector[1]);
+        }
+        assertEquals(-90.0, RVP_UavLoiterGuidance.yawTo(1, 0), 0.001);
+        assertEquals(90.0, RVP_UavLoiterGuidance.yawTo(-1, 0), 0.001);
+        assertEquals(0.0, RVP_UavLoiterGuidance.yawTo(0, 1), 0.001);
+        assertEquals(180.0, Math.abs(Mth.wrapDegrees((float) RVP_UavLoiterGuidance.yawTo(0, -1))), 0.001);
+    }
+
+    @Test
+    void axisCompensationProducesContinuousTargetOnEveryTick() {
+        for (float step : new float[]{0.2F, 0.5F}) {
+            for (float signedStep : new float[]{step, -step}) {
+                for (float target : new float[]{-0.7F, 0.0F, 0.35F}) {
+                    RVP_UavLoiterGuidance.CompensatedInput input =
+                            RVP_UavLoiterGuidance.compensateInput(target, signedStep);
+                    assertEquals(input.target(), input.setterValue() + signedStep, 1.0E-6F);
+                }
+            }
+        }
+    }
+
+    @Test
+    void fixedWingMinimumSpeedAccountsForScaleAirAndAngleOfAttack() {
+        double lowAltitude = RVP_UavLoiterGuidance.estimateFixedWingMinSpeedMps(
+                4074, 16.296, 24.444, 3.0, 1.0, 5.0, 25.0);
+        double highAltitude = RVP_UavLoiterGuidance.estimateFixedWingMinSpeedMps(
+                4074, 16.296, 24.444, 3.0, 0.7, 5.0, 25.0);
+        double invalidAoA = RVP_UavLoiterGuidance.estimateFixedWingMinSpeedMps(
+                4074, 16.296, 24.444, 3.0, 0.7, -10.0, 25.0);
+        assertTrue(highAltitude > lowAltitude);
+        assertTrue(invalidAoA > highAltitude);
+    }
+
+    @Test
+    void loiterThrottleIsMutuallyExclusiveAndCollectivelyProtectsHighAltitudeOverspeed() {
+        double targetSpeed = 32.0;
+        RVP_UavLoiterGuidance.GuidanceOutput overspeedHigh = RVP_UavLoiterGuidance.computeLoiter(
+                100, 120, 0, 0, 0, 64, 0, 100, 99, 0,
+                false, 0, 0, targetSpeed * 1.2, 35, targetSpeed);
+        assertFalse(overspeedHigh.forward());
+        assertTrue(overspeedHigh.backward());
+
+        RVP_UavLoiterGuidance.GuidanceOutput underspeedLow = RVP_UavLoiterGuidance.computeLoiter(
+                100, 80, 0, 0, 0, 64, 0, 100, 99, -2,
+                false, 0, 0, targetSpeed * 0.75, 35, targetSpeed);
+        assertTrue(underspeedLow.forward());
+        assertFalse(underspeedLow.backward());
+
+        RVP_UavLoiterGuidance.GuidanceOutput highButFast = RVP_UavLoiterGuidance.computeLoiter(
+                100, 130, 0, 0, 0, 64, 0, 100, 99, 0,
+                false, 0, 0, targetSpeed * 1.15, 35, targetSpeed);
+        assertFalse(highButFast.forward());
+        // 实际36.8m/s，超过目标32m/s的1.08倍；高出目标31格只禁止爬升油门，不抑制超速收油。
+        assertTrue(highButFast.backward());
+    }
+
+    @Test
+    void approachOnlyCapturesWithRadialHeadingAltitudeAndSpeedConditions() {
+        RVP_UavLoiterGuidance.GuidanceOutput captured = RVP_UavLoiterGuidance.computeApproach(
+                100, 99, 0, 0, 0, 64, 0, 100, 99, 0,
+                1, false, 0, 0, 30, 30);
+        assertEquals(RVP_UavLoiterManager.LoiterPhase.LOITER, captured.nextPhase());
+
+        RVP_UavLoiterGuidance.GuidanceOutput wrongHeading = RVP_UavLoiterGuidance.computeApproach(
+                100, 99, 0, 90, 0, 64, 0, 100, 99, 0,
+                1, false, 0, 0, 30, 30);
+        assertEquals(RVP_UavLoiterManager.LoiterPhase.APPROACH, wrongHeading.nextPhase());
+    }
+
+    @Test
+    void energyRecoveryTakesPriorityOverRadialErrorAndUsesAltitudeHysteresis() {
+        double speed = 32.0;
+        RVP_UavLoiterGuidance.GuidanceOutput outsideAndSlow = RVP_UavLoiterGuidance.computeLoiter(
+                220, 80, 0, 0, 0, 64, 0, 100, 99, -2,
+                false, 0, 50, speed * 0.7, 35, speed);
+        assertEquals(RVP_UavLoiterManager.LoiterPhase.RECOVERY, outsideAndSlow.nextPhase());
+        assertTrue(outsideAndSlow.forward());
+        assertFalse(outsideAndSlow.backward());
+
+        RVP_UavLoiterGuidance.GuidanceOutput outsideAndDropping = RVP_UavLoiterGuidance.computeLoiter(
+                220, 70, 0, 0, 0, 64, 0, 100, 99, -2,
+                false, 0, 20, speed, 35, speed);
+        assertEquals(RVP_UavLoiterManager.LoiterPhase.RECOVERY, outsideAndDropping.nextPhase());
+        RVP_UavLoiterGuidance.GuidanceOutput radialMustNotCancelRecovery = RVP_UavLoiterGuidance.computeRecovery(
+                220, 70, 0, 0, 0, 64, 0, 100, 99, -2,
+                1, 0, 20, speed, 35, speed);
+        assertEquals(RVP_UavLoiterManager.LoiterPhase.RECOVERY, radialMustNotCancelRecovery.nextPhase());
+
+        RVP_UavLoiterGuidance.GuidanceOutput stillTooHigh = RVP_UavLoiterGuidance.computeRecovery(
+                220, 108, 0, 0, 0, 64, 0, 100, 99, 0,
+                1, 0, 0, speed, 35, speed);
+        assertEquals(RVP_UavLoiterManager.LoiterPhase.RECOVERY, stillTooHigh.nextPhase());
+        assertFalse(stillTooHigh.forward());
+
+        RVP_UavLoiterGuidance.GuidanceOutput stillTooLow = RVP_UavLoiterGuidance.computeRecovery(
+                220, 50, 0, 0, 0, 64, 0, 100, 99, 0,
+                1, 0, 0, speed * 1.2, 35, speed);
+        assertEquals(RVP_UavLoiterManager.LoiterPhase.RECOVERY, stillTooLow.nextPhase());
+        assertFalse(stillTooLow.forward());
+        assertTrue(stillTooLow.backward());
+
+        RVP_UavLoiterGuidance.GuidanceOutput recovered = RVP_UavLoiterGuidance.computeRecovery(
+                220, 99, 0, 0, 0, 64, 0, 100, 99, 0,
+                1, 0, 0, speed, 35, speed);
+        assertEquals(RVP_UavLoiterManager.LoiterPhase.APPROACH, recovered.nextPhase());
+    }
+
+    @Test
+    void existingMarkedAndFollowPlansSurviveToggleSwitchbackAndNbtReload() {
+        java.util.UUID uav = java.util.UUID.randomUUID();
+        java.util.UUID parent = java.util.UUID.randomUUID();
+        try {
+            RVP_UavLoiterManager.enableMarkedCenter(uav, new Vec3(80, 120, -40), 100, 135);
+            RVP_UavLoiterManager.disable(uav);
+            // M 的 autoLoiterOnSwitchBack 走 enableFollowParent 时也必须保留原标点。
+            RVP_UavLoiterManager.enableFollowParent(uav, parent, 180, 30, 1000, 64, -800);
+            RVP_UavLoiterManager.LoiterState marked = RVP_UavLoiterManager.get(uav);
+            assertTrue(marked.active());
+            assertTrue(marked.markedCenter());
+            assertEquals(null, marked.followParentUuid());
+            assertEquals(80.0, marked.centerX(), 0.001);
+            assertEquals(120.0, marked.centerY(), 0.001);
+            assertEquals(-40.0, marked.centerZ(), 0.001);
+
+            net.minecraft.nbt.CompoundTag saved = RVP_UavLoiterManager.serialize(marked);
+            RVP_UavLoiterManager.clearRuntime();
+            RVP_UavLoiterManager.restore(uav, saved);
+            RVP_UavLoiterManager.LoiterState restored = RVP_UavLoiterManager.get(uav);
+            assertTrue(restored.active());
+            assertTrue(restored.markedCenter());
+            assertEquals(100.0, restored.requestedRadius(), 0.001);
+            assertEquals(135.0, restored.altitude(), 0.001);
+
+            // 显式地图重标才把标记圆心改为新点并进入重新接入阶段。
+            RVP_UavLoiterManager.updateCenter(uav, new Vec3(300, 150, 220), 150);
+            RVP_UavLoiterManager.LoiterState recaptured = RVP_UavLoiterManager.get(uav);
+            assertEquals(RVP_UavLoiterManager.LoiterPhase.APPROACH, recaptured.phase());
+            assertEquals(300.0, recaptured.centerX(), 0.001);
+
+            RVP_UavLoiterManager.clearRuntime();
+            RVP_UavLoiterManager.enableFollowParent(uav, parent, 120, 35, 10, 64, 20);
+            RVP_UavLoiterManager.pauseForSignal(uav);
+            net.minecraft.nbt.CompoundTag followSaved = RVP_UavLoiterManager.serialize(
+                    RVP_UavLoiterManager.get(uav));
+            RVP_UavLoiterManager.clearRuntime();
+            RVP_UavLoiterManager.restore(uav, followSaved);
+            RVP_UavLoiterManager.LoiterState followRestored = RVP_UavLoiterManager.get(uav);
+            assertTrue(followRestored.signalPaused());
+            assertEquals(parent, followRestored.followParentUuid());
+            assertEquals(64.0, followRestored.centerY(), 0.001);
+            assertEquals(99.0, followRestored.altitude(), 0.001);
+            assertTrue(RVP_UavLoiterManager.resumeExistingPlan(uav));
+            assertEquals(parent, RVP_UavLoiterManager.get(uav).followParentUuid());
+        } finally {
+            RVP_UavLoiterManager.clearRuntime();
+        }
+    }
+
+    @Test
+    void deployableControlSeatPolicyPreservesDefaultAndExplicitAllowedSeats() {
+        ResourceLocation vehicleId = new ResourceLocation("rvp", "carrier");
+        RVP_DeployableUavConfig defaultSeats = new RVP_DeployableUavConfig(true, vehicleId, "uav",
+                Vec3.ZERO, "parent", true, true, true, 0, true, 0, 2048, java.util.List.of());
+        assertTrue(RVP_DeployableUavService.isDeployableControlSeatAllowed(defaultSeats, 0));
+        assertFalse(RVP_DeployableUavService.isDeployableControlSeatAllowed(defaultSeats, 1));
+        assertFalse(RVP_DeployableUavService.isDeployableControlSeatAllowed(defaultSeats, -1));
+
+        RVP_DeployableUavConfig explicitSeat = new RVP_DeployableUavConfig(true, vehicleId, "uav",
+                Vec3.ZERO, "parent", true, true, true, 0, true, 0, 2048, java.util.List.of(2));
+        assertTrue(RVP_DeployableUavService.isDeployableControlSeatAllowed(explicitSeat, 2));
+        assertFalse(RVP_DeployableUavService.isDeployableControlSeatAllowed(explicitSeat, 0));
+    }
+
+    @Test
+    void positiveYawErrorUsesRightYawAndLeftRoll() {
+        // FixedWingVehicle 中 rightYaw 令 yaw 增大；目标坡度 -40° 时滚转仍向左。
         RVP_UavLoiterGuidance.FixedWingControls c = RVP_UavLoiterGuidance.computeFixedWingControls(
                 60f, -40f, 0f, 0.0, 0.0, 0);
-        assertTrue(c.leftYaw());
-        assertFalse(c.rightYaw());
+        assertFalse(c.leftYaw());
+        assertTrue(c.rightYaw());
         assertTrue(c.rollLeft());
         assertFalse(c.rollRight());
     }
 
     @Test
-    void largeRightHeadingErrorMirrorsControls() {
+    void negativeYawErrorUsesLeftYawAndRightRoll() {
         RVP_UavLoiterGuidance.FixedWingControls c = RVP_UavLoiterGuidance.computeFixedWingControls(
                 -60f, 40f, 0f, 0.0, 0.0, 0);
-        assertTrue(c.rightYaw());
-        assertFalse(c.leftYaw());
+        assertFalse(c.rightYaw());
+        assertTrue(c.leftYaw());
         assertTrue(c.rollRight());
         assertFalse(c.rollLeft());
     }
@@ -39,7 +223,8 @@ class RVP_UavLoiterGuidanceTest {
         // 目标 -24°，当前 -25° → 坡度误差 1° < 死区 3° → 滚转杆释放（航向 40° 偏航杆仍置位）
         RVP_UavLoiterGuidance.FixedWingControls c = RVP_UavLoiterGuidance.computeFixedWingControls(
                 40f, -24f, -25f, 0.0, 0.0, 0);
-        assertTrue(c.leftYaw());
+        assertFalse(c.leftYaw());
+        assertTrue(c.rightYaw());
         assertFalse(c.rollLeft());
         assertFalse(c.rollRight());
     }

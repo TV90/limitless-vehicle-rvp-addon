@@ -183,6 +183,8 @@ public final class RVP_ProjectileMotion {
         }
 
         Vec3 velocity = projectile.getDeltaMovement();
+        // 记录本 Tick 起始竖直速度，供下一 Tick 的顶端点火判断"由爬升转为到达顶点"。
+        double startVerticalSpeed = velocity.y;
         int ignition = resolveMotorIgnitionTick(projectile, data);
 
         if (projectile.getFlightTickCount() >= ignition) {
@@ -265,6 +267,8 @@ public final class RVP_ProjectileMotion {
                 applyMissileCoastFacing(projectile, velocity, (float) MISSILE_COAST_LERP);
             }
         }
+        // 在本 Tick 末尾落盘起始竖直速度：下一 Tick 读到的才是上一 Tick 的 vy，可与当前 vy 比较出顶点穿越。
+        projectile.updatePreviousVerticalSpeed(startVerticalSpeed);
     }
 
     /**
@@ -296,6 +300,27 @@ public final class RVP_ProjectileMotion {
         if (speedEnabled) {
             speedOk = velocity.length() <= speedThreshold;
         }
+
+        // 极速比例触发：阈值基准取"当前高度下的实际极速"，与 clampSpeed 的钳制口径完全一致，
+        // 因此低空极速高、高空极速低时，触发点都落在同一个相对速度区间。
+        float ratioThreshold = data.getProjectileData().getResolvedSecondPulseTriggerSpeedRatio();
+        float ratioMaxSpeed = ratioThreshold > 0f ? data.getProjectileData().getMaxSpeed() : 0f;
+        float ratioBaseSpeed = 0f;
+        if (ratioMaxSpeed > 0f) {
+            ratioBaseSpeed = (float) (ratioMaxSpeed
+                    * data.getProjectileData().resolveAltitudeMaxSpeedFactor(projectile.getY()));
+        }
+        boolean ratioEnabled = ratioThreshold > 0f && ratioBaseSpeed > 0f;
+        boolean ratioOk = ratioEnabled && velocity.length() <= ratioThreshold * ratioBaseSpeed;
+
+        // 顶端点火：上一 Tick 仍在爬升（vy > 0），本 Tick 竖直速度已降到容差以内，即视为到达高抛弹道顶点。
+        boolean apexEnabled = data.getProjectileData().isSecondPulseTriggerApex();
+        double apexTolerance = data.getProjectileData().getResolvedSecondPulseTriggerApexTolerance();
+        double previousVerticalSpeed = projectile.getPreviousVerticalSpeed();
+        boolean apexOk = apexEnabled
+                && projectile.hasPreviousVerticalSpeed()
+                && previousVerticalSpeed > 0.0D
+                && velocity.y <= apexTolerance;
 
         boolean distOk = false;
         double resolvedDistance = -1D;
@@ -337,6 +362,14 @@ public final class RVP_ProjectileMotion {
                 speedEnabled,
                 speedThreshold,
                 speedOk,
+                ratioEnabled,
+                ratioThreshold,
+                ratioBaseSpeed,
+                ratioOk,
+                apexEnabled,
+                (float) apexTolerance,
+                previousVerticalSpeed,
+                apexOk,
                 distEnabled,
                 distThreshold,
                 distOk,
@@ -347,7 +380,8 @@ public final class RVP_ProjectileMotion {
                 distanceSource
         );
 
-        return speedOk || distOk;
+        // 四个点火条件取并集：任一满足即点火；第一段动力段烧完的前置校验在此方法开头。
+        return speedOk || distOk || ratioOk || apexOk;
     }
 
     /** 发射完成：初速 + 可选载机速度已写入 {@code deltaMovement}。 */

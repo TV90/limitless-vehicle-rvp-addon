@@ -24,7 +24,7 @@ public final class RVP_LightRuntimeTuning {
     /** 参数元数据；不适用的分组以 NaN 标记，命令不会注册对应节点。 */
     public enum Parameter {
         /** 总开关/光晕/发动机照亮与外晕开关覆盖，未设置时沿用 TOML；不开放真实方块光。 */
-        enabled("开关：0关闭、1开启；engine只控制发动机广域橙晕（表面照亮见 TOML engineLight），保留喷焰；未覆盖时沿用客户端配置（默认开启）", 0, 1,
+        enabled("开关：0关闭、1开启；engine只控制发动机广域橙晕（表面照亮见 TOML engineLight），保留喷焰；未覆盖时沿用客户端配置", 0, 1,
                 1, Float.NaN, Float.NaN, 1, 1),
         /** 环境适应总开关；只调照亮、外围光晕和天空闪光，保留发光核心与贴身光团。 */
         ambientEnabled("环境明暗适应；默认1开启、0恢复原效果，只影响照亮、烟雾受光、外围光晕和天空，核心、贴身光团与喷焰保持自身亮度", 0, 1,

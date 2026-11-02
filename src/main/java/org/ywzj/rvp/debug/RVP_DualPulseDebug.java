@@ -71,6 +71,14 @@ public final class RVP_DualPulseDebug {
                                       boolean speedEnabled,
                                       float speedThreshold,
                                       boolean speedOk,
+                                      boolean ratioEnabled,
+                                      float ratioThreshold,
+                                      float ratioBaseSpeed,
+                                      boolean ratioOk,
+                                      boolean apexEnabled,
+                                      float apexTolerance,
+                                      double previousVerticalSpeed,
+                                      boolean apexOk,
                                       boolean distEnabled,
                                       float distThreshold,
                                       boolean distOk,
@@ -90,13 +98,19 @@ public final class RVP_DualPulseDebug {
 
         boolean shouldLog = projectile.tickCount % 5 == 0
                 || speedOk
+                || ratioOk
+                || apexOk
                 || distOk
                 || secondPulseStartTick >= 0
                 || trace.lastLoggedTick == Integer.MIN_VALUE
                 || trace.lastSpeedOk != speedOk
+                || trace.lastRatioOk != ratioOk
+                || trace.lastApexOk != apexOk
                 || trace.lastDistOk != distOk;
         if (!shouldLog) {
             trace.lastSpeedOk = speedOk;
+            trace.lastRatioOk = ratioOk;
+            trace.lastApexOk = apexOk;
             trace.lastDistOk = distOk;
             return;
         }
@@ -112,6 +126,14 @@ public final class RVP_DualPulseDebug {
                 + " speedThreshold=" + trimFloat(speedThreshold)
                 + " speedEnabled=" + speedEnabled
                 + " speedOk=" + speedOk
+                + " ratioThreshold=" + trimFloat(ratioThreshold)
+                + " ratioBaseSpeed=" + trimFloat(ratioBaseSpeed)
+                + " ratioEnabled=" + ratioEnabled
+                + " ratioOk=" + ratioOk
+                + " apexTolerance=" + trimFloat(apexTolerance)
+                + " prevVy=" + trimDouble(previousVerticalSpeed)
+                + " apexEnabled=" + apexEnabled
+                + " apexOk=" + apexOk
                 + " distThreshold=" + trimFloat(distThreshold)
                 + " distEnabled=" + distEnabled
                 + " distOk=" + distOk
@@ -125,6 +147,8 @@ public final class RVP_DualPulseDebug {
         appendFileLog(line);
         trace.lastLoggedTick = projectile.tickCount;
         trace.lastSpeedOk = speedOk;
+        trace.lastRatioOk = ratioOk;
+        trace.lastApexOk = apexOk;
         trace.lastDistOk = distOk;
     }
 
@@ -217,6 +241,8 @@ public final class RVP_DualPulseDebug {
         private int secondPulseStartTick = -1;
         private int lastLoggedTick = Integer.MIN_VALUE;
         private boolean lastSpeedOk;
+        private boolean lastRatioOk;
+        private boolean lastApexOk;
         private boolean lastDistOk;
 
         private MissileTrace(int missileId) {

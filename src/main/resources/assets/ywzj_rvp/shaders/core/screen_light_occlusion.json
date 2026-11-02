@@ -34,6 +34,7 @@
     {"name": "LightAmbient5", "type": "float", "count": 1, "values": [-1]},
     {"name": "LightAmbient6", "type": "float", "count": 1, "values": [-1]},
     {"name": "LightAmbient7", "type": "float", "count": 1, "values": [-1]},
+    { "name": "WorldUpView", "type": "float", "count": 3, "values": [0, 1, 0] },
     { "name": "LightHemisphereAxis0", "type": "float", "count": 4, "values": [0, 0, 0, 0] },
     { "name": "LightHemisphereAxis1", "type": "float", "count": 4, "values": [0, 0, 0, 0] },
     { "name": "LightHemisphereAxis2", "type": "float", "count": 4, "values": [0, 0, 0, 0] },

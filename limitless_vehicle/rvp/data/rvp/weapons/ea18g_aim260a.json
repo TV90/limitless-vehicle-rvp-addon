@@ -24,8 +24,11 @@
     "thrust": 8.22393,
     "motor_burn_time": 100,
     "second_pulse": true,
-    "second_pulse_trigger_speed": 4.0,
+    "second_pulse_trigger_speed": 0,
     "second_pulse_trigger_distance": 200,
+    "second_pulse_trigger_speed_ratio": 0.6,
+    "second_pulse_trigger_apex": true,
+    "second_pulse_trigger_apex_tolerance": 0.05,
     "second_pulse_thrust": 4,
     "second_pulse_burn_time": 100,
     "drag_coefficient": 0.057024,
@@ -70,8 +73,8 @@
     "predict_target_pos": true,
     "active_radar_activation_range": 384,
     "guidance_tick_range": "[[20,inf]]",
-    "loft_height_above_target": 160,
-    "loft_end_distance": 700,
+    "loft_height_above_target": 320,
+    "loft_end_distance": 200,
     "loft_blend_distance": 700
   },
   "effects_data": {

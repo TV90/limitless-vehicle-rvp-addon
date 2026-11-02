@@ -6,6 +6,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraftforge.event.entity.EntityLeaveLevelEvent;
+import net.minecraftforge.event.server.ServerStoppedEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
@@ -23,8 +24,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * [RVP] 直升机三态飞行模式（2026-10-05，用户需求）：常规 → 自动总距 → 悬停 → 常规，
  * **由本体 Z 键（悬停切换）直接驱动，零 Mixin、零新增包**。
  *
- * <p>原理：本体 Z 键每按一次翻转 public {@code hoverMode}（唯一入口，
- * {@code onClientVehicleAction} 直翻，不同步、客户端不可见）。本处理器每 tick 检测
+ * <p>原理：本体 Z 键每按一次翻转 public {@code hoverMode}（
+ * {@code onClientVehicleAction} 直翻，不同步、客户端不可见）。程序切换经
+ * {@link #setHoverMode(RotaryWingVehicle, boolean)} 同步模式；本处理器每 tick 检测
  * {@code hoverMode} 变化并按三态校正：</p>
  * <ul>
  *   <li>常规(F,F) 按 Z → 本体翻为 T → 检测到 F→T 且此前非自动总距 → <b>校正回 F 并开启
@@ -44,12 +46,16 @@ import java.util.concurrent.ConcurrentHashMap;
 @Mod.EventBusSubscriber(modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class RVP_AutoCollectiveHandler {
 
-    /** 自动总距模式侧表：载具 UUID → 是否启用。仅服务端读写；车辆卸载即清理。 */
-    private static final Map<UUID, Boolean> AUTO_COLLECTIVE = new ConcurrentHashMap<>();
-    /** hoverMode 上一 tick 快照：检测本体 Z 键翻转（变化 = 用户按键，推进三态）。 */
-    private static final Map<UUID, Boolean> LAST_HOVER = new ConcurrentHashMap<>();
+    /** 已接受的飞行模式；同时包含自动总距开关和 hover 快照，避免两张表不同步。 */
+    private static final Map<UUID, RVP_RotaryFlightMode> FLIGHT_MODES = new ConcurrentHashMap<>();
 
     private RVP_AutoCollectiveHandler() {}
+
+    /** 程序设置悬停时同步三态快照，避免被按键检测误转换成自动总距；不改变玩家的 Z 键循环。 */
+    public static void setHoverMode(RotaryWingVehicle vehicle, boolean enabled) {
+        vehicle.hoverMode = enabled;
+        FLIGHT_MODES.put(vehicle.getUUID(), enabled ? RVP_RotaryFlightMode.HOVER : RVP_RotaryFlightMode.NORMAL);
+    }
 
     /**
      * 每 tick 执行：垂直速度阻尼式自动总距。镜像本体 hoverMode 阻尼段
@@ -73,32 +79,22 @@ public final class RVP_AutoCollectiveHandler {
             return;
         }
         UUID uuid = vehicle.getUUID();
-        boolean hover = vehicle.hoverMode;
-        Boolean lastHover = LAST_HOVER.put(uuid, hover);
-        if (lastHover != null && hover != lastHover) {
-            if (!lastHover && hover) {
-                // F→T：此前常规（auto=false）→ 校正为自动总距态；此前自动总距 → 维持悬停
-                boolean wasAuto = AUTO_COLLECTIVE.getOrDefault(uuid, false);
-                if (!wasAuto) {
-                    vehicle.hoverMode = false;
-                    // 快照必须对齐校正后的值：否则下 tick 读到校正后的 F 与快照 T 比对，
-                    // 误判为"又变化了一次（T→F）"走退出分支——表现为进自动总距瞬间回常规
-                    LAST_HOVER.put(uuid, false);
-                    AUTO_COLLECTIVE.put(uuid, true);
-                    notifyMode(vehicle, "rvp.flight_mode.auto_collective");
-                } else {
-                    AUTO_COLLECTIVE.put(uuid, false);
-                    notifyMode(vehicle, "rvp.flight_mode.hover");
-                }
-            } else {
-                // T→F：悬停退出 → 常规态
-                AUTO_COLLECTIVE.put(uuid, false);
-                notifyMode(vehicle, "rvp.flight_mode.normal");
-            }
+        RVP_RotaryFlightMode mode = FLIGHT_MODES.computeIfAbsent(uuid,
+                ignored -> vehicle.hoverMode ? RVP_RotaryFlightMode.HOVER : RVP_RotaryFlightMode.NORMAL);
+        // 调用同一三态转换规则；setHoverMode 已登记的程序切换在这里保持不变。
+        RVP_RotaryFlightMode next = mode.observeHover(vehicle.hoverMode);
+        if (next != mode) {
+            FLIGHT_MODES.put(uuid, next);
+            vehicle.hoverMode = next == RVP_RotaryFlightMode.HOVER;
+            // 调用现有提示入口，保留玩家 Z 键循环的三种反馈。
+            notifyMode(vehicle, switch (next) {
+                case NORMAL -> "rvp.flight_mode.normal";
+                case AUTO_COLLECTIVE -> "rvp.flight_mode.auto_collective";
+                case HOVER -> "rvp.flight_mode.hover";
+            });
             return; // 切换 tick 不执行阻尼，下 tick 按新态工作
         }
-        if (!AUTO_COLLECTIVE.getOrDefault(uuid, false)
-                || vehicle.hoverMode) {
+        if (mode != RVP_RotaryFlightMode.AUTO_COLLECTIVE) {
             // 未启用；或悬停态（本体自带更敏感的阻尼，重复介入无意义）
             return;
         }
@@ -112,11 +108,9 @@ public final class RVP_AutoCollectiveHandler {
         if (config == null || !config.enabled()) {
             // 未配置 rvp_auto_collective 参数块 = 该载具不支持自动总距（开关默认关闭语义）。
             // 兜底（2026-10-12 玩家崩服后加）：非 RVP 直升机没有 rvp 扩展配置，若此前被
-            // Z 键切进了自动总距态（AUTO_COLLECTIVE=true），此处静默回常规态，避免
+            // Z 键切进了自动总距态，此处静默回常规态，避免
             // 玩家停在"切了但永远无效果"的哑态（崩溃本体已由 Manager 判空修复）。
-            if (AUTO_COLLECTIVE.getOrDefault(uuid, false)) {
-                AUTO_COLLECTIVE.put(uuid, false);
-            }
+            FLIGHT_MODES.put(uuid, RVP_RotaryFlightMode.NORMAL);
             return;
         }
         // 与本体 hoverMode 阻尼同源的垂直速度基准（推力结算后、物理积分前）
@@ -135,9 +129,15 @@ public final class RVP_AutoCollectiveHandler {
     @SubscribeEvent
     public static void onEntityLeaveLevel(EntityLeaveLevelEvent event) {
         Entity entity = event.getEntity();
-        if (entity instanceof AbstractVehicle) {
-            AUTO_COLLECTIVE.remove(entity.getUUID());
+        if (entity instanceof AbstractVehicle && !entity.level().isClientSide()) {
+            FLIGHT_MODES.remove(entity.getUUID());
         }
+    }
+
+    /** 单人游戏关服后也清空状态，避免下一次载入沿用旧的按键快照。 */
+    @SubscribeEvent
+    public static void onServerStopped(ServerStoppedEvent event) {
+        FLIGHT_MODES.clear();
     }
 
     /** 向载具驾驶员发三态切换提示（actionbar，translatable 双端安全）。 */

@@ -1,0 +1,54 @@
+{
+  "type": "rvp:machinegun",
+  "name": "30mm Automatic Grenade Launcher",
+  "name_CN": "30毫米自动榴弹发射器",
+  "recoil": 0.3,
+  "shoot_interval": 500,
+  "max_capacity": 4,
+  "reload": {
+    "time": 160,
+    "ammo": "ywzj_vehicle:ammo_grenade"
+  },
+  "fire_data": {
+    "spread": 0.5,
+    "fire_mode": "FULL_AUTO"
+  },
+  "projectile_data": {
+    "velocity": 2.4,
+    "gravity": -0.045,
+    "drag": 0.01,
+    "rotate_to_motion": true
+  },
+  "effects_data": {
+    "trajectory_particle": "none",
+    "impact_particle": "minecraft:block",
+    "explosion_particle": "minecraft:explosion",
+    "caliber": 30,
+    "tracer_caliber": 30,
+    "tracer_r": 1.0,
+    "tracer_g": 0.4,
+    "tracer_b": 0.1
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": true,
+      "damage": 20,
+      "radius": 6,
+      "destroy_block": true,
+      "explosion_damage_factor": {
+        "player": 0.5,
+        "living": 0.5,
+        "vehicle_default": 1.0,
+        "vehicles": {
+          "ywzj_vehicle:tracked_vehicle": 0.6,
+          "ywzj_vehicle:wheeled_vehicle": 1.2,
+          "ywzj_vehicle:vessel_vehicle": 1.5
+        }
+      }
+    }
+  },
+  "collision_data": {
+    "direct_damage": 120
+  },
+  "fuse_data": {}
+}

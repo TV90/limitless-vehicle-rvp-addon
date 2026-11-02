@@ -90,7 +90,7 @@
     "explosion_data": {
       "explode": true,
       "damage": 2400,
-      "radius": 48,
+      "radius": 32,
       "proximity_fuze": false,
       "destroy_block": true,
       "destroy_radius": 33,

@@ -201,6 +201,9 @@ JSON 文件本身不能写注释，字段解释以本文档和 `org.ywzj.rvp.wea
 | `second_pulse` | 是否启用双脉冲推进（第二段推力）。仅 IR/ARH/SARH/ARM/**GPS** 制导导弹生效（2026-09-15 起 GPS 加入——弹道/准弹道导弹两级推进，如 9M723 一级助推+二级接力；未配置本字段的 GPS 导弹行为不变）。触发评估仅在一级燃尽（`motor_burn_time` 耗尽）后开始。 |
 | `second_pulse_trigger_speed` | 第二段触发：导弹速度 ≤ 阈值时满足（0 表示不按速度触发）。 |
 | `second_pulse_trigger_distance` | 第二段触发：距离锁定目标 ≤ 阈值时满足（0 表示不按距离触发；仅在存在锁定目标实体或锁定坐标时可判定）。 |
+| `second_pulse_trigger_speed_ratio` | 第二段触发：当前速度 ≤ `本值 × 当前生效极速` 时满足（0 表示关闭）。当前生效极速 = `max_speed × altitude_max_speed_factor(当前高度)`，与速度钳制同一口径，因此低空极速高、高空极速低时都在同一相对速度触发；`max_speed` 未配置（不限速）时本条件不生效。 |
+| `second_pulse_trigger_apex` | 第二段触发：高抛弹道顶端点火开关，默认 `false`。按竖直速度过零判定——上一 Tick 仍在爬升（vy > 0）、本 Tick 竖直速度已降到容差以内即满足。仅在第二段触发窗口内有效，即一级燃尽后弹体仍在爬升；若顶点早于燃尽，本条件不会点火。 |
+| `second_pulse_trigger_apex_tolerance` | 顶端点火容差，单位格/Tick（竖直速度），默认 `0.05`；`0` 表示严格过零。高抛弹道常不能精确达到理论顶点，正容差让点火略提前。 |
 | `second_pulse_thrust` | 第二段推力（与 `mass` 决定加速度）。 |
 | `second_pulse_burn_time` | 第二段燃烧时间（tick）。 |
 | `self_destruct_distance` | 自毁距离（米，2026-09-29）：沿弹道累计飞行路程达到该值即自毁。未配置按武器类别取默认——机枪/机炮（`MACHINEGUN`）默认 1024，其它类别 0（不自毁）；显式 `0` = 关闭（含显式关闭机枪默认）。 |
@@ -1715,6 +1718,7 @@ SACLOS 反坦克导弹（半自动修正）：
 | `nctr_name` | NCTR（敌我识别）显示名称字符串。 | `?` |
 | `show_skeleton` | 观瞄时是否显示骨骼俯视图。 | `true` |
 | `hide_passenger` | 是否隐藏乘客渲染（由 `RVP_VehicleHitboxFactorManager` 读取）。 | `false` |
+| `rvp_hide_in_creative` | 是否从创造模式物品栏隐藏该载具的生成物（载具页与搜索页一并生效）。用于仅由母车部署的辅助载具（雷达车 / 随车无人机）：载具实体、数据与母车放飞链路完全不变。由 `RVP_VehicleSupplementListener` 解析、`RVP_CreativeTabEvents` 在客户端移除。 | `false` |
 
 ### 2.2 武器槽位过热（写在武器条目内）
 
@@ -1856,21 +1860,21 @@ ERA 与全部骨骼模块统一写在 `bone_modules.<骨>` 条目（详见各模
 
 ### 2.6 可部署 UAV（`deployable_uav_*`）
 
-把指定载具作为“可部署 UAV”从本车释放（需要 `deployable_uav_vehicle_id` 指向实际载具 id）。`deployable_uav_enabled: true` 且 `deployable_uav_vehicle_id` 有效才启用：
+启用 `deployable_uav_enabled: true` 并配置 `deployable_uav_options` 候选列表；每台母车同时只允许一个部署实例。列表项含 `id`、`name`、`vehicle_id`、`role`、`spawn_offset`、`spawn_yaw_mode`、`initial_speed`，完整说明与示例见 §8.3。
 
 | 字段 | 说明 | 默认值 |
 | --- | --- | --- |
 | `deployable_uav_enabled` | 总开关。 | `false` |
-| `deployable_uav_vehicle_id` | 被部署的 UAV 载具资源 id（必填）。 | 空 |
-| `deployable_uav_role` | UAV 角色标记：任意字符串（无固定枚举），仅作标记/调试显示，默认 `uav`。 | `uav` |
-| `deployable_uav_spawn_offset` | 生成位置偏移：对象 `{x,y,z}` 或 `[x,y,z]`。 | `[0,0,0]` |
-| `deployable_uav_spawn_yaw_mode` | 生成朝向模式：`parent`（默认，朝母机当前朝向）/ `operator_look`（朝操作员视线方向）。 | `parent` |
-| `deployable_uav_single_instance` | 是否同时只允许一架。 | `true` |
-| `deployable_uav_allow_control_switch` | 是否允许切换到 UAV 控制视角。 | `true` |
-| `deployable_uav_auto_link_datalink` | 自动建立数据链。 | `true` |
-| `deployable_uav_redeploy_cooldown_tick` | 回收后再次部署的冷却（tick）。 | `0` |
-| `deployable_uav_auto_loiter_on_switch_back` | 切回本车时 UAV 自动进入盘旋。 | `true` |
-| `deployable_uav_initial_speed` | 部署初始速度。 | `0.0` |
+| `deployable_uav_options` | 辅助载具候选列表，每项的 `id`、`vehicle_id` 必填。 | `[]` |
+| `deployable_uav_default_option` | 默认候选的稳定 `id`。 | 首个合法项 |
+| `deployable_uav_allow_control_switch` | 公共策略：是否允许真人切入辅助载具。 | `true` |
+| `deployable_uav_auto_link_datalink` | 公共策略：自动建立数据链。 | `true` |
+| `deployable_uav_redeploy_cooldown_tick` | 公共策略：终结起点开始计时的冷却，单位 tick。未确认回传仍锁定部署。 | `0` |
+| `deployable_uav_auto_loiter_on_switch_back` | 公共策略：切回本车时辅助载具自动进入盘旋。 | `true` |
+| `deployable_uav_signal_range` | 公共策略：水平信号距离，单位格；非正数无限。 | `2048` |
+| `deployable_uav_allowed_seat_indexes` | 公共策略：允许操纵部署功能的母车座位索引。 | 空列表，仅驾驶位 0 |
+
+2026-11-02 起，原平铺的载具 ID、角色、偏移、朝向、初速改放到每个候选内；Java 不兼容旧键。一次性转换脚本为 `scripts/migrate_deployable_uav_options.ps1`，转换前必须备份。单实例已是固定规则，旧 `deployable_uav_single_instance` 不再控制行为。
 
 ### 2.7 起落架自动收放（`rvp_auto_landing_gear*`）
 
@@ -2862,6 +2866,25 @@ RVP 的 Forge 配置分三个文件：`ywzj_rvp-server.toml`、`ywzj_rvp-common.
 | 顶层 `spread` | 由 `submunition_data` / `dispenser_data` 控制；弹道散布回退顶层 `inaccuracy` |
 
 ---
+
+## 8.3 载具自爆与辅助载具候选（2026-11-02）
+
+| 所在位置 | 字段 | 默认值 / 单位 | 语义 |
+| --- | --- | --- | --- |
+| 武器 `fire_data` | `self_destruct_vehicle` | false | 仅 `rvp:bomb` 使用；在载具位置引爆配置战斗部并终结载具。部署辅助载具先回传真人，普通载具不保护乘员。 |
+| 母车顶层 | `deployable_uav_options` | [] | 当前候选列表。单实例部署，从多项中选择一种。旧单机平铺字段需用脚本一次性转换。 |
+| 母车顶层 | `deployable_uav_default_option` | 首个合法项的 id | 无已保存选择时使用的候选；实体选择按母车 UUID 持久化。 |
+| 候选对象 | `id` / `vehicle_id` | 必填 | 稳定选项 id 与实际载具资源 id。更改 id 会改变保存选择的寻址。 |
+| 候选对象 | `name` / `role` | id / uav | 界面名称与辅助载具用途；雷达中继同样使用该目录。 |
+| 候选对象 | `spawn_offset` | [0,0,0]，格 | 生成偏移，随 `spawn_yaw_mode` 指定的朝向旋转，沿用原部署坐标规则。 |
+| 候选对象 | `spawn_yaw_mode` | parent | 沿用原支持的母车/操作者生成朝向规则。 |
+| 候选对象 | `initial_speed` | 0，格/tick | 沿生成朝向的水平初速；1=20 格/秒；0 不施加初速。 |
+| 候选对象 | `allow_control_switch` / `auto_link_datalink` / `auto_loiter_on_switch_back` | 继承母车同名 `deployable_uav_*` 字段 | 各候选可以覆盖对应控制策略。 |
+| 候选对象 | `redeploy_cooldown_tick` / `signal_range` / `allowed_seat_indexes` | 继承母车同名 `deployable_uav_*` 字段 | 冷却为 tick，信号距离为格，座位列表为空仅驾驶位。 |
+
+选择只在没有部署实例、没有回传/终结事务且冷却结束时应用；冷却持久化，子机卸载不等于终结。已部署实例保存放飞时的有效配置，配置重载不改变其策略。
+
+完整片段与迁移/验证记录见 [载具自爆与辅助载具自定义实施记录](../RVP载具自爆与辅助载具自定义_实施记录_20261102.md)。本批只提供通用功能与示例，不创建 FPV 载具资产。
 
 ## 9 参考
 

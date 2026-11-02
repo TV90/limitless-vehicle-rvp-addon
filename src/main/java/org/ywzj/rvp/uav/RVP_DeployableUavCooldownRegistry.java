@@ -2,42 +2,27 @@ package org.ywzj.rvp.uav;
 
 import net.minecraft.server.level.ServerLevel;
 
-import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
+/** 兼容旧部署调用点的冷却 facade；权威数据保存在 overworld SavedData。 */
 public final class RVP_DeployableUavCooldownRegistry {
-    private static final Map<UUID, Long> PARENT_REDEPLOY_END_TICK = new ConcurrentHashMap<>();
-
     private RVP_DeployableUavCooldownRegistry() {}
 
+    /** 为母车 UUID 持久化冷却截止时间；清理运行态不会绕过存档冷却。 */
     public static void startCooldown(ServerLevel level, UUID parentUuid, int cooldownTick) {
-        if (level == null || parentUuid == null || cooldownTick <= 0) {
-            return;
-        }
-        long endTick = level.getServer().getTickCount() + Math.max(cooldownTick, 0);
-        PARENT_REDEPLOY_END_TICK.merge(parentUuid, endTick, Math::max);
+        if (level == null || parentUuid == null || cooldownTick <= 0) return;
+        RVP_DeployableUavStateSavedData.startCooldown(level, parentUuid, cooldownTick);
     }
 
+    /** 读取母车剩余冷却 tick，按稳定世界时间计算。 */
     public static int getRemainingTick(ServerLevel level, UUID parentUuid) {
-        if (level == null || parentUuid == null) {
-            return 0;
-        }
-        Long endTick = PARENT_REDEPLOY_END_TICK.get(parentUuid);
-        if (endTick == null) {
-            return 0;
-        }
-        long remaining = endTick - level.getServer().getTickCount();
-        if (remaining <= 0L) {
-            PARENT_REDEPLOY_END_TICK.remove(parentUuid);
-            return 0;
-        }
-        return remaining > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) remaining;
+        if (level == null || parentUuid == null) return 0;
+        return RVP_DeployableUavStateSavedData.remainingCooldown(level, parentUuid);
     }
 
-    public static void clear(UUID parentUuid) {
-        if (parentUuid != null) {
-            PARENT_REDEPLOY_END_TICK.remove(parentUuid);
-        }
-    }
+    /** 旧清理入口保留为空操作，避免清除持久化冷却并允许重启绕过。 */
+    public static void clear(UUID parentUuid) {}
+
+    /** 只清运行态；选择、冷却与部署租约均由 SavedData 保存。 */
+    public static void clearRuntime() {}
 }

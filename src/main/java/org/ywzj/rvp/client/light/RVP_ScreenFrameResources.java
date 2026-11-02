@@ -62,6 +62,8 @@ final class RVP_ScreenFrameResources {
     private boolean depthReady;
     /** 深度所属的主目标，窗口重建后不复用旧附件。 */
     private int sourceFramebuffer;
+    /** 清屏前保存的清除色，清空离屏目标后必须原样交回其它渲染阶段。 */
+    private static final java.nio.FloatBuffer CLEAR_COLOR = org.lwjgl.BufferUtils.createFloatBuffer(4);
 
     /** 在光影最终处理和手持物阶段之前保存近景；外部当前绑定的 MRT 不影响只读复制。 */
     boolean captureDepth() {
@@ -267,6 +269,16 @@ final class RVP_ScreenFrameResources {
             RVP_GlStateSync.blend(false);
             GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 3);
         } finally { shader.clear(); }
+    }
+
+    /** 清空离屏颜色目标；没有环境灯时用清屏代替整屏灯光绘制，同时避免复用上一帧残留贡献。 */
+    void clearColorTarget(int framebuffer, int width, int height) {
+        // 调用实际 GL 读取清除色，不能假设外部始终是默认值。
+        GL11.glGetFloatv(GL11.GL_COLOR_CLEAR_VALUE, CLEAR_COLOR);
+        bind(framebuffer, width, height);
+        GL11.glClearColor(0F, 0F, 0F, 0F);
+        GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);
+        GL11.glClearColor(CLEAR_COLOR.get(0), CLEAR_COLOR.get(1), CLEAR_COLOR.get(2), CLEAR_COLOR.get(3));
     }
 
     /** 源亮度按 1-(1-源)*(1-背景) 叠加，可达到显示峰值，Alpha 完全沿用背景。 */

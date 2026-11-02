@@ -159,7 +159,14 @@ public final class RVP_ScreenLightPass {
     private static boolean hasVisualInputs() {
         return RVP_RocketPlumeManager.INSTANCE.hasActive()
                 || RVP_RocketTrailManager.INSTANCE.hasActive()
-                || RVP_LightingConfig.screenEnabled() && RVP_ScreenLightManager.INSTANCE.hasActiveLights();
+                || hasLightWork();
+    }
+
+    /** 照亮总开关关闭时没有任何屏幕光需要绘制；喷焰与尾烟由各自的 hasActive 判断保留。 */
+    private static boolean hasLightWork() {
+        return RVP_LightingConfig.maxLights() > 0
+                && RVP_LightingConfig.screenEnabled()
+                && RVP_ScreenLightManager.INSTANCE.hasActiveLights();
     }
 
     /**
@@ -216,7 +223,8 @@ public final class RVP_ScreenLightPass {
         camera = event.getCamera().getPosition();
         // 调用统一预算和球体投影裁剪，先剔除离屏光，最多只为八盏光查询实体/地形遮挡。
         // 追踪开启时额外传入诊断回调，把每条被剔除的候选与具体原因写进日志。
-        List<RVP_ScreenLight> candidates = !RVP_LightingConfig.screenEnabled() || RVP_LightingConfig.intensity() <= 0
+        // 照亮总开关只关闭照亮通道，不阻止采集：干扰机光晕仍需进入预算，逐灯分项由 hasEnabledChannel 判定。
+        List<RVP_ScreenLight> candidates = RVP_LightingConfig.intensity() <= 0
                 ? List.of() : RVP_ScreenLightManager.INSTANCE.collectVisible(camera, event.getPartialTick(),
                 RVP_LightingConfig.maxDistance(), RVP_ScreenLightDebugCommands.limitForDiagnostics(RVP_LightingConfig.maxLights()), light -> {
                     // 调用分项开关：照亮/光晕/核心/天空全关的灯不占预算槽位，也不做遮挡查询。
@@ -304,15 +312,19 @@ public final class RVP_ScreenLightPass {
                     + (lightShader.getUniform("LightSkySpread0") != null ? "已声明" : "缺失（描述 JSON 未同步，天空项会静默失效）")
                     + "，LightSkyColorIntensity0 "
                     + (lightShader.getUniform("LightSkyColorIntensity0") != null ? "已声明" : "缺失（描述 JSON 未同步，天空项会静默失效）"));
-            if (lights.stream().anyMatch(light -> surfaceEnabled(light.type())
-                    && light.radius() > 0 && light.intensity() > 0 && light.surfaceWeight() > 0)) {
+            // 照亮全关（默认状态）时只有光晕通道：不采集遮挡几何，也不跑整屏照亮 pass。
+            boolean anySurface = lights.stream().anyMatch(light -> surfaceEnabled(light.type())
+                    && light.radius() > 0 && light.intensity() > 0 && light.surfaceWeight() > 0);
+            if (anySurface) {
                 // 调用真实方块形状/实体盒采集，不再将缺失背面的相机深度用作投影几何。
                 RVP_LightGeometryPass.prepare(Minecraft.getInstance().level, lights, VIEW, camera, event.getPartialTick());
             }
             // 调用统一几何绑定；数据不可用时保留照亮，不重新启用旧的轮廓投影猜测。
             RVP_LightGeometryPass.upload(lightShader);
+            // 调用导弹广域橙晕开关：关闭时喷焰不再申请光晕链，纯导弹帧不再启动多尺度光晕。
             boolean useBloom = RVP_LightingConfig.bloomEnabled() && bloomShader != null && bloomAvailable
-                    && (plumes.stream().anyMatch(plume -> plume.haloRadius() > 0)
+                    && (RVP_LightingConfig.missileHaloEnabled()
+                            && plumes.stream().anyMatch(plume -> plume.haloRadius() > 0)
                     || lights.stream().anyMatch(light -> light.bloom() && haloEnabled(light.type())
                             && light.haloRadius() > 0));
             if (useBloom) {
@@ -324,11 +336,14 @@ public final class RVP_ScreenLightPass {
             }
             // 调用天空散射追踪帧摘要：本帧真正提交的光源与逐灯 sky 采样值，合并剔除原因后节流输出。
             RVP_SkyScatterTrace.frame(RVP_ScreenLightManager.INSTANCE.size(), lights,
-                    useBloom ? "光晕链" : "直接合成（bloom 关闭）");
+                    useBloom ? "光晕链" : "直接合成（无光晕输入）");
             if (!useBloom) {
-                lightShader.safeGetUniform("OutputMode").set(0);
-                FRAME.bind(FRAME.mainTarget(), FRAME.width(), FRAME.height());
-                FRAME.draw(lightShader);
+                // 纯喷焰帧没有环境灯：整屏灯光 pass 的输出与原画面完全相同，直接跳过。
+                if (!lights.isEmpty()) {
+                    lightShader.safeGetUniform("OutputMode").set(0);
+                    FRAME.bind(FRAME.mainTarget(), FRAME.width(), FRAME.height());
+                    FRAME.draw(lightShader);
+                }
                 // 调用喷口独立叠加，即使关闭光晕，核心仍可达到显示白点而非旧的 0.9 上限。
                 renderEmission();
                 // 调用世界尺寸光晕；小分辨率 Bloom 目标失败时，仍可保留独立广域扩散。
@@ -343,13 +358,24 @@ public final class RVP_ScreenLightPass {
                 if (!lights.isEmpty()) { RVP_LightOcclusionPass.captureReport(FRAME, lightShader); }
                 return;
             }
-            lightShader.safeGetUniform("OutputMode").set(1);
-            FRAME.bind(FRAME.lightTarget(), FRAME.width(), FRAME.height());
-            FRAME.draw(lightShader);
-            // 调用独立光晕来源：只读取每盏光的光晕范围，不把照亮结果送进模糊。
-            lightShader.safeGetUniform("OutputMode").set(3);
-            FRAME.bind(FRAME.glowTarget(), FRAME.width(), FRAME.height());
-            FRAME.draw(lightShader);
+            // 没有环境灯时灯光贡献恒为零：清空两张离屏目标即可，不再整屏跑两遍灯光程序。
+            if (lights.isEmpty()) {
+                FRAME.clearColorTarget(FRAME.lightTarget(), FRAME.width(), FRAME.height());
+                FRAME.clearColorTarget(FRAME.glowTarget(), FRAME.width(), FRAME.height());
+            } else {
+                // 照亮全关时表面贡献恒为零：只清空照亮目标，不跑逐像素遮挡查询。
+                if (anySurface) {
+                    lightShader.safeGetUniform("OutputMode").set(1);
+                    FRAME.bind(FRAME.lightTarget(), FRAME.width(), FRAME.height());
+                    FRAME.draw(lightShader);
+                } else {
+                    FRAME.clearColorTarget(FRAME.lightTarget(), FRAME.width(), FRAME.height());
+                }
+                // 调用独立光晕来源：只读取每盏光的光晕范围，不把照亮结果送进模糊。
+                lightShader.safeGetUniform("OutputMode").set(3);
+                FRAME.bind(FRAME.glowTarget(), FRAME.width(), FRAME.height());
+                FRAME.draw(lightShader);
+            }
             // 调用定向喷焰合入独立光晕来源；最终白热核心仍单独显示。
             RVP_RocketPlumePass.render(FRAME, plumes, VIEW, PROJECTION, camera, plumeTime, 1);
             // 调用各层共同的模糊范围倍率；真实亮焰先通过连续过滤逐层缩小，不用稀疏大步长伪造远层。
@@ -390,6 +416,9 @@ public final class RVP_ScreenLightPass {
         // 调用显式遮挡绑定；构建新层级前 ready=false，会安全使用当帧原始深度。
         RVP_LightOcclusionPass.upload(lightShader, FRAME.depth());
         lightShader.safeGetUniform("LightCount").set(lights.size());
+        // 调用观察空间方向换算，把世界竖直方向交给 Shader 作为定向光水平 140° 窗口的参考轴。
+        Vector3f worldUpView = VIEW.transformDirection(new Vector3f(0F, 1F, 0F)).normalize();
+        lightShader.safeGetUniform("WorldUpView").set(worldUpView.x, worldUpView.y, worldUpView.z);
         uploadLightSlots();
     }
 
@@ -474,7 +503,8 @@ public final class RVP_ScreenLightPass {
             // 调用独立光晕强度；照亮结束或爆炸brightness改动都不会覆盖该时间线和亮度。
             lightShader.safeGetUniform("LightHaloColorIntensity" + index).set(light.red(), light.green(), light.blue(),
                     halo ? light.haloIntensity() * RVP_LightingConfig.intensity() : 0);
-            lightShader.safeGetUniform("LightShape" + index).set(light.surfaceWeight(),
+            // 照亮关闭时表面权重必须归零：Shader 以 shape.x>0 为条件执行逐像素遮挡步进。
+            lightShader.safeGetUniform("LightShape" + index).set(surface ? light.surfaceWeight() : 0F,
                     RVP_LightingConfig.volumetricEnabled() ? light.volumetricStrength() : 0,
                     light.bloom() ? 1F : 0F,
                     halo ? (light.type() == RVP_LightSourceType.ROCKET_ENGINE ? 0F : light.haloRadius()) : 0F);
@@ -521,9 +551,9 @@ public final class RVP_ScreenLightPass {
                 && lights.stream().anyMatch(light -> light.type() == RVP_LightSourceType.ROCKET_ENGINE);
     }
 
-    /** 照亮通道：按来源类型读取 TOML 分项开关；干扰机与激光小光只受总开关约束。 */
+    /** 照亮通道：总开关关闭时不照亮任何表面；开启后按来源类型读取分项开关。 */
     private static boolean surfaceEnabled(RVP_LightSourceType type) {
-        return switch (type) {
+        return RVP_LightingConfig.screenEnabled() && switch (type) {
             case EXPLOSION -> RVP_LightingConfig.explosionLightEnabled();
             case MUZZLE -> RVP_LightingConfig.muzzleLightEnabled();
             case ROCKET_ENGINE -> RVP_LightingConfig.engineLightEnabled();
@@ -531,22 +561,25 @@ public final class RVP_ScreenLightPass {
         };
     }
 
-    /** 光晕通道：爆炸与发动机各有独立开关，炮口与干扰机沿用既有参数控制。 */
+    /** 光晕通道：全部跟随照亮总开关，干扰机玻片也不例外。 */
     private static boolean haloEnabled(RVP_LightSourceType type) {
-        return switch (type) {
+        return RVP_LightingConfig.screenEnabled() && switch (type) {
+            case EO_JAMMER, MUZZLE, LASER -> true;
             case EXPLOSION -> RVP_LightingConfig.explosionHaloEnabled();
             case ROCKET_ENGINE -> RVP_LightingConfig.missileHaloEnabled();
-            case MUZZLE, EO_JAMMER, LASER -> true;
         };
     }
 
-    /** 自发光核心通道：目前只有爆炸白热核心有分项开关，旧圆形喷口仍由代码常量控制。 */
+    /** 自发光核心通道：总开关关闭时不绘制；开启后只有爆炸白热核心另有分项开关。 */
     private static boolean coreEnabled(RVP_LightSourceType type) {
-        return type != RVP_LightSourceType.EXPLOSION || RVP_LightingConfig.explosionCoreEnabled();
+        return RVP_LightingConfig.screenEnabled()
+                && (type != RVP_LightSourceType.EXPLOSION || RVP_LightingConfig.explosionCoreEnabled());
     }
 
-    /** 天空染色通道：对所有支持天空的短光统一生效。 */
-    private static boolean skyEnabled() { return RVP_LightingConfig.skyScatterEnabled(); }
+    /** 天空染色通道：属于照亮，受总开关约束。 */
+    private static boolean skyEnabled() {
+        return RVP_LightingConfig.screenEnabled() && RVP_LightingConfig.skyScatterEnabled();
+    }
 
     /** 该灯是否至少有一个开启的通道；全关时不占八灯预算槽位，也不做遮挡查询。 */
     private static boolean hasEnabledChannel(RVP_ScreenLight light) {

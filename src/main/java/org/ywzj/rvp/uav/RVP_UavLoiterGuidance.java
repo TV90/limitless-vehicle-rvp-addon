@@ -6,18 +6,12 @@ import org.ywzj.rvp.uav.RVP_UavLoiterManager.LoiterPhase;
 
 /**
  * 无人机盘旋制导算法。
- * <p><b>固定翼布尔杆量闭环（2026-10-06）</b>：本体 FixedWingVehicle 在无人驾驶时每 tick
- * 把 {@code controlUnit.yRot/xRot} 强制重置为当前姿态，旧版"写 yRot 目标航向 + 本体自动改平
- * 滚转"的转弯通道在无人场景被整体短路。改为纯布尔杆量闭环：leftYaw/rightYaw（偏航角速度）+
- * left/right（滚转 bang-bang 脉冲控坡度）+ up/down/forward/backward（高度/速度/油门脉冲），
- * 无人驾驶全部有效，零 Mixin。旋翼机沿用模拟偏航，零改动。</p>
- * <p><b>可持续盘旋解算（resolveFixedWingLoiterSolution）</b>：固定翼升力 = 阻力×升阻比随速度²
- * 缩放，配置半径在速度过快/升力不足时物理上守不住高度。解算器按气动参数推出最小平飞速度
- * v_min，与配置半径联立解出满足升力约束的（实际半径 R，临界坡度 φ=asin(v_min²/gR) 封顶，
- * 目标速度 v=sqrt(Rg·tanφ)）；所需坡度超上限时按上限反算最小半径兜底。盘旋中节流阀闭环
- * 把空速压到目标速度——半径/坡度/速度三者自洽，任意气动调参下自动匹配。</p>
- * <p><b>高度垂直速度闭环</b>：目标爬升率 = clamp(高度误差×0.08, ±4 m/s)，再按（目标爬升率 −
- * 实际垂直速度）误差脉冲 up/down——垂直速度即时阻尼，消除纯高度误差脉冲的过冲振荡。</p>
+ * <p>固定翼控制通过每 tick 补偿本体 inputStep 连续写入模拟杆量，避免无人驾驶空挡时本体自动
+ * 俯仰/偏航/滚转回正分支抢写控制。布尔输入只用于维持本体非空挡通道；油门仍按本体的累加语义
+ * 做互斥调节。旋翼机沿用目标航向模拟控制。</p>
+ * <p>半径规划用载具质量、阻力、升阻比、高度 scaleAir 和迎角估计可行转弯速度与有效半径；
+ * 最小速度采用 5° 迎角近似并加 12%余量，不代表本体完整气动模型的精确失速速度。飞控每 tick
+ * 同时用垂向速度误差和协调转弯前馈控制俯仰/偏航，油门按速度与高度误差互斥调节。</p>
  */
 public final class RVP_UavLoiterGuidance {
 
@@ -38,7 +32,7 @@ public final class RVP_UavLoiterGuidance {
     /** 盘旋速度闭环：超速判定（目标速度 × 本系数 以上收油）。 */
     private static final double SPEED_OVER_FACTOR = 1.08;
     /** 盘旋速度闭环：欠速判定（目标速度 × 本系数 以下给油）。 */
-    private static final double SPEED_UNDER_FACTOR = 0.7;
+    private static final double SPEED_UNDER_FACTOR = 0.9;
 
     /**
      * 盘旋切线航向（按盘旋方向取向，2026-10-06 方向配对修复）。
@@ -51,6 +45,11 @@ public final class RVP_UavLoiterGuidance {
         return direction >= 0
                 ? Math.toDegrees(Math.atan2(dz, dx))
                 : Math.toDegrees(Math.atan2(-dz, -dx));
+    }
+
+    /** 与本体 VectorUtil.vecToRot 一致：yaw=-atan2(dx,dz)，前向为 (-sin(yaw), cos(yaw))。 */
+    static double yawTo(double dx, double dz) {
+        return Math.toDegrees(Math.atan2(-dx, dz));
     }
 
     /**
@@ -77,8 +76,41 @@ public final class RVP_UavLoiterGuidance {
             boolean rightYaw,
             float targetYRot,
             boolean useAnalogYaw,
+            float pitchInput,
+            float yawInput,
+            float rollInput,
             LoiterPhase nextPhase
     ) {}
+
+    /** 固定翼连续模拟杆量闭环。 */
+    public record FixedWingAnalogControls(float pitch, float yaw, float roll) {}
+
+    public static FixedWingAnalogControls computeFixedWingAnalogControls(float headingErrorDeg,
+                                                                          float targetBankDeg,
+                                                                          float currentBankDeg,
+                                                                          double altitudeError,
+                                                                          double climbRateMps,
+                                                                          double coordinatedTurnRateDegPerTick,
+                                                                          double pitchRateDegPerInput,
+                                                                          double yawRateDegPerInput) {
+        double targetClimbRate = Mth.clamp(altitudeError * CLIMB_RATE_PER_ALT_ERROR, -4.0, 4.0);
+        double climbRateError = targetClimbRate - climbRateMps;
+        // 本体按局部 Z→X→Y 依序旋转；倾斜转弯要持续局部俯仰角速度抵消 yaw 的 Euler 耦合。
+        // 对近水平坡度，bodyPitchRate ≈ -yawRate × sin(bank)，按本体单 tick 俯仰响应换算输入。
+        double turnPitchInput = pitchRateDegPerInput > 1.0E-6
+                ? -coordinatedTurnRateDegPerTick * Math.sin(Math.toRadians(currentBankDeg)) / pitchRateDegPerInput
+                : 0.0;
+        float pitch = (float) Mth.clamp(-climbRateError * 0.16 + turnPitchInput, -0.9, 0.9);
+        float bankError = targetBankDeg - currentBankDeg;
+        float roll = Math.abs(bankError) < BANK_DEADBAND ? 0.0F
+                : Mth.clamp(bankError * 0.035F, -0.85F, 0.85F);
+        double yawFeedForward = yawRateDegPerInput > 1.0E-6
+                ? -coordinatedTurnRateDegPerTick * Math.cos(Math.toRadians(currentBankDeg)) / yawRateDegPerInput
+                : 0.0;
+        float yaw = (float) Mth.clamp(yawFeedForward
+                + (Math.abs(headingErrorDeg) < 3.0F ? 0.0 : -headingErrorDeg * 0.008), -0.85, 0.85);
+        return new FixedWingAnalogControls(pitch, yaw, roll);
+    }
 
     /** 固定翼布尔杆量闭环输出（纯函数，便于单元测试）。 */
     public record FixedWingControls(
@@ -98,6 +130,33 @@ public final class RVP_UavLoiterGuidance {
      * @param hSpeedBlocks     当前空速（blocks/tick，仅几何回退分支使用）
      */
     public record FixedWingLoiterSolution(double actualRadius, double targetBankDeg, double targetSpeedMps) {}
+
+    /** 预补偿后的杆量值；消费后必须等于 target，避免本体空输入的自动回正逻辑介入。 */
+    public record CompensatedInput(float setterValue, float target) {}
+
+    /** 计算 setter 应写的值；fixed-wing tickMove 随后叠加 signedStep。 */
+    public static CompensatedInput compensateInput(float target, float signedStep) {
+        float clamped = Mth.clamp(target, -1.0F, 1.0F);
+        return new CompensatedInput(clamped - signedStep, clamped);
+    }
+
+    /** 按 FixedWingVehicle.tickMove 的速度平方阻力、scaleAir 与迎角升力区间估计升力下限。 */
+    public static double estimateFixedWingMinSpeedMps(double massKg, double airDragKMin,
+                                                        double airDragKMax, double liftToDrag,
+                                                        double scaleAir, double aoaDeg,
+                                                        double aoaMaxDeg) {
+        if (!(massKg > 0) || !(airDragKMin > 0) || !(liftToDrag > 0)
+                || !(aoaMaxDeg > 0) || !Double.isFinite(scaleAir)) return 0.0;
+        double scale = Math.max(0.001, scaleAir);
+        double alpha = Mth.clamp((float) aoaDeg, -90.0F, 90.0F);
+        double dragK = (airDragKMax - airDragKMin) * Math.abs(Math.sin(Math.toRadians(alpha)))
+                + airDragKMin;
+        double liftFactor = liftToDrag * scale + 2.0 * scale * alpha / aoaMaxDeg;
+        if (!(liftFactor > 0) || !(dragK > 0)) return 0.0;
+        double blockSpeed = Math.sqrt(org.ywzj.vehicle.vehicle.PhysicsEngine.G * massKg
+                / (dragK * liftFactor));
+        return blockSpeed * 20.0 * 1.12;
+    }
 
     /**
      * 解出满足升力约束的盘旋（半径， 坡度， 速度）。
@@ -143,7 +202,7 @@ public final class RVP_UavLoiterGuidance {
     /**
      * 固定翼布尔杆量闭环（纯函数）。
      *
-     * @param headingErrorDeg 航向误差（wrap 后）：期望 − 当前，正值 = 需向左转
+     * @param headingErrorDeg 航向误差（wrap 后）：期望 − 当前，正值 = MC yaw 增大方向
      * @param targetBankDeg   目标坡度（带符号）：负 = 左坡度（左转）
      * @param currentBankDeg  当前滚转角（uav.getZRot()，带符号）：负 = 左坡度
      * @param altError        高度误差（目标 − 当前，正 = 需爬升，格）
@@ -153,8 +212,10 @@ public final class RVP_UavLoiterGuidance {
     public static FixedWingControls computeFixedWingControls(float headingErrorDeg, float targetBankDeg,
                                                              float currentBankDeg, double altError,
                                                              double climbRateMps, int tickCount) {
-        boolean leftYaw = headingErrorDeg > YAW_BOOLEAN_THRESHOLD;
-        boolean rightYaw = headingErrorDeg < -YAW_BOOLEAN_THRESHOLD;
+        // 本体 FixedWingVehicle 将 leftYaw 映射为正 q.rotateY，再以 -rot.y 写回实体 yaw；
+        // 因而 leftYaw 会减小 yaw，正 yaw 误差必须使用 rightYaw。
+        boolean leftYaw = headingErrorDeg < -YAW_BOOLEAN_THRESHOLD;
+        boolean rightYaw = headingErrorDeg > YAW_BOOLEAN_THRESHOLD;
         float bankError = targetBankDeg - currentBankDeg;
         boolean rollLeft = false;
         boolean rollRight = false;
@@ -221,28 +282,31 @@ public final class RVP_UavLoiterGuidance {
                                               double centerX, double centerY, double centerZ,
                                               double targetAltitude, double climbRateMps,
                                               double hSpeedMps, double solutionSpeedMps,
-                                              boolean isRotaryWing, int tickCount) {
+                                              boolean isRotaryWing, int tickCount, float currentBankDeg) {
         double altError = targetAltitude - uavY;
         boolean needClimb = uavY < targetAltitude - 20 || altError > 20;
 
         double dx = centerX - uavX;
         double dz = centerZ - uavZ;
-        double targetYaw = Math.toDegrees(Math.atan2(dx, -dz));
+        double targetYaw = yawTo(dx, dz);
 
         if (isRotaryWing) {
             return new GuidanceOutput(false, false, true, false, false, false, false, false,
-                    uavYaw, true, needClimb ? LoiterPhase.CLIMB : LoiterPhase.TRANSIT);
+                    uavYaw, true, 0, 0, 0, needClimb ? LoiterPhase.CLIMB : LoiterPhase.TRANSIT);
         }
         float headingError = Mth.wrapDegrees((float) (targetYaw - uavYaw));
         float targetBank = Mth.clamp(headingError * BANK_PROPORTIONAL_GAIN,
                 -(float) RVP_LoiterConfig.ALIGN_BANK_CAP, (float) RVP_LoiterConfig.ALIGN_BANK_CAP);
-        FixedWingControls controls = computeFixedWingControls(headingError, targetBank, 0f,
+        FixedWingControls controls = computeFixedWingControls(headingError, targetBank, currentBankDeg,
                 altError, climbRateMps, tickCount);
         boolean[] throttle = fixedWingThrottle(altError, hSpeedMps, solutionSpeedMps, tickCount);
+        FixedWingAnalogControls analog = computeFixedWingAnalogControls(headingError, targetBank,
+                currentBankDeg, altError, climbRateMps, 0.0, 0.0, 0.0);
         return new GuidanceOutput(throttle[0], throttle[1], controls.up(), controls.down(),
                 controls.rollLeft(), controls.rollRight(),
                 controls.leftYaw(), controls.rightYaw(),
-                (float) targetYaw, false, needClimb ? LoiterPhase.CLIMB : LoiterPhase.TRANSIT);
+                (float) targetYaw, false, analog.pitch(), analog.yaw(), analog.roll(),
+                needClimb ? LoiterPhase.CLIMB : LoiterPhase.TRANSIT);
     }
 
     /**
@@ -252,7 +316,7 @@ public final class RVP_UavLoiterGuidance {
                                                 double centerX, double centerY, double centerZ,
                                                 double radius, double targetAltitude, double climbRateMps,
                                                 double hSpeedMps, double solutionSpeedMps,
-                                                boolean isRotaryWing, int tickCount) {
+                                                boolean isRotaryWing, int tickCount, float currentBankDeg) {
         double dx = centerX - uavX;
         double dz = centerZ - uavZ;
         double dist = Math.sqrt(dx * dx + dz * dz);
@@ -261,7 +325,7 @@ public final class RVP_UavLoiterGuidance {
         }
         double approachX = centerX - (dx / dist) * radius;
         double approachZ = centerZ - (dz / dist) * radius;
-        double targetYaw = Math.toDegrees(Math.atan2(approachX - uavX, -(approachZ - uavZ)));
+        double targetYaw = yawTo(approachX - uavX, approachZ - uavZ);
 
         double altError = targetAltitude - uavY;
         LoiterPhase nextPhase = dist < radius * 1.5 ? LoiterPhase.APPROACH : LoiterPhase.TRANSIT;
@@ -270,18 +334,20 @@ public final class RVP_UavLoiterGuidance {
             boolean up = altError > 5;
             boolean down = altError < -5;
             return new GuidanceOutput(true, false, up, down, false, false, false, false,
-                    (float) targetYaw, true, nextPhase);
+                    (float) targetYaw, true, 0, 0, 0, nextPhase);
         }
         float headingError = Mth.wrapDegrees((float) (targetYaw - uavYaw));
         float targetBank = Mth.clamp(headingError * BANK_PROPORTIONAL_GAIN,
                 -(float) RVP_LoiterConfig.ALIGN_BANK_CAP, (float) RVP_LoiterConfig.ALIGN_BANK_CAP);
-        FixedWingControls controls = computeFixedWingControls(headingError, targetBank, 0f,
+        FixedWingControls controls = computeFixedWingControls(headingError, targetBank, currentBankDeg,
                 altError, climbRateMps, tickCount);
         boolean[] throttle = fixedWingThrottle(altError, hSpeedMps, solutionSpeedMps, tickCount);
+        FixedWingAnalogControls analog = computeFixedWingAnalogControls(headingError, targetBank,
+                currentBankDeg, altError, climbRateMps, 0.0, 0.0, 0.0);
         return new GuidanceOutput(throttle[0], throttle[1], controls.up(), controls.down(),
                 controls.rollLeft(), controls.rollRight(),
                 controls.leftYaw(), controls.rightYaw(),
-                (float) targetYaw, false, nextPhase);
+                (float) targetYaw, false, analog.pitch(), analog.yaw(), analog.roll(), nextPhase);
     }
 
     /**
@@ -290,7 +356,8 @@ public final class RVP_UavLoiterGuidance {
     public static GuidanceOutput computeApproach(double uavX, double uavY, double uavZ, float uavYaw,
                                                  double centerX, double centerY, double centerZ,
                                                  double radius, double targetAltitude, double climbRateMps,
-                                                 int loiterDirection, boolean isRotaryWing, int tickCount) {
+                                                 int loiterDirection, boolean isRotaryWing, int tickCount,
+                                                 float currentBankDeg, double hSpeedMps, double solutionSpeedMps) {
         double dx = centerX - uavX;
         double dz = centerZ - uavZ;
         double dist = Math.sqrt(dx * dx + dz * dz);
@@ -299,12 +366,16 @@ public final class RVP_UavLoiterGuidance {
         }
 
         double tangent = tangentYaw(uavX - centerX, uavZ - centerZ, loiterDirection);
-        double toCenterYaw = Math.toDegrees(Math.atan2(dx, -dz));
+        double toCenterYaw = yawTo(dx, dz);
         double blend = Mth.clamp((float) ((dist - radius) / (radius * 0.5)), 0f, 1f);
         double targetYaw = lerpAngle(tangent, toCenterYaw, blend);
 
         double altError = targetAltitude - uavY;
-        LoiterPhase nextPhase = Math.abs(dist - radius) < 25 ? LoiterPhase.LOITER : LoiterPhase.APPROACH;
+        boolean captured = Math.abs(dist - radius) < Math.max(12.0, radius * 0.12)
+                && Math.abs(altError) < 12.0
+                && Math.abs(Mth.wrapDegrees((float) (tangent - uavYaw))) < 18.0
+                && (solutionSpeedMps <= 0 || hSpeedMps >= solutionSpeedMps * 0.88);
+        LoiterPhase nextPhase = captured ? LoiterPhase.LOITER : LoiterPhase.APPROACH;
 
         if (isRotaryWing) {
             boolean up = altError > 3;
@@ -312,17 +383,20 @@ public final class RVP_UavLoiterGuidance {
             int duty = (int) (4 * blend + 1);
             boolean forward = (tickCount % 5) < duty;
             return new GuidanceOutput(forward, false, up, down, false, false, false, false,
-                    (float) targetYaw, true, nextPhase);
+                    (float) targetYaw, true, 0, 0, 0, nextPhase);
         }
         float headingError = Mth.wrapDegrees((float) (targetYaw - uavYaw));
         float targetBank = Mth.clamp(headingError * BANK_PROPORTIONAL_GAIN,
                 -(float) RVP_LoiterConfig.ALIGN_BANK_CAP, (float) RVP_LoiterConfig.ALIGN_BANK_CAP);
-        FixedWingControls controls = computeFixedWingControls(headingError, targetBank, 0f,
+        FixedWingControls controls = computeFixedWingControls(headingError, targetBank, currentBankDeg,
                 altError, climbRateMps, tickCount);
-        return new GuidanceOutput(true, false, controls.up(), controls.down(),
+        boolean[] throttle = fixedWingThrottle(altError, hSpeedMps, solutionSpeedMps, tickCount);
+        FixedWingAnalogControls analog = computeFixedWingAnalogControls(headingError, targetBank,
+                currentBankDeg, altError, climbRateMps, 0.0, 0.0, 0.0);
+        return new GuidanceOutput(throttle[0], throttle[1], controls.up(), controls.down(),
                 controls.rollLeft(), controls.rollRight(),
                 controls.leftYaw(), controls.rightYaw(),
-                (float) targetYaw, false, nextPhase);
+                (float) targetYaw, false, analog.pitch(), analog.yaw(), analog.roll(), nextPhase);
     }
 
     /**
@@ -342,6 +416,19 @@ public final class RVP_UavLoiterGuidance {
                                                boolean isRotaryWing, int tickCount,
                                                float uavZRot, double hSpeedMps,
                                                double solutionBank, double solutionSpeed) {
+        return computeLoiter(uavX, uavY, uavZ, uavYaw, centerX, centerY, centerZ, radius,
+                targetAltitude, climbRateMps, isRotaryWing, tickCount, uavZRot, hSpeedMps,
+                solutionBank, solutionSpeed, 1.0, 1.0);
+    }
+
+    /** 固定翼连续盘旋控制的速度相关偏航/俯仰协调增益。 */
+    public static GuidanceOutput computeLoiter(double uavX, double uavY, double uavZ, float uavYaw,
+                                               double centerX, double centerY, double centerZ,
+                                               double radius, double targetAltitude, double climbRateMps,
+                                               boolean isRotaryWing, int tickCount,
+                                               float uavZRot, double hSpeedMps,
+                                               double solutionBank, double solutionSpeed,
+                                               double pitchRateDegPerInput, double yawRateDegPerInput) {
         double dx = uavX - centerX;
         double dz = uavZ - centerZ;
         double horizontalDist = Math.sqrt(dx * dx + dz * dz);
@@ -374,12 +461,16 @@ public final class RVP_UavLoiterGuidance {
             yawError += RVP_LoiterConfig.LOITER_DIRECTION * Mth.clamp((float) radialError * 0.12f, -35f, 35f);
             float targetYRot = Mth.wrapDegrees(uavYaw + yawError);
             return new GuidanceOutput(forward, false, up, down, false, false, false, false,
-                    targetYRot, true, LoiterPhase.LOITER);
+                    targetYRot, true, 0, 0, 0, LoiterPhase.LOITER);
         }
 
         // 固定翼盘旋：目标坡度 = 方向 ×（解算坡度 + 径向修正，外侧收紧）
         float radialCorrection = Mth.clamp((float) radialError * 0.2f, -RADIAL_CORRECTION_CAP, RADIAL_CORRECTION_CAP);
-        float targetBank = Mth.clamp(
+        boolean lowSpeedRecovery = solutionSpeed > 0 && hSpeedMps < solutionSpeed * 0.84;
+        boolean droppingBelowTarget = altError > 12.0 && climbRateMps < -1.5;
+        boolean excessiveBank = Math.abs(uavZRot) > RVP_LoiterConfig.LOITER_BANK + 5.0;
+        boolean enterRecovery = lowSpeedRecovery || droppingBelowTarget || excessiveBank;
+        float targetBank = (lowSpeedRecovery || excessiveBank) ? 0.0F : Mth.clamp(
                 RVP_LoiterConfig.LOITER_DIRECTION * ((float) solutionBank + radialCorrection),
                 -45f, 45f);
         float headingError = Mth.wrapDegrees((float) (tangentYaw - uavYaw));
@@ -387,15 +478,55 @@ public final class RVP_UavLoiterGuidance {
         // 节流阀双向闭环：超解算速度收油（速度是半径/坡度/升力自洽的前提）；
         // 欠速或高度不足给油。收油优先级（占空）高于给油，保证速度上限刚性。
         boolean backward = hSpeedMps > solutionSpeed * SPEED_OVER_FACTOR && pulseThrottle(tickCount, 4);
-        boolean forward = (altError > 5 || hSpeedMps < solutionSpeed * SPEED_UNDER_FACTOR)
+        boolean throttleForClimb = droppingBelowTarget && hSpeedMps < solutionSpeed * 1.1;
+        boolean throttleForSpeed = (hSpeedMps < solutionSpeed * SPEED_UNDER_FACTOR
+                || (altError > 5 && hSpeedMps < solutionSpeed * 1.15))
                 && pulseThrottle(tickCount, 2);
+        boolean forward = !backward && (lowSpeedRecovery || throttleForClimb || throttleForSpeed);
 
         FixedWingControls controls = computeFixedWingControls(headingError, targetBank,
                 Mth.wrapDegrees(uavZRot), altError, climbRateMps, tickCount);
+        double turnRateDegPerTick = RVP_LoiterConfig.LOITER_DIRECTION
+                * (hSpeedMps / 20.0) / Math.max(1.0, radius) * (180.0 / Math.PI);
+        FixedWingAnalogControls analog = computeFixedWingAnalogControls(headingError, targetBank,
+                Mth.wrapDegrees(uavZRot), altError, climbRateMps, turnRateDegPerTick,
+                pitchRateDegPerInput, yawRateDegPerInput);
+        boolean outOfCapture = Math.abs(radialError) > Math.max(35.0, radius * 0.45);
+        LoiterPhase nextPhase = enterRecovery ? LoiterPhase.RECOVERY
+                : outOfCapture ? LoiterPhase.APPROACH : LoiterPhase.LOITER;
         return new GuidanceOutput(forward, backward, controls.up(), controls.down(),
                 controls.rollLeft(), controls.rollRight(),
                 controls.leftYaw(), controls.rightYaw(),
-                (float) tangentYaw, false, LoiterPhase.LOITER);
+                (float) tangentYaw, false, analog.pitch(), analog.yaw(), analog.roll(),
+                nextPhase);
+    }
+
+    /** 固定翼低能量恢复：翼平、恢复空速/高度，满足滞回阈值后再捕获盘旋。 */
+    public static GuidanceOutput computeRecovery(double uavX, double uavY, double uavZ, float uavYaw,
+                                                  double centerX, double centerY, double centerZ,
+                                                  double radius, double targetAltitude, double climbRateMps,
+                                                  int direction, int tickCount, float currentBankDeg,
+                                                  double hSpeedMps, double solutionBank, double solutionSpeed) {
+        double dx = uavX - centerX;
+        double dz = uavZ - centerZ;
+        double tangent = tangentYaw(dx, dz, direction);
+        float headingError = Mth.wrapDegrees((float) (tangent - uavYaw));
+        double altitudeError = targetAltitude - uavY;
+        boolean backward = hSpeedMps > solutionSpeed * SPEED_OVER_FACTOR && pulseThrottle(tickCount, 4);
+        boolean forward = !backward && (hSpeedMps < solutionSpeed * 0.72
+                || (hSpeedMps < solutionSpeed * 0.96 && pulseThrottle(tickCount, 5)));
+        FixedWingControls discrete = computeFixedWingControls(headingError, 0.0F, currentBankDeg,
+                altitudeError, climbRateMps, tickCount);
+        FixedWingAnalogControls analog = computeFixedWingAnalogControls(headingError, 0.0F,
+                currentBankDeg, altitudeError, climbRateMps, 0.0, 0.0, 0.0);
+        boolean recovered = hSpeedMps >= solutionSpeed * 0.96
+                && altitudeError >= -8.0 && altitudeError <= 12.0
+                && Math.abs(currentBankDeg) <= RVP_LoiterConfig.LOITER_BANK - 5.0
+                && climbRateMps > -1.0;
+        LoiterPhase next = recovered ? LoiterPhase.APPROACH : LoiterPhase.RECOVERY;
+        return new GuidanceOutput(forward, backward, discrete.up(), discrete.down(),
+                discrete.rollLeft(), discrete.rollRight(), discrete.leftYaw(), discrete.rightYaw(),
+                (float) tangent, false, analog.pitch(), analog.yaw(), analog.roll(), next);
     }
 
     /** 角度线性插值（考虑 wrap）。 */

@@ -2,10 +2,10 @@
   "type": "rvp:machinegun",
   "name": "H/PJ-38 130MM Cannon",
   "recoil": 0,
-  "shoot_interval": 4000,
+  "shoot_interval": 100,
   "max_capacity": 1,
   "reload": {
-    "time": 120,
+    "time": 70,
     "ammo": "ywzj_vehicle:ammo_artillery"
   },
   "fire_data": {
@@ -35,15 +35,18 @@
   "detonate_data": {
     "explosion_data": {
       "explode": true,
-      "damage": 300,
+      "damage": 200,
       "radius": 8,
       "destroy_block": true,
       "explosion_damage_factor": {
+        "player": 0.2,
+        "living": 0.2,
         "vehicle_default": 1.0,
         "vehicles": {
-          "ywzj_vehicle:tracked_vehicle": 0.9,
-          "ywzj_vehicle:wheeled_vehicle": 1.2,
-          "ywzj_vehicle:vessel_vehicle": 2.0
+          "ywzj_vehicle:wheeled_vehicle": 4.0,
+          "ywzj_vehicle:rotary_wing_vehicle": 2.0,
+          "ywzj_vehicle:fixed_wing_vehicle": 2.0,
+          "ywzj_vehicle:vessel_vehicle": 3.67
         }
       }
     }

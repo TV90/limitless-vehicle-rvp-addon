@@ -35,8 +35,10 @@ public final class RVP_GuidanceRuntimeMath {
         // [RVP] §46（2026-10-01 用户定版）：制导瞄准点 = 目标**最大体积 OBB** 的中心
         // （非载具/广播克隆回退 AABB 中心），长/斜载具不再瞄悬空的 AABB 中心；
         // 下方 PIP 预测消费同一 target 变量自动跟随
+        // [RVP] §49（2026-11-01 用户定版）：红外族（IR/AIR）改锁点——舰船仍取最大 OBB 中心，
+        // 其余目标在本弹锁定种子下固定抽一块 OBB，弹着点在车体/炮塔等部位之间分散
         Vec3 target = entity != null && entity.isAlive()
-                ? org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(entity)
+                ? resolveAimPoint(projectile, entity, intent.sourceType())
                 : intent.aimPoint();
         if (entity != null && entity.isAlive() && target != null) {
             projectile.rememberGuidancePos(target);
@@ -273,6 +275,25 @@ public final class RVP_GuidanceRuntimeMath {
                         : entity == null ? "NO_ENTITY_TARGET" : predictiveInterceptBlockReason(context),
                 steeringTarget, intercept, pipControl);
         return true;
+    }
+
+    /**
+     * 实体意图的制导瞄准点。
+     *
+     * <p>§49（2026-11-01 用户定版）：只有红外族（IR/AIR）在舰船阈值以下改锁随机 OBB；
+     * 其它制导类型与两族的大目标一律保持"最大 OBB 中心"，行为零变化。</p>
+     */
+    private static Vec3 resolveAimPoint(
+            RVP_BaseBullet projectile,
+            Entity entity,
+            RVP_EnumGuidanceType sourceType
+    ) {
+        if (sourceType == RVP_EnumGuidanceType.IR || sourceType == RVP_EnumGuidanceType.AIR) {
+            return org.ywzj.rvp.util.RVP_AimPointResolver.resolveIrLockPoint(entity,
+                    org.ywzj.rvp.util.RVP_AimPointResolver.lockSeed(projectile.getId(), entity),
+                    org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(entity));
+        }
+        return org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(entity);
     }
 
     /** 主段为预设 GPS、末段允许记忆制导且尚无实体意图时，保留原坐标飞行控制。 */

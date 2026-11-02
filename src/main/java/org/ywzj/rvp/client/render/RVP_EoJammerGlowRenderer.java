@@ -40,7 +40,7 @@ import java.util.UUID;
 
 /**
  * 光电干扰机玻片夜间红光：在载具本体渲染完成后，对 display JSON {@code eo_jammer_glow}
- * 指定的玻片骨再画一遍，用顶点色乘红色并强制满亮度，同时注册一盏红色屏幕光。
+ * 指定的玻片骨再画一遍，用顶点色乘红色并强制满亮度；照亮开启时另注册一盏红色屏幕光。
  *
  * <p>只追加不改写：本体渲染仍是常规 cutout 通道，白天、残骸、干扰模块失效时不画第二遍，
  * 玻片保持原样。第二遍复用同一 {@link BakedModelInstance}，动画姿态由本体渲染器本帧写入，
@@ -52,8 +52,9 @@ import java.util.UUID;
  * 枢轴经 {@code getGlobalTransform} 带着炮塔动画回到模型空间，再按载具朝向落到世界坐标。
  * display JSON 列了几块玻片就登记几盏灯，左右各一块时画面上一左一右两个光斑。</p>
  *
- * <p>屏幕光是<b>半球光</b>：半球轴取玻片骨自己的法线（模型 +Z，即镜片朝外的一侧），
- * 跟着骨骼一起旋转，所以炮塔转到车体后方时红光就照向后方，不会固定照着车体前部。</p>
+ * <p>屏幕光是<b>定向光</b>：轴向取玻片骨自己的法线（模型 +Z，即镜片朝外的一侧），
+ * 跟着骨骼一起旋转，所以炮塔转到车体后方时红光就照向后方，不会固定照着车体前部；
+ * Shader 内再按水平 140° × 竖直 180° 收窄，避免像半球那样往玻片两侧洒光。</p>
  */
 @OnlyIn(Dist.CLIENT)
 public final class RVP_EoJammerGlowRenderer {
@@ -169,7 +170,8 @@ public final class RVP_EoJammerGlowRenderer {
             return;
         }
 
-        // 屏幕光总开关关闭时撤掉本车全部灯，顶点红光照常画（那是玻片本身的样子）。
+        // 照亮总开关关闭时连光晕一起撤：玻片只留模型自身红光（顶点色叠加），
+        // 夜视仪下这层自发光仍会被荧光滤镜放大，不再借屏幕光光晕。
         // 自己在车上时这盏灯只留照亮、不带光晕：观瞄与第三人称镜头就贴在玻片后面，
         // 光晕会糊住整个画面；玻片仍然发红、车体照样被红光照到，别人看你这辆车一切照旧。
         boolean ownVehicle = LocalVehiclePlayer.instance.vehicle == vehicle;
@@ -256,7 +258,8 @@ public final class RVP_EoJammerGlowRenderer {
             RVP_ScreenLightManager.INSTANCE.removePersistent(key, RVP_LightSourceType.EO_JAMMER);
             return;
         }
-        // 调用持续光统一入口：每帧心跳续期，条件失效时立即删除；半球轴随炮塔朝向。
+        // 调用持续光统一入口：每帧心跳续期，条件失效时立即删除；定向轴向随炮塔朝向，
+        // Shader 内按水平 140° × 竖直 180° 裁切，不会像半球那样往玻片两侧洒光。
         // 夜视仪下换用更大更亮的一档：干扰灯的能量主要在红外波段，肉眼只见微弱红晕，
         // 像增强管会把它整片放大，所以同一盏灯在滤镜里半径和亮度都要抬一档。
         RVP_LightParameters parameters = RVP_NvgHandler.isActive()

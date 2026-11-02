@@ -37,7 +37,8 @@ public class RVP_Network {
     /** 协议 32：新增小口径划空与方块命中声音消息；客户端和服务端须同时更新。 */
     /** 协议 33：新增不依赖实体追踪的导弹与殉燃声音消息；客户端和服务端须同时更新。 */
     /** 协议 34：殉燃弹药爆响改为客户端本地跟随播放（移除 AMMO_POPS 与截止时刻）；发射声改为客户端本地优先，只向未追踪载具的玩家补发；双端必须一同更新。 */
-    private static final String PROTOCOL = "34";
+    /** 协议 35：新增母车辅助载具候选选择请求和权威状态同步。 */
+    private static final String PROTOCOL = "35";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "main"))
@@ -102,6 +103,18 @@ public class RVP_Network {
                 .encoder(C2SSelectModdingSubWeapon::encode)
                 .decoder(C2SSelectModdingSubWeapon::decode)
                 .consumerMainThread(C2SSelectModdingSubWeapon::handle)
+                .add();
+        // 辅助载具状态请求：验证母车实体 UUID 后返回服务端选项、冷却和部署锁。
+        CHANNEL.messageBuilder(C2SRequestDeployableUavState.class, id++, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(C2SRequestDeployableUavState::encode)
+                .decoder(C2SRequestDeployableUavState::decode)
+                .consumerMainThread(C2SRequestDeployableUavState::handle)
+                .add();
+        // 辅助载具候选选择：服务端校验工具、停车门、冷却、租约与候选 ID。
+        CHANNEL.messageBuilder(C2SSelectDeployableUavOption.class, id++, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(C2SSelectDeployableUavOption::encode)
+                .decoder(C2SSelectDeployableUavOption::decode)
+                .consumerMainThread(C2SSelectDeployableUavOption::handle)
                 .add();
         CHANNEL.messageBuilder(C2SDeployDeployableUav.class, id++)
                 .encoder(C2SDeployDeployableUav::encode)
@@ -442,6 +455,12 @@ public class RVP_Network {
                 .encoder(S2CVehicleSound::encode)
                 .decoder(S2CVehicleSound::decode)
                 .consumerMainThread(S2CVehicleSound::handle)
+                .add();
+        // 辅助载具状态同步：S2C 单向推送已校验的服务端权威快照。
+        CHANNEL.messageBuilder(S2CDeployableUavState.class, id++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(S2CDeployableUavState::encode)
+                .decoder(S2CDeployableUavState::decode)
+                .consumerMainThread(S2CDeployableUavState::handle)
                 .add();
     }
 }

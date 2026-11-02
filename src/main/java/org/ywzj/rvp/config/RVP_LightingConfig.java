@@ -56,28 +56,30 @@ public final class RVP_LightingConfig {
 
     static {
         ForgeConfigSpec.Builder client = new ForgeConfigSpec.Builder();
-        SCREEN_LIGHT = client.comment("屏幕空间光总开关：关闭后照亮、光晕、白热核心、天空散射与烟雾受光全部不绘制。",
-                        "光晕、核心、天空等分项见下方同名开关；粒子、喷焰与声音不受影响。")
-                .define("screenLight", true);
-        EXPLOSION_LIGHT = client.comment("爆炸照亮：关闭后爆炸不再照亮地面/墙面/实体，粒子、烟雾与声音照常。")
-                .define("explosionLight", true);
-        MUZZLE_LIGHT = client.comment("炮口照亮：关闭后开火不再照亮周围环境。")
-                .define("muzzleLight", true);
-        ENGINE_LIGHT = client.comment("发动机照亮：关闭后飞行中的导弹不再照亮周围墙面与烟雾；核心喷焰不受影响。")
-                .define("engineLight", true);
-        EXPLOSION_CORE = client.comment("爆炸白热核心：炸点的圆形高亮核心；关闭后只保留照亮与光晕。")
-                .define("explosionCore", true);
-        EXPLOSION_HALO = client.comment("爆炸广域光晕：炸点周围的世界空间光晕，需要 bloom 才能显示。")
-                .define("explosionHalo", true);
-        SKY_SCATTER = client.comment("天空散射：爆炸把整片夜空染亮；关闭后天空像素完全不受爆炸光影响。")
-                .define("skyScatter", true);
-        SMOKE_LIGHT = client.comment("烟雾与炮口特殊贴图受光：关闭后烟雾贴图不再接收环境光。")
-                .define("smokeLight", true);
+        SCREEN_LIGHT = client.comment("屏幕空间照亮总开关，默认关闭：关闭后爆炸/炮口/发动机不再照亮环境，烟雾不再受光，天空不再被染亮，白热核心与各类光晕也一并停止。",
+                        "分项开关见下方同名条目，默认同样关闭；粒子、喷焰与声音不受影响。",
+                        "光电干扰机玻片不再例外：照亮关闭时它只保留模型自身的红光，不再提供光晕与周围照亮；夜视仪下仍会高亮。")
+                .define("screenLight", false);
+        EXPLOSION_LIGHT = client.comment("爆炸照亮：关闭后爆炸不再照亮地面/墙面/实体，粒子、烟雾与声音照常。默认关闭。")
+                .define("explosionLight", false);
+        MUZZLE_LIGHT = client.comment("炮口照亮：关闭后开火不再照亮周围环境。默认关闭。")
+                .define("muzzleLight", false);
+        ENGINE_LIGHT = client.comment("发动机照亮：关闭后飞行中的导弹不再照亮周围墙面与烟雾；核心喷焰不受影响。",
+                        "默认关闭：屏幕空间发动机照亮开销大，需要时手动开启。")
+                .define("engineLight", false);
+        EXPLOSION_CORE = client.comment("爆炸白热核心：炸点的圆形高亮核心；关闭后只保留照亮与光晕。默认关闭。")
+                .define("explosionCore", false);
+        EXPLOSION_HALO = client.comment("爆炸广域光晕：炸点周围的世界空间光晕，需要 bloom 才能显示。默认关闭。")
+                .define("explosionHalo", false);
+        SKY_SCATTER = client.comment("天空散射：爆炸把整片夜空染亮；关闭后天空像素完全不受爆炸光影响。默认关闭。")
+                .define("skyScatter", false);
+        SMOKE_LIGHT = client.comment("烟雾与炮口特殊贴图受光：关闭后烟雾贴图不再接收环境光。默认关闭。")
+                .define("smokeLight", false);
         PLUME = client.comment("程序喷焰：导弹尾部的定向喷流，独立于八灯预算与观察距离；关闭后回到旧尾焰粒子。")
                 .define("plume", true);
-        BLOOM = client.comment("半分辨率亮部光晕；关闭不影响基础受光。") .define("bloom", true);
-        MISSILE_HALO = client.comment("导弹发动机的广域外圈橙晕；关闭只去掉外圈，发动机表面照亮由 engineLight 控制。")
-                .define("missileHalo", true);
+        BLOOM = client.comment("半分辨率亮部光晕；关闭不影响基础受光，所有光晕（含干扰机玻片光晕）都不再显示。").define("bloom", true);
+        MISSILE_HALO = client.comment("导弹发动机的广域外圈橙晕；关闭只去掉外圈，发动机表面照亮由 engineLight 控制。默认关闭。")
+                .define("missileHalo", false);
         EO_JAMMER_GLOW = client.comment("光电干扰机玻片在夜间/暗处乘红色并发光；关闭后玻片完全保持原贴图。",
                         "玻片骨骼与对应干扰模块由 display JSON 的 eo_jammer_glow 指定。")
                 .define("eoJammerGlow", true);
@@ -102,7 +104,7 @@ public final class RVP_LightingConfig {
         context.registerConfig(ModConfig.Type.CLIENT, CLIENT_SPEC, "ywzj_rvp-lighting-client.toml");
     }
 
-    /** 配置未加载时允许安全客户端默认值。 */
+    /** 照亮总开关；默认关闭。关闭后所有屏幕光（含干扰机玻片光晕）停止提交，玻片只保留模型自身红光。 */
     public static boolean screenEnabled() {
         // 调用本机会话覆盖；未调参时沿用已加载的画质配置。
         return RVP_LightRuntimeTuning.getOrDefault(Group.global, Parameter.enabled,
@@ -115,11 +117,11 @@ public final class RVP_LightingConfig {
                 configuredBloomEnabled() ? 1 : 0) == 1;
     }
     /** 返回原始画质选择，供调参面板显示真正的默认值；不读取会话覆盖。 */
-    public static boolean configuredScreenEnabled() { return !CLIENT_SPEC.isLoaded() || SCREEN_LIGHT.get(); }
+    public static boolean configuredScreenEnabled() { return CLIENT_SPEC.isLoaded() && SCREEN_LIGHT.get(); }
     /** 返回原始光晕选择；恢复默认后继续尊重玩家已有 TOML。 */
     public static boolean configuredBloomEnabled() { return !CLIENT_SPEC.isLoaded() || BLOOM.get(); }
-    /** 返回原始发动机广域橙晕选择；默认开启，面板不会自行关闭。 */
-    public static boolean configuredMissileHaloEnabled() { return !CLIENT_SPEC.isLoaded() || MISSILE_HALO.get(); }
+    /** 返回原始发动机广域橙晕选择；默认关闭，面板不会自行开启。 */
+    public static boolean configuredMissileHaloEnabled() { return CLIENT_SPEC.isLoaded() && MISSILE_HALO.get(); }
     /** 导弹发动机广域橙晕；只控制外圈，发动机表面照亮见 {@link #engineLightEnabled()}。 */
     public static boolean missileHaloEnabled() {
         // 调用本地会话开关；未显式调参时沿用客户端配置。
@@ -141,8 +143,8 @@ public final class RVP_LightingConfig {
     public static boolean skyScatterEnabled() { return enabledByDefault(SKY_SCATTER); }
     /** 烟雾与炮口特殊贴图受光。 */
     public static boolean smokeLightEnabled() { return enabledByDefault(SMOKE_LIGHT); }
-    /** 程序喷焰；关闭后回到旧尾焰粒子，和八灯预算、观察距离无关。 */
-    public static boolean plumeEnabled() { return enabledByDefault(PLUME); }
+    /** 程序喷焰与光照无关；配置未加载时仍按开启处理，避免启动首帧缺视觉。 */
+    public static boolean plumeEnabled() { return !CLIENT_SPEC.isLoaded() || PLUME.get(); }
 
     /**
      * 空中起爆离地高度门槛，单位格；0 表示不限制（贴地爆炸也生成光源）。
@@ -161,13 +163,13 @@ public final class RVP_LightingConfig {
         return CLIENT_SPEC.isLoaded() ? AIR_BURST_CLEARANCE.get().floatValue() : 100F;
     }
 
-    /** 单项开关的统一读取：配置未加载时按代码默认（开启）处理，避免启动首帧短暂缺光。 */
+    /** 单项照亮开关的统一读取：配置未加载时按代码默认（关闭）处理，与 TOML 默认值一致。 */
     private static boolean enabledByDefault(ForgeConfigSpec.BooleanValue value) {
-        return !CLIENT_SPEC.isLoaded() || value.get();
+        return CLIENT_SPEC.isLoaded() && value.get();
     }
 
-    /** 光电干扰机玻片夜间红光；配置未加载时按开启处理，与 TOML 默认值一致。 */
-    public static boolean eoJammerGlowEnabled() { return enabledByDefault(EO_JAMMER_GLOW); }
+    /** 光电干扰机玻片夜间红光与光晕；与照亮总开关无关，配置未加载时也按开启处理。 */
+    public static boolean eoJammerGlowEnabled() { return !CLIENT_SPEC.isLoaded() || EO_JAMMER_GLOW.get(); }
     /** 默认关闭实验性空气散射。 */
     public static boolean volumetricEnabled() { return CLIENT_SPEC.isLoaded() && VOLUMETRIC.get(); }
     /** 返回客户端灯数预算。 */

@@ -37,8 +37,18 @@ class RVP_LightParametersTest {
 
     @Test
     void explosionAndOwnOcclusionKeepLocalAndNewDefaults() {
-        // 调用配置读取入口：合并沿用本地照亮默认开启，远端新增的本车遮挡默认关闭。
-        assertTrue(RVP_LightingConfig.explosionLightEnabled());
+        // 调用配置读取入口：照亮默认全部关闭，本车遮挡沿用默认关闭。
+        assertFalse(RVP_LightingConfig.screenEnabled());
+        assertFalse(RVP_LightingConfig.explosionLightEnabled());
+        assertFalse(RVP_LightingConfig.muzzleLightEnabled());
+        assertFalse(RVP_LightingConfig.explosionCoreEnabled());
+        assertFalse(RVP_LightingConfig.explosionHaloEnabled());
+        assertFalse(RVP_LightingConfig.skyScatterEnabled());
+        assertFalse(RVP_LightingConfig.smokeLightEnabled());
+        assertFalse(RVP_LightingConfig.missileHaloEnabled());
+        assertTrue(RVP_LightingConfig.bloomEnabled());
+        assertTrue(RVP_LightingConfig.eoJammerGlowEnabled());
+        assertTrue(RVP_LightingConfig.plumeEnabled());
         assertFalse(RVP_LightingConfig.sourceVehicleOccludesOwnLight());
         // 真实方块光仍保持本地关闭状态，屏幕光开关不改变它。
         assertEquals(0, RVP_LightParameters.explosion(8).blockLightLevel());
