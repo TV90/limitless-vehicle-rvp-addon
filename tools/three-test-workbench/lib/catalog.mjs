@@ -57,6 +57,19 @@ export async function discoverCatalog({ pluginRoot, projectRoot, env = process.e
       await confinedFile(folder, manifest.module);
       const plugin = { id: manifest.id, name: manifest.name,
         module: `/plugins/${directory.name}/${manifest.module.split(/[\\/]/).map(encodeURIComponent).join('/')}`, cases: [], warnings: [] };
+      // 工具页由插件清单声明，主体只提供入口，不了解编辑器的业务字段。
+      if (manifest.tools !== undefined) {
+        if (!Array.isArray(manifest.tools)) throw new Error('tools 必须是工具页数组');
+        const toolIds = new Set();
+        plugin.tools = [];
+        for (const tool of manifest.tools) {
+          if (!isId(tool?.id) || toolIds.has(tool.id) || typeof tool.name !== 'string'
+            || typeof tool.page !== 'string' || !tool.page.endsWith('.html')) throw new Error('工具页需要唯一 id、name 与 HTML page');
+          await confinedFile(folder, tool.page); toolIds.add(tool.id);
+          plugin.tools.push({ id: tool.id, name: tool.name,
+            url: `/plugins/${directory.name}/${tool.page.split(/[\\/]/).map(encodeURIComponent).join('/')}` });
+        }
+      }
       const sources = new Set();
       for (const source of manifest.sources) {
         try {

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "projectile",
+  "name": "RVP 弹体仿真",
+  "module": "adapter.js",
+  "sources": [{
+    "id": "simulation",
+    "root": "build/projectile-simulation",
+    "index": "index.json",
+    "rootEnv": "RVP_PROJECTILE_REPLAY_DIR",
+    "hint": "请在项目根运行 ./gradlew projectileSimulation；武器来自 limitless_vehicle/rvp/data/rvp/weapons"
+  }, {
+    "id": "editor",
+    "root": "build/projectile-simulation-editor",
+    "index": "index.json",
+    "hint": "用例生成器的单例仿真结果；先保存用例，再运行编辑器提供的命令"
+  }]
+}

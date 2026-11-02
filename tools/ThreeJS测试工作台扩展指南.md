@@ -16,7 +16,7 @@
 
 **适配器**就是把测试自己的字段翻译成工作台认识的“对象、位置、观察值和事件”的小模块。主体没有 `if (pluginId === 'gunner')` 之类的业务分支，新增领域不需要把所有类型继续塞到大文件里。
 
-本次只新增工具和文档；没有改动旧工具、游戏逻辑、本体源码、Mixin 或载具包。Gunner 插件直接读取当前 `gunnerSimulation` 输出；解析抛体插件入口则读取统一格式，展示另一领域如何独立接入。
+Gunner 插件读取当前 `gunnerSimulation` 输出，解析抛体插件展示统一格式接入。RVP 弹体插件由独立 Java 进程直接创建真实生产弹体并执行气动/运动方法；游戏共用单刻状态准备与制导入口，工作台只负责回放。
 
 ## 2. 运行
 
@@ -33,8 +33,8 @@ npm start
 自带的解析抛体示例无需 Java 构建。要生成 Gunner 数据，回到项目根目录：
 
 ```powershell
-$env:JAVA_HOME='C:\Users\FishKing0721\.jdks\ms-17.0.16'
-$env:JAVA_TOOL_OPTIONS='-Djdk.net.unixdomain.tmpdir=D:\WgameProject'
+
+
 ./gradlew gunnerSimulation
 ```
 
@@ -96,6 +96,10 @@ $env:JAVA_TOOL_OPTIONS='-Djdk.net.unixdomain.tmpdir=D:\WgameProject'
 | `sources[].index` | 相对于数据目录的索引 JSON |
 | `sources[].rootEnv` | 可选；主动声明允许哪个环境变量覆盖目录，覆盖后可指向项目外 |
 | `sources[].hint` | 可选；数据未生成时给使用者的说明 |
+| `tools` | 可选工具页数组；每项需要插件内唯一的 `id`、显示 `name` 和相对 HTML 路径 `page`；页首自动生成入口 |
+| `server` | 可选服务端 `.mjs` 模块；只由本地清单指定，不作为静态文件公开 |
+
+交互编辑器可参考 [弹体用例生成器](three-test-workbench/plugins/projectile-scenario/README.md)。工具页位于插件自己的目录，HTML/CSS/JS 均由本机服务提供；服务模块导出 `handleRequest({request, path, projectRoot, send})`，接收 `/api/plugins/<插件id>/` 后的相对路径。通用路由检查路径并拒绝来源不是工作台的写请求；业务模块还须自行限制方法、请求大小、可写目录与数据格式。已有插件没有 `tools` 或 `server` 时行为保持原样，不必提供服务模块。
 
 插件默认导出接口：
 
@@ -200,6 +204,7 @@ export function createProbe({ THREE, object }) {
 | 插件 | 数据来源 | 特殊能力 / 边界 |
 | --- | --- | --- |
 | `gunner` | `build/gunner-simulation/index.json` 与原始场景记录 | 专用载具/飞机图形、阶段与操纵输入面板；接入范围沿用原记录，未额外运行游戏物理或真实武器 |
+| `projectile` | `build/projectile-simulation/index.json`；`./gradlew projectileSimulation` 生成 | [RVP 弹体仿真](three-test-workbench/plugins/projectile/README.md)：权威武器 JSON + 真实实体气动/运动方法；六类实体、空气/水中、冷发射/二脉冲、风漂/部署；目标与环境由场景提供，不运行伤害或引信触发 |
 | `standard` | `plugins/standard/records/`；也可配置其他来源 | 直接读取统一格式，通用图形与观察值；解析示例只是数学公式演示，没有调用 RVP 弹道 |
 
 工作台读取测试进程已经生成的结果。新增 Java 算法测试仍需在测试侧调用生产代码并导出观察值；测试入口、场景生成与断言由该测试自身维护，不要求统一塞回 Gunner 仿真类。Gunner 原始记录没有断言字段，因此新工具只展示原始统计，不自行声称测试“通过”。
@@ -214,8 +219,8 @@ npm run check
 npm test
 
 # 在项目根目录
-$env:JAVA_HOME='C:\Users\FishKing0721\.jdks\ms-17.0.16'
-$env:JAVA_TOOL_OPTIONS='-Djdk.net.unixdomain.tmpdir=D:\WgameProject'
+
+
 ./gradlew build gunnerSimulation
 ```
 
@@ -226,6 +231,7 @@ $env:JAVA_TOOL_OPTIONS='-Djdk.net.unixdomain.tmpdir=D:\WgameProject'
 | `core/view.js` | 通用三维画面、资源生命周期、轨迹、相机与选择 |
 | `lib/catalog.mjs` / `server.mjs` | 自动发现、本地数据来源与 HTTP 边界 |
 | `plugins/gunner/` | 当前 Gunner 格式适配、专用模型和观察面板 |
+| `plugins/projectile/` / `src/test/java/.../projectile/simulation/` | RVP 武器只读、逐刻弹道计算、来源摘要、弹体模型和观察面板 |
 | `plugins/standard/` / `scripts/generate-demo.mjs` | 通用格式入口与可重复生成的独立示例 |
 | `test/` | 输入、采样、动态扩展、实际 Java 记录和 HTTP 验证 |
 

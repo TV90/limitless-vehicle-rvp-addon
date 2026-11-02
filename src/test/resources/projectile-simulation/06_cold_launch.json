@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "rvp_cold_launch",
+  "name": "RVP 冷发射 · 鹰击-20",
+  "description": "真实冷发射本地轴、机头锁定、GPS PRESET 交接和实体二脉冲触发。",
+  "weapon": "rvp:052d_yj20",
+  "ticks": 1200,
+  "position": [0, 70, 0],
+  "yaw": 0,
+  "pitch": 0,
+  "groundY": 64,
+  "coldLaunchTicks": 20,
+  "coldLaunchVelocity": [0, 40, 0],
+  "target": [200, 68, 6000],
+  "targetRadius": 4
+}

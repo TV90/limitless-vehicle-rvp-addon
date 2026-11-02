@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "rvp_rocket",
+  "name": "RVP 火箭弹 · Hydra-70",
+  "description": "运行真实火箭弹初始化与实体运动，保留生产出膛倍率、载机速度继承、恒速和速度上限。",
+  "weapon": "rvp:ah64_hydra70",
+  "ticks": 500,
+  "position": [0, 180, 0],
+  "vehicleVelocity": [0, 0, 40],
+  "yaw": 0,
+  "pitch": -5,
+  "groundY": 64
+}

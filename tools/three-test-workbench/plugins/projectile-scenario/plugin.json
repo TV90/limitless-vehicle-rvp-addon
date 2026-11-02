@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "projectile-scenario",
+  "name": "弹体用例生成器（几何预览）",
+  "module": "adapter.js",
+  "server": "server.mjs",
+  "sources": [],
+  "tools": [{ "id": "editor", "name": "弹体用例生成器", "page": "index.html" }]
+}

@@ -13,6 +13,19 @@ public final class RVP_GuidanceRuntimeController {
     private RVP_GuidanceRuntimeController() {}
 
     public static boolean tick(RVP_BaseBullet projectile) {
+        // 调用同一个实体制导入口；游戏中的目标观测始终由已注册的制导源提供。
+        return tick(projectile, null);
+    }
+
+    /**
+     * 实体制导的外部观测入口：只允许替换“本刻看到了哪个目标”，其余阶段、门控、转向与气动仍执行原链。
+     *
+     * @param projectile 正在执行实体飞行的弹体
+     * @param observation 可选目标观测提供者；null 使用生产制导源，独立数值环境可提供明确的实体/坐标观测
+     * @return 本刻是否成功执行制导
+     */
+    public static boolean tick(RVP_BaseBullet projectile,
+            java.util.function.Function<RVP_GuidanceRuntimeContext, RVP_GuidanceIntent> observation) {
         // DIRCM 被干扰：丢制导（不执行任何制导源，等效 NONE 意图直飞）+ 每 tick 强制偏转。
         // 普通 IR/ARH 弹为永久干扰；HITL 弹由 RVP_DircmRuntimeManager 递减 dircmJamRemainTick
         // 归零后恢复制导。双端安全：无任何客户端类型引用。
@@ -47,7 +60,8 @@ public final class RVP_GuidanceRuntimeController {
         }
 
         RVP_GuidanceRuntimeContext context = new RVP_GuidanceRuntimeContext(projectile, data, active);
-        RVP_GuidanceIntent intent = source.evaluate(context);
+        // 外部环境只提供观测，不能替换下面的惯性回退或实体转向执行器。
+        RVP_GuidanceIntent intent = observation == null ? source.evaluate(context) : observation.apply(context);
         if (!intent.success() && active.enableInertialGuidance()) {
             Vec3 memory = projectile.getLastGuidancePos();
             if (memory != null) {

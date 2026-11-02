@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "rvp_torpedo",
+  "name": "RVP 鱼雷 · 鱼-7 入水过渡",
+  "description": "直接运行真实鱼雷的空中弹道、入水判定、速度过渡和水中深度阻尼。",
+  "weapon": "rvp:052d_yu7",
+  "ticks": 600,
+  "position": [0, 138, 0],
+  "yaw": 0,
+  "pitch": -15,
+  "groundY": 64,
+  "waterY": 128,
+  "guidance": false
+}

@@ -154,12 +154,16 @@ async function refreshCatalog() {
   try {
     const response = await fetch('/api/catalog'); if (!response.ok) throw new Error('读取测试目录失败');
     const catalog = await response.json(), nextRegistry = new PluginRegistry(), entries = new Map(), warnings = [...catalog.warnings];
-    const groups = [], importOptions = [new Option('导入格式：自动识别', '')];
+    const groups = [], toolLinks = [], importOptions = [new Option('导入格式：自动识别', '')];
     for (const description of catalog.plugins) {
       warnings.push(...description.warnings.map(message => `${description.name}：${message}`));
       try {
         const module = await import(description.module);
         nextRegistry.add(module.default, description.id);
+        for (const tool of description.tools ?? []) {
+          const link = document.createElement('a'); link.className = 'button'; link.textContent = `${tool.name} ↗`;
+          link.href = tool.url; link.target = '_blank'; link.rel = 'noopener'; link.style.textDecoration = 'none'; toolLinks.push(link);
+        }
         importOptions.push(new Option(`导入格式：${description.name}`, description.id));
         const group = document.createElement('optgroup'); group.label = description.name;
         for (const entry of description.cases) { group.append(new Option(entry.name, entry.url)); entries.set(entry.url, { ...entry, pluginId: description.id }); }
@@ -168,6 +172,7 @@ async function refreshCatalog() {
     }
     if (revision !== catalogRevision) return;
     registry = nextRegistry; catalogEntries = entries;
+    $('plugin-tools').replaceChildren(...toolLinks);
     $('scenario').replaceChildren(new Option('选择测试 / 本地导入', ''), ...groups);
     $('scenario').value = current?.source ?? '';
     const importSelection = $('import-plugin').value;

@@ -2069,13 +2069,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                     RVP_ProjectileLifecycleDebug.NotAliveCheckpoint.AFTER_SUBMUNITION)) {
                 return;
             }
-            guidanceWireDirectApplied = false;
-            // 每 Tick 重新建立 PRESET 制导到运动层的接管标记，避免上一 Tick 的状态泄漏。
-            presetGuidanceMotionAppliedThisTick = false;
-            aeroLoadFactor = 0.0;
-            attackAngleApplied = false;
-            // 调用攻角门控，智能引信/瞬转区间接管前清理上一阶段角速度。
-            if (!RVP_ProjectileMotion.usesAttackAngle(this)) resetAttackAngleRates();
+            // 调用实体与独立数值环境共用的单刻准备，避免气动载荷或“已积分”标记残留。
+            prepareKinematicGuidanceTick();
             tickGuidance();
             // 调用本项目攻角兜底：无制导指令时推进残留攻角；智能引信拥有独立运动契约。
             if (!smartFuseActive) RVP_ProjectileMotion.finishAttackAngleGuidance(this);
@@ -2149,6 +2144,19 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                         superTickNanos + rvpTickNanos);
             }
         }
+    }
+
+    /**
+     * 准备一次真实实体制导/运动的临时状态；不推进时钟，不调用任何虚拟段算法。
+     * 独立数值环境必须在制导前调用，和服务端实体 Tick 保持相同顺序。
+     */
+    public final void prepareKinematicGuidanceTick() {
+        guidanceWireDirectApplied = false;
+        presetGuidanceMotionAppliedThisTick = false;
+        aeroLoadFactor = 0.0;
+        attackAngleApplied = false;
+        // 调用实体攻角门控；智能引信或瞬转区间接管时清掉上一阶段的角速度。
+        if (!RVP_ProjectileMotion.usesAttackAngle(this)) resetAttackAngleRates();
     }
 
     /*=======================虚拟中段弹体=======================*/

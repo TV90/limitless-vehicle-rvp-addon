@@ -5,8 +5,8 @@ Java 运行当前 Gunner 的数值决策并生成 JSON，Three.js 根据记录�
 在项目根目录运行：
 
 ```powershell
-$env:JAVA_HOME='C:\Users\FishKing0721\.jdks\ms-17.0.16'
-$env:JAVA_TOOL_OPTIONS='-Djdk.net.unixdomain.tmpdir=D:\WgameProject'
+
+
 ./gradlew gunnerSimulation
 cd tools/gunner-replay
 npm ci

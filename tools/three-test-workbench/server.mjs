@@ -1,7 +1,8 @@
 import { createServer } from 'node:http';
 import { dirname, extname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { confinedFile, discoverCatalog, FileError, readLimited } from './lib/catalog.mjs';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { confinedFile, discoverCatalog, FileError, readJSON, readLimited } from './lib/catalog.mjs';
+import { isId } from './core/replay.js';
 
 /** 新工具独立提供页面、插件和 Three.js，不依赖旧工具的文件或 node_modules。 */
 const webRoot = dirname(fileURLToPath(import.meta.url));
@@ -16,11 +17,24 @@ export function createWorkbenchServer({ projectRoot = resolve(webRoot, '../..'),
       response.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
       response.end(request.method === 'HEAD' ? undefined : body);
     };
-    if (!['GET', 'HEAD'].includes(request.method)) { response.setHeader('Allow', 'GET, HEAD'); send(405, 'text/plain', '仅支持读取'); return; }
     try {
       // 不先用 URL 标准化路径，保留 .. 原文用于拒绝穿越目录的请求。
       const path = decodeURIComponent(request.url.split('?')[0]);
       if (!path.startsWith('/') || path.includes('\\') || path.includes('\0') || path.split('/').includes('..')) throw new FileError(403, '路径超出允许目录');
+      if (path.startsWith('/api/plugins/')) {
+        const [id, ...parts] = path.slice('/api/plugins/'.length).split('/');
+        if (!isId(id)) throw new FileError(404, '没有此插件接口');
+        // 仅执行本地清单主动声明的服务模块；浏览器输入不能指定模块路径。
+        const manifest = await readJSON(await confinedFile(pluginRoot, `${id}/plugin.json`), 1024 * 1024);
+        if (manifest.schemaVersion !== 1 || manifest.id !== id || typeof manifest.server !== 'string'
+          || !manifest.server.endsWith('.mjs')) throw new FileError(404, '插件未提供服务接口');
+        if (!['GET', 'HEAD'].includes(request.method) && request.headers.origin
+          && request.headers.origin !== `http://${request.headers.host}`) throw new FileError(403, '仅允许工作台页面保存数据');
+        const module = await import(pathToFileURL(await confinedFile(resolve(pluginRoot, id), manifest.server)).href);
+        if (typeof module.handleRequest !== 'function') throw new FileError(500, '插件服务入口无效');
+        await module.handleRequest({ request, path: `/${parts.join('/')}`, projectRoot, send }); return;
+      }
+      if (!['GET', 'HEAD'].includes(request.method)) { response.setHeader('Allow', 'GET, HEAD'); send(405, 'text/plain', '仅支持读取'); return; }
       if (path === '/api/catalog' || path.startsWith('/api/records/')) {
         // 每次刷新重新发现；新增插件/索引条目后无需修改主体或重启服务。
         const catalog = await discoverCatalog({ projectRoot, pluginRoot, env });
@@ -34,7 +48,7 @@ export function createWorkbenchServer({ projectRoot = resolve(webRoot, '../..'),
       let root = webRoot, file;
       if (path.startsWith('/plugins/')) {
         root = pluginRoot; file = path.slice('/plugins/'.length);
-        if (!['.js', '.png', '.jpg', '.svg'].includes(extname(file))) throw new FileError(404, '未公开此插件文件');
+        if (!['.html', '.css', '.js', '.png', '.jpg', '.svg'].includes(extname(file))) throw new FileError(404, '未公开此插件文件');
       } else if (path.startsWith('/vendor/three/')) {
         root = resolve(webRoot, 'node_modules/three'); file = path.slice('/vendor/three/'.length);
         if (!file.endsWith('.js') || (!file.startsWith('build/') && !file.startsWith('examples/jsm/'))) throw new FileError(404, '未公开此依赖文件');

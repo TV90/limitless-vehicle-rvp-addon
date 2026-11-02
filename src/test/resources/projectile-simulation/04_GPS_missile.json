@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "rvp_gps_missile",
+  "name": "RVP GPS 导弹 · 风暴阴影",
+  "description": "运行真实导弹的 GPS 巡航与点制导执行器、点火延迟、变质量、攻角和实体运动。",
+  "weapon": "rvp:rafale_storm_shadow",
+  "ticks": 1000,
+  "position": [0, 220, 0],
+  "vehicleVelocity": [0, 0, 60],
+  "yaw": 0,
+  "pitch": 0,
+  "groundY": 64,
+  "target": [120, 68, 1500],
+  "targetRadius": 4
+}

@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "rvp_bomb",
+  "name": "RVP 炸弹 · MK-84",
+  "description": "直接运行真实炸弹实体的重力、载机速度继承和速度限制，停止条件保留完整实体状态。",
+  "weapon": "rvp:f14d_mk84",
+  "ticks": 600,
+  "position": [0, 300, 0],
+  "vehicleVelocity": [0, 0, 60],
+  "yaw": 0,
+  "pitch": 0,
+  "groundY": 64
+}

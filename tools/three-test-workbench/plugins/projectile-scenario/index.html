@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0d1920">
+  <title>弹体用例生成器 · RVP 三维测试工作台</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="./editor.css">
+  <script type="importmap">{"imports":{"three":"/vendor/three/build/three.module.js","three/addons/":"/vendor/three/examples/jsm/"}}</script>
+</head>
+<body>
+  <header>
+    <div class="brand"><span class="brand-icon" aria-hidden="true">⌖</span><div><h1>弹体用例生成器 <span>/ RVP</span></h1><p>摆好发射初态，预览目标运动，生成可复现的测试</p></div></div>
+    <div class="sources"><a class="button" href="/" target="_blank" rel="noopener">打开回放工作台 ↗</a><button id="new">新建</button><button id="duplicate">复制为新用例</button><label class="button" for="import">导入 JSON</label><input id="import" type="file" accept=".json,application/json" hidden></div>
+  </header>
+  <div class="template-bar">
+    <label for="template-search">从现有场景开始</label><input id="template-search" type="search" placeholder="筛选名称、武器或文件名" aria-label="筛选场景模板">
+    <select id="template" aria-label="场景模板"><option>正在读取场景…</option></select><button id="load-template">载入为副本</button><button id="refresh">刷新目录</button><span id="catalog-count" class="muted"></span>
+  </div>
+  <div id="message" class="message" role="status">正在读取项目场景和权威武器目录…</div>
+  <details id="catalog-warnings" class="notices" hidden><summary>目录读取提示</summary><div id="warnings"></div></details>
+  <main class="editor-layout">
+    <section class="preview" aria-label="场景三维编辑预览">
+      <div id="preview-host"></div>
+      <div class="preview-heading"><div class="eyebrow">SCENARIO / 几何预览</div><h2 id="preview-title">自定义弹体测试</h2><p>玫红：目标完整路线　金色：机头朝向　青绿：初速输入</p></div>
+      <div class="preview-tools"><div role="group" aria-label="相机视角"><button id="iso" class="active">三维</button><button id="top">俯视</button><button id="side">侧视</button><button id="fit">适配全景</button></div>
+        <label for="drag-mode">画面拖动</label><select id="drag-mode"><option value="launch">发射点</option><option value="target">目标起点</option><option value="initialVelocity">初速箭头端点</option><option value="targetVelocity">目标速度箭头端点</option><option value="none">仅旋转相机</option></select></div>
+      <div class="preview-legend"><span><i class="launch-dot"></i>机头</span><span><i class="velocity-dot"></i>初速输入</span><span><i class="target-dot"></i>目标</span><span>X → 东 / Y ↑ 高度 / Z → 南</span></div>
+      <div id="preview-error" class="preview-error" hidden></div>
+      <div class="preview-readout"><span id="target-position">目标 —</span><span id="target-speed">速度 —</span><small>拖动彩色坐标轴调整参数；空白处旋转，滚轮缩放。箭头长度按画面缩放。</small></div>
+    </section>
+    <aside class="editor-panel">
+      <nav class="tabs" aria-label="参数分组"><button data-tab="launch" class="active">发射初态</button><button data-tab="target">目标运动</button><button data-tab="environment">环境 / 高级</button><button data-tab="json">JSON</button></nav>
+      <form id="editor-form" novalidate>
+        <section data-panel="launch">
+          <div class="panel-title">用例信息 <small>距离：格 · 速度：格/秒</small></div>
+          <div id="identity-fields"></div>
+          <label class="field"><span>武器筛选</span><input id="weapon-search" type="search" placeholder="名称、类型或 ID"></label>
+          <label class="field"><span>权威武器</span><select id="weapon" data-field="weapon" required></select></label>
+          <p id="weapon-hint" class="help"></p>
+          <div id="launch-fields"></div>
+          <div class="angle-sliders"><label>机头航向 <output id="yaw-output"></output><input id="yaw-slider" type="range" min="-180" max="180" step="0.1" aria-label="机头航向滑条"></label><label>机头俯仰 <output id="pitch-output"></output><input id="pitch-slider" type="range" min="-90" max="90" step="0.1" aria-label="机头俯仰滑条"></label></div>
+          <button id="aim-target" type="button">机头指向目标起点</button>
+          <div id="initial-velocity-field"></div>
+          <div id="initial-direction" class="direction-controls"><div class="panel-title">初速输入方向 <small>与机头角度分别设置</small></div><div class="triple"><label>速率<input id="initial-speed" type="number" min="0" step="any" value="40"></label><label>航向 °<input id="initial-yaw" type="number" step="any" value="0"></label><label>俯仰 °<input id="initial-pitch" type="number" min="-90" max="90" step="any" value="0"></label></div><button id="velocity-from-head" type="button">初速方向对齐机头</button></div>
+          <p class="help">初速输入会交给真实实体初始化；冷发射、平台速度继承及武器规则可能继续改变它。金色机头和青绿速度箭头可朝不同方向。</p>
+        </section>
+        <section data-panel="target" hidden>
+          <div class="panel-title">目标运动 <small>恒定加速度脚本</small></div>
+          <p class="help">目标位置 = 起点 + 初速 × 秒数 + ½ × 加速度 × 秒数²。与 Java 场景中的目标脚本一致；当前格式支持直线与恒加速度曲线。</p>
+          <label class="field"><span>快速设置运动</span><select id="target-preset"><option value="">选择预设…</option><option value="stationary">静止</option><option value="crossing">沿 +X 横穿，30 格/秒</option><option value="incoming">朝发射点接近，40 格/秒</option><option value="receding">背离发射点，40 格/秒</option><option value="climbing">向上爬升，20 格/秒</option><option value="accelerating">沿 +X 加速，初速 15、加速度 3</option></select></label>
+          <div id="target-fields"></div>
+          <p class="help">关闭目标后导出 target: null。目标球只作为仿真停止条件，不等于武器引信范围。移动 GPS 用例的装订坐标仍由生产代码处理。</p>
+        </section>
+        <section data-panel="environment" hidden>
+          <div class="panel-title">环境与复现</div><div id="environment-fields"></div>
+          <details><summary>冷发射与平台姿态</summary><div id="cold-fields"></div><p class="help">冷发射速度是挂架本地坐标，保留本体轴约定；不把它当世界初速箭头。真实交接和点火延迟以 Java 回放为准。</p></details>
+          <details><summary>子弹药 / 智能引信接管初态</summary><div id="advanced-fields"></div><p class="help">只提供释放或已经接管之后的初态，不模拟子母弹释放与引信触发。</p></details>
+        </section>
+        <section data-panel="json" hidden>
+          <div class="panel-title">当前场景 JSON <small>schemaVersion: 1</small></div><p class="help">可以直接编辑并应用。未知键、非法数值和旧格式会明确报错。</p><label class="sr-only" for="json-editor">场景 JSON</label><textarea id="json-editor" spellcheck="false"></textarea><button id="apply-json" type="button">应用 JSON 到预览</button>
+        </section>
+      </form>
+    </aside>
+  </main>
+  <footer class="editor-footer">
+    <div class="transport"><button id="play" aria-label="播放目标运动">▶</button><button id="previous" aria-label="上一刻">❮</button><button id="next" aria-label="下一刻">❯</button><strong id="time">0.00 s</strong><span id="duration">/ 30.00 s</span><label for="rate">预览速度</label><select id="rate"><option value="0.25">0.25×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="8">8×</option></select></div>
+    <label class="sr-only" for="timeline">目标预览时间轴</label><input id="timeline" type="range" min="0" max="600" value="0" step="1">
+    <div class="save-bar"><span id="draft-status" class="muted">有效参数自动保留为本机草稿</span><button id="download" disabled>下载场景 JSON</button><button id="save" class="primary" disabled>保存为新用例</button><button id="copy-command" disabled>复制仿真命令</button></div>
+    <details class="run-help"><summary>怎样查看真实导弹轨迹？</summary><p>先保存用例，在项目根目录运行以下命令，再到回放工作台“刷新目录”，选择“RVP 弹体仿真”的对应场景。结果写入独立目录，不改写原有的完整场景索引。</p><pre id="command"></pre></details>
+  </footer>
+  <script type="module" src="./editor.js"></script>
+</body>
+</html>

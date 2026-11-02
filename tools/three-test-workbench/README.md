@@ -15,12 +15,18 @@ npm start
 自带解析抛体示例，可直接使用。要观察项目真实 Gunner 仿真，在项目根目录先执行：
 
 ```powershell
-$env:JAVA_HOME='C:\Users\FishKing0721\.jdks\ms-17.0.16'
-$env:JAVA_TOOL_OPTIONS='-Djdk.net.unixdomain.tmpdir=D:\WgameProject'
+
+
 ./gradlew gunnerSimulation
 ```
 
 点击“刷新目录”即可发现结果。`RVP_REPLAY_DIR` 可覆盖 Gunner 插件的数据目录；缺少 Gunner 输出时会显示提示，独立示例仍可使用。
+
+RVP 弹体仿真在项目根运行 `./gradlew projectileSimulation`，刷新页面与目录后选择 **RVP 弹体仿真**。武器只读 `limitless_vehicle/rvp/data/rvp/weapons/`。默认六个场景包含炮弹、火箭、炸弹、GPS 导弹、鱼雷入水和冷发射二脉冲。指定其他武器：`./gradlew projectileSimulation "-PprojectileWeapon=rvp:ah64_hydra70"`。
+
+气动和运动直接执行真实实体方法，包含六类弹体、二脉冲、风漂、部署、水中运动、姿态与制导执行器；不使用虚拟段积分器。场景提供理想目标观测与简化环境，不验证实际探测锁定或伤害。回放已升级第 2 版，旧结果需重新计算。[详细范围、初态与对照验证](plugins/projectile/README.md)。
+
+页首新增 **弹体用例生成器 ↗**：以现有 `projectile-simulation` 场景为模板，在三维画面拖动发射点、目标起点与速度端点，分别调整机头与初速方向，按时间轴预览目标的直线/恒加速度运动。支持全部当前场景字段、JSON 导入导出、本机草稿、保存新用例和复制单例仿真命令；真实导弹路线仍由 Java 生成。[编辑器用法与预览边界](plugins/projectile-scenario/README.md)。已经运行旧版服务时请重启 `npm start` 后刷新页面。
 
 - 播放/暂停、逐刻前后、倍速、时间轴跳转、事件跳转；空格和方向键也可操作。
 - 选择或点击对象、跟随、俯视、三维视角、已走轨迹、范围与目标连线。

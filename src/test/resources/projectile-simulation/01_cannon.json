@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "rvp_cannon",
+  "name": "RVP 炮弹 · XM829A5",
+  "description": "直接运行 RVP_BulletEntity 的炮弹运动和姿态入口，保留先移动、后摩擦重力与旋转插值。",
+  "weapon": "rvp:abramsx_xm829a5",
+  "ticks": 200,
+  "position": [0, 68, 0],
+  "yaw": 0,
+  "pitch": 0,
+  "groundY": 64,
+  "target": [0, 68, 600],
+  "targetRadius": 2
+}
