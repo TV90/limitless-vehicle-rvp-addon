@@ -15,8 +15,8 @@ import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import java.util.function.Supplier;
 
 /**
- * 盘旋激活时屏蔽玩家原生运动输入（鼠标瞄准/键盘运动），仅保留 functional 输入（武器操作）。
- * 制导逻辑由 {@link org.ywzj.rvp.uav.RVP_UavLoiterTickService} 写入 ControlUnit。
+ * 自动飞行接管时屏蔽玩家原生运动输入（鼠标瞄准/键盘运动），仅保留functional武器操作。
+ * 原盘旋走既有UAV执行，新公共会话走FlightExecutor；复用本注入点，不增加字节码入口。
  */
 @Mixin(ControlUnit.class)
 public abstract class ControlUnitMixin {
@@ -47,7 +47,9 @@ public abstract class ControlUnitMixin {
         // → return 放行原方法（正常写入运动输入）；盘旋中 或 直升机着舰/接管流程中 → 落到下方
         // 屏蔽段（保留 functional 武器操作，吞运动输入）
         if (!RVP_UavLoiterManager.isControlLocked(vehicle.getUUID())
-                && !org.ywzj.rvp.helidock.RVP_HeliDockManager.isControlLocked(vehicle.getUUID())) {
+                && !org.ywzj.rvp.helidock.RVP_HeliDockManager.isControlLocked(vehicle.getUUID())
+                // 转发公共会话的只读控制权查询；复用原注入点，保留原操作者校验与功能输入。
+                && !org.ywzj.rvp.flight.RVP_FlightTickService.isControlLocked(vehicle)) {
             return;
         }
         // 盘旋时只保留 functional 输入（武器操作），屏蔽运动输入

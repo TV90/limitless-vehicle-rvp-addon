@@ -15,6 +15,11 @@ import org.ywzj.rvp.countermeasure.RVP_CountermeasureConfigManager;
 import org.ywzj.rvp.countermeasure.RVP_CountermeasureData;
 import org.ywzj.rvp.entity.gunner.ai.GunnerExternalRadarController;
 import org.ywzj.rvp.entity.gunner.ai.GunnerTargeting;
+import org.ywzj.rvp.entity.gunner.ai.RVP_GunnerGroundPolicy;
+import org.ywzj.rvp.entity.gunner.ai.RVP_GunnerGroundPolicy.GroundEngagementState;
+import org.ywzj.rvp.entity.gunner.ai.RVP_GunnerGroundPolicy.GroundPatrolState;
+import org.ywzj.rvp.entity.gunner.ai.RVP_GunnerGroundPolicy.LauncherPositioningState;
+import org.ywzj.rvp.entity.gunner.ai.RVP_GunnerGroundPolicy.StuckRecoveryState;
 import org.ywzj.rvp.entity.gunner.ai.RVP_GunnerLockDebug;
 import org.ywzj.vehicle.entity.weapon.AmmoEntity;
 
@@ -55,6 +60,8 @@ import org.ywzj.vehicle.entity.weapon.MissileEntity;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfile;
 import org.ywzj.rvp.entity.gunner.ai.profile.RVP_EnumGunnerFaction;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
+import org.ywzj.rvp.entity.gunner.flight.RVP_GunnerFlightAdapter;
+import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfileManager;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.debug.RVP_DebugFlags;
@@ -78,12 +85,6 @@ public final class RVP_BuiltinGunnerBehaviors {
     private static final int AIR_PHASE_ATTACK = 0;
     /** 空战脱离阶段。 */
     private static final int AIR_PHASE_DISENGAGE = 1;
-    /** 地面接敌停车观察时长。 */
-    private static final int GROUND_TACTICAL_HOLD_TICK = 100;
-    /** 地面战术侧移最短时长。 */
-    private static final int GROUND_TACTICAL_EVADE_MIN_TICK = 140;
-    /** 地面战术侧移最长时长。 */
-    private static final int GROUND_TACTICAL_EVADE_MAX_TICK = 280;
     /** 红外威胁检测半径（格）：扫描跟踪本载具的红外族导弹。 */
     private static final double INFRARED_THREAT_RADIUS = 200.0;
     /** 近距敌方导弹告警半径（格）：任何敌对阵营导弹进入该圈即抛烟规避。 */
@@ -378,6 +379,18 @@ public final class RVP_BuiltinGunnerBehaviors {
             @Override
             public void plan(Stage stage, RVP_GunnerBehaviorContext context,
                              RVP_GunnerBehaviorRuntime runtime, RVP_GunnerIntentSink sink) {
+                if (RVP_GunnerFlightAdapter.enabled(context.gunner(), context.vehicle())) {
+                    // 只提供本行为配置和候选请求；公共计算/业务阶段只在移动仲裁胜出后推进。
+                    RVP_GunnerFlightAdapter.offerParameters(context.gunner(), context.profile(), priority());
+                    if (!isSeadActive(runtime)) {
+                        RVP_GunnerMovementActions.Command shared = new RVP_GunnerMovementActions.Command();
+                        shared.flightDirective = new RVP_GunnerFlightAdapter.Directive(id(), context.target(), context.profile(), 0);
+                        sink.submit(intent(id(), "vehicle", 800, 500,
+                                RVP_GunnerBehaviorIntent.Channel.MOVEMENT, RVP_GunnerBehaviorIntent.Kind.MOVEMENT,
+                                context.target(), shared, null, true, "", null));
+                    }
+                    return;
+                }
                 if (isSeadActive(runtime)) {
                     return;
                 }
@@ -609,82 +622,6 @@ public final class RVP_BuiltinGunnerBehaviors {
         }
     }
 
-    /** 地面接敌与发射架共用的战术停车/侧移状态基类。 */
-    private abstract static class TacticalMoveState {
-        /** 战术停车剩余 tick。 */
-        protected int holdTicks;
-        /** 战术侧移剩余 tick。 */
-        protected int evadeTicks;
-        /** 战术侧移相对远离方向的偏航角。 */
-        protected float evadeYawBias;
-
-        /** 推进战术计时。 */
-        final void tick() {
-            if (holdTicks > 0) {
-                holdTicks--;
-            }
-            if (evadeTicks > 0) {
-                evadeTicks--;
-            }
-        }
-
-        /** 开始一次战术停车与侧移。 */
-        final void start(int holdTicks, int evadeTicks, float evadeYawBias) {
-            this.holdTicks = Math.max(0, holdTicks);
-            this.evadeTicks = Math.max(0, evadeTicks);
-            this.evadeYawBias = evadeYawBias;
-        }
-
-        /** 清除战术停车与侧移状态。 */
-        final void clearTacticalEvade() {
-            holdTicks = 0;
-            evadeTicks = 0;
-            evadeYawBias = 0.0F;
-        }
-    }
-
-    /** 发射架定位行为状态。 */
-    private static final class LauncherPositioningState extends TacticalMoveState {
-        /** 发射架装填期巡逻状态。 */
-        private final GroundPatrolState patrol = new GroundPatrolState();
-    }
-
-    /** 地面接敌行为状态。 */
-    private static final class GroundEngagementState extends TacticalMoveState {
-    }
-
-    /** 地面巡逻大转弯状态。 */
-    private static final class GroundPatrolState {
-        /** 距离下次大转弯的剩余 tick。 */
-        private int turnCooldownTicks;
-        /** 当前大转弯剩余 tick。 */
-        private int turningTicks;
-        /** 当前大转弯目标偏航角。 */
-        private float targetYaw;
-    }
-
-    /** 卡住检测与倒车恢复状态。 */
-    private static final class StuckRecoveryState {
-        /** 上次卡住检测位置 X。 */
-        private double lastCheckX;
-        /** 上次卡住检测位置 Z。 */
-        private double lastCheckZ;
-        /** 倒车恢复剩余 tick。 */
-        private int recoveryTicks;
-        /** 再次检测卡住前的冷却 tick。 */
-        private int cooldownTicks;
-
-        /** 推进一 tick 恢复与检测冷却。 */
-        private void tick() {
-            if (recoveryTicks > 0) {
-                recoveryTicks--;
-            }
-            if (cooldownTicks > 0) {
-                cooldownTicks--;
-            }
-        }
-    }
-
     /** 固定翼或旋翼战斗飞行阶段状态。 */
     private static final class AirFlightState {
         /** 当前攻击/脱离阶段。 */
@@ -841,50 +778,13 @@ public final class RVP_BuiltinGunnerBehaviors {
                 target, null, null, false, transactionId, null).withActionProfile(profile));
     }
 
-    /** Launcher vehicle driving: park when has ammo, roam when reloading. */
+    /** 发射架策略由游戏与仿真共用的数值算法计算，动作仍由意图执行器提交。 */
     private static void tickLauncherGroundDriving(GunnerEntity gunner, AbstractVehicle vehicle, @Nullable Entity target,
                                                   GunnerProfile profile, LauncherPositioningState state,
                                                   RVP_GunnerMovementActions.Command command) {
-        boolean hasAmmo = hasAnyAmmo(vehicle);
-        if (hasAmmo) {
-            // Park — stop and let weapon system aim freely
-            state.clearTacticalEvade();
-            return;
-        }
-        // No ammo — reloading, roam tactically
-        if (target == null) {
-            tickGroundWander(gunner, vehicle, profile, state.patrol, command);
-            return;
-        }
-        Vec3 delta = target.position().subtract(vehicle.position());
-        double distSqr = delta.horizontalDistanceSqr();
-        double dist = Math.sqrt(distSqr);
-        Vec2 targetRot = VectorUtil.vecToRot(new Vec3(delta.x, 0, delta.z));
-        float yawDelta = Mth.wrapDegrees(targetRot.y - vehicle.getYRot());
-        double stopDist = target instanceof AbstractVehicle ? profile.getDriveStopDistance() : 0.0;
-        boolean tacticalTarget = stopDist > 0.0;
-
-        if (tacticalTarget && dist <= stopDist) {
-            if (state.holdTicks <= 0 && state.evadeTicks <= 0) {
-                state.start(GROUND_TACTICAL_HOLD_TICK,
-                        GROUND_TACTICAL_EVADE_MIN_TICK
-                                + gunner.getRandom().nextInt(
-                                GROUND_TACTICAL_EVADE_MAX_TICK - GROUND_TACTICAL_EVADE_MIN_TICK + 1),
-                        55.0F);
-            }
-        } else if (!tacticalTarget || dist > stopDist * 1.8) {
-            state.clearTacticalEvade();
-        }
-
-        if (state.holdTicks > 0) return;
-        if (state.evadeTicks > 0) {
-            tickGroundTacticalEvade(vehicle, target, yawDelta, state.evadeYawBias, command);
-            return;
-        }
-
-        if (yawDelta > 8) command.right = true;
-        else if (yawDelta < -8) command.left = true;
-        if (dist > stopDist * 1.2 && Math.abs(yawDelta) < 80) command.forward = true;
+        // 调用公共地面策略，保留有弹停车、装填走位的原行为。
+        copyGroundCommand(RVP_GunnerGroundPolicy.launcher(groundInput(gunner, vehicle, target, true,
+                hasAnyAmmo(vehicle)), groundSettings(profile), state, groundRandom(gunner)), command);
     }
 
     private static boolean hasAnyAmmo(AbstractVehicle vehicle) {
@@ -892,129 +792,68 @@ public final class RVP_BuiltinGunnerBehaviors {
         return ACTIONS.weapons().hasCombatAmmo(vehicle);
     }
 
+    /** 将本刻观察交给共用接敌算法，避免测试与游戏维护两套规则。 */
     private static void tickGroundEngagement(GunnerEntity gunner, AbstractVehicle vehicle, Entity target,
                                              GunnerProfile profile, GroundEngagementState state,
                                              RVP_GunnerMovementActions.Command command) {
-        Vec3 delta = target.position().subtract(vehicle.position());
-        double distSqr = delta.horizontalDistanceSqr();
-        double dist = Math.sqrt(distSqr);
-        Vec2 targetRot = VectorUtil.vecToRot(new Vec3(delta.x, 0, delta.z));
-        float yawDelta = Mth.wrapDegrees(targetRot.y - vehicle.getYRot());
-
-        double stopDist = target instanceof AbstractVehicle ? profile.getDriveStopDistance() : 0.0;
-        boolean tacticalTarget = stopDist > 0.0;
-
-        if (tacticalTarget && dist <= stopDist) {
-            if (state.holdTicks <= 0 && state.evadeTicks <= 0) {
-                float yawBias = gunner.getRandom().nextBoolean()
-                        ? profile.getGroundEvadeYawDeg() : -profile.getGroundEvadeYawDeg();
-                state.start(profile.getGroundHoldTick(),
-                        profile.getGroundEvadeTickMin()
-                                + gunner.getRandom().nextInt(Math.max(1,
-                                profile.getGroundEvadeTickMax() - profile.getGroundEvadeTickMin() + 1)),
-                        yawBias);
-            }
-        } else if (!tacticalTarget || dist > stopDist * 1.8) {
-            state.clearTacticalEvade();
-        }
-
-        if (state.holdTicks > 0) {
-            return;
-        }
-
-        if (state.evadeTicks > 0) {
-            tickGroundTacticalEvade(vehicle, target, yawDelta, state.evadeYawBias, command);
-            return;
-        }
-
-        if (yawDelta > 8) {
-            command.right = true;
-        } else if (yawDelta < -8) {
-            command.left = true;
-        }
-
-        if (dist > stopDist * 1.2 && Math.abs(yawDelta) < 80) {
-            command.forward = true;
-        }
+        // 调用公共地面策略，只计算命令；本方法不直接驱动车辆。
+        copyGroundCommand(RVP_GunnerGroundPolicy.engage(groundInput(gunner, vehicle, target, false, false),
+                groundSettings(profile), state, groundRandom(gunner)), command);
     }
 
-    /** 卡住检测与倒车脱困只提交高优先级移动意图，不再嵌在接敌/发射架行为中。 */
+    /** 卡住检测仍提交高优先级候选，行为顺序与唯一移动通道保持原样。 */
     private static void tickStuckRecovery(RVP_GunnerBehaviorContext context, StuckRecoveryState state,
                                           RVP_GunnerIntentSink sink) {
-        GunnerEntity gunner = context.gunner();
-        AbstractVehicle vehicle = context.vehicle();
-        Entity target = context.target();
-        GunnerProfile profile = context.profile();
-        float yawDelta = 0.0F;
-        boolean desireMove = false;
-        if (target != null && (!context.has(RVP_GunnerBehaviorContext.Capability.LAUNCHER)
-                || !hasAnyAmmo(vehicle))) {
-            Vec3 delta = target.position().subtract(vehicle.position());
-            Vec2 targetRot = VectorUtil.vecToRot(new Vec3(delta.x, 0.0, delta.z));
-            yawDelta = Mth.wrapDegrees(targetRot.y - vehicle.getYRot());
-            double stopDist = target instanceof AbstractVehicle ? profile.getDriveStopDistance() : 0.0;
-            desireMove = Math.sqrt(delta.horizontalDistanceSqr()) > stopDist * 1.6
-                    && Math.abs(yawDelta) < 25.0F;
-        }
-        if (target != null && gunner.tickCount % profile.getDriveStuckCheckTick() == 0
-                && state.cooldownTicks <= 0) {
-            double moved = vehicle.position().distanceToSqr(
-                    state.lastCheckX, vehicle.getY(), state.lastCheckZ);
-            double stuckDist = profile.getDriveStuckDistance();
-            if (desireMove && moved < stuckDist * stuckDist) {
-                state.recoveryTicks = profile.getDriveRecoveryTick();
-                state.cooldownTicks = profile.getDriveRecoveryTick() * 2
-                        + profile.getDriveStuckCheckTick();
-            }
-            state.lastCheckX = vehicle.getX();
-            state.lastCheckZ = vehicle.getZ();
-        }
-        if (state.recoveryTicks <= 0) {
-            return;
-        }
+        boolean launcher = context.has(RVP_GunnerBehaviorContext.Capability.LAUNCHER);
+        // 调用公共脱困算法；只有发射架有目标时才查询弹药，维持原查询条件。
+        RVP_GunnerGroundPolicy.Command result = RVP_GunnerGroundPolicy.recover(
+                groundInput(context.gunner(), context.vehicle(), context.target(), launcher,
+                        context.target() != null && launcher && hasAnyAmmo(context.vehicle())),
+                groundSettings(context.profile()), state);
+        if (result == null) return;
         RVP_GunnerMovementActions.Command command = new RVP_GunnerMovementActions.Command();
-        command.backward = true;
-        if (yawDelta > 0.0F) {
-            command.right = true;
-        } else {
-            command.left = true;
-        }
+        // 调用数值命令转换，把脱困候选交回原仲裁流程。
+        copyGroundCommand(result, command);
         sink.submit(intent("stuck_recovery", "vehicle", 830, 820,
                 RVP_GunnerBehaviorIntent.Channel.MOVEMENT,
                 RVP_GunnerBehaviorIntent.Kind.MOVEMENT,
-                target, command, null, true, "", null));
+                context.target(), command, null, true, "", null));
     }
 
-    private static void tickGroundTacticalEvade(AbstractVehicle vehicle, Entity target,
-                                                float targetYawDelta, float evadeYawBias,
-                                                RVP_GunnerMovementActions.Command command) {
-        Vec3 away = vehicle.position().subtract(target.position());
-        if (away.horizontalDistanceSqr() < 1.0E-4) {
-            away = vehicle.getLookAngle();
-        }
-        Vec2 awayRot = VectorUtil.vecToRot(new Vec3(away.x, 0, away.z));
-        float desiredYaw = awayRot.y + evadeYawBias;
-        float evadeYawDelta = Mth.wrapDegrees(desiredYaw - vehicle.getYRot());
+    /** 复制游戏观察；策略不持有实体或世界引用。 */
+    private static RVP_GunnerGroundPolicy.Input groundInput(GunnerEntity gunner, AbstractVehicle vehicle,
+                                                            @Nullable Entity target, boolean launcher, boolean ammo) {
+        Vec3 look = vehicle.getLookAngle();
+        // 调用数值合同，目标类型仍由真实实体判定。
+        return new RVP_GunnerGroundPolicy.Input(gunner.tickCount,
+                new RVP_GunnerGroundPolicy.Point(vehicle.getX(), vehicle.getZ()), vehicle.getYRot(), look.x, look.z,
+                target == null ? null : new RVP_GunnerGroundPolicy.Point(target.getX(), target.getZ()),
+                target instanceof AbstractVehicle, launcher, ammo);
+    }
 
-        if (evadeYawDelta > 8.0F) {
-            command.right = true;
-        } else if (evadeYawDelta < -8.0F) {
-            command.left = true;
-        }
+    /** 使用当前行为自己的编译参数视图，不读取其他行为的参数。 */
+    private static RVP_GunnerGroundPolicy.Settings groundSettings(GunnerProfile profile) {
+        // 调用 Profile 数值查询，将原参数逐项传入共享策略。
+        return new RVP_GunnerGroundPolicy.Settings(profile.getDriveStopDistance(), profile.getGroundHoldTick(),
+                profile.getGroundEvadeTickMin(), profile.getGroundEvadeTickMax(), profile.getGroundEvadeYawDeg(),
+                profile.getDriveStuckCheckTick(), profile.getDriveStuckDistance(), profile.getDriveRecoveryTick(),
+                profile.getGroundBigTurnIntervalTickMin(), profile.getGroundBigTurnIntervalTickMax(),
+                profile.getGroundBigTurnAngleDegMin(), profile.getGroundBigTurnAngleDegMax(), profile.getGroundBigTurnDurationTick());
+    }
 
-        if (Math.abs(evadeYawDelta) < 100.0F) {
-            command.forward = true;
-        } else {
-            command.backward = true;
-        }
+    /** 游戏继续消费原 Gunner 随机源，保持调用顺序与分布。 */
+    private static RVP_GunnerGroundPolicy.RandomInput groundRandom(GunnerEntity gunner) {
+        return new RVP_GunnerGroundPolicy.RandomInput() {
+            @Override public int nextInt(int bound) { return gunner.getRandom().nextInt(bound); }
+            @Override public float nextFloat() { return gunner.getRandom().nextFloat(); }
+            @Override public boolean nextBoolean() { return gunner.getRandom().nextBoolean(); }
+        };
+    }
 
-        if (Math.abs(targetYawDelta) > 60.0F) {
-            if (targetYawDelta > 0.0F) {
-                command.right = true;
-            } else {
-                command.left = true;
-            }
-        }
+    /** 仅转换字段，唯一载具写入边界仍在原动作层。 */
+    private static void copyGroundCommand(RVP_GunnerGroundPolicy.Command source, RVP_GunnerMovementActions.Command target) {
+        target.forward = source.forward(); target.backward = source.backward();
+        target.left = source.left(); target.right = source.right();
     }
 
     /**
@@ -1401,45 +1240,9 @@ public final class RVP_BuiltinGunnerBehaviors {
     private static void tickGroundWander(GunnerEntity gunner, AbstractVehicle vehicle, GunnerProfile profile,
                                          GroundPatrolState state,
                                          RVP_GunnerMovementActions.Command command) {
-        int cooldown = state.turnCooldownTicks;
-        int turning = state.turningTicks;
-        if (turning > 0) {
-            state.turningTicks = turning - 1;
-            float yawDelta = Mth.wrapDegrees(state.targetYaw - vehicle.getYRot());
-            if (Math.abs(yawDelta) > 6) {
-                if (yawDelta > 0) {
-                    command.right = true;
-                } else {
-                    command.left = true;
-                }
-            } else {
-                state.turningTicks = 0;
-            }
-            return;
-        }
-        if (cooldown > 0) {
-            state.turnCooldownTicks = cooldown - 1;
-        } else {
-            int minTick = profile.getGroundBigTurnIntervalTickMin();
-            int maxTick = profile.getGroundBigTurnIntervalTickMax();
-            int next = minTick + gunner.getRandom().nextInt(Math.max(1, maxTick - minTick + 1));
-            state.turnCooldownTicks = next;
-
-            float minDeg = profile.getGroundBigTurnAngleDegMin();
-            float maxDeg = profile.getGroundBigTurnAngleDegMax();
-            float ang = minDeg + gunner.getRandom().nextFloat() * Math.max(0.0F, maxDeg - minDeg);
-            if (gunner.getRandom().nextBoolean()) {
-                ang = -ang;
-            }
-            state.targetYaw = vehicle.getYRot() + ang;
-            state.turningTicks = profile.getGroundBigTurnDurationTick();
-            return;
-        }
-
-        command.forward = true;
-        if ((gunner.tickCount / 40) % 2 == 0) {
-            command.left = true;
-        }
+        // 调用共用巡逻算法，保持原随机大转弯、停车旋转和轻左转前进规则。
+        copyGroundCommand(RVP_GunnerGroundPolicy.patrol(groundInput(gunner, vehicle, null, false, false),
+                groundSettings(profile), state, groundRandom(gunner)), command);
     }
 
     private static boolean ensureAirPhase(GunnerEntity gunner, GunnerProfile profile,
@@ -1857,6 +1660,10 @@ public final class RVP_BuiltinGunnerBehaviors {
             state.totalTicks = 0;
             state.revengeTargetId = radarSource.getId();
             state.revengeFired = false;
+            if (RVP_GunnerFlightAdapter.enabled(gunner, vehicle)) {
+                // 新模式入口即发布飞离目标，保留本刻已执行操纵，下一物理刻连续接管。
+                submitSharedSeadFlight(gunner, vehicle, radarSource, false, sink);
+            }
             return true;
         }
         // 复仇推进：累计总时长，超保险上限强制退出
@@ -1913,6 +1720,11 @@ public final class RVP_BuiltinGunnerBehaviors {
     private static void tickSeadFly(GunnerEntity gunner, AbstractVehicle vehicle, Entity target,
                                     boolean towardTarget, double currentAgl,
                                     RVP_GunnerIntentSink sink) {
+        if (RVP_GunnerFlightAdapter.enabled(gunner, vehicle)) {
+            // 反雷达业务只改变导航意图，不再自己计算一套固定180格的操纵。
+            submitSharedSeadFlight(gunner, vehicle, target, towardTarget, sink);
+            return;
+        }
         RVP_GunnerMovementActions.Command command = new RVP_GunnerMovementActions.Command();
         Vec3 aimPoint;
         if (towardTarget) {
@@ -1952,6 +1764,18 @@ public final class RVP_BuiltinGunnerBehaviors {
         sink.submit(intent("sead_revenge", "vehicle", 720, 950,
                 RVP_GunnerBehaviorIntent.Channel.MOVEMENT,
                 RVP_GunnerBehaviorIntent.Kind.MOVEMENT,
+                target, command, null, true, "", null));
+    }
+
+    /** 新模式反雷达移动候选，通过同一个Gunner会话参数化调用公共飞行能力。 */
+    private static void submitSharedSeadFlight(GunnerEntity gunner, AbstractVehicle vehicle, Entity target,
+                                              boolean towardTarget, RVP_GunnerIntentSink sink) {
+        GunnerProfile profile = GunnerProfileManager.INSTANCE.getProfile(
+                GunnerProfileManager.INSTANCE.normalizeProfileId(gunner.getProfileId()));
+        RVP_GunnerMovementActions.Command command = new RVP_GunnerMovementActions.Command();
+        command.flightDirective = new RVP_GunnerFlightAdapter.Directive("sead", target, profile, towardTarget ? 2 : 1);
+        sink.submit(intent("sead_revenge", "vehicle", 720, 950,
+                RVP_GunnerBehaviorIntent.Channel.MOVEMENT, RVP_GunnerBehaviorIntent.Kind.MOVEMENT,
                 target, command, null, true, "", null));
     }
 

@@ -293,7 +293,7 @@ class RVP_GunnerBehaviorBaselineTest {
                 "private static void tickStuckRecovery(");
         String recovery = section(behaviors,
                 "private static void tickStuckRecovery(",
-                "private static void tickGroundTacticalEvade(");
+                "private static RVP_GunnerGroundPolicy.Input groundInput(");
         String fixedWing = section(behaviors,
                 "private static boolean tickFixedWingDriving(",
                 "private static boolean tickRotaryDriving(");
@@ -315,19 +315,11 @@ class RVP_GunnerBehaviorBaselineTest {
         assertFalse(behaviors.contains("ACTIONS.movement().apply"),
                 "阶段 D 行为不得直接应用 ControlUnit");
 
-        assertContainsAll(launcher,
-                "if (hasAmmo)",
-                "tickGroundWander(gunner, vehicle, profile, state.patrol, command);",
-                "command.forward = true;");
-        assertContainsAll(ground,
-                "state.start(profile.getGroundHoldTick()",
-                "tickGroundTacticalEvade",
-                "command.forward = true;");
-        assertContainsAll(recovery,
-                "state.recoveryTicks = profile.getDriveRecoveryTick();",
-                "state.cooldownTicks = profile.getDriveRecoveryTick() * 2",
-                "RVP_GunnerBehaviorIntent.Kind.MOVEMENT",
-                "command.backward = true;");
+        // 数值算法迁入生产共享策略后，基线冻结真实行为的转发边界；具体时序由策略测试验证。
+        assertContainsAll(launcher, "RVP_GunnerGroundPolicy.launcher(", "hasAnyAmmo(vehicle)", "groundSettings(profile)");
+        assertContainsAll(ground, "RVP_GunnerGroundPolicy.engage(", "groundRandom(gunner)");
+        assertContainsAll(recovery, "RVP_GunnerGroundPolicy.recover(", "if (result == null) return;",
+                "RVP_GunnerBehaviorIntent.Kind.MOVEMENT", "copyGroundCommand(result, command)");
         assertContainsAll(fixedWing,
                 "tickFixedWingCruise(gunner, vehicle, profile, false, currentAgl, command);",
                 "return false;",
@@ -340,11 +332,7 @@ class RVP_GunnerBehaviorBaselineTest {
                 "ensureRotaryAirPhase(gunner, profile, state)",
                 "command.yRot = facingRot.y;",
                 "command.xRot = desiredPitch;");
-        assertContainsAll(wander,
-                "state.targetYaw = vehicle.getYRot() + ang;",
-                "command.forward = true;",
-                "command.left = true;",
-                "command.right = true;");
+        assertContainsAll(wander, "RVP_GunnerGroundPolicy.patrol(", "groundSettings(profile)", "groundRandom(gunner)");
         assertOrdered(movementActions,
                 "control.reset();",
                 "control.forward = command.forward;",
@@ -539,10 +527,9 @@ class RVP_GunnerBehaviorBaselineTest {
                 "Smoke 行为状态不得继续存放在 GunnerEntity");
         assertFalse(entity.contains("private int seadMode"),
                 "SEAD 行为状态不得继续存放在 GunnerEntity");
+        String groundPolicy = read(Path.of("src/main/java/org/ywzj/rvp/entity/gunner/ai/RVP_GunnerGroundPolicy.java"));
+        assertContainsAll(groundPolicy, "class StuckRecoveryState", "class GroundEngagementState", "class GroundPatrolState");
         assertContainsAll(behaviors,
-                "class StuckRecoveryState",
-                "class GroundEngagementState",
-                "class GroundPatrolState",
                 "class AirFlightState",
                 "class SmokeEvasionState",
                 "class SeadState");

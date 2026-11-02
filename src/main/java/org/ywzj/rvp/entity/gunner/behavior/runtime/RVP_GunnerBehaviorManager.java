@@ -3,6 +3,7 @@ package org.ywzj.rvp.entity.gunner.behavior.runtime;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.fml.loading.FMLEnvironment;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
+import org.ywzj.rvp.entity.gunner.flight.RVP_GunnerFlightAdapter;
 import org.ywzj.rvp.entity.gunner.ai.RVP_GunnerDebugMonitor;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfile;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfileManager;
@@ -165,6 +166,8 @@ public final class RVP_GunnerBehaviorManager {
 
     /** 通过动作层清理不再续租的雷达、制导、补给与同步状态。 */
     private void cleanup(GunnerEntity gunner, AbstractVehicle vehicle, WeaponUnit weaponUnit) {
+        // 调用业务适配器交还新固定翼会话；旧开关关闭时没有此状态，不改变旧操纵。
+        RVP_GunnerFlightAdapter.release(gunner);
         RVP_GunnerActionGateway actions = RVP_GunnerActionGateway.INSTANCE;
         if (vehicle != null) {
             // 调用补给动作适配器，清除离座或换 Profile 后的装填覆盖计时。
@@ -246,6 +249,8 @@ public final class RVP_GunnerBehaviorManager {
 
         /** 司机本 tick 没有任何移动候选时提交显式停车兜底，避免沿用旧控制输入。 */
         private void ensureDriverStopFallback() {
+            // 新固定翼由START公共执行器连续操纵，不能再用旧全零停车命令覆盖它。
+            if (RVP_GunnerFlightAdapter.enabled(context.gunner(), context.vehicle())) return;
             boolean hasMovement = pending.stream()
                     .anyMatch(intent -> intent.channel() == RVP_GunnerBehaviorIntent.Channel.MOVEMENT);
             if (!hasMovement && context.has(RVP_GunnerBehaviorContext.Capability.DRIVER)) {

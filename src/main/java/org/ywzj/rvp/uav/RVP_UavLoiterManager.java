@@ -54,6 +54,22 @@ public final class RVP_UavLoiterManager {
 
     /** 内部可变状态。 */
     static final class MutableState {
+        /** 新固定翼路径的临时公共会话，不写存档。 */
+        org.ywzj.rvp.flight.RVP_FlightTickService.Session sharedFlightSession;
+        /** 公共请求业务版本，重新捕获圆心/切换起飞时递增。 */
+        long sharedFlightRevision;
+        /** 上次提交的圆心，用于区分缓慢跟随与大幅重标点。 */
+        Vec3 sharedLastCenter;
+        /** 上次提交的请求半径。 */
+        double sharedLastRadius;
+        /** 上次请求是否为起飞目标。 */
+        boolean sharedTakeoff;
+        /** 新起飞任务锁定的滑跑方向，度。 */
+        double sharedTakeoffHeading;
+        /** 新业务参数异常差分，避免同一坏计划逐刻刷日志。 */
+        String sharedFlightFailure = "";
+        /** 最近公共路径配置快照；配置变化时重新申请会话，不复活旧捕获状态。 */
+        org.ywzj.rvp.config.RVP_LoiterConfig sharedFlightConfig;
         volatile boolean active = false;
         volatile boolean planInitialized = false;
         volatile boolean signalPaused = false;

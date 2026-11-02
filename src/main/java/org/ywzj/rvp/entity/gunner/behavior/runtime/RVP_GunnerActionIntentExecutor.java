@@ -2,6 +2,7 @@ package org.ywzj.rvp.entity.gunner.behavior.runtime;
 
 import org.ywzj.rvp.entity.gunner.behavior.action.RVP_GunnerActionGateway;
 import org.ywzj.rvp.entity.gunner.behavior.action.RVP_GunnerActionResult;
+import org.ywzj.rvp.entity.gunner.flight.RVP_GunnerFlightAdapter;
 import org.ywzj.rvp.entity.gunner.behavior.api.RVP_GunnerBehaviorContext;
 import org.ywzj.rvp.entity.gunner.behavior.api.RVP_GunnerBehaviorIntent;
 import org.ywzj.vehicle.entity.weapon.AmmoEntity;
@@ -18,6 +19,13 @@ public final class RVP_GunnerActionIntentExecutor implements RVP_IGunnerIntentEx
 
     @Override
     public RVP_GunnerActionResult execute(RVP_GunnerBehaviorContext context, RVP_GunnerBehaviorIntent intent) {
+        // 调用业务安全门核对本刻已执行反馈，普通交战/反雷达请求都不能靠JSON优先级绕过。
+        if ((intent.kind() == RVP_GunnerBehaviorIntent.Kind.FIRE_ENGAGEMENT
+                || intent.kind() == RVP_GunnerBehaviorIntent.Kind.FIRE_ANTI_RADIATION)
+                && RVP_GunnerFlightAdapter.enabled(context.gunner(), context.vehicle())
+                && (intent.target() == null || !RVP_GunnerFlightAdapter.allowFire(context.gunner(), intent.target()))) {
+            return RVP_GunnerActionResult.GATED;
+        }
         return switch (intent.kind()) {
             case TARGET -> {
                 // 调用目标动作适配器，统一推进组网记账和同步目标字段。

@@ -12,6 +12,11 @@ import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.entity.gunner.GunnerEntity;
+import org.ywzj.rvp.flight.RVP_FlightRequest;
+import org.ywzj.rvp.flight.RVP_FlightTickService;
+import org.ywzj.rvp.flight.RVP_FlightTuning;
+import org.ywzj.rvp.flight.RVP_FlightTypes;
 import org.ywzj.rvp.client.state.RVP_ClientLoiterState;
 import org.ywzj.rvp.config.RVP_LoiterConfig;
 import org.ywzj.rvp.config.RVP_LoiterConfigCache;
@@ -73,6 +78,10 @@ public final class RVP_UavLoiterTickService {
                 RVP_UavLoiterManager.persist(uav);
                 continue;
             }
+            if (RVP_UavFlightOptions.USE_SHARED_FIXED_WING_FLIGHT && uav instanceof FixedWingVehicle) {
+                // 新固定翼由公共START入口先准备再执行，原路径只保留已有客户端同步。
+                continue;
+            }
             // 盘旋激活时制导优先；玩家运动输入由 ControlUnitMixin 屏蔽，
             // 玩家仍可操作武器（functional 输入）和按 F 键退出盘旋
             // 获取配置
@@ -107,8 +116,98 @@ public final class RVP_UavLoiterTickService {
             return;
         }
         RVP_UavLoiterManager.disable(uav.getUUID());
-        uav.controlUnit.reset();
+        if (RVP_UavFlightOptions.USE_SHARED_FIXED_WING_FLIGHT && uav instanceof FixedWingVehicle fixedWing) {
+            // 调用公共代次检查释放本UAV会话，保留武器功能键，不清其他业务持有者。
+            RVP_FlightTickService.release(fixedWing, fixedWing.getUUID());
+        } else {
+            uav.controlUnit.reset();
+        }
         RVP_UavLoiterManager.persist(uav);
+    }
+
+    /** 公共调度的业务准备回调：坏参数只影响对应飞机，其他计划继续准备。 */
+    public static void prepareSharedFlight(MinecraftServer server) {
+        if (!RVP_UavFlightOptions.USE_SHARED_FIXED_WING_FLIGHT) return;
+        for (Map.Entry<UUID, MutableState> entry : RVP_UavLoiterManager.getAllInternal().entrySet()) {
+            MutableState state = entry.getValue();
+            try {
+                // 调用本业务单机请求构造，实际输入仍只由公共执行器写入。
+                prepareSharedVehicle(server, entry.getKey(), state);
+                state.sharedFlightFailure = "";
+            } catch (IllegalArgumentException | IllegalStateException exception) {
+                if (state.sharedFlightSession != null) state.sharedFlightSession.close();
+                state.sharedFlightSession = null;
+                String failure = exception.getClass().getSimpleName() + ":" + exception.getMessage();
+                if (!failure.equals(state.sharedFlightFailure))
+                    com.mojang.logging.LogUtils.getLogger().warn("[RVP Flight] UAV计划{}无效: {}", entry.getKey(), failure);
+                state.sharedFlightFailure = failure;
+            }
+        }
+    }
+
+    /** UAV业务转换一个活动计划；不包含飞行控制算法或运动字段写入。 */
+    private static void prepareSharedVehicle(MinecraftServer server, UUID uuid, MutableState state) {
+        AbstractVehicle resolved = resolveVehicle(server, uuid);
+        if (!(resolved instanceof FixedWingVehicle vehicle)) {
+            if (state.sharedFlightSession != null) state.sharedFlightSession.close();
+            state.sharedFlightSession = null;
+            return;
+        }
+        // Gunner司机拥有自己的驾驶业务；停用自动计划但保留几何信息，避免两个旧/新写入者争抢。
+        if (vehicle.getDriver() instanceof GunnerEntity) {
+            RVP_UavLoiterManager.disable(vehicle.getUUID());
+        }
+        if (!state.active || state.signalPaused || !vehicle.isAlive() || vehicle.isRemoved() || vehicle.isDestroyed()) {
+            if (state.sharedFlightSession != null) state.sharedFlightSession.close();
+            state.sharedFlightSession = null;
+            RVP_UavLoiterManager.persist(vehicle);
+            return;
+        }
+        updateCenterIfFollowing(server, state);
+        RVP_LoiterConfig config = resolveConfig(vehicle);
+        if (state.sharedFlightConfig != null && !state.sharedFlightConfig.equals(config)) {
+            if (state.sharedFlightSession != null) state.sharedFlightSession.close();
+            state.sharedFlightSession = null;
+            state.sharedFlightRevision++;
+        }
+        state.sharedFlightConfig = config;
+        if (state.sharedFlightSession == null || !state.sharedFlightSession.valid()) {
+            // 资格直接复用本业务的活动/信号/实例状态，不把业务类传进公共计算器。
+            state.sharedFlightSession = RVP_FlightTickService.acquire(vehicle, vehicle.getUUID(),
+                    current -> RVP_UavLoiterManager.getAllInternal().get(current.getUUID()) == state
+                            && state.active && !state.signalPaused
+                            && !(current.getDriver() instanceof GunnerEntity));
+            if (state.sharedFlightSession == null) return;
+        }
+        var feedback = state.sharedFlightSession.feedback();
+        if (feedback != null) {
+            state.effectiveRadius = feedback.effectiveRadius() > 0 ? feedback.effectiveRadius() : state.radius;
+            LoiterPhase nextPhase = feedback.status() == RVP_FlightTypes.Status.RECOVERING ? LoiterPhase.RECOVERY
+                    : feedback.status() == RVP_FlightTypes.Status.CAPTURED ? LoiterPhase.LOITER
+                    : feedback.altitudeError() > 15 ? LoiterPhase.CLIMB : LoiterPhase.APPROACH;
+            if (nextPhase != state.phase) {
+                state.phase = nextPhase; state.phaseTickCounter = 0; state.phaseTimeout = resolvePhaseTimeout(nextPhase);
+            } else state.phaseTickCounter = (state.phaseTickCounter + 1) % Math.max(1, state.phaseTimeout);
+        }
+        Vec3 center = new Vec3(state.centerX, state.centerY, state.centerZ);
+        boolean takeoff = vehicle.level().getBlockState(vehicle.blockPosition().below()).isSolid();
+        if (takeoff && !state.sharedTakeoff) state.sharedTakeoffHeading = vehicle.getYRot();
+        if (state.sharedLastCenter == null || state.sharedLastCenter.distanceToSqr(center) > 2500
+                || state.sharedLastRadius != state.radius || state.sharedTakeoff != takeoff) state.sharedFlightRevision++;
+        state.sharedLastCenter = center; state.sharedLastRadius = state.radius; state.sharedTakeoff = takeoff;
+        RVP_FlightRequest.Goal goal = takeoff
+                ? new RVP_FlightRequest.Takeoff(state.sharedTakeoffHeading)
+                : new RVP_FlightRequest.Orbit(
+                        new RVP_FlightTypes.Vector(center.x, center.y, center.z),
+                        Math.max(1, state.radius), RVP_LoiterConfig.LOITER_DIRECTION);
+        var request = new RVP_FlightRequest(vehicle.getUUID() + ":loiter", state.sharedFlightRevision,
+                goal, RVP_FlightRequest.Altitude.worldY(state.centerY + config.loiterAltitudeOffset()),
+                RVP_FlightRequest.Speed.safeCruise(1.25),
+                RVP_FlightRequest.Limits.cruiseDefaults().withMaxBankDeg(RVP_LoiterConfig.LOITER_BANK)
+                        .withAltitudeLimits(RVP_LoiterConfig.TERRAIN_CLEARANCE, 4096));
+        // 同一公共入口按业务参数调用，不复刻本体输入补偿与三轴控制。
+        state.sharedFlightSession.submit(request, RVP_FlightTuning.smoothCruise(), 3);
+        RVP_UavLoiterManager.persist(vehicle);
     }
 
     /** 同步活跃盘旋圆到所有客户端，供战术地图渲染。 */

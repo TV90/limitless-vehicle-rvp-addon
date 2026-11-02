@@ -1,7 +1,9 @@
 package org.ywzj.rvp.entity.gunner.behavior.action;
 
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
+import org.ywzj.rvp.entity.gunner.flight.RVP_GunnerFlightAdapter;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
+import org.ywzj.vehicle.entity.vehicle.FixedWingVehicle;
 import org.ywzj.vehicle.entity.vehicle.RotaryWingVehicle;
 import org.ywzj.vehicle.vehicle.control.ControlUnit;
 
@@ -14,6 +16,8 @@ public final class RVP_GunnerMovementActions {
      * <p>字段保持与本体 ControlUnit 一一对应；算法只修改本命令，不能直接写载具。</p>
      */
     public static final class Command {
+        /** 新固定翼业务请求；非空时只交公共会话，不直接写本体运动输入。 */
+        public RVP_GunnerFlightAdapter.Directive flightDirective;
         /** 是否前进。 */
         public boolean forward;
         /** 是否倒车。 */
@@ -64,6 +68,11 @@ public final class RVP_GunnerMovementActions {
         // 调用本体司机查询，确保非司机行为不能写真实移动控制。
         if (!isDriver(vehicle, gunner)) {
             return RVP_GunnerActionResult.NOT_DRIVER;
+        }
+        if (RVP_GunnerFlightAdapter.enabled(gunner, vehicle) && vehicle instanceof FixedWingVehicle fixedWing) {
+            // 调用业务适配器仅发布仲裁胜出的目标；旧停车/其他移动候选不得覆盖公共执行器。
+            return command.flightDirective == null ? RVP_GunnerActionResult.GATED
+                    : RVP_GunnerFlightAdapter.apply(gunner, fixedWing, command.flightDirective);
         }
         ControlUnit control = vehicle.controlUnit;
         // 调用本体 ControlUnit.reset，保证每 tick 只在动作边界统一清理旧输入。

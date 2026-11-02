@@ -67,6 +67,9 @@ public class RVP_MOD {
         RVP_SuperbWarfareCompat.init();
         event.enqueueWork(() -> {
             RVP_Network.init();
+            // 注册UAV业务准备回调，由公共飞行入口明确先准备意图、后统一计算与执行。
+            org.ywzj.rvp.flight.RVP_FlightTickService.registerProducer("uav_loiter",
+                    org.ywzj.rvp.uav.RVP_UavLoiterTickService::prepareSharedFlight);
             // 安装 RVP 网络视觉发布端，使弹体业务只依赖公共发布接口，不直接读取网络通道。
             RVP_VisualEffects.installPublisher(new RVP_NetworkVisualEventPublisher());
         });
