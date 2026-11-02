@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "rvp_accelerating_target",
+  "name": "RVP 加速目标 · 编辑器与真实回放对照",
+  "description": "验证工作台按秒计算的目标初速度、恒定加速度与生产 Java 回放逐刻一致，不改变武器配置。",
+  "weapon": "rvp:rafale_storm_shadow",
+  "ticks": 80,
+  "position": [0, 220, 0],
+  "vehicleVelocity": [0, 0, 60],
+  "yaw": 0,
+  "pitch": 0,
+  "groundY": 64,
+  "target": [120, 68, 1500],
+  "targetVelocity": [10, 0, 0],
+  "targetAcceleration": [2, 0, 0],
+  "targetRadius": 4
+}

@@ -66,7 +66,10 @@ test('当前 Java 数据字段完整对应，全部已有场景可无损填默�
   const keys = [...java.matchAll(/public (?:int|float|long|boolean|double(?:\[\])?|Double|String) (\w+)\s*[=;]/g)].map(match => match[1]);
   assert.deepEqual(Object.keys(DEFAULT_SCENARIO).sort(), keys.sort(), 'Java 增加输入字段时编辑器也须显式支持');
   const root = fileURLToPath(new URL('../../../src/test/resources/projectile-simulation/', import.meta.url));
-  const files = (await readdir(root)).filter(file => file.endsWith('.json')); assert.ok(files.length >= 206);
+  const files = (await readdir(root)).filter(file => file.endsWith('.json'));
+  // 验证仓库实际提交的六类基线，再遍历所有附加场景；不依赖开发机未提交的 200 份输入。
+  for (const file of ['01_cannon.json', '02_rocket.json', '03_bomb.json', '04_GPS_missile.json',
+    '05_torpedo.json', '06_cold_launch.json']) assert.ok(files.includes(file), `缺少基线场景 ${file}`);
   for (const file of files) {
     const input = JSON.parse((await readFile(join(root, file), 'utf8')).replace(/^\uFEFF/, '')), before = JSON.stringify(input);
     const normalized = normalizeScenario(input);
@@ -170,7 +173,7 @@ test('保存拒绝外来页面、路径输入、非 JSON、超大正文、非法
 
 test('单例命令使用安全文件 ID 和独立输出目录，不允许把 shell 内容当场景路径', () => {
   const command = simulationCommand(scene());
-  assert.match(command, /JAVA_TOOL_OPTIONS/); assert.match(command, /projectile-simulation\/custom_projectile\.json/);
+  assert.match(command, /^\.\/gradlew projectileSimulation /); assert.match(command, /projectile-simulation\/custom_projectile\.json/);
   assert.match(command, /-PprojectileOutput=build\/projectile-simulation-editor/);
   assert.throws(() => simulationCommand({ id: 'bad`$(x)' }));
 });

@@ -130,6 +130,13 @@ repositories {
 
 dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+    // 独立弹体仿真直接构造本体 AmmoEntity；JUnit 不经过 Forge 的内嵌 jar 加载器。
+    // 仅补齐测试/仿真运行期的 MAE，生产包仍由 SBM 提供同版依赖。
+    testRuntimeOnly('com.maydaymemory:mae:1.1.2') {
+        exclude group: 'com.google.code.findbugs', module: 'jsr305'
+        exclude group: 'it.unimi.dsi', module: 'fastutil'
+        exclude group: 'org.joml', module: 'joml'
+    }
     // DH 矩阵字段映射测试在测试运行期构造官方 API 值对象；不会进入发布 jar。
     testImplementation "maven.modrinth:Xs0XTOVv:GgrzKRsK"
     // 手动虚拟飞行测试使用 XChart 按 Tick 绘制实时轨迹，不进入模组运行时依赖。
@@ -313,6 +320,23 @@ tasks.register('gunnerSimulation', JavaExec) {
     // 与使用文档保持一致：支持单场景或目录，并允许单独指定输出目录。
     args project.findProperty('gunnerScenario') ?: 'src/test/resources/gunner-simulation',
             project.findProperty('gunnerOutput') ?: 'build/gunner-simulation'
+}
+
+// 工作台与命令行共用的真实弹体仿真入口；测试代码与记录不进入玩家 jar。
+tasks.register('projectileSimulation', JavaExec) {
+    description = '使用真实弹体运动入口生成工作台回放。'
+    group = 'verification'
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'org.ywzj.rvp.projectile.simulation.RVP_ProjectileSimulationMain'
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+    workingDir projectDir
+    args project.findProperty('projectileScenario') ?: 'src/test/resources/projectile-simulation',
+            project.findProperty('projectileOutput') ?: 'build/projectile-simulation',
+            project.findProperty('projectileWeaponRoot') ?: 'limitless_vehicle/rvp/data/rvp/weapons',
+            project.findProperty('projectileWeapon') ?: ''
 }
 
 tasks.register('manualTrajectoryTest', Test) {
