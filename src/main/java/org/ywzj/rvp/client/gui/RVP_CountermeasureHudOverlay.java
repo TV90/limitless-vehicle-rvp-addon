@@ -83,7 +83,8 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
         boolean smokeDamaged = !smokeDestroyed && isTypeDamaged(vehicle, RVP_EnumCountermeasureType.SMOKE);
         boolean hasEcm = isEcmSeatAllowed(vehicle, seatIndex) && isEcmAvailable(vehicle);
         // 快速维修行（融入缺省自动补位：服务端已同步 hasMaintenance 才占行，否则后续行前移）
-        RVP_ClientMaintenanceState.Snapshot maintenanceState = RVP_ClientMaintenanceState.get(vehicle.getId());
+        RVP_ClientMaintenanceState.Snapshot maintenanceState = seatIndex == 0
+                ? RVP_ClientMaintenanceState.get(vehicle.getId()) : null;
         // 地面载具速度行始终显示（用户 2026-09-27），故地面载具不因"无干扰物/ECM/维修"而跳过渲染
         boolean groundVehicle = !(vehicle instanceof RotaryWingVehicle)
                 && !(vehicle instanceof FixedWingVehicle);

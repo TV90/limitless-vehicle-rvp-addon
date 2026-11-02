@@ -32,6 +32,9 @@ public class RVP_OverlayRegistry {
         if (RVP_DebugFlags.HUD.isEnabled()) {
             LOGGER.info("[RVP-Hud] onRegisterHud fired");
         }
+        // 全屏失图属于视频背景，先于载具信息 HUD 绘制；本体光学镜头层可位于更低层。
+        event.registerBelowAll("rvp_hitl_video_background", new RVP_HitlVideoBackgroundOverlay());
+        event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_vehicle_actions", new RVP_VehicleActionHudOverlay());
         event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_radar", new RVP_RadarOverlay());
         event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_scope", new RVP_ScopeOverlay());
         event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_missile", new RVP_MissileOverlay());

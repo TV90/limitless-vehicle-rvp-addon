@@ -569,5 +569,10 @@
   "ui.ywzj_rvp.uav.option_deployed": "An auxiliary vehicle is deployed; selection is locked",
   "ui.ywzj_rvp.uav.option_locked": "Selection unavailable: %1$s",
   "ui.ywzj_rvp.uav.option_select": "Request Configuration Change",
-  "ui.ywzj_rvp.uav.option_unavailable": "Vehicle data or model unavailable"
+  "ui.ywzj_rvp.uav.option_unavailable": "Vehicle data or model unavailable",
+
+  "hud.ywzj_rvp.action.deploy_auxiliary": "Deploy",
+  "hud.ywzj_rvp.action.switch_auxiliary": "Switch",
+  "hud.ywzj_rvp.action.tactical_map": "Map",
+  "hud.ywzj_rvp.action.vehicle_status": "Status"
 }

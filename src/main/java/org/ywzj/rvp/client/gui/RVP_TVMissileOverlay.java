@@ -44,7 +44,7 @@ public class RVP_TVMissileOverlay {
         // 调用独立终结提示；此时导弹控制与远程区块已释放，仍可完整覆盖返回母车的底层画面。
         if (RVP_ClientHitlState.isNoImage(mc.level)) {
             reset();
-            RVP_HitlVideoLossRenderer.draw(event.getGuiGraphics(), mc.font, mc.level.getGameTime());
+            RVP_HitlVideoLossRenderer.drawCaption(event.getGuiGraphics(), mc.font);
             return;
         }
         if (!RVP_ClientHitlState.isActive()) {
@@ -62,10 +62,7 @@ public class RVP_TVMissileOverlay {
 
         GuiGraphics gg = event.getGuiGraphics();
         Font font = mc.font;
-        if (RVP_ClientHitlState.isHitlLinkBlocked()) {
-            // 调用与终结共用的现有雪花屏，保留遮挡机制与控制判定。
-            RVP_HitlVideoLossRenderer.drawSnow(gg, mc.level.getGameTime());
-        }
+        // 雪花背景已由最底层独立 overlay 绘制，此处只绘制相机仪表与失图文字。
         // 调用固定居中的装饰层；与可动准星、已有制导和离轴角限制相互独立。
         if (!RVP_ClientHitlState.isHitlLinkBlocked()) {
             if (RVP_ClientHitlState.isDesignateMode()) RVP_HitlReticleRenderer.drawTvReference(gg);

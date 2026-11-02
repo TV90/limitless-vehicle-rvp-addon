@@ -154,12 +154,14 @@ public final class RVP_MaintenanceRuntimeManager {
 
     /**
      * 玩家尝试触发快速维修。校验：已配置 / 维修模块存活 / 未被摧毁 / 冷却就绪 /
-     * 玩家在本车上 / 离地高度限制。通过则进入生效期并执行模块渐进恢复。
+     * 玩家在本车一号位 / 离地高度限制。通过则进入生效期并执行模块渐进恢复。
      *
      * @return true = 已触发
      */
     public static boolean tryStart(ServerPlayer player, AbstractVehicle vehicle) {
-        if (player == null || vehicle == null || vehicle.level().isClientSide() || vehicle.isDestroyed()) {
+        // 权限门先于配置查询和状态分配，伪造请求不得改变冷却表。
+        if (!org.ywzj.rvp.util.RVP_VehicleSeatAccess.isPrimaryPassenger(player, vehicle)
+                || vehicle.level().isClientSide() || vehicle.isDestroyed()) {
             return false;
         }
         var binding = RVP_VehicleHitboxFactorManager.INSTANCE.resolveMaintenanceModule(vehicle);
@@ -171,10 +173,6 @@ public final class RVP_MaintenanceRuntimeManager {
         }
         MaintenanceState state = STATES.computeIfAbsent(vehicle.getUUID(), k -> new MaintenanceState());
         if (state.cooldown > 0 || state.useRemain > 0) {
-            return false;
-        }
-        // 必须乘坐在本车上（防手持改装工具远程滥用）
-        if (player.getVehicle() != vehicle) {
             return false;
         }
         BoneMaintenanceConfig config = binding.config();

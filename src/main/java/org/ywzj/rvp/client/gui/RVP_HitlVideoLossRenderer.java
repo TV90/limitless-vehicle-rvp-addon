@@ -46,12 +46,15 @@ public final class RVP_HitlVideoLossRenderer {
     public static void drawSnow(GuiGraphics gg, long tick) {
         int w = gg.guiWidth();
         int h = gg.guiHeight();
+        // 提交背景前后都 flush，禁止噪点批次延迟到展板模型之后才绘制。
+        gg.flush();
         gg.fill(0, 0, w, h, 0xFF000000); // 黑底（单次 draw）
         ResourceLocation loc = ensureSnowTexture(tick, w, h);
         if (loc != null) {
             // 整屏贴噪点纹理：单次 draw（替代原来数千次 2×2 fill）
             gg.blit(loc, 0, 0, 0, 0, w, h, w, h);
         }
+        gg.flush();
     }
 
     /** 复用/生成一张屏幕尺寸的雪花噪点纹理；每 {@code SNOW_REGEN_INTERVAL} tick 重绘一次模拟闪动。

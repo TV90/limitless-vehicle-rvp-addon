@@ -386,7 +386,8 @@ public class RVP_ClientEvents {
         // 走 resolveMaintenanceModule 的默认配置：冷却 15 秒、一次修复 30% 最大血量）→ 服务端权威触发
         while (RVP_Keys.USE_MAINTENANCE.consumeClick()) {
             LocalVehiclePlayer lvp = LocalVehiclePlayer.instance;
-            if (lvp != null && lvp.vehicle != null && lvp.onVehicle()) {
+            if (lvp != null && lvp.vehicle != null && lvp.onVehicle()
+                    && org.ywzj.rvp.util.RVP_VehicleSeatAccess.isPrimaryPassenger(player, lvp.vehicle)) {
                 RVP_Network.CHANNEL.sendToServer(
                         new org.ywzj.rvp.maintenance.network.C2SUseMaintenance(lvp.vehicle.getId()));
             }

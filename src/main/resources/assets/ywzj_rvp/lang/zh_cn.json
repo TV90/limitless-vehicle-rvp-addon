@@ -569,5 +569,10 @@
   "ui.ywzj_rvp.uav.option_deployed": "辅助载具正在部署，暂不可更换",
   "ui.ywzj_rvp.uav.option_locked": "暂不可更换：%1$s",
   "ui.ywzj_rvp.uav.option_select": "申请更换配置",
-  "ui.ywzj_rvp.uav.option_unavailable": "缺少辅助载具数据或模型"
+  "ui.ywzj_rvp.uav.option_unavailable": "缺少辅助载具数据或模型",
+
+  "hud.ywzj_rvp.action.deploy_auxiliary": "部署",
+  "hud.ywzj_rvp.action.switch_auxiliary": "切换",
+  "hud.ywzj_rvp.action.tactical_map": "地图",
+  "hud.ywzj_rvp.action.vehicle_status": "状态"
 }
