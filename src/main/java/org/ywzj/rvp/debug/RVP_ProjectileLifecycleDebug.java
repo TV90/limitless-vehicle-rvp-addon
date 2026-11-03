@@ -18,6 +18,7 @@ import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.entity.projectile.RVP_ProjectileMotion;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AeroSteeringLimits;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AeroSteeringModel;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AttackAngleModel;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_BallisticTrajectoryMath;
 import org.ywzj.rvp.weapon.data.RVP_ProjectileData;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
@@ -108,6 +109,7 @@ public final class RVP_ProjectileLifecycleDebug {
             {"attackAngleLimitDeg", "攻角上限度"}, {"bodyVelocityAngleDeg", "机头速度夹角度"},
             {"attackPitchRateDeg", "攻角俯仰角速度"}, {"attackYawRateDeg", "攻角偏航角速度"},
             {"attackEffectiveInertia", "攻角有效惯量系数"},
+            {"attackInertiaEnabled", "攻角有效惯量开启"},
             {"aeroLoadFactor", "气动载荷使用率"}, {"aeroAvailableG", "当前可用过载G"},
             {"aeroReferenceSpeed", "动压参考速度"}, {"aeroDensityFactor", "空气密度倍率"},
             {"aeroInducedDrag", "诱导阻力系数"},
@@ -816,6 +818,7 @@ public final class RVP_ProjectileLifecycleDebug {
         if (config == null) {
             return "aeroSteeringEnabled=false"
                     + " attackAngleActive=false"
+                    + " attackInertiaEnabled=false"
                     + " attackAngleLimitDeg=<null>"
                     + " bodyVelocityAngleDeg=" + decimalOrNull(bodyVelocityAngleDeg)
                     + " aeroLoadFactor=" + decimal(aeroLoadFactor)
@@ -837,15 +840,20 @@ public final class RVP_ProjectileLifecycleDebug {
         // 调用本项目气动数学模型，记录当前速度下的可用 G；关闭气动时该值不参与运动。
         double availableGs = projectileData.isRvpAeroSteering()
                 ? RVP_AeroSteeringModel.availableGs(speed, limits) : Double.NaN;
-        // 调用只读双轴快照和质量解析器，诊断不能推进执行器或触发发动机点火。
+        // 调用只读姿态快照；惯量关闭时不再计算质量惯量，避免日志误报该功能仍在生效。
         var attitude = projectile.getAttackAngleState();
-        double inertia = org.ywzj.rvp.guidance.trajectorymath.util.RVP_AttackAngleInertiaModel
-                .effectiveInertia(RVP_ProjectileMotion.resolveAttackAngleMass(projectile));
+        boolean inertiaEnabled = attackAngleActive && RVP_AttackAngleModel.INERTIA_ENABLED;
+        // 调用保留的惯量解析器仅供启用时诊断，不推进执行器或触发发动机点火。
+        double inertia = inertiaEnabled
+                ? org.ywzj.rvp.guidance.trajectorymath.util.RVP_AttackAngleInertiaModel
+                        .effectiveInertia(RVP_ProjectileMotion.resolveAttackAngleMass(projectile))
+                : Double.NaN;
         return "aeroSteeringEnabled=" + projectileData.isRvpAeroSteering()
                 + " attackAngleActive=" + attackAngleActive
+                + " attackInertiaEnabled=" + inertiaEnabled
                 + " attackPitchRateDeg=" + decimal(attitude.pitchRateDeg())
                 + " attackYawRateDeg=" + decimal(attitude.yawRateDeg())
-                + " attackEffectiveInertia=" + decimal(inertia)
+                + " attackEffectiveInertia=" + decimalOrNull(inertia)
                 + " attackAngleLimitDeg=" + decimal(projectileData.getRvpAttackAngleLimitDeg())
                 + " bodyVelocityAngleDeg=" + decimalOrNull(bodyVelocityAngleDeg)
                 + " aeroLoadFactor=" + decimal(aeroLoadFactor)

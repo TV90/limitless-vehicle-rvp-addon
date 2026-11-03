@@ -155,9 +155,9 @@ class RVP_AttackAngleInertiaModelTest {
     void coastingSettlesWithStateMemory() {
         var state = new RVP_AttackAngleState(15, -20, 3, -4);
         for (int tick = 0; tick < 150; tick++) {
-            var next = RVP_AttackAngleModel.solve(VELOCITY, state, VELOCITY, LIMITS, 900);
-            state = next.state();
-            assertTrue(RVP_BallisticTrajectoryMath.isFinite(next.bodyDirection()));
+            // 调用保留的惯量执行器单独验证代码仍可工作，不经过当前已停用惯量的运行入口。
+            state = RVP_AttackAngleInertiaModel.step(VELOCITY, state, VELOCITY, LIMITS, 900);
+            assertTrue(RVP_BallisticTrajectoryMath.isFinite(state.direction()));
         }
         assertEquals(0, state.pitchDeg(), 1e-6);
         assertEquals(0, state.yawDeg(), 1e-6);
@@ -178,14 +178,13 @@ class RVP_AttackAngleInertiaModelTest {
         assertEquals(result, RVP_PIPAttackAngleController.solve(VELOCITY, input, target, limits, null, 250));
     }
 
-    /** 大质量首 Tick 不可能瞬间取得满攻角，PIP 必须真实报告可达性限制。 */
+    /** 保留的惯量执行器仍有大质量首刻滞后，停用只改变运行入口而不删除原有算法。 */
     @Test
-    void pipCannotBypassInertiaForUnreachableRequests() {
+    void retainedInertiaStillLimitsHeavyFirstStep() {
         var limits = new RVP_AeroSteeringLimits(100.0, 0.5f, 10, 1, 0, 0, true, 30);
-        var result = RVP_PIPAttackAngleController.solve(VELOCITY, REST, new Vec3(10, 0, 0),
-                limits, null, 900);
-        assertTrue(result.responseLimited());
-        assertTrue(result.steering().attackAngleRadians() < Math.toRadians(10));
-        assertTrue(result.steering().turnAngleRadians() < result.requestedTurnRadians());
+        // 调用原双轴算法本身，900 kg 的首刻响应必须仍低于满攻角。
+        var state = RVP_AttackAngleInertiaModel.step(VELOCITY, REST, new Vec3(1, 0, 0), limits, 900);
+        assertTrue(state.yawRateDeg() < 0);
+        assertTrue(RVP_BallisticTrajectoryMath.angleBetween(VELOCITY, state.direction()) < Math.toRadians(10));
     }
 }

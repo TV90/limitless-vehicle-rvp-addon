@@ -5,11 +5,13 @@ import net.minecraft.world.phys.Vec3;
 import org.ywzj.vehicle.vehicle.PhysicsEngine;
 
 /**
- * 机体轴和速度轴分离的降阶模型，双轴有效惯量推进姿态，不模拟刚体力矩或滚转。
+ * 机体轴和速度轴分离的降阶模型；当前按比例推进机头，双轴有效惯量代码保留但停用。
  * 使用游戏化的总攻角升力曲线；没有风场时速度轴视为相对气流方向。
  * 纯函数不访问实体、世界或客户端，实体和虚拟中段共用。
  */
 public final class RVP_AttackAngleModel {
+    /** 双轴有效惯量总开关；false 恢复无角速度记忆的机头响应，实体、PIP 与虚拟弹道共用。 */
+    public static final boolean INERTIA_ENABLED = false;
     /** 非零方向和速度的判定阈值。 */
     private static final double EPSILON = 1.0E-8;
     /** 显式 G 优先时的姿态响应比例，避免同时配置 turning_factor 改变 G 主控语义。 */
@@ -52,8 +54,16 @@ public final class RVP_AttackAngleModel {
         Vec3 axis = current.normalize();
         Vec3 desired = valid(desiredDirection) && desiredDirection.lengthSqr() > EPSILON * EPSILON
                 ? desiredDirection.normalize() : axis;
-        // 调用双轴有效惯量执行器，每 Tick 仅推进一次角速度和机体姿态。
-        var next = RVP_AttackAngleInertiaModel.step(current, state, desired, limits, mass);
+        RVP_AttackAngleState next;
+        if (INERTIA_ENABLED) {
+            // 调用保留的双轴有效惯量执行器，重新启用时仍只推进一次角速度和姿态。
+            next = RVP_AttackAngleInertiaModel.step(current, state, desired, limits, mass);
+        } else {
+            // 调用原攻角阶段的球面插值：机头按既有响应比例转动，不读取质量或旧角速度。
+            Vec3 direction = RVP_BallisticTrajectoryMath.slerpDirection(body, desired, bodyResponse(limits));
+            // 调用方向解码保留竖直偏航，同时清零停用前可能残留的两轴角速度。
+            next = RVP_AttackAngleState.fromDirection(direction, state.yawDeg());
+        }
         return evaluateBody(current, next, limits);
     }
 
@@ -66,8 +76,14 @@ public final class RVP_AttackAngleModel {
         // 调用本项目夹角/球面插值，将受控姿态限制在速度轴周围的攻角锥内。
         double angle = RVP_BallisticTrajectoryMath.angleBetween(axis, body);
         if (angle > cap) {
-            // 调用状态硬约束，让施力轴、推力轴和持久化姿态一致，同时保留锥面切向角速度。
-            state = RVP_AttackAngleInertiaModel.constrainState(axis, state, limits.attackAngleLimitDeg());
+            if (INERTIA_ENABLED) {
+                // 调用保留的惯量约束，使施力轴、推力轴和姿态一致，并保留锥面切向角速度。
+                state = RVP_AttackAngleInertiaModel.constrainState(axis, state, limits.attackAngleLimitDeg());
+            } else {
+                // 调用原攻角锥裁剪，不执行双轴角速度投影或惯量计算。
+                Vec3 direction = RVP_BallisticTrajectoryMath.slerpDirection(axis, body, cap / angle);
+                state = RVP_AttackAngleState.fromDirection(direction, state.yawDeg());
+            }
             body = state.direction();
             angle = cap;
         }

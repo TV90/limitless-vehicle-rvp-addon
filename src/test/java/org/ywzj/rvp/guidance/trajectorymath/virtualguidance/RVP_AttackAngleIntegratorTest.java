@@ -76,10 +76,8 @@ class RVP_AttackAngleIntegratorTest {
         // 调用本项目虚拟积分器对比相同满载指令的能量结算。
         var drag = integrator.step(state(), target, parameters(20, 0.2, false, false, 0, 10.0));
         var constant = integrator.step(state(), target, parameters(20, 0.2, true, false, 0, 10.0));
-        // 独立按首 Tick 的质量惯量计算攻角载荷，不能再假定大指令瞬间满载。
-        double alpha = Math.toRadians(10.0 * (1.0 - Math.exp(-1.0 / 0.6)));
-        double load = Math.sin(alpha) / Math.sin(Math.toRadians(20));
-        assertEquals(10.0 * (1.0 - 0.2 * load * load), drag.state().velocity().length(), EPSILON);
+        // 无惯量比例响应在此大指令下到达 20 度锥边，独立验证满载诱导阻力只扣一次。
+        assertEquals(8.0, drag.state().velocity().length(), EPSILON);
         assertEquals(10.0, constant.state().velocity().length(), EPSILON);
     }
 
@@ -98,12 +96,14 @@ class RVP_AttackAngleIntegratorTest {
                 first.flightDistance(), first.flightTick(), first.remainingLife(), first.secondPulseStartTick());
         var lost = integrator.step(aligned, new RVP_VirtualGuidanceInput(null), parameters).state();
         assertTrue(second.velocity().distanceTo(lost.velocity()) > 0.001);
-        // 只清角速度、保持机头不变的对照，专门防止虚实交接丢掉惯量状态。
+        // 保留相同机头但注入旧角速度；停用惯量后，这些残留状态不能影响后续航迹。
         var noRates = new RVP_VirtualTrajectoryState(first.position(), first.velocity(),
                 first.xRot(), first.yRot(), first.peakFlightSpeed(), first.flightDistance(),
-                first.flightTick(), first.remainingLife(), first.secondPulseStartTick());
+                first.flightTick(), first.remainingLife(), first.secondPulseStartTick(), 30, -40);
         var reset = integrator.step(noRates, new RVP_VirtualGuidanceInput(null), parameters).state();
-        assertNotEquals(second.yawRateDeg(), reset.yawRateDeg());
+        assertEquals(second, reset);
+        assertEquals(0, second.pitchRateDeg());
+        assertEquals(0, second.yawRateDeg());
     }
 
     /** 连续百 Tick 验证虚拟编排与实体使用的纯模型一致，姿态仅在同步边界转为 float。 */

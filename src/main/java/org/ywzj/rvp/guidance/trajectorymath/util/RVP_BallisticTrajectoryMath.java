@@ -376,9 +376,13 @@ public final class RVP_BallisticTrajectoryMath {
         return launch != null && remaining.dot(target.subtract(launch).multiply(1, 0, 1)) <= 0.0;
     }
 
-    /** 攻角模式预留一阶响应时间及最大惯量松弛时间；关闭攻角时保持原前视距离。 */
+    /** 攻角模式预留机头响应时间；仅惯量启用时额外计入动压响应和惯量松弛时间。 */
     public static double resolvePresetResponseTicks(double speed, RVP_AeroSteeringLimits limits) {
         if (limits == null || !limits.attackAngleEnabled()) return 0.0;
+        if (!RVP_AttackAngleModel.INERTIA_ENABLED) {
+            // 调用当前机头比例响应，停用惯量后不再为惯量或动压姿态滞后增加提前量。
+            return Mth.clamp(1.0 / Math.max(RVP_AttackAngleModel.bodyResponse(limits), 0.05), 1.0, 20.0);
+        }
         // 调用真实执行器响应公式；有限上限防止低动压时追点跳过整条弹道。
         double response = RVP_AttackAngleInertiaModel.response(speed, limits);
         return Mth.clamp(1.0 / Math.max(response, 0.05) + 3.0, 3.0, 23.0);

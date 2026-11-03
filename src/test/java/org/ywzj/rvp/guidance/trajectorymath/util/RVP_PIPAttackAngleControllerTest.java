@@ -37,7 +37,7 @@ class RVP_PIPAttackAngleControllerTest {
     void statefulCrossingStaysSubBlockWithoutIncreasingGBudget() {
         double worstAdditionalMiss = 0;
         for (double[] scene : new double[][]{{1.0, 300}, {0.5, 300}, {0.25, 600}, {0.25, 1000}}) {
-            // 调用连续交会工具对比同 G 预算；允许有限的惯量滞后，但必须保持半格内首次交会。
+            // 调用连续交会工具对比同 G 预算，保持半格内首次交会并核验无惯量时的原精度预算。
             double baseline = crossingMiss(Mode.BASELINE, scene[0], scene[1]);
             double fixed = crossingMiss(Mode.CONTROLLED, scene[0], scene[1]);
             System.out.printf("PIP density=%.2f distance=%.0f baseline=%.6f controlled=%.6f%n",
@@ -45,14 +45,14 @@ class RVP_PIPAttackAngleControllerTest {
             worstAdditionalMiss = Math.max(worstAdditionalMiss, fixed - baseline);
             assertTrue(fixed < 0.5, "首次交会脱靶量=" + fixed);
         }
-        // 旧模型无惯量，不能继续要求额外误差≤0.05；新模型同时守住绝对误差与相对退化预算。
-        assertTrue(worstAdditionalMiss <= 0.2, "最大额外首次交会脱靶量=" + worstAdditionalMiss);
+        // 停用惯量后恢复无惯量的原预算，不能用先前为惯量滞后放宽的 0.2 格掩盖退化。
+        assertTrue(worstAdditionalMiss <= 0.05, "最大额外首次交会脱靶量=" + worstAdditionalMiss);
     }
 
     @Test
     void compensatesThrustInsteadOfAddingNormalCorrectionTwice() {
         Vec3 velocity = new Vec3(SPEED, 0, 0);
-        // 使用首 Tick 确实可达的小指令；大指令受惯量限制，不能要求无延迟完成。
+        // 使用首刻可达的小指令，单独验证沿机头推力补偿，不让攻角饱和掩盖重复转向。
         Vec3 desired = new Vec3(Math.cos(Math.toRadians(1)), 0, Math.sin(Math.toRadians(1)));
         for (double thrust : new double[]{0.0, 0.1, 0.4}) {
             var motor = new RVP_PropulsionMath.MotorState(thrust > 0, thrust, 1.0);
@@ -63,6 +63,24 @@ class RVP_PIPAttackAngleControllerTest {
             assertFalse(result.responseLimited());
             assertTrue(RVP_BallisticTrajectoryMath.angleBetween(result.requestedVelocity(), actual) < 1.0E-3);
             assertEquals(SPEED, result.steering().velocity().length(), EPSILON);
+        }
+    }
+
+    /** PIP 与弹道前视必须跟随同一个关闭开关，不能继续用质量惯量生成额外提前量。 */
+    @Test
+    void disabledInertiaKeepsPredictionIndependentOfMassAndAngularRates() {
+        Vec3 velocity = new Vec3(0, 0, SPEED);
+        Vec3 desired = new Vec3(1, 1, 10);
+        var rest = new RVP_AttackAngleState(-5, 8, 0, 0);
+        var spinning = new RVP_AttackAngleState(-5, 8, 30, -40);
+        for (double density : new double[]{1.0, 0.014}) {
+            var limits = new RVP_AeroSteeringLimits(null, 0.125f, SPEED, density, 0, 0, true, 60);
+            // 调用正式控制器，旧角速度与质量只属于停用分支，不能改变实际 PIP 结果。
+            assertEquals(RVP_PIPAttackAngleController.solve(velocity, rest, desired, limits, null, 10),
+                    RVP_PIPAttackAngleController.solve(velocity, spinning, desired, limits, null, 900));
+            // 调用两种前视入口：惯量专项补偿归零，PRESET 仍保留普通机头比例响应时间。
+            assertEquals(0, RVP_PIPAttackAngleController.estimateResponseLeadTicks(velocity, limits, 900));
+            assertEquals(8, RVP_BallisticTrajectoryMath.resolvePresetResponseTicks(SPEED, limits));
         }
     }
 

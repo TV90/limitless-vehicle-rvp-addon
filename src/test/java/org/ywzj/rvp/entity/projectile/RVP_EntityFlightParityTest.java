@@ -102,11 +102,14 @@ class RVP_EntityFlightParityTest {
         RVP_ProjectileSimulationBootstrap.write(Projectile.class, reference.entity(), "leftOwner", true);
         boolean secondPulseSeen = false;
         boolean angularResponseSeen = false;
+        // 攻角停用惯量后角速度应为零，仍必须实际建立气动载荷，不能靠关闭攻角通过对照。
+        boolean aerodynamicLoadSeen = false;
         boolean previousWater = direct.snapshot().inWater(), waterTransitionSeen = false;
         for (int tick = 1; tick <= sample.ticks; tick++) {
             var actual = direct.step();
             secondPulseSeen |= actual.motorStage().equals("第二脉冲燃烧");
             angularResponseSeen |= Math.abs(actual.pitchRateDeg()) + Math.abs(actual.yawRateDeg()) > 1.0E-9;
+            aerodynamicLoadSeen |= actual.aeroLoadFactor() > 1.0E-9;
             waterTransitionSeen |= actual.inWater() != previousWater; previousWater = actual.inWater();
             reference.entity().setOldPosAndRot(); reference.entity().tickCount++; reference.observeEnvironment();
             // 调用完整生产 Tick；参考类没有覆写 tick、tickMotion 或炮弹专属运动。
@@ -116,7 +119,10 @@ class RVP_EntityFlightParityTest {
         }
         if (sample.name.startsWith("pulse_")) assertTrue(secondPulseSeen, "该触发条件必须实际点燃二脉冲，不能只比较未触发路径");
         if (sample.name.equals("GPS_attack_angle") || sample.name.equals("IR_predictive_intercept")) {
-            assertTrue(angularResponseSeen, "必须实际推进机头角速度，不能把攻角关掉后声称对齐");
+            // 调用正式攻角门控，确认逐刻相等覆盖了真实攻角响应，并验证惯量角速度确已停用。
+            assertTrue(RVP_ProjectileMotion.usesAttackAngle(direct.entity()), "必须保持攻角模式开启");
+            assertTrue(aerodynamicLoadSeen, "必须实际建立攻角载荷，不能把攻角关掉后声称对齐");
+            assertFalse(angularResponseSeen, "关闭惯量后不能继续推进两轴角速度");
         }
         if (sample.name.equals("parent_wind")) assertTrue(direct.entity().getInheritedWindDirection().lengthSqr() > 0);
         if (sample.name.startsWith("torpedo_enter_") || sample.name.startsWith("torpedo_leave_")) assertTrue(waterTransitionSeen);

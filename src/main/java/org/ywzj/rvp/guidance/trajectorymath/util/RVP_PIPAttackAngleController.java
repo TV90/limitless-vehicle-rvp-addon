@@ -5,7 +5,7 @@ import net.minecraft.world.phys.Vec3;
 
 /**
  * 航迹到机头指令适配器，供 PIP、固定坐标与 PRESET 共用，纯数学、不修改实体。
- * 外环沿用旧航迹响应和 G 预算，内环读取不可变双轴状态反解执行器，并计入沿机头推力。
+ * 外环沿用旧航迹响应和 G 预算，内环按同一总开关反解机头执行器，并计入沿机头推力。
  * 不预先扣诱导阻力；正式载荷与姿态只由返回的实际求解结果写回一次。
  */
 public final class RVP_PIPAttackAngleController {
@@ -13,6 +13,8 @@ public final class RVP_PIPAttackAngleController {
     private static final double EPSILON = 1.0E-8;
     /** 单步攻角反解最多 INVERSE_ITERATIONS 轮，避免热路径随交战距离增长。 */
     private static final int INVERSE_ITERATIONS = 10;
+    /** 球面逆响应避开完全反向的数值分支，单位弧度，保留目标所在转弯平面。 */
+    private static final double MAX_INPUT_ANGLE = Math.PI - 0.003;
 
     private RVP_PIPAttackAngleController() { }
 
@@ -26,7 +28,8 @@ public final class RVP_PIPAttackAngleController {
     public static double estimateResponseLeadTicks(Vec3 velocity,
                                                     RVP_AeroSteeringLimits limits,
                                                     double mass) {
-        if (!validDirection(velocity) || limits == null || !limits.attackAngleEnabled()) {
+        if (!RVP_AttackAngleModel.INERTIA_ENABLED
+                || !validDirection(velocity) || limits == null || !limits.attackAngleEnabled()) {
             return 0.0D;
         }
         double response = Mth.clamp(
@@ -121,21 +124,32 @@ public final class RVP_PIPAttackAngleController {
         }
         // 调用本类方向构造，取得达到请求所需的机头姿态；能力不足时自然饱和到攻角锥。
         Vec3 desiredBody = directionAt(axis, tangent, (low + high) * 0.5);
-        // 调用共用增益和角度转换反解双轴执行器，显式扣除上一 Tick 尚未消散的角速度。
-        double response = RVP_AttackAngleInertiaModel.response(speed, limits);
-        double gain = RVP_AttackAngleInertiaModel.rateResponse(mass);
-        // 调用与前向执行器相同的等价角选择，反解与正式推进必须采用同一跨极点路径。
-        var target = state.nearestRotation(desiredBody);
-        double pitchStep = target.pitchDeg() - state.pitchDeg();
-        double yawStep = Mth.wrapDegrees(target.yawDeg() - state.yawDeg());
-        double pitchCommand = response <= EPSILON ? state.pitchDeg() : state.pitchDeg()
-                + (pitchStep - (1.0 - gain) * state.pitchRateDeg()) / (gain * response);
-        double yawCommand = response <= EPSILON ? state.yawDeg() : state.yawDeg()
-                + (yawStep - (1.0 - gain) * state.yawRateDeg()) / (gain * response);
-        // 两轴反解只提供指令，不绕过实际攻角锥/角速度限制；过大的偏航误差不能环绕为反向指令。
-        Vec3 command = new RVP_AttackAngleState(state.pitchDeg()
-                + Mth.clamp(pitchCommand - state.pitchDeg(), -179.9, 179.9),
-                state.yawDeg() + Mth.clamp(yawCommand - state.yawDeg(), -179.9, 179.9), 0, 0).direction();
+        Vec3 command;
+        if (RVP_AttackAngleModel.INERTIA_ENABLED) {
+            // 调用共用增益和角度转换反解保留的双轴执行器，扣除上一 Tick 尚未消散的角速度。
+            double response = RVP_AttackAngleInertiaModel.response(speed, limits);
+            double gain = RVP_AttackAngleInertiaModel.rateResponse(mass);
+            // 调用与前向执行器相同的等价角选择，保证跨极点时逆解与正式推进方向一致。
+            var target = state.nearestRotation(desiredBody);
+            double pitchStep = target.pitchDeg() - state.pitchDeg();
+            double yawStep = Mth.wrapDegrees(target.yawDeg() - state.yawDeg());
+            double pitchCommand = response <= EPSILON ? state.pitchDeg() : state.pitchDeg()
+                    + (pitchStep - (1.0 - gain) * state.pitchRateDeg()) / (gain * response);
+            double yawCommand = response <= EPSILON ? state.yawDeg() : state.yawDeg()
+                    + (yawStep - (1.0 - gain) * state.yawRateDeg()) / (gain * response);
+            // 两轴逆解只提供指令，不绕过攻角锥或把过大的偏航误差环绕成反向指令。
+            command = new RVP_AttackAngleState(state.pitchDeg()
+                    + Mth.clamp(pitchCommand - state.pitchDeg(), -179.9, 179.9),
+                    state.yawDeg() + Mth.clamp(yawCommand - state.yawDeg(), -179.9, 179.9), 0, 0).direction();
+        } else {
+            // 调用无惯量模型的响应与夹角公式，恢复球面逆响应，不读取旧角速度或质量。
+            Vec3 body = state.direction();
+            double response = RVP_AttackAngleModel.bodyResponse(limits);
+            double bodyStep = RVP_BallisticTrajectoryMath.angleBetween(body, desiredBody);
+            // 调用确定性转弯平面构造，超出单刻机头响应能力时只提交可达的有界指令。
+            command = response <= EPSILON ? body : directionAt(body, tangentToward(body, desiredBody),
+                    Math.min(bodyStep / response, MAX_INPUT_ANGLE));
+        }
         // 调用真实攻角模型，以当前机头执行一次实际响应；与上面假定已达姿态的试算区分。
         var steering = RVP_AttackAngleModel.solve(velocity, state, command, limits, mass);
         // 逆解超出可达域时，欧拉角外推可能跨越半球；补试同转弯平面的锥边指令，
