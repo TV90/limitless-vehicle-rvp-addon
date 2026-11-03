@@ -118,7 +118,8 @@ public final class RVP_ClientHitlUtil {
         double closestDist = Double.MAX_VALUE;
         Entity owner = missile instanceof RVP_BaseBullet bullet ? bullet.getOwner() : null;
         for (Entity entity : mc.level.getEntities(missile, missile.getBoundingBox().expandTowards(end.subtract(start)).inflate(1.0),
-                e -> e.isPickable() && e != missile && (owner == null || !e.is(owner)))) {
+                e -> (e.isPickable() || org.ywzj.rvp.countermeasure.RVP_CountermeasureState.isOpticalObstruction(e))
+                        && e != missile && (owner == null || !e.is(owner)))) {
             if (entity instanceof org.ywzj.vehicle.entity.vehicle.AbstractVehicle vehicle) {
                 // 调用真实受击 OBB，AABB 仅作候选粗筛，空洞不会选到载具实体中心。
                 var boxes = org.ywzj.rvp.util.RVP_NamedVehicleObbs.collect(vehicle);
@@ -131,8 +132,9 @@ public final class RVP_ClientHitlUtil {
                     continue;
                 }
             }
-            var box = entity.getBoundingBox().inflate(0.3);
-            var hit = box.clip(start, end);
+            boolean obstruction = org.ywzj.rvp.countermeasure.RVP_CountermeasureState.isOpticalObstruction(entity);
+            var box = entity.getBoundingBox().inflate(obstruction ? 0.0 : 0.3);
+            var hit = box.contains(start) ? java.util.Optional.of(start) : box.clip(start, end);
             if (hit.isPresent()) {
                 double dist = start.distanceToSqr(hit.get());
                 if (dist < closestDist) {

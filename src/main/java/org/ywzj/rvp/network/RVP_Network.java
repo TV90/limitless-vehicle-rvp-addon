@@ -40,7 +40,8 @@ public class RVP_Network {
     /** 协议 35：新增母车辅助载具候选选择请求和权威状态同步。 */
     /** 协议 36：显式配置的 HITL 远程观察窗口、区块、心跳及导弹 spawn 标志。 */
     /** 协议 42：客户端按方向机两档状态限制炮塔回转，与服务端保持一致。 */
-    private static final String PROTOCOL = "43";
+    // 44：既有 HITL 链路包增加权威锁点、OBB 身份及 DIRCM 禁锁剩余时间。
+    private static final String PROTOCOL = "44";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "main"))

@@ -84,17 +84,8 @@ public final class RVP_ClientSaclosState {
                 return;
             }
         }
-        Vec3 clientPoint = RVP_ClientHitlState.getClientDesignatedPos();
-        if (clientPoint != null) {
-            laserHudPos = clientPoint;
-            return;
-        }
-        Entity entity = mc.level.getEntity(RVP_ClientHitlState.getActiveMissileId());
-        if (entity instanceof RVP_MissileEntity missile && missile.isAlive()) {
-            laserHudPos = missile.getTargetPos();
-        } else {
-            laserHudPos = null;
-        }
+        // 实体尚未加载时保留同步点；无同步点则无框，禁止读出生包里的陈旧目标。
+        laserHudPos = RVP_ClientHitlState.getClientDesignatedPos();
     }
 
     public static void toggleVehicleLaser(LocalPlayer player) {

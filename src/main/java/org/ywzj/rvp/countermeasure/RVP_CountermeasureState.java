@@ -380,7 +380,7 @@ public final class RVP_CountermeasureState {
         }
         Level level = near.level();
         AABB probe = new AABB(point, point).inflate(1.0);
-        return level.getEntities(near, probe, e -> e instanceof RVP_SmokeEntity && e.isAlive()).stream()
+        return level.getEntities(near, probe, e -> e instanceof RVP_SmokeEntity && isOpticalObstruction(e)).stream()
                 .anyMatch(e -> e.getBoundingBox().contains(point));
     }
 
@@ -393,7 +393,7 @@ public final class RVP_CountermeasureState {
         Vec3 center = target.getBoundingBox().getCenter();
         Level level = target.level();
         AABB probe = new AABB(center, center).inflate(1.0);
-        for (Entity e : level.getEntities(target, probe, x -> x instanceof RVP_SmokeEntity && x.isAlive())) {
+        for (Entity e : level.getEntities(target, probe, x -> x instanceof RVP_SmokeEntity && isOpticalObstruction(x))) {
             if (e.getBoundingBox().contains(center)) {
                 return (RVP_SmokeEntity) e;
             }
@@ -431,26 +431,38 @@ public final class RVP_CountermeasureState {
         return new Vec3(px, cy, pz);
     }
 
+    /** 仅已形成的光学遮挡体参与判定；烟雾弹在展开前不是一堵小型隐形墙。 */
+    public static boolean isOpticalObstruction(Entity entity) {
+        return entity.isAlive() && entity instanceof SightObstruction
+                && (!(entity instanceof RVP_SmokeEntity smoke)
+                || smoke.isExploded() && smoke.getCurrentRadius() > 0.0f);
+    }
+
+    /** 返回真实视线上的最近遮挡体；包围盒只粗筛，不能把斜线旁边的烟也算作遮挡。 */
+    @Nullable
+    public static Entity findSightObstruction(Entity seeker, Vec3 start, Vec3 end) {
+        Entity closest = null;
+        double nearest = Double.POSITIVE_INFINITY;
+        for (Entity entity : seeker.level().getEntities(seeker, new AABB(start, end).inflate(0.1),
+                RVP_CountermeasureState::isOpticalObstruction)) {
+            AABB bounds = entity.getBoundingBox();
+            Vec3 entry = bounds.contains(start) ? start : bounds.clip(start, end).orElse(null);
+            if (entry != null && start.distanceToSqr(entry) < nearest) {
+                nearest = start.distanceToSqr(entry);
+                closest = entity;
+            }
+        }
+        return closest;
+    }
+
     private static boolean hasSightObstruction(Entity seeker, Entity target) {
-        if (target instanceof SightObstruction) {
-            return true;
-        }
-        if (isLineOfSightBlocked(seeker, target.getBoundingBox().getCenter())) {
-            return true;
-        }
-        // 弹目视线走廊：任一 SightObstruction（含大体积烟雾云）的 AABB 与之相交即视为遮挡
-        AABB box = new AABB(seeker.position(), target.position()).inflate(2.0);
-        return seeker.level().getEntities(seeker, box, entity -> entity instanceof SightObstruction).stream()
-                .anyMatch(entity -> entity.getBoundingBox().intersects(box));
+        // 调用统一射线判定，实体中心与点指定共用相同遮挡语义。
+        return isOpticalObstruction(target) || hasSightObstruction(seeker, target.getBoundingBox().getCenter());
     }
 
     private static boolean hasSightObstruction(Entity seeker, Vec3 targetPos) {
-        if (isLineOfSightBlocked(seeker, targetPos)) {
-            return true;
-        }
-        AABB box = new AABB(seeker.position(), targetPos).inflate(2.0);
-        return seeker.level().getEntities(seeker, box, entity -> entity instanceof SightObstruction).stream()
-                .anyMatch(entity -> entity.getBoundingBox().intersects(box));
+        return isLineOfSightBlocked(seeker, targetPos)
+                || findSightObstruction(seeker, seeker.position(), targetPos) != null;
     }
 
     /**
@@ -467,8 +479,10 @@ public final class RVP_CountermeasureState {
         if (clampEnd == null) {
             return false;
         }
-        return level.clip(new ClipContext(seeker.position(), clampEnd,
-                ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, seeker)).getType() != HitResult.Type.MISS;
+        HitResult hit = level.clip(new ClipContext(seeker.position(), clampEnd,
+                ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, seeker));
+        // 指向可见方块表面属于有效点锁；只有终点前的方块才构成遮挡（容差 1 厘米）。
+        return hit.getType() != HitResult.Type.MISS && hit.getLocation().distanceToSqr(targetPos) > 1.0E-4;
     }
 
     /** 把射线终点回退到最后一个已加载区块内；起点即未加载时返回 null（不做方块遮挡判定）。 */

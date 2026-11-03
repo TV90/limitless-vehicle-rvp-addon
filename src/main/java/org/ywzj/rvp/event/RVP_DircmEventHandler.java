@@ -72,7 +72,8 @@ public class RVP_DircmEventHandler {
             }
             // HITL 弹临时干扰恢复（服务端）
             for (net.minecraft.world.entity.Entity entity : level.getEntities().getAll()) {
-                if (entity instanceof RVP_BaseBullet bullet && bullet.dircmJammed) {
+                // 白闪结束后仍推进禁锁计时，TV 的 60 tick 干扰不能把 120 tick 禁锁永久停在 60。
+                if (entity instanceof RVP_BaseBullet bullet && (bullet.dircmJammed || bullet.dircmNoRedesignateTick > 0)) {
                     RVP_DircmRuntimeManager.tickJammedProjectile(bullet);
                 }
             }

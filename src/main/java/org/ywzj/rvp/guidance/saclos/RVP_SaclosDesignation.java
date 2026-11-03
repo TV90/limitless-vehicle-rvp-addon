@@ -27,22 +27,9 @@ public final class RVP_SaclosDesignation {
         if (!usesSaclosGuidance(projectile)) {
             return;
         }
-        if (isHitlDesignate(projectile)) {
-            Entity tracked = projectile.getTargetEntity();
-            if (tracked != null && tracked.isAlive()) {
-                // [RVP] §46：HITL 指定目标点与制导瞄准点同源（最大 OBB 中心）
-                projectile.setTargetPos(
-                        ((RVP_MissileEntity) projectile).rvp$resolveHitlAimPoint(tracked));
-            }
-            return;
-        }
-        // 人在回路电视（HITL_TV）导弹退出视角后：禁止再被吊舱实时瞄准线覆盖目标点（否则
-        // 导弹会逐 tick 追玩家鼠标/吊舱方向，表现为"指令线鼠标操控"而非飞向最后锁定目标）。
-        // 退出后的目标跟踪由 RVP_RuntimeHitlTvGuidanceSource 用 targetEntity / 最后 targetPos
-        // 延续，并复用其 validateEntity/queryPoint 的烟雾与视线反制（目标入烟仍脱锁）。
-        if (projectile.getRvpData() != null && projectile.getRvpData().isSaclosTvGuided()) {
-            return;
-        }
+        // TV 的实体/OBB 点只由制导源在光学检查通过后刷新；镜头退出也不绕过此门。
+        if (isHitlDesignate(projectile)
+                || projectile.getRvpData() != null && projectile.getRvpData().isSaclosTvGuided()) return;
         if (!RVP_SaclosOperatorSession.isLaserEnabled(projectile)) {
             return;
         }
