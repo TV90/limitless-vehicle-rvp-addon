@@ -44,8 +44,8 @@ public final class RVP_ClientHitReplay {
         FRAMES.headMap(clip.impactTick() - 60, false).clear();
         samples = List.copyOf(FRAMES.values());
         if (reset) {
-            startTick = samples.isEmpty() ? clip.impactTick() : Math.max(samples.get(0).tick(),
-                    clip.impactTick() - RVP_HitReplay.HISTORY_TICKS);
+            // 展示飞行段固定为一秒；历史不足时 sample 保持最早可用姿态，不能把慢放压成瞬间命中。
+            startTick = clip.impactTick() - RVP_ClientHitIndicatorState.FLY_MS / 50.0;
             startNanos = System.nanoTime();
         }
         if (metadata != null && (!metadata.vehicleId().equals(clip.vehicleId())

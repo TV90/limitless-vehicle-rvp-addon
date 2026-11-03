@@ -39,7 +39,6 @@ import org.slf4j.Logger;
 import org.ywzj.rvp.client.state.RVP_ClientBoneModuleState;
 import org.ywzj.rvp.client.state.RVP_ClientHitIndicatorState;
 import org.ywzj.rvp.client.state.RVP_ClientHitReplay;
-import org.ywzj.rvp.replay.RVP_HitReplay;
 import org.ywzj.rvp.replay.RVP_ReplayPose;
 import org.ywzj.rvp.client.state.RVP_ClientHitNotifyState;
 import org.ywzj.rvp.debug.RVP_DebugFlags;
@@ -541,7 +540,6 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
                                           List<RVP_ClientHitIndicatorState.HitEvent> events) {
         PoseStack pose = gg.pose();
         Matrix4f matrix = pose.last().pose();
-        long now = System.currentTimeMillis();
         // 该载具是否有直击事件：有直击时爆炸事件不再渲染弹体模型（直击+爆炸只渲染直击那一次）
         boolean hasDirectHit = false;
         for (RVP_ClientHitIndicatorState.HitEvent e : events) {
@@ -550,7 +548,7 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
                 break;
             }
         }
-        int historicalProjectiles = 0;
+        int flyingProjectiles = 0;
         for (RVP_ClientHitIndicatorState.HitEvent event : events) {
             long elapsed = RVP_ClientHitReplay.elapsed(event);
             if (elapsed < 0) {
@@ -559,40 +557,26 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
             // 命中点/爆炸中心（模型空间 = 相对实体位置，与模型几何同一基准）
             Vec3 hitModel = event.hitPosition.subtract(entity.position());
             Vec3 incoming = event.incomingDir;
+            boolean pairedDirectHit = hasDirectHit;
             if (RVP_ClientHitReplay.isProxy(entity) && RVP_ClientHitReplay.matches(event.replay)
                     && entity instanceof AbstractVehicle vehicle) {
+                // 历史姿态只负责命中点和来袭方向的跟随；飞行仍走下面原有的 4 格/1 秒展示动画。
                 hitModel = RVP_ReplayPose.resolve(vehicle, event.replay.anchor(), false).subtract(entity.position());
                 incoming = RVP_ReplayPose.resolve(vehicle, event.replay.anchor(), true);
+                pairedDirectHit = events.stream().anyMatch(other -> !other.boneDisplayName.isEmpty()
+                        && other.replay != null && other.replay.impactTick() == event.replay.impactTick());
                 if (elapsed < RVP_ClientHitIndicatorState.FLY_MS) {
-                    // 真实历史轨迹可能尚在展板外，保持目标比例，不伪造四米飞行段。
-                    boolean duplicatedExplosion = event.boneDisplayName.isEmpty() && events.stream().anyMatch(other ->
-                            !other.boneDisplayName.isEmpty() && other.replay != null
-                                    && other.replay.impactTick() == event.replay.impactTick());
-                    if (!duplicatedExplosion && historicalProjectiles++ < 32)
-                        renderHistoricalFlight(gg, matrix, entity, event);
-                    continue;
+                    // 同次直击与爆炸只画一个弹体；保留连续命中最多同时画 32 个飞行物的限制。
+                    if (event.boneDisplayName.isEmpty() && pairedDirectHit) continue;
+                    if (flyingProjectiles++ >= 32) continue;
                 }
             }
             if (event.boneDisplayName.isEmpty()) {
-                renderExplosionAnimation(gg, matrix, event, hitModel, incoming, elapsed, scale, hasDirectHit);
+                renderExplosionAnimation(gg, matrix, event, hitModel, incoming, elapsed, scale, pairedDirectHit);
             } else {
                 renderDirectAnimation(gg, matrix, event, hitModel, incoming, elapsed, scale);
             }
         }
-    }
-
-    /** 世界轨迹与载具历史共享一条 tick 时间轴；出生前/缺帧不凭空补弹道。 */
-    private static void renderHistoricalFlight(GuiGraphics gg, Matrix4f matrix, Entity entity,
-                                               RVP_ClientHitIndicatorState.HitEvent event) {
-        double tick = RVP_ClientHitReplay.clock();
-        Vec3 current = RVP_HitReplay.projectileAt(event.replay.projectile(), tick);
-        if (current == null) return;
-        Vec3 previous = RVP_HitReplay.projectileAt(event.replay.projectile(), tick - 0.1);
-        Vec3 incoming = previous == null || previous.distanceToSqr(current) < 1e-10 ? event.incomingDir
-                : previous.subtract(current).normalize();
-        Vec3 position = current.subtract(entity.position());
-        if (hasProjectileModel(event)) renderProjectileModel(gg, position, incoming);
-        else renderTracer(gg, matrix, position, incoming);
     }
 
     /**
