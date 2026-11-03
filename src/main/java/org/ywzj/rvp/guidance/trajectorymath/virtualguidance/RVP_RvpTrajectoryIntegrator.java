@@ -15,11 +15,13 @@ import org.ywzj.rvp.guidance.trajectorymath.util.RVP_PointGuidanceController;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_PIPAttackAngleController;
 
 /**
- * 从 RVP 实体制导/运动链抽出的纯虚拟弹道 Tick 编排器。
+ * 供独立数学试验使用的纯参数弹道编排器，不再驱动游戏中的虚拟中段。
  *
  * <p>本类只负责按固定顺序组合物理推进、制导、速度限制、姿态派生和状态推进；无状态的
  * 数值计算集中由 {@link RVP_BallisticTrajectoryMath} 提供，便于实体弹道、预测器和测试复用。
- * 实现不访问世界、实体和区块。</p>
+ * 实现不访问世界、实体和区块。生产虚拟飞行改由
+ * {@link org.ywzj.rvp.virtualflight.server.RVP_EntityTrajectoryIntegrator} 直接调用实体运动链，
+ * 本类不能作为实体轨迹等价性的验证依据。</p>
  */
 public final class RVP_RvpTrajectoryIntegrator implements RVP_VirtualTrajectoryIntegrator {
     /** 当前 RVP 纯数学弹道实现的稳定标识，用于校验持久化状态兼容性。 */

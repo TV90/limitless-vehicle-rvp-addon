@@ -108,6 +108,7 @@ import org.ywzj.rvp.util.RVP_ChunkPathLoadManager;
 import org.ywzj.rvp.guidance.trajectorymath.virtualguidance.RVP_VirtualTrajectoryState;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AttackAngleState;
 import org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileSnapshot;
+import org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileKinematics;
 import org.ywzj.vehicle.all.AllDamageTypes;
 import org.ywzj.vehicle.api.entity.RemoteTickEntity;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
@@ -2072,10 +2073,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 return;
             }
             // 调用实体与独立数值环境共用的单刻准备，避免气动载荷或“已积分”标记残留。
-            prepareKinematicGuidanceTick();
-            tickGuidance();
-            // 调用本项目攻角兜底：无制导指令时推进残留攻角；智能引信拥有独立运动契约。
-            if (!smartFuseActive) RVP_ProjectileMotion.finishAttackAngleGuidance(this);
+            tickKinematicGuidance();
             RVP_ChunkPathLoader.PathLoadResult pathLoadResult = requestDynamicChunkPath(
                     RVP_ChunkPathLoadManager.RequestPriority.ACTIVE_PROJECTILE);
             if (!pathLoadResult.currentTickPathReady()) {
@@ -2161,6 +2159,15 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         if (!RVP_ProjectileMotion.usesAttackAngle(this)) resetAttackAngleRates();
     }
 
+    /** 实体态与虚拟态共用的制导顺序；碰撞和区块门仍由真实实体 Tick 单独处理。 */
+    private void tickKinematicGuidance() {
+        // 调用本项目单刻准备和实际弹种制导入口，保证先制导、后受力，不能在虚拟态另写一套顺序。
+        prepareKinematicGuidanceTick();
+        tickGuidance();
+        // 调用本项目攻角兜底：没有有效指令时仍推进残余角速度，智能引信保留独立运动契约。
+        if (!smartFuseActive) RVP_ProjectileMotion.finishAttackAngleGuidance(this);
+    }
+
     /*=======================虚拟中段弹体=======================*/
 
     /**
@@ -2184,6 +2191,54 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         return new RVP_VirtualTrajectoryState(position(), getDeltaMovement(), getXRot(), getYRot(),
                 peakFlightSpeed, flightDistance, getFlightTickCount(), life, secondPulseStartTick,
                 attackPitchRateDeg, attackYawRateDeg);
+    }
+
+    /** 保存轨迹之外仍会影响下一刻运动的状态，尤其是 PRESET 点火参考点和二脉冲顶点历史。 */
+    public final RVP_VirtualMissileKinematics createVirtualMidcourseKinematics() {
+        return new RVP_VirtualMissileKinematics(currentFlightSpeed, updateCount,
+                previousVerticalSpeed, previousVerticalSpeedValid, presetLaunchPos, presetAscentPos,
+                presetOverheadPos, presetInitialized, presetGuidanceMotionAppliedDuringLaunch,
+                inheritedWindDirection, launchVehicleVelocity, coldLaunchVelocity);
+    }
+
+    /** 恢复完整运动记忆；不重新初始化 PRESET、不用历史峰值覆盖当前速率，也不改写机头姿态。 */
+    public final void restoreVirtualMidcourseKinematics(RVP_VirtualMissileKinematics state, int coldLaunchTick) {
+        currentFlightSpeed = state.currentFlightSpeed();
+        updateCount = state.updateCount();
+        previousVerticalSpeed = state.previousVerticalSpeed();
+        previousVerticalSpeedValid = state.previousVerticalSpeedValid();
+        presetLaunchPos = state.presetLaunchPosition();
+        presetAscentPos = state.presetAscentPosition();
+        presetOverheadPos = state.presetOverheadPosition();
+        presetInitialized = state.presetInitialized();
+        presetGuidanceMotionAppliedDuringLaunch = state.presetGuidanceAppliedDuringLaunch();
+        inheritedWindDirection = state.inheritedWindDirection();
+        launchVehicleVelocity = state.launchVehicleVelocity();
+        coldLaunchVelocity = state.coldLaunchVelocity();
+        coldLaunchTimeTick = coldLaunchTick;
+    }
+
+    /**
+     * 未加入世界的虚拟计算对象只执行实体的飞行计算，不运行 Entity.tick、碰撞、引信、尾迹或区块申请。
+     * 准入器保证这里只处理已结束冷发射、无实时世界依赖的固定 GPS 导弹。
+     */
+    public final void tickVirtualMidcourseFlight() {
+        // 调用原版姿态历史入口，让制导所见的上一刻角度与正常实体调度一致。
+        setOldPosAndRot();
+        tickCount++;
+        updateCount++;
+        // 调用真实实体同一制导和动态分派运动方法，推力、二脉冲、风偏、恒速与阻力均不另行计算。
+        tickKinematicGuidance();
+        tickMotion();
+        life--;
+    }
+
+    /** 这些状态需要载具实时姿态或沿途世界交互，结束后才能交给无世界 Tick 的虚拟计算对象。 */
+    public final boolean hasWorldDependentMidcourseMotion() {
+        // 调用本项目点火时序，冷发射/延迟点火完成前仍由真实实体和发射平台推进。
+        return rvpData == null || getFlightTickCount() < RVP_ProjectileMotion.resolveMotorIgnitionTick(this, rvpData)
+                || isInWater() || submunitionDeploymentMotionActive || smartFuseActive
+                || dircmJammed || ecmActiveJamRemainTick > 0;
     }
 
     /** 在 discard 前标记“真实转虚拟”专用移除语义。 */
@@ -2282,24 +2337,6 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         topAttackTriggerTick = snapshot.topAttackTriggerTick();
         irSeekerGraceUntilTick = snapshot.irSeekerGraceUntilTick();
         irSeekerLossGraceStarted = snapshot.irSeekerLossGraceStarted();
-    }
-
-    /**
-     * 在完整快照恢复后按权威速度校正弹体视线，并同步上一帧姿态供出生包与插值器使用。
-     */
-    public final void alignVirtualRestoredAttitudeToVelocity() {
-        // 调用本项目攻角门控：该模式的快照姿态为独立状态，必须原样恢复。
-        if (RVP_ProjectileMotion.usesAttackAngle(this)) {
-            xRotO = getXRot();
-            yRotO = getYRot();
-            return;
-        }
-        Vec3 velocity = getDeltaMovement();
-        if (velocity.lengthSqr() <= 1.0E-8) return;
-        // 调用实体制导共用的旋转换算，保证恢复姿态与正常制导姿态语义一致。
-        RVP_ProjectileMotion.applyGuidanceFacing(this, velocity);
-        xRotO = getXRot();
-        yRotO = getYRot();
     }
 
     /*=======================虚拟中段弹体 END=======================*/

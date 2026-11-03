@@ -15,18 +15,11 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.RVP_MOD;
-import org.ywzj.rvp.all.RVP_Entities;
-import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.rvp.util.RVP_AimPointResolver;
 import org.ywzj.rvp.virtualflight.common.RVP_VirtualFlightPhase;
 import org.ywzj.rvp.virtualflight.common.RVP_VirtualFlightReason;
-import org.ywzj.rvp.guidance.trajectorymath.virtualguidance.RVP_RvpTrajectoryIntegrator;
-import org.ywzj.rvp.guidance.trajectorymath.virtualguidance.RVP_VirtualGuidanceInput;
-import org.ywzj.rvp.guidance.trajectorymath.virtualguidance.RVP_VirtualTrajectoryIntegrator;
-import org.ywzj.rvp.guidance.trajectorymath.virtualguidance.RVP_VirtualTrajectoryParameters;
 import org.ywzj.rvp.guidance.trajectorymath.virtualguidance.RVP_VirtualTrajectoryResult;
-import org.ywzj.rvp.guidance.trajectorymath.util.RVP_TargetMotionState;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.data.RVP_VirtualMidcourseData;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
@@ -37,7 +30,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -65,25 +57,10 @@ public final class RVP_VirtualMissileManager {
     /** UUID 为键、自然过期时间为 40 Tick 的恢复交接 Ticket。 */
     private static final TicketType<UUID> RESTORE_TICKET = TicketType.create(
             "rvp_virtual_missile_restore", Comparator.comparing(UUID::toString), 40);
-    /** 当前注册的纯弹道积分器；阶段 B 默认仍为 {@code rvp_current}。 */
-    private static RVP_VirtualTrajectoryIntegrator integrator = new RVP_RvpTrajectoryIntegrator();
-    /** 最近一次 ServerTick 收集到的记录数，用于阻止带活动状态的热切换。 */
-    private static int lastKnownActiveCount;
     /** 跨 Tick 保留的恢复预算轮转起点，避免列表前部长期优先。 */
     private static int fairnessCursor;
 
     private RVP_VirtualMissileManager() {}
-
-    /**
-     * 安装新的纯轨迹积分器。
-     *
-     * @param replacement 新实现，不得为 {@code null}
-     * @throws IllegalStateException 当前存在活动虚拟记录时抛出，防止在途状态静默换算法
-     */
-    public static void installIntegrator(RVP_VirtualTrajectoryIntegrator replacement) {
-        if (lastKnownActiveCount > 0) throw new IllegalStateException("Cannot replace integrator while virtual missiles are active");
-        integrator = Objects.requireNonNull(replacement, "replacement");
-    }
 
     /**
      * 在真实导弹完成本 Tick 运动、引信和路径提交后尝试原子转入虚拟态。
@@ -115,8 +92,9 @@ public final class RVP_VirtualMissileManager {
                 missile.getUUID(), level.dimension().location(), missile.getWeaponId(),
                 owner == null ? null : owner.getUUID(), shooterVehicle == null ? null : shooterVehicle.getUUID(),
                 missile.getVirtualMidcourseLaunchPosition(), missile.createVirtualMidcourseSnapshot(),
+                missile.createVirtualMidcourseKinematics(),
                 missile.getId(), missile.getColdLaunchTimeTick(), gameTime, gameTime,
-                integrator.implementationId(), integrator.implementationVersion(),
+                RVP_EntityTrajectoryIntegrator.ID, RVP_EntityTrajectoryIntegrator.VERSION,
                 RVP_VirtualFlightPhase.VIRTUAL_CRUISE, 0, 0, 0, 0);
         // [RVP] RADAR 上行改靶：标记与间隔从实体转快照（运行时字段，不入 NBT）
         state.radarUplinkTargeting = missile.radarUplinkTargeting;
@@ -149,7 +127,6 @@ public final class RVP_VirtualMissileManager {
         MinecraftServer server = event.getServer();
         // 第一步：加载各维度 SavedData，并清理结构损坏或跨维度重复 UUID。
         List<StateRef> refs = collectAndValidate(server);
-        lastKnownActiveCount = refs.size();
         if (refs.isEmpty()) {
             RVP_VirtualMissileDebug.summarizeIfDue(server);
             return;
@@ -168,11 +145,21 @@ public final class RVP_VirtualMissileManager {
                 terminate(ref, RVP_VirtualFlightReason.WEAPON_DATA_MISSING, "weapon not present/current RVP missile");
                 continue;
             }
+            // 调用当前准入检查；热重载引入世界依赖后不能让计算对象继续执行不支持的导引头或引信逻辑。
+            if (RVP_VirtualMissileEligibility.evaluateConfiguration(data) != RVP_VirtualMissileEligibility.Result.ELIGIBLE) {
+                terminate(ref, RVP_VirtualFlightReason.CONFIGURATION_CHANGED, "virtual flight configuration no longer eligible");
+                continue;
+            }
+            if (!state.trajectoryImplementationId.equals(RVP_EntityTrajectoryIntegrator.ID)
+                    || state.trajectoryStateVersion != RVP_EntityTrajectoryIntegrator.VERSION) {
+                terminate(ref, RVP_VirtualFlightReason.INCOMPATIBLE_INTEGRATOR, "loaded state implementation mismatch");
+                continue;
+            }
             if (state.phase == RVP_VirtualFlightPhase.VIRTUAL_CRUISE) {
                 // 调用本项目目标点解析器和虚拟状态更新入口；目标实体仍加载时滚动刷新位置/速度，
-                // 让卸载期间的纯积分继续看到变速、变向目标，而不是永远追初始 GPS 点。
+                // 查询只读取已经加载的实体；固定 GPS 准入本身不因此扩展为动态目标制导。
                 refreshLiveTargetMotion(ref, state);
-                // 巡航态只调用一次纯积分；失败时 integrateOneTick 已负责终止记录。
+                // 巡航态调用一次实体飞行计算；失败时 integrateOneTick 已负责终止记录。
                 if (!integrateOneTick(ref, data)) continue;
                 double horizontalSpeed = Math.sqrt(state.trajectory().velocity().x * state.trajectory().velocity().x
                         + state.trajectory().velocity().z * state.trajectory().velocity().z);
@@ -214,7 +201,6 @@ public final class RVP_VirtualMissileManager {
     /** 服务器停止后清理仅运行时的计数与轮转游标；SavedData 由原版存档流程保存。 */
     @SubscribeEvent
     public static void onServerStopped(ServerStoppedEvent event) {
-        lastKnownActiveCount = 0;
         fairnessCursor = 0;
     }
 
@@ -242,30 +228,15 @@ public final class RVP_VirtualMissileManager {
      */
     private static boolean integrateOneTick(StateRef ref, RVP_WeaponData data) {
         RVP_VirtualMissileState state = ref.state;
-        if (!state.trajectoryImplementationId.equals(integrator.implementationId())
-                || state.trajectoryStateVersion != integrator.implementationVersion()) {
-            terminate(ref, RVP_VirtualFlightReason.INCOMPATIBLE_INTEGRATOR, "loaded state implementation mismatch");
-            return false;
-        }
         long start = System.nanoTime();
-        // 从当前武器数据生成纯参数，随后只把不可变状态/输入交给积分器。
-        RVP_VirtualTrajectoryParameters parameters = RVP_VirtualTrajectoryInputFactory.createParameters(
-                data, state.coldLaunchTimeTick, state.trajectory().position().y,
-                state.trajectory().flightTick() + 1);
         RVP_VirtualMissileDebug.Vec3Before before = new RVP_VirtualMissileDebug.Vec3Before(
                 state.trajectory().position(), state.trajectory().velocity());
-        // 核心调用：积分器不接触 Level、Entity、Ticket 或任何同步加载 API。
-        // PRESET 弹道导弹的纯输入从当前武器配置与固定发射点冻结，未启用时为 null。
-        RVP_VirtualTrajectoryResult result = integrator.step(state.trajectory(),
-                new RVP_VirtualGuidanceInput(state.snapshot.targetPosition(),
-                        RVP_VirtualTrajectoryInputFactory.createPresetGuidance(data, state.launchPosition),
-                        new RVP_TargetMotionState(state.snapshot.targetPosition(),
-                                state.snapshot.lastKnownTargetVelocity(), Vec3.ZERO, 0.0D)),
-                parameters);
+        // 调用实体运动适配器：计算对象不加入世界，只执行与真实实体相同的制导和运动方法。
+        RVP_VirtualTrajectoryResult result = RVP_EntityTrajectoryIntegrator.step(ref.level, state, data,
+                resolveVehicle(ref.level, state.shooterVehicleUuid), resolveLivingEntity(ref.level, state.ownerUuid));
         RVP_VirtualMissileDebug.noteIntegrationNanos(System.nanoTime() - start);
-        // 将不可变积分结果替换回完整快照，同时保留制导/雷达/GPS/Top Attack 状态。
-        state.updateTrajectory(result.state());
-        RVP_VirtualMissileDebug.trajectoryTick(state, before, parameters, result);
+        // 调用实体运动日志出口，快照已由实际执行链写回，不能再按虚拟规则重置 GPS/发动机状态。
+        RVP_VirtualMissileDebug.trajectoryTick(state, before, data, result);
         state.virtualFlightTicks++;
         state.lastUpdatedGameTime = ref.level.getGameTime();
         if (state.trajectory().remainingLife() < 0) {
@@ -406,15 +377,8 @@ public final class RVP_VirtualMissileManager {
         if (data == null) return false;
         LivingEntity owner = resolveLivingEntity(ref.level, state.ownerUuid);
         AbstractVehicle shooterVehicle = resolveVehicle(ref.level, state.shooterVehicleUuid);
-        RVP_MissileEntity missile = new RVP_MissileEntity(RVP_Entities.RVP_MISSILE.get(), ref.level, state.weaponId);
-        RVP_BaseBullet.AimRot aim = new RVP_BaseBullet.AimRot(state.trajectory().xRot(), state.trajectory().yRot());
-        // 先走标准初始化建立同步字段与运行组件，再用专用快照覆盖在途状态。
-        missile.initFromWeapon(data, RVP_EnumWeaponKind.MISSILE, shooterVehicle, owner,
-                state.trajectory().position(), aim, state.trajectory().velocity());
-        missile.setUUID(state.flightUuid);
-        missile.restoreFromVirtualMidcourseSnapshot(state.snapshot, state.launchPosition);
-        // 快照恢复后再调用专用对齐入口，避免旧快照姿态覆盖虚拟段最终速度方向。
-        missile.alignVirtualRestoredAttitudeToVelocity();
+        // 调用虚拟计算同款恢复入口，完整保留实际机头姿态、当前速率和 PRESET 参考点。
+        RVP_MissileEntity missile = RVP_EntityTrajectoryIntegrator.createEntity(ref.level, state, data, shooterVehicle, owner);
         // Chunk 已 ready 后才进行有限碰撞查询；该调用不会触发区块生成。
         Vec3 safePosition = findSafeRestorePosition(ref.level, missile, state.trajectory().position(),
                 state.trajectory().velocity());

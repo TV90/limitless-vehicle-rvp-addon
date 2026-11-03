@@ -30,8 +30,9 @@ public final class RVP_VirtualMidcourseData {
     /** 单枚导弹最大虚拟飞行时间，单位 tick，默认 12000；超过后丢弃。 */
     @SerializedName("max_virtual_flight_tick") private int maxVirtualFlightTick = 12000;
     /**
-     * 可选虚拟巡航高度，单位世界 Y，默认 null；仅在 GPS 巡航阶段生效，配置后闭环跟踪
-     * 该绝对高度，未配置时以当前虚拟位置高度为闭环基准。
+     * 当前 schema 保留的可选绝对巡航高度字段，单位世界 Y，默认 null。
+     * 生产虚拟态与实体态共用制导链后不消费本字段；实际巡航行为统一由 guidance_data 配置，
+     * 避免同一枚弹只在虚拟态切换另一条高度曲线。
      */
     @SerializedName("cruise_altitude") private Double cruiseAltitude;
     /** 目标更新方式；默认 FIXED_SNAPSHOT，阶段 B 只接受该值。 */
@@ -59,7 +60,7 @@ public final class RVP_VirtualMidcourseData {
     public int getVirtualUpdateIntervalTick() { return 1; }
     /** @return 至少为 1 的单次虚拟飞行 Tick 上限。 */
     public int getMaxVirtualFlightTick() { return Math.max(maxVirtualFlightTick, 1); }
-    /** @return 可选世界 Y 巡航高度；未配置或值非有限时为 null。 */
+    /** @return 可选世界 Y 巡航高度；当前实体/虚拟运动链不消费，缺省或非有限时为 null。 */
     public Double getCruiseAltitude() {
         return cruiseAltitude != null && Double.isFinite(cruiseAltitude) ? cruiseAltitude : null;
     }

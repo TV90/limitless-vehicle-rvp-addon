@@ -6,7 +6,6 @@ import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
 import org.ywzj.rvp.guidance.RVP_GuidancePhase;
 import org.ywzj.rvp.virtualflight.common.RVP_VirtualFlightPhase;
-import org.ywzj.rvp.guidance.trajectorymath.virtualguidance.RVP_RvpTrajectoryIntegrator;
 import org.ywzj.rvp.guidance.trajectorymath.virtualguidance.RVP_VirtualTrajectoryState;
 
 import java.util.UUID;
@@ -45,6 +44,7 @@ class RVP_VirtualMissileStateCodecTest {
         assertEquals(original.ownerUuid, loaded.ownerUuid);
         assertEquals(original.launchPosition, loaded.launchPosition);
         assertEquals(original.trajectory(), loaded.trajectory());
+        assertEquals(original.kinematics, loaded.kinematics);
         assertEquals(RVP_GuidancePhase.TERMINAL, loaded.snapshot.guidancePhase());
         assertEquals(345, loaded.snapshot.motorBurnEndTick());
         assertEquals(42, loaded.snapshot.secondPulseBurnTimeTick());
@@ -52,8 +52,8 @@ class RVP_VirtualMissileStateCodecTest {
         assertTrue(loaded.snapshot.gpsCruiseVerticalResetApplied());
         assertEquals(new Vec3(1, 2, 3), loaded.snapshot.gpsTargetOffset());
         assertEquals(new Vec3(300, 160, 400), loaded.snapshot.topAttackApexPosition());
-        assertEquals(RVP_RvpTrajectoryIntegrator.ID, loaded.trajectoryImplementationId);
-        assertEquals(RVP_RvpTrajectoryIntegrator.VERSION, loaded.trajectoryStateVersion);
+        assertEquals(RVP_EntityTrajectoryIntegrator.ID, loaded.trajectoryImplementationId);
+        assertEquals(RVP_EntityTrajectoryIntegrator.VERSION, loaded.trajectoryStateVersion);
         assertEquals(RVP_VirtualFlightPhase.RESTORE_WAITING_CHUNKS, loaded.phase);
         assertEquals(2, loaded.restoreAttemptCount);
     }
@@ -63,6 +63,10 @@ class RVP_VirtualMissileStateCodecTest {
         CompoundTag unsupported = state().save();
         unsupported.putInt("stateSchemaVersion", 999);
         assertTrue(RVP_VirtualMissileState.load(unsupported).isEmpty());
+
+        CompoundTag oldSchema = state().save();
+        oldSchema.putInt("stateSchemaVersion", 1);
+        assertTrue(RVP_VirtualMissileState.load(oldSchema).isEmpty());
 
         CompoundTag missing = state().save();
         missing.remove("snapshot");
@@ -75,6 +79,16 @@ class RVP_VirtualMissileStateCodecTest {
         CompoundTag badRate = state().save();
         badRate.getCompound("snapshot").putDouble("yawRateDeg", Double.NaN);
         assertTrue(RVP_VirtualMissileState.load(badRate).isEmpty());
+
+        CompoundTag missingMemory = state().save();
+        missingMemory.remove("kinematics");
+        assertTrue(RVP_VirtualMissileState.load(missingMemory).isEmpty());
+        CompoundTag badHistory = state().save();
+        badHistory.getCompound("kinematics").putDouble("previousVerticalSpeed", Double.NaN);
+        assertTrue(RVP_VirtualMissileState.load(badHistory).isEmpty());
+        CompoundTag incompletePreset = state().save();
+        incompletePreset.getCompound("kinematics").remove("presetLaunchPosition");
+        assertTrue(RVP_VirtualMissileState.load(incompletePreset).isEmpty());
     }
 
     /** 缺失运行态角速度安全读零；积分器版本仍由管理器另行检查，不迁移武器 JSON。 */
@@ -101,8 +115,9 @@ class RVP_VirtualMissileStateCodecTest {
     }
 
     @Test
-    void virtualTickAppliesExplicitFixedGpsSubsystemSemantics() {
+    void replacingTrajectoryDoesNotInventGuidanceOrMotorState() {
         RVP_VirtualMissileState state = state();
+        RVP_VirtualMissileSnapshot original = state.snapshot;
         RVP_VirtualTrajectoryState advanced = new RVP_VirtualTrajectoryState(
                 new Vec3(104, 120.2, -193), new Vec3(4, 0.2, 7), 1, -60,
                 9.5, 1242.6, 211, 799, 190);
@@ -110,16 +125,16 @@ class RVP_VirtualMissileStateCodecTest {
         state.updateTrajectory(advanced);
 
         assertEquals(advanced, state.trajectory());
-        assertEquals(state.snapshot.targetPosition(), state.snapshot.lastGuidancePosition());
-        assertEquals(RVP_GuidancePhase.MAIN, state.snapshot.guidancePhase());
-        assertFalse(state.snapshot.activeRadarOn());
-        assertFalse(state.snapshot.activeRadarCatch());
-        assertEquals(0, state.snapshot.activeRadarLostTargetTick());
-        assertTrue(state.snapshot.gpsCruiseVerticalResetApplied());
-        assertFalse(state.snapshot.topAttackApexReached());
-        assertEquals(-1, state.snapshot.topAttackTriggerTick());
-        assertEquals(Integer.MIN_VALUE, state.snapshot.irSeekerGraceUntilTick());
-        assertFalse(state.snapshot.irSeekerLossGraceStarted());
+        assertEquals(original.lastGuidancePosition(), state.snapshot.lastGuidancePosition());
+        assertEquals(original.guidancePhase(), state.snapshot.guidancePhase());
+        assertEquals(original.activeRadarOn(), state.snapshot.activeRadarOn());
+        assertEquals(original.activeRadarCatch(), state.snapshot.activeRadarCatch());
+        assertEquals(original.activeRadarLostTargetTick(), state.snapshot.activeRadarLostTargetTick());
+        assertEquals(original.gpsCruiseVerticalResetApplied(), state.snapshot.gpsCruiseVerticalResetApplied());
+        assertEquals(original.topAttackApexReached(), state.snapshot.topAttackApexReached());
+        assertEquals(original.topAttackTriggerTick(), state.snapshot.topAttackTriggerTick());
+        assertEquals(original.irSeekerGraceUntilTick(), state.snapshot.irSeekerGraceUntilTick());
+        assertEquals(original.irSeekerLossGraceStarted(), state.snapshot.irSeekerLossGraceStarted());
     }
 
     private static RVP_VirtualMissileState state() {
@@ -136,8 +151,13 @@ class RVP_VirtualMissileStateCodecTest {
         return new RVP_VirtualMissileState(
                 flight, dimension, new ResourceLocation("rvp", "test_gps"),
                 UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"), null,
-                Vec3.ZERO, snapshot, 77, 10, 1000, 1050,
-                RVP_RvpTrajectoryIntegrator.ID, RVP_RvpTrajectoryIntegrator.VERSION,
+                Vec3.ZERO, snapshot,
+                // 调用运动记忆构造器，编码测试覆盖点火参考点、顶点历史和非默认风向。
+                new RVP_VirtualMissileKinematics(8.1, 205, 1.2, true,
+                        new Vec3(0, 90, 0), new Vec3(20, 300, 0), new Vec3(5000, 300, 6000),
+                        true, true, new Vec3(1, 0, 0), new Vec3(0.2, 0, 0.1), new Vec3(0, 2, 0)),
+                77, 10, 1000, 1050,
+                RVP_EntityTrajectoryIntegrator.ID, RVP_EntityTrajectoryIntegrator.VERSION,
                 RVP_VirtualFlightPhase.RESTORE_WAITING_CHUNKS, 50, 12, 2, 1038);
     }
 }

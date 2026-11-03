@@ -42,7 +42,8 @@ public final class RVP_GuidanceRuntimeGeometry {
         if (!contains(config.targetDistanceRange(), distance)) {
             return false;
         }
-        if (!contains(config.altitudeRange(), altitudeAgl(projectile, target))) {
+        // 未配置高度门时不查询地形，保证普通 GPS 实体计算可在未加载区块上无副作用复用。
+        if (config.altitudeRange() != null && !contains(config.altitudeRange(), altitudeAgl(projectile, target))) {
             return false;
         }
         return true;

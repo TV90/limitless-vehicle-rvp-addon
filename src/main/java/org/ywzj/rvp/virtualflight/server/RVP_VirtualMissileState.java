@@ -6,6 +6,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
+import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.rvp.guidance.RVP_GuidancePhase;
 import org.ywzj.rvp.virtualflight.common.RVP_VirtualFlightPhase;
 import org.ywzj.rvp.guidance.trajectorymath.virtualguidance.RVP_VirtualTrajectoryState;
@@ -24,7 +25,7 @@ import java.util.UUID;
  */
 public final class RVP_VirtualMissileState {
     /** 单条状态的 NBT schema 版本；与 SavedData 容器版本分开演进。 */
-    static final int STATE_SCHEMA_VERSION = 1;
+    static final int STATE_SCHEMA_VERSION = 2;
     /** 原版世界边界内允许持久化的最大水平绝对坐标。 */
     private static final double MAX_WORLD_COORDINATE = 2.9999984E7;
 
@@ -42,6 +43,10 @@ public final class RVP_VirtualMissileState {
     public final Vec3 launchPosition;
     /** 可替换的完整实体运行快照；每次积分按字段语义推进或规范化子系统状态。 */
     public RVP_VirtualMissileSnapshot snapshot;
+    /** 位置/姿态之外的实体运动记忆，每刻与完整快照一起更新并持久化。 */
+    public RVP_VirtualMissileKinematics kinematics;
+    /** 未加入世界的运动计算对象；只复用制导/运动方法，不参与世界实体调度或网络同步。 */
+    @Nullable RVP_MissileEntity trajectoryEntity;
     /** 转虚拟前的实体 ID，仅用于日志；不可作为恢复主键。 */
     public final int originalEntityId;
     /** 冷发射结束 Tick，用于继续计算发动机点火时间。 */
@@ -92,6 +97,7 @@ public final class RVP_VirtualMissileState {
      * @param shooterVehicleUuid 可选发射载具 UUID
      * @param launchPosition 初始发射位置
      * @param snapshot 完整实体运行快照
+     * @param kinematics 实体运动链的跨刻记忆
      * @param originalEntityId 转换前实体 ID，仅用于诊断
      * @param coldLaunchTimeTick 冷发射结束 Tick
      * @param enteredGameTime 进入虚拟态的 gameTime
@@ -107,7 +113,8 @@ public final class RVP_VirtualMissileState {
     public RVP_VirtualMissileState(
             UUID flightUuid, ResourceLocation dimension, ResourceLocation weaponId,
             @Nullable UUID ownerUuid, @Nullable UUID shooterVehicleUuid, Vec3 launchPosition,
-            RVP_VirtualMissileSnapshot snapshot, int originalEntityId, int coldLaunchTimeTick,
+            RVP_VirtualMissileSnapshot snapshot, RVP_VirtualMissileKinematics kinematics,
+            int originalEntityId, int coldLaunchTimeTick,
             long enteredGameTime, long lastUpdatedGameTime, String trajectoryImplementationId,
             int trajectoryStateVersion, RVP_VirtualFlightPhase phase, int virtualFlightTicks,
             int restoreWaitTicks, int restoreAttemptCount, long restoreRequestedGameTime) {
@@ -118,6 +125,7 @@ public final class RVP_VirtualMissileState {
         this.shooterVehicleUuid = shooterVehicleUuid;
         this.launchPosition = launchPosition;
         this.snapshot = snapshot;
+        this.kinematics = kinematics;
         this.originalEntityId = originalEntityId;
         this.coldLaunchTimeTick = coldLaunchTimeTick;
         this.enteredGameTime = enteredGameTime;
@@ -135,30 +143,28 @@ public final class RVP_VirtualMissileState {
     public RVP_VirtualTrajectoryState trajectory() { return snapshot.trajectory(); }
 
     /**
-     * 替换纯轨迹子状态，并按第一阶段固定 GPS 准入契约推进其余运行状态。
-     *
-     * <p>目标点、GPS 散布和发动机绝对时间字段冻结；已绑定目标 UUID 与最后已知速度保留，
-     * 由管理器在目标实体可见时滚动更新；飞行 Tick/life 由轨迹继续计时；
-     * 最近制导点与 GPS 垂直重置按虚拟闭环结果重算；终端制导、雷达、IR 与 Top Attack
-     * 均被准入规则禁止，因此恢复为明确的未激活状态，不能把入口时的陈旧记忆写回实体。</p>
+     * 只替换轨迹子状态，不补造制导重置或其他弹载子系统状态。
+     * 实际虚拟飞行直接读取实体完整快照；此入口供单独修改轨迹的调用方使用。
      *
      * @param trajectory 积分器返回的新轨迹状态
      */
     public void updateTrajectory(RVP_VirtualTrajectoryState trajectory) {
         snapshot = new RVP_VirtualMissileSnapshot(
-                trajectory, snapshot.targetPosition(), snapshot.targetPosition(),
-                snapshot.targetEntityUuid(), snapshot.lastKnownTargetVelocity(), RVP_GuidancePhase.MAIN,
-                snapshot.motorBurnEndTick(),
-                snapshot.secondPulseBurnTimeTick(), false, false,
-                0, true,
+                trajectory, snapshot.targetPosition(), snapshot.lastGuidancePosition(),
+                snapshot.targetEntityUuid(), snapshot.lastKnownTargetVelocity(), snapshot.guidancePhase(),
+                snapshot.motorBurnEndTick(), snapshot.secondPulseBurnTimeTick(), snapshot.activeRadarOn(),
+                snapshot.activeRadarCatch(), snapshot.activeRadarLostTargetTick(), snapshot.gpsCruiseVerticalResetApplied(),
                 snapshot.gpsTargetOffset(), snapshot.gpsTargetOffsetResolved(),
-                null, null, null, false,
-                -1, Integer.MIN_VALUE, false);
+                snapshot.topAttackLaunchPosition(), snapshot.topAttackInitialTargetPosition(), snapshot.topAttackApexPosition(),
+                snapshot.topAttackApexReached(), snapshot.topAttackTriggerTick(), snapshot.irSeekerGraceUntilTick(),
+                snapshot.irSeekerLossGraceStarted());
+        // 外部显式替换轨迹后丢弃计算缓存，下刻必须从新权威快照重建，不能继续使用旧位置/速度。
+        trajectoryEntity = null;
     }
 
     /**
      * [RVP] RADAR 上行改靶（2026-10-02）：仅替换权威目标点与最近制导点，其余快照字段原样
-     * 保留——与 {@link #updateTrajectory} 不同，不推进相位、不重置弹载子系统状态。
+     * 保留；本方法不推进飞行、不重置弹载子系统，也不改变已冻结的 PRESET 参考点。
      * 积分器每 tick 从 {@code snapshot.targetPosition()} 现读（替换后下一 tick 生效），
      * 恢复触发判定同源，因此超视距虚拟弹同样被改靶。新点为雷达修正真值，不再叠加 GPS 散布。
      * 调用方负责对所属 SavedData 标脏。
@@ -180,8 +186,8 @@ public final class RVP_VirtualMissileState {
     /**
      * 更新虚拟段当前目标位置和速度，保留其余弹载快照。
      *
-     * <p>调用方仅在服务端成功解析到同维度目标实体时使用；目标不可见时保留上一次快照，
-     * 由纯积分器按最后已知速度做有限前视。</p>
+     * <p>调用方仅在服务端成功解析到同维度目标实体时使用；目标不可见时保留上一次快照。
+     * 当前准入仍要求固定 GPS 点，不能据此绕过动态实体目标的准入限制。</p>
      */
     public void updateTargetMotion(Vec3 newTargetPosition, Vec3 newTargetVelocity) {
         snapshot = new RVP_VirtualMissileSnapshot(
@@ -213,6 +219,8 @@ public final class RVP_VirtualMissileState {
         tag.put("launchPosition", writeVec3(launchPosition));
         // 调用快照编码器集中保存实体态必须恢复的字段。
         tag.put("snapshot", saveSnapshot(snapshot));
+        // 调用实体运动记忆编码器，保存下一刻实际制导和二脉冲判定仍需使用的状态。
+        tag.put("kinematics", kinematics.save());
         tag.putInt("originalEntityId", originalEntityId);
         tag.putInt("coldLaunchTimeTick", coldLaunchTimeTick);
         tag.putLong("enteredGameTime", enteredGameTime);
@@ -242,7 +250,8 @@ public final class RVP_VirtualMissileState {
             ResourceLocation weaponId = ResourceLocation.tryParse(tag.getString("weaponId"));
             if (dimensionId == null || weaponId == null
                     || !tag.contains("launchPosition", Tag.TAG_COMPOUND)
-                    || !tag.contains("snapshot", Tag.TAG_COMPOUND)) {
+                    || !tag.contains("snapshot", Tag.TAG_COMPOUND)
+                    || !tag.contains("kinematics", Tag.TAG_COMPOUND)) {
                 return Optional.empty();
             }
             CompoundTag snapshotTag = tag.getCompound("snapshot");
@@ -258,6 +267,7 @@ public final class RVP_VirtualMissileState {
             RVP_VirtualMissileState state = new RVP_VirtualMissileState(
                     tag.getUUID("flightUuid"), dimensionId, weaponId,
                     getUuid(tag, "ownerUuid"), getUuid(tag, "shooterVehicleUuid"), launch, snapshot,
+                    RVP_VirtualMissileKinematics.load(tag.getCompound("kinematics")),
                     tag.getInt("originalEntityId"), Math.max(tag.getInt("coldLaunchTimeTick"), 0),
                     tag.getLong("enteredGameTime"), tag.getLong("lastUpdatedGameTime"),
                     tag.getString("trajectoryImplementationId"), tag.getInt("trajectoryStateVersion"), phase,
@@ -278,6 +288,7 @@ public final class RVP_VirtualMissileState {
     public boolean isStructurallyValid() {
         RVP_VirtualTrajectoryState trajectory = trajectory();
         return flightUuid != null && dimension != null && weaponId != null
+                && kinematics != null && kinematics.isValid()
                 && trajectoryImplementationId != null && !trajectoryImplementationId.isBlank()
                 && validVec(launchPosition) && validVec(trajectory.position()) && validVec(trajectory.velocity())
                 && validVec(snapshot.targetPosition()) && validOptionalVec(snapshot.lastGuidancePosition())

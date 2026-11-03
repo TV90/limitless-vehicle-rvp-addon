@@ -6,8 +6,8 @@ import org.slf4j.Logger;
 import org.ywzj.rvp.debug.RVP_ProjectileLifecycleDebug;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.rvp.virtualflight.common.RVP_VirtualFlightReason;
-import org.ywzj.rvp.guidance.trajectorymath.virtualguidance.RVP_VirtualTrajectoryParameters;
 import org.ywzj.rvp.guidance.trajectorymath.virtualguidance.RVP_VirtualTrajectoryResult;
+import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.vehicle.PhysicsEngine;
 
 /**
@@ -34,7 +34,7 @@ public final class RVP_VirtualMissileDebug {
     private static long invalid;
     /** 公平预算实际批准的新 Ticket 数。 */
     private static long ticketsGranted;
-    /** 纯积分器累计耗时。 */
+    /** 实体运动计算累计耗时。 */
     private static long integrationNanos;
     /** 管理器 ServerTick 累计耗时。 */
     private static long managerNanos;
@@ -52,7 +52,7 @@ public final class RVP_VirtualMissileDebug {
     /** 记录一次恢复等待超时。 */ public static void noteTimedOut() { timedOut++; }
     /** 记录一次非法状态。 */ public static void noteInvalid() { invalid++; }
     /** 累加本 Tick 新批准 Ticket 数。 */ public static void noteTicketsGranted(int count) { ticketsGranted += count; }
-    /** 累加纯积分器耗时，负数按零处理。 */ public static void noteIntegrationNanos(long nanos) { integrationNanos += Math.max(nanos, 0); }
+    /** 累加实体运动计算耗时，负数按零处理。 */ public static void noteIntegrationNanos(long nanos) { integrationNanos += Math.max(nanos, 0); }
     /** 累加管理器调度耗时，负数按零处理。 */ public static void noteManagerNanos(long nanos) { managerNanos += Math.max(nanos, 0); }
 
     /** 输出单实体一次性的虚拟化资格拒绝详情。 */
@@ -83,9 +83,12 @@ public final class RVP_VirtualMissileDebug {
 
     /** 输出单 Tick 转换连续性数据，包括当前转向模式、配置上限、实际 G、转角和航程。 */
     public static void trajectoryTick(RVP_VirtualMissileState state, Vec3Before before,
-                                      RVP_VirtualTrajectoryParameters parameters,
+                                      RVP_WeaponData data,
                                       RVP_VirtualTrajectoryResult result) {
         if (!isEnabled()) return;
+        // 调用当前弹体参数解析器，仅为日志读取正式运动链实际使用的限制，不生成第二套积分输入。
+        var projectile = data.getProjectileData();
+        Float factor = projectile.resolveTurningFactor(result.state().flightTick());
         double speedBefore = before.velocity().length();
         double actualGs = PhysicsEngine.G <= 0.0 || speedBefore <= 1.0E-8 ? 0.0
                 : 2.0 * speedBefore * Math.sin(result.turnAngleRadians() * 0.5) / PhysicsEngine.G;
@@ -94,8 +97,8 @@ public final class RVP_VirtualMissileDebug {
                         + "turningFactor={} actualGs={} thetaRad={} travelled={}",
                 state.flightUuid, result.state().flightTick(), before.position(), result.state().position(),
                 before.velocity(), result.state().velocity(), result.state().velocity().length(),
-                parameters.rvpMaxGs() != null ? "RVP_MAX_G" : "TURNING_FACTOR",
-                parameters.rvpMaxGs(), parameters.turningFactor(), actualGs,
+                projectile.getRvpMaxG() != null ? "RVP_MAX_G" : "TURNING_FACTOR",
+                projectile.getRvpMaxG(), factor == null ? 0.5F : factor, actualGs,
                 result.turnAngleRadians(), result.state().flightDistance());
     }
 

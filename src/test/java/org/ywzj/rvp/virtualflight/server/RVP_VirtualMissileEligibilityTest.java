@@ -7,6 +7,7 @@ import org.ywzj.rvp.weapon.data.RVP_FuseData;
 import org.ywzj.rvp.weapon.data.RVP_GuidanceData;
 import org.ywzj.rvp.weapon.data.RVP_TerminalGuidanceData;
 import org.ywzj.rvp.weapon.data.RVP_VirtualMidcourseData;
+import org.ywzj.rvp.weapon.data.RVP_Range;
 
 import java.lang.reflect.Field;
 
@@ -36,6 +37,23 @@ class RVP_VirtualMissileEligibilityTest {
         RVP_FuseData proximity = gson.fromJson("{\"proximity_radius\":8}", RVP_FuseData.class);
         assertEquals(RVP_VirtualMissileEligibility.Result.INELIGIBLE_WORLD_DEPENDENT_PAYLOAD,
                 evaluate(config("{\"enabled\":true}"), gps(), proximity));
+
+        RVP_FuseData groundProximity = gson.fromJson("{\"ground_proximity_fuse_distance\":8}", RVP_FuseData.class);
+        assertEquals(RVP_VirtualMissileEligibility.Result.INELIGIBLE_WORLD_DEPENDENT_PAYLOAD,
+                evaluate(config("{\"enabled\":true}"), gps(), groundProximity));
+    }
+
+    /** 没有离地高度门的 GPS 才能脱离地形查询；PRESET 原本不执行该门。 */
+    @Test
+    void terrainDependentGuidanceStaysRealUnlessPresetBypassesTheEnvelope() {
+        RVP_GuidanceData terrain = gps();
+        // 调用生产区间构造器，建立真实目标离地高度门，而非用测试布尔量替代配置。
+        setField(terrain, "guidanceAltitudeRange", RVP_Range.closed(0f, 100f));
+        assertEquals(RVP_VirtualMissileEligibility.Result.INELIGIBLE_TERRAIN_GUIDANCE,
+                evaluate(config("{\"enabled\":true}"), terrain, new RVP_FuseData()));
+        setField(terrain, "presetCruiseAltitude", 200f);
+        assertEquals(RVP_VirtualMissileEligibility.Result.ELIGIBLE,
+                evaluate(config("{\"enabled\":true}"), terrain, new RVP_FuseData()));
     }
 
     @Test

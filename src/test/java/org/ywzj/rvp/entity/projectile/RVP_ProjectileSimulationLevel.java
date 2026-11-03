@@ -13,6 +13,7 @@ public final class RVP_ProjectileSimulationLevel extends ServerLevel {
     /** 平地世界高度，格。 */ private double groundY;
     /** 可选水面世界高度；null 表示无水。 */ private Double waterY;
     /** 当前已发生的世界刻，供生产采样与时序方法读取。 */ private long observationTick;
+    /** 无地形依赖的飞行回归可拒绝所有高度图查询，避免测试环境掩盖虚拟段的强加载。 */ private boolean terrainQueriesForbidden;
     /** 场景的水查询结果。 */ private FluidState water;
     /** 场景的干燥查询结果。 */ private FluidState air;
     /** 仅作为生产区块驻留统计的身份键，不运行服务器循环或线程。 */ private net.minecraft.server.MinecraftServer serverIdentity;
@@ -33,11 +34,17 @@ public final class RVP_ProjectileSimulationLevel extends ServerLevel {
 
     /** 测试时序由逐刻调度提供，不用实际墙钟时间。 */
     public void observeTick(int tick) { observationTick = tick; }
+    /** 仅为测试收紧环境边界，不替换任何弹体计算。 */
+    public void forbidTerrainQueries() { terrainQueriesForbidden = true; }
     /** 给完整生产 Tick 的只读驻留统计一个稳定身份。 */ @Override public net.minecraft.server.MinecraftServer getServer() { return serverIdentity; }
     /** 测试环境全部区块已就绪，不引入真实区块载入延迟。 */ @Override public boolean hasChunkAt(BlockPos position) { return true; }
     /** 返回本刻观测时间。 */ @Override public long getGameTime() { return observationTick; }
     /** 不模拟区块等待；这个边界不会改变实体运动公式。 */ @Override public boolean isPositionEntityTicking(BlockPos position) { return true; }
-    /** 生产制导离地高度查询使用同一个 groundY。 */ @Override public int getHeight(Heightmap.Types type, int x, int z) { return (int) Math.floor(groundY); }
+    /** 生产制导离地高度查询使用同一个 groundY；无地形依赖的测试不得调用。 */
+    @Override public int getHeight(Heightmap.Types type, int x, int z) {
+        if (terrainQueriesForbidden) throw new AssertionError("无地形依赖的飞行不应查询高度图");
+        return (int) Math.floor(groundY);
+    }
     /** 场景允许超出原版建筑高度的飞行，地形仍是同一平面。 */ @Override public int getMinBuildHeight() { return (int) Math.floor(groundY) - 64; }
     /** 按场景水面回答生产鱼雷的“上方仍是水”检查。 */
     @Override public FluidState getFluidState(BlockPos position) {

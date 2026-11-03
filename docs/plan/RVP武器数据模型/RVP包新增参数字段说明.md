@@ -233,7 +233,7 @@ JSON 文件本身不能写注释，字段解释以本文档和 `org.ywzj.rvp.wea
 - 非法倍率档整档跳过（不产生 1.0 回退），剩余合法节点照常生效。
 - `y` 采样的是**世界坐标**。
 - 倍率只缩放钳制上限（`max_speed`），不影响 `min_speed` 与二脉冲触发速度；`max_speed=0`（不限制）时倍率无效果。
-- 仅导弹实体运动链与虚拟弹道链消费；CCIP、火箭预测、无制导弹道不读取。虚拟链在发射高度冻结倍率（与阻力倍率同口径）。
+- 仅导弹实体运动链与虚拟弹道链消费；CCIP、火箭预测、无制导弹道不读取。虚拟态直接执行实体运动方法，阻力和极速倍率均按每刻当前世界高度读取，不在发射高度冻结。
 
 示例：
 
@@ -1667,7 +1667,6 @@ SACLOS 反坦克导弹（半自动修正）：
     "restore_wait_timeout_tick": 200,
     "virtual_update_interval_tick": 1,
     "max_virtual_flight_tick": 12000,
-    "cruise_altitude": 320.0,
     "target_update_mode": "FIXED_SNAPSHOT",
     "on_restore_timeout": "DISCARD"
   }
@@ -1688,7 +1687,7 @@ SACLOS 反坦克导弹（半自动修正）：
 | `restore_wait_timeout_tick` | int | tick，`200` | 恢复区块长期无法 ready 时的最大等待时间 |
 | `virtual_update_interval_tick` | int | tick，`1` | 虚拟积分间隔；第一版固定钳制为 1，后续才允许批量积分 |
 | `max_virtual_flight_tick` | int | tick，`12000` | 单次虚拟态最长持续时间，不得超过弹体剩余 `life` |
-| `cruise_altitude` | double/null | 世界 Y，`null` | 可选虚拟巡航高度；配置后在目标仍可达的前提下由高度闭环跟踪，不可达时取沿命中路线能够接近的高度，为空时以当前虚拟高度为闭环基准 |
+| `cruise_altitude` | double/null | 世界 Y，`null` | 当前 schema 保留字段，生产实体/虚拟运动链均不消费；实际巡航统一配置 `guidance_data`，避免切换虚拟态后改变轨迹 |
 | `target_update_mode` | enum | `FIXED_SNAPSHOT` | `FIXED_SNAPSHOT` 或第二阶段的 `DATALINK` |
 | `on_restore_timeout` | enum | `DISCARD` | 第一版只建议 `DISCARD`；不得在未加载目标处直接爆炸 |
 
@@ -1698,11 +1697,12 @@ SACLOS 反坦克导弹（半自动修正）：
 - `restore_lead_tick × 当前水平速度` 与 `restore_target_distance` 取较大值作为实际恢复触发距离。
 - `restore_ticket_radius` 最大为 2，避免单枚导弹恢复时请求过多区块。
 - `max_virtual_flight_tick <= weapon life`；运行时最终使用两者较小值。
-- 虚拟积分从 `projectile_data` 读取 `rvp_maxg`、当前飞行 Tick 的 `turning_factor` 及 4 个气动转向字段；`rvp_aero_steering=false` 时维持旧选择规则，显式启用时与实体链共享动压、转角上限和诱导阻力结算。
-- 虚拟积分不读取 `guidance_data.cruise_leveling_factor` 或 `max_turn_degree_per_tick`。
+- 虚拟态直接执行实体的制导与运动方法；`projectile_data` 的转向、攻角、推进、二脉冲、阻力与高度倍率按实体时序现读，不再冻结成另一套积分参数。
+- GPS 巡航统一读取 `guidance_data.cruise_start_tick`、`cruise_leveling_factor` 等实体配置；PRESET 保留实际点火参考点，虚拟态不能另配一条巡航高度曲线。
+- 冷发射/延迟点火未结束、水中、部署分量或实时干扰期间继续保留实体；普通 GPS 配置了目标离地高度门、近地引信或距离自毁时也不进入虚拟段。PRESET 自身不执行该高度门。
 - 不添加旧键别名、`legacy*` 或迁移逻辑；历史 JSON 由 `scripts/` 批量修改。
 
-`rvp_maxg`、`turning_factor` 与 `rvp_aero_steering` 等既有字段共同构成实体态、虚拟态共用的弹体机动契约，不读取本体 `max_g`。两种状态共用相同优先级、动压解析与诱导阻力实现。2026-11-03 重新启用双轴惯量并加入低动压机头限幅后，当前积分器版本 **12→13**，快照结构版本仍为 1；启用攻角时 xRot/yRot 保存机头轴而非速度轴，另保存 `pitchRateDeg` / `yawRateDeg`（度/Tick）。缺失角速度键按 0 读取，但不绕过积分器版本检查。**升级后版本不匹配（包括 12）的在途虚拟记录会被管理器以 INCOMPATIBLE_INTEGRATOR 终止，不会自动迁移或重建；未启用攻角的旧虚拟记录同样受版本检查影响，请在没有在途虚拟弹时升级。** 未启用攻角的数值积分仍走原分支。本次不新增 JSON 配置项，详见 [双轴有效惯量实现](../../RVP弹体-fish/RVP攻角双轴有效惯量降阶模型实现_20261021.md)。
+`rvp_maxg`、`turning_factor` 与 `rvp_aero_steering` 等既有字段共同构成实体态、虚拟态共用的弹体机动契约，不读取本体 `max_g`。2026-11-03 虚拟中段改为直接调用实体运动链，生产实现为 **`rvp_entity / 1`**，单条快照格式 **1→2**，新增保存实际点火参考点、当前速率、上一刻竖直速度和风向等完整运动记忆；xRot/yRot 与 `pitchRateDeg/yawRateDeg` 仍原样交接。**格式 1 的旧在途记录直接拒绝读取，不自动迁移；格式 2 中实现标识或版本不匹配的记录以 `INCOMPATIBLE_INTEGRATOR` 终止。请在没有在途虚拟弹时升级。** 15 类用例逐刻对照完整生产实体 Tick，并覆盖存档重建、改靶和恢复后连续运动；自由飞行以相同外部输入和有效飞行刻为比较条件，虚拟段不模拟未加载地形、水中或沿途干扰。详见[虚拟中段现行实现与验证边界](../../RVP弹体-fish/RVP导弹虚拟中段弹道具体实施方案.md#0-当前状态契约更新2026-11-03)。
 
 机头转角新增预算：`maxTurn = 90° × baseResponse × 动压系数`，其中显式 G 时 `baseResponse=0.5`，否则使用当前 `turning_factor`。每轴比例响应先受此预算限制，再推进惯量；平滑后的角速度与三维总机头转角仍受此预算限制。它与 `rvp_turn_rate_limit` 的航迹转角限制不同，实体、PIP/固定点逆解和虚拟态使用同一公式；前视估计也计入新预算。攻角上限仍表示机头与速度轴之间的总偏角，不是每刻机头转角。
 

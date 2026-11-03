@@ -31,6 +31,8 @@ public final class RVP_VirtualMissileEligibility {
         /** 实体没有稳定目标点。 */ INELIGIBLE_NO_TARGET_POS,
         /** 当前仍绑定动态目标实体。 */ INELIGIBLE_TARGET_ENTITY,
         /** 实体正处于区块等待门控。 */ INELIGIBLE_WAITING_FOR_CHUNK,
+        /** 冷发射、水中、干扰或部署分量仍需要真实世界推进。 */ INELIGIBLE_WORLD_DEPENDENT_MOTION,
+        /** 非 PRESET 制导配置了需要沿途世界查询的目标离地高度门。 */ INELIGIBLE_TERRAIN_GUIDANCE,
         /** 尚未达到最小真实飞行 Tick。 */ INELIGIBLE_FLIGHT_TICK,
         /** 尚未离开发射点足够远。 */ INELIGIBLE_LAUNCH_DISTANCE,
         /** 已过于接近目标，不值得进入虚拟态。 */ INELIGIBLE_TARGET_DISTANCE,
@@ -52,6 +54,8 @@ public final class RVP_VirtualMissileEligibility {
         if (target == null) return Result.INELIGIBLE_NO_TARGET_POS;
         if (missile.getTargetEntity() != null) return Result.INELIGIBLE_TARGET_ENTITY;
         if (missile.isWaitingForChunk()) return Result.INELIGIBLE_WAITING_FOR_CHUNK;
+        // 调用实体运动资格出口，冷发射结束后才切换，避免脱离载具后改变弹射方向或漏掉水中运动。
+        if (missile.hasWorldDependentMidcourseMotion()) return Result.INELIGIBLE_WORLD_DEPENDENT_MOTION;
         if (missile.getFlightTickCount() < config.getEntryMinFlightTick()) return Result.INELIGIBLE_FLIGHT_TICK;
         if (missile.position().distanceTo(missile.getVirtualMidcourseLaunchPosition())
                 < config.getEntryMinDistanceFromLaunch()) return Result.INELIGIBLE_LAUNCH_DISTANCE;
@@ -67,10 +71,16 @@ public final class RVP_VirtualMissileEligibility {
 
     /** 从完整武器对象提取资格所需字段并调用可单测的纯参数重载。 */
     public static Result evaluateConfiguration(RVP_WeaponData data) {
-        return evaluateConfiguration(data.getVirtualMidcourseData(), data.getGuidanceData(), data.getFuseData(),
+        // 调用纯配置检查后补查距离自毁；该计数属于真实碰撞段，不允许虚拟段漏算后继续飞行。
+        Result result = evaluateConfiguration(data.getVirtualMidcourseData(), data.getGuidanceData(), data.getFuseData(),
                 data.hasHumanInTheLoop(), data.getEffectsData().isWireLinkEnabled(),
                 data.getSubmunitionData().isEnabled(), data.getDispenserData().hasItem(),
                 data.getBounce(), data.getBounceFuseTick());
+        if (result == Result.ELIGIBLE
+                && data.getProjectileData().resolveSelfDestructDistance(data.getWeaponKind()) > 0f) {
+            return Result.INELIGIBLE_WORLD_DEPENDENT_PAYLOAD;
+        }
+        return result;
     }
 
     /**
@@ -87,6 +97,10 @@ public final class RVP_VirtualMissileEligibility {
         }
         if (guidance.getGuidanceType() != RVP_EnumGuidanceType.GPS) return Result.INELIGIBLE_GUIDANCE;
         if (guidance.getTerminalGuidance() != null) return Result.INELIGIBLE_TERMINAL_GUIDANCE;
+        // PRESET 本身不执行目标离地高度门；普通 GPS 若配置该门，留在实体态查询地形，不强加载目标区块。
+        if (guidance.getGuidanceAltitudeRange() != null && guidance.getPresetCruiseAltitude() <= 0f) {
+            return Result.INELIGIBLE_TERRAIN_GUIDANCE;
+        }
         if (guidance.getTopAttackHeight() != null && Math.abs(guidance.getTopAttackHeight()) > 1.0E-6f) {
             return Result.INELIGIBLE_TOP_ATTACK;
         }
@@ -95,7 +109,7 @@ public final class RVP_VirtualMissileEligibility {
         }
         if (submunition || dispenser
                 || fuse.getDelayTick() > 0 || fuse.getProximityRadius() > 0f
-                || fuse.isProgrammableAirburst() || fuse.isAheadEnabled()
+                || fuse.isProgrammableAirburst() || fuse.isAheadEnabled() || fuse.getGroundProximityFuseDistance() > 0f
                 || fuse.isTopAttackFuseEnabled() || bounce > 0 || bounceFuseTick > 0) {
             return Result.INELIGIBLE_WORLD_DEPENDENT_PAYLOAD;
         }

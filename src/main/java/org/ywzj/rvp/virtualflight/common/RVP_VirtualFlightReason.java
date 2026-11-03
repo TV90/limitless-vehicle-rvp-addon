@@ -20,6 +20,8 @@ public enum RVP_VirtualFlightReason {
     UUID_CONFLICT,
     /** 当前武器索引已不存在或不再是 RVP Missile。 */
     WEAPON_DATA_MISSING,
+    /** 热重载后当前武器不再满足无世界交互的虚拟飞行准入条件。 */
+    CONFIGURATION_CHANGED,
     /** SavedData 中积分器 ID/版本与当前实现不兼容。 */
     INCOMPATIBLE_INTEGRATOR,
     /** 状态结构、坐标或积分结果非法。 */
