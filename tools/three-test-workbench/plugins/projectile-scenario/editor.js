@@ -1,4 +1,4 @@
-import { DEFAULT_SCENARIO, anglesFromVelocity, normalizeScenario, simulationCommand, targetAt, velocityFromAngles } from './scenario.js';
+import { DEFAULT_SCENARIO, anglesFromVelocity, insertTargetPoint, normalizeScenario, simulationCommand, targetAt, velocityFromAngles } from './scenario.js';
 import { ScenarioView } from './view.js';
 
 /** 页面节点和本机草稿键；草稿只保留当前格式的有效输入。 */
@@ -7,6 +7,8 @@ const $ = id => document.getElementById(id), DRAFT_KEY = 'rvp-projectile-scenari
 let draft = structuredClone(DEFAULT_SCENARIO), scene = null, valid = false, catalog = { scenarios: [], weapons: [] };
 /** 播放只影响目标标记，不改变场景本身；目录请求用版本号防止旧响应覆盖新响应。 */
 let tick = 0, playing = false, view = null, catalogRevision = 0;
+/** -1 表示第 0 刻起点，其余为 targetPath 下标；列表签名避免输入时重建选项丢失滚动位置。 */
+let selectedPathIndex = -1, pathListSignature = '';
 /** 表单节点表用于局部同步，避免每次拖动重建输入框而丢失焦点。 */
 const fields = new Map();
 
@@ -43,7 +45,11 @@ function triple(hostId, key, label, { unit = '格/秒', optional = false, fallba
   if (optional) {
     const toggleLabel = document.createElement('label'); toggle = document.createElement('input'); toggle.type = 'checkbox'; toggle.id = `enable-${key}`;
     toggleLabel.append(toggle, document.createTextNode(' 启用')); heading.append(toggleLabel);
-    toggle.addEventListener('change', () => { draft[key] = toggle.checked ? [...fallback] : null; updateDraft(); });
+    toggle.addEventListener('change', () => {
+      draft[key] = toggle.checked ? [...fallback] : null;
+      if (key === 'target' && !toggle.checked) { draft.targetPath = []; selectedPathIndex = -1; }
+      updateDraft();
+    });
   }
   const group = document.createElement('div'); group.className = 'triple';
   const inputs = axes.map((axis, index) => {
@@ -67,9 +73,9 @@ function buildFields() {
   scalar('launch-fields', 'pitch', '机头俯仰（度；正数抬头）', { min: -90, max: 90 });
   triple('initial-velocity-field', 'initialVelocity', '指定初速输入', { optional: true, fallback: [0, 0, 40], help: '关闭时由权威武器配置决定出膛初速；不在网页推算生产初始化。' });
   triple('target-fields', 'target', '目标起点', { unit: '格', optional: true, fallback: [0, 164, 800] });
-  triple('target-fields', 'targetVelocity', '目标初速度');
-  triple('target-fields', 'targetAcceleration', '目标加速度', { unit: '格/秒²' });
-  scalar('target-fields', 'targetRadius', '目标停止球半径（格）', { min: 0 });
+  triple('analytic-target-fields', 'targetVelocity', '目标初速度');
+  triple('analytic-target-fields', 'targetAcceleration', '目标加速度', { unit: '格/秒²' });
+  scalar('target-radius-field', 'targetRadius', '目标停止球半径（格）', { min: 0 });
   scalar('environment-fields', 'ticks', '运行时长（刻；20 刻 = 1 秒）', { min: 1, max: 20000 });
   scalar('environment-fields', 'seed', '固定随机种子');
   scalar('environment-fields', 'groundY', '地面 / 海底高度 Y（格）');
@@ -116,6 +122,74 @@ function syncFields() {
   $('weapon-hint').textContent = selectedWeapon ? `${selectedWeapon.type} · 平台速度继承：${selectedWeapon.inheritVehicleVelocity ? '开启' : '未开启'}。实际初始化以 Java 回放首帧为准。` : '此 ID 未在当前权威武器目录中找到；请核对后选择。';
   if ($('weapon').value !== draft.weapon) renderWeapons();
   $('aim-target').disabled = !draft.target;
+  $('focus-target').disabled = !draft.target;
+  // 调用轨迹点局部同步，保留当前键入位置并明确速度字段在自由轨迹中不生效。
+  syncPathFields();
+}
+
+/** 轨迹列表与单点坐标从输入副本读取；坏输入仍留在表单，便于原地修正。 */
+function syncPathFields() {
+  const path = draft.targetPath, enabled = path.length > 0;
+  selectedPathIndex = Math.max(-1, Math.min(selectedPathIndex, path.length - 1));
+  $('target-motion').value = enabled ? 'path' : 'analytic'; $('target-motion').disabled = !draft.target;
+  $('path-controls').hidden = !enabled;
+  $('analytic-target-fields').hidden = enabled; $('target-preset').closest('label').hidden = enabled;
+  $('motion-help').textContent = enabled ? '自由轨迹已接管目标运动。初速度和加速度数值保留，切回原方式时使用。'
+    : '目标位置 = 起点 + 初速 × 秒数 + ½ × 加速度 × 秒数²。也可双击玫红路线，转为可编辑的到达点。';
+  for (const key of ['targetVelocity', 'targetAcceleration']) for (const input of fields.get(key).inputs) input.disabled = enabled;
+  $('target-preset').disabled = enabled;
+  $('drag-mode').querySelector('[value="targetVelocity"]').disabled = enabled;
+  if (enabled && $('drag-mode').value === 'targetVelocity') { $('drag-mode').value = 'pathPoint'; view?.setDragMode('pathPoint'); }
+  const signature = JSON.stringify([draft.target, path]);
+  if (signature !== pathListSignature) {
+    $('path-points').replaceChildren(new Option('起点 · 第 0 刻', '-1'), ...path.map((point, index) => {
+      const option = new Option(`${index + 1} · 第 ${point.tick} 刻 · ${(point.tick / 20).toFixed(2)} 秒`, String(index));
+      option.title = `X / Y / Z：${point.position.map(pretty).join(' / ')}`; return option;
+    }));
+    $('path-ticks').replaceChildren(...path.map(point => new Option(`第 ${point.tick} 刻`, String(point.tick))));
+    pathListSignature = signature;
+  }
+  $('path-points').value = String(selectedPathIndex); $('path-count').textContent = `${path.length} / 256 个到达点`;
+  const point = selectedPathIndex < 0 ? { tick: 0, position: draft.target } : path[selectedPathIndex];
+  $('path-tick').disabled = selectedPathIndex < 0; $('path-tick').max = draft.ticks;
+  if (document.activeElement !== $('path-tick')) $('path-tick').value = point?.tick ?? 0;
+  $('path-seconds').textContent = selectedPathIndex < 0 ? '起点固定在第 0 刻；可编辑下方坐标。' : `${(point.tick / 20).toFixed(2)} 秒；修改后须仍位于前后点之间。`;
+  for (const [axis, index] of ['x', 'y', 'z'].map((axis, index) => [axis, index])) {
+    if (document.activeElement !== $(`path-${axis}`)) $(`path-${axis}`).value = point?.position?.[index] ?? '';
+  }
+  $('delete-path-point').disabled = selectedPathIndex < 0;
+  $('path-insert-tick').max = draft.ticks; $('add-path-point').disabled = !valid;
+  // 调用画面选中同步，坐标控件始终挂在正在编辑的点上。
+  view?.selectPathPoint(selectedPathIndex);
+}
+
+/** 所有分组切换共用入口，画面选点时也能直接打开目标参数。 */
+function showTab(name) {
+  for (const button of document.querySelectorAll('[data-tab]')) button.classList.toggle('active', button.dataset.tab === name);
+  for (const panel of document.querySelectorAll('[data-panel]')) panel.hidden = panel.dataset.panel !== name;
+  document.querySelector('.editor-panel').scrollTop = 0;
+}
+
+/** 选点同时定位到达时刻并启用坐标轴；起点和后续点采用同样的操作。 */
+function selectPathPoint(index) {
+  if (!valid || !scene.targetPath.length) return;
+  selectedPathIndex = Math.max(-1, Math.min(index, scene.targetPath.length - 1));
+  tick = selectedPathIndex < 0 ? 0 : scene.targetPath[selectedPathIndex].tick;
+  setPlaying(false); $('drag-mode').value = 'pathPoint';
+  syncPathFields(); view?.setDragMode('pathPoint'); updateTime();
+}
+
+/** 插点前按当前路线取样，已有时刻只选中；首次插点会保留原终点，恒加速曲线转为分段直线。 */
+function addPathPoint(atTick) {
+  if (!valid) { message('请先修正当前参数，再添加轨迹点。', true); return; }
+  const existing = scene.targetPath.findIndex(point => point.tick === atTick);
+  if (existing >= 0 || (atTick === 0 && scene.targetPath.length)) { selectPathPoint(existing); showTab('target'); return; }
+  try {
+    draft = insertTargetPoint(scene, atTick); selectedPathIndex = draft.targetPath.findIndex(point => point.tick === atTick);
+    tick = atTick; setPlaying(false); $('drag-mode').value = 'pathPoint';
+    updateDraft('已插入轨迹点。拖动彩色坐标轴，或修改坐标与到达时刻；点间匀速直行，最后一点后停住。');
+    view?.setDragMode('pathPoint'); showTab('target');
+  } catch (error) { message(error.message, true); }
 }
 
 /** 校验成功才更新场景、草稿和导出内容；出错时保留最后有效的几何画面。 */
@@ -166,7 +240,7 @@ function uniqueId(base) {
 function replaceDraft(input, notice, copy = false) {
   const next = normalizeScenario(input);
   if (copy) { next.id = uniqueId(next.id); next.name = `${next.name}（副本）`; }
-  draft = next; tick = 0; setPlaying(false); updateDraft(notice); view?.fit();
+  draft = next; tick = 0; selectedPathIndex = -1; setPlaying(false); updateDraft(notice); view?.fit();
 }
 
 /** 重新读取插件接口，不依赖已有的仿真输出或 Minecraft 客户端。 */
@@ -198,7 +272,7 @@ async function refreshCatalog(initial = false) {
 function createNew() {
   const weapon = draft.weapon || catalog.weapons.find(entry => entry.type === 'rvp:missile')?.id || catalog.weapons[0]?.id || '';
   draft = { ...structuredClone(DEFAULT_SCENARIO), id: uniqueId('projectile'), weapon, target: [0, 164, 800] };
-  tick = 0; setPlaying(false); renderWeapons(); updateDraft('已建立新用例。'); view?.fit();
+  tick = 0; selectedPathIndex = -1; setPlaying(false); renderWeapons(); updateDraft('已建立新用例。'); view?.fit();
 }
 
 /** 目标预设只修改位置存在性、速度和加速度；朝向以当前发射点与目标起点计算。 */
@@ -222,18 +296,21 @@ function updateTime() {
   const state = targetAt(scene, tick); view?.seek(tick);
   $('target-position').textContent = state ? `目标 X ${state.position[0].toFixed(2)}　Y ${state.position[1].toFixed(2)}　Z ${state.position[2].toFixed(2)}` : '当前无目标';
   $('target-speed').textContent = state ? `目标速度 ${Math.hypot(...state.velocity).toFixed(2)} 格/秒　·　X/Y/Z ${state.velocity.map(v => v.toFixed(2)).join(' / ')}` : '可在“目标运动”中启用目标起点';
+  if (document.activeElement !== $('path-insert-tick')) $('path-insert-tick').value = Math.round(tick);
 }
 
 buildFields();
 try {
-  view = new ScenarioView($('preview-host'), (key, value) => { draft[key] = value; setPlaying(false); updateDraft(); });
+  view = new ScenarioView($('preview-host'), (key, value) => {
+    if (key === 'pathPoint' && selectedPathIndex >= 0) draft.targetPath[selectedPathIndex].position = value;
+    else draft[key === 'pathPoint' ? 'target' : key] = value;
+    setPlaying(false); updateDraft();
+  }, index => { selectPathPoint(index); showTab('target'); }, atTick => addPathPoint(atTick));
 } catch (error) { $('preview-error').hidden = false; $('preview-error').textContent = `三维画面无法启动：${error.message}。参数编辑、目标数值预览与 JSON 保存仍可使用。`; }
 $('editor-form').addEventListener('submit', event => event.preventDefault());
 for (const tab of document.querySelectorAll('[data-tab]')) tab.addEventListener('click', () => {
-  for (const button of document.querySelectorAll('[data-tab]')) button.classList.toggle('active', button === tab);
-  for (const panel of document.querySelectorAll('[data-panel]')) panel.hidden = panel.dataset.panel !== tab.dataset.tab;
   // 分组切换回到面板顶部，避免继承另一组的滚动位置而漏看关键输入。
-  document.querySelector('.editor-panel').scrollTop = 0;
+  showTab(tab.dataset.tab);
 });
 $('weapon').addEventListener('change', event => { draft.weapon = event.target.value; updateDraft(); });
 $('weapon-search').addEventListener('input', renderWeapons); $('template-search').addEventListener('input', renderTemplates);
@@ -262,16 +339,42 @@ $('velocity-from-head').addEventListener('click', () => {
   draft.initialVelocity = velocityFromAngles(draft.yaw, draft.pitch, Math.hypot(...(draft.initialVelocity ?? [0, 0, 40]))); updateDraft();
 });
 $('target-preset').addEventListener('change', event => { applyTargetPreset(event.target.value); event.target.value = ''; });
+$('target-motion').addEventListener('change', event => {
+  if (event.target.value === 'path') { addPathPoint(scene?.ticks); return; }
+  draft.targetPath = []; selectedPathIndex = -1; setPlaying(false);
+  updateDraft('已切回初速度与恒定加速度运动，轨迹点已清除。');
+});
+$('path-points').addEventListener('change', event => selectPathPoint(Number(event.target.value)));
+$('path-tick').addEventListener('input', event => {
+  if (selectedPathIndex < 0) return;
+  const value = numberValue(event.target); draft.targetPath[selectedPathIndex].tick = value;
+  setPlaying(false); updateDraft();
+  if (valid) { tick = value; updateTime(); }
+});
+for (const axis of ['x', 'y', 'z']) $(`path-${axis}`).addEventListener('input', () => {
+  const position = ['x', 'y', 'z'].map(key => numberValue($(`path-${key}`)));
+  if (selectedPathIndex < 0) draft.target = position; else draft.targetPath[selectedPathIndex].position = position;
+  setPlaying(false); updateDraft();
+});
+$('add-path-point').addEventListener('click', () => addPathPoint(numberValue($('path-insert-tick'))));
+$('delete-path-point').addEventListener('click', () => {
+  if (selectedPathIndex < 0) return;
+  draft.targetPath.splice(selectedPathIndex, 1); selectedPathIndex--;
+  setPlaying(false); updateDraft(draft.targetPath.length ? '已删除轨迹点，其余点的到达时刻保持不变。' : '最后一个轨迹点已删除，恢复初速度与恒定加速度运动。');
+  if (valid && draft.targetPath.length) selectPathPoint(selectedPathIndex);
+});
 $('drag-mode').addEventListener('change', event => {
   const key = event.target.value;
   if (key === 'initialVelocity' && !draft.initialVelocity) { draft.initialVelocity = velocityFromAngles(draft.yaw, draft.pitch, 40); updateDraft('已启用初速输入，可拖动青绿箭头端点。'); }
-  if (['target', 'targetVelocity'].includes(key) && !draft.target) { draft.target = [draft.position[0], draft.position[1], draft.position[2] + 800]; updateDraft('已启用目标，可拖动目标或速度端点。'); }
+  if (['target', 'targetVelocity', 'pathPoint'].includes(key) && !draft.target) { draft.target = [draft.position[0], draft.position[1], draft.position[2] + 800]; updateDraft('已启用目标，可拖动目标或速度端点。'); }
+  if (key === 'pathPoint' && !draft.targetPath.length) { addPathPoint(scene?.ticks); return; }
   view?.setDragMode(key);
 });
 for (const mode of ['iso', 'top', 'side']) $(mode).addEventListener('click', () => {
   for (const id of ['iso', 'top', 'side']) $(id).classList.toggle('active', id === mode); view?.fit(mode);
 });
 $('fit').addEventListener('click', () => view?.fit());
+$('focus-target').addEventListener('click', () => view?.fit(view.mode, true));
 $('timeline').addEventListener('input', event => { setPlaying(false); tick = Number(event.target.value); updateTime(); });
 $('play').addEventListener('click', () => { if (!scene || !valid) return; if (tick >= scene.ticks) tick = 0; setPlaying(!playing); updateTime(); });
 $('previous').addEventListener('click', () => { setPlaying(false); tick = Math.max(0, Math.ceil(tick) - 1); updateTime(); });

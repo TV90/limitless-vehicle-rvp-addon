@@ -171,6 +171,56 @@ class RVP_ProjectileSimulationTest {
         assertEquals(0, state.velocity().x, 1.0E-12);
     }
 
+    @Test
+    void waypointTargetFeedsActualEntityPositionAndOutgoingVelocityAtEveryTick() {
+        // 调用当前武器解析器创建测试弹；只检查目标观测，不依赖特定权威武器 ID。
+        var weapon = RVP_ProjectileSimulationWeapon.parse("rvp:probe", JsonParser.parseString("""
+                {"type":"rvp:missile","life":200,"projectile_data":{"velocity":2},
+                 "guidance_data":{"guidance_type":"NONE"}}
+                """).getAsJsonObject(), "0".repeat(64));
+        var scene = scene("rvp:probe"); scene.ticks = 80; scene.target = new double[]{100, 200, 300};
+        scene.targetVelocity = new double[]{999, 999, 999}; scene.targetAcceleration = new double[]{10, 10, 10};
+        scene.targetPath = new RVP_ProjectileSimulationScenario.TargetPoint[]{
+                new RVP_ProjectileSimulationScenario.TargetPoint(20, new double[]{120, 200, 300}),
+                new RVP_ProjectileSimulationScenario.TargetPoint(40, new double[]{120, 220, 280}),
+                new RVP_ProjectileSimulationScenario.TargetPoint(60, new double[]{120, 220, 280})};
+        // 调用场景脚本核对显式期望，防止对照实体和场景时共享错误而误通过。
+        assertArrayEquals(new double[]{110, 200, 300}, scene.targetAt(10).position(), 0);
+        assertArrayEquals(new double[]{0, 20, -20}, scene.targetAt(20).velocity(), 0);
+        assertArrayEquals(new double[]{120, 210, 290}, scene.targetAt(30).position(), 0);
+        assertArrayEquals(new double[]{120, 210.5, 289.5}, scene.targetAt(30.5).position(), 0);
+        assertArrayEquals(new double[]{0, 0, 0}, scene.targetAt(40).velocity(), 0);
+        assertArrayEquals(new double[]{120, 220, 280}, scene.targetAt(80).position(), 0);
+        var flight = new RVP_ProjectileEntitySimulation(weapon.data(), weapon.kind(), scene);
+        for (int tick = 0; tick <= scene.ticks; tick++) {
+            // 调用真实实体步进和目标读取器，确认生产制导观察到的不是仍在运行的恒加速度路线。
+            if (tick > 0) flight.step();
+            var expected = scene.targetAt(tick);
+            assertEquals(new Vec3(expected.position()[0], expected.position()[1], expected.position()[2]), flight.targetPosition());
+            var observed = flight.entity().getTargetEntity().getDeltaMovement().scale(20);
+            assertArrayEquals(expected.velocity(), new double[]{observed.x, observed.y, observed.z}, 1.0E-12);
+        }
+        // 调用绝对时刻取样，末点后倒拖仍必须恢复首段观测。
+        assertArrayEquals(new double[]{20, 0, 0}, scene.targetAt(0).velocity(), 0);
+    }
+
+    @Test
+    void invalidWaypointTimesAndPositionsAreRejectedBeforeEntityCreation() {
+        var scene = scene("rvp:probe"); scene.target = new double[]{0, 100, 500};
+        for (double tick : new double[]{0, -1, 1.5, 6, Double.NaN, Double.POSITIVE_INFINITY}) {
+            scene.targetPath = new RVP_ProjectileSimulationScenario.TargetPoint[]{new RVP_ProjectileSimulationScenario.TargetPoint(tick, scene.target)};
+            assertThrows(IllegalArgumentException.class, scene::validate);
+        }
+        scene.targetPath = new RVP_ProjectileSimulationScenario.TargetPoint[]{
+                new RVP_ProjectileSimulationScenario.TargetPoint(2, scene.target), new RVP_ProjectileSimulationScenario.TargetPoint(2, scene.target)};
+        assertThrows(IllegalArgumentException.class, scene::validate);
+        scene.targetPath = new RVP_ProjectileSimulationScenario.TargetPoint[]{new RVP_ProjectileSimulationScenario.TargetPoint(2, new double[]{0, Double.NaN, 0})};
+        assertThrows(IllegalArgumentException.class, scene::validate);
+        scene.targetPath = new RVP_ProjectileSimulationScenario.TargetPoint[]{new RVP_ProjectileSimulationScenario.TargetPoint(2, scene.target)};
+        scene.target = null;
+        assertThrows(IllegalArgumentException.class, scene::validate);
+    }
+
     /** 稳定的短场景夹具，目标与发射姿态由各测试显式设置。 */
     private static RVP_ProjectileSimulationScenario scene(String weapon) {
         var scene = new RVP_ProjectileSimulationScenario();

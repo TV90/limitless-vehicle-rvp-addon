@@ -24,10 +24,18 @@ public final class RVP_ProjectileSimulationScenario {
     /** 可选固定目标世界坐标；无目标时填 null。 */ public double[] target;
     /** 目标脚本初速度，格/秒；给生产拦截制导提供真实 Entity 运动观测。 */ public double[] targetVelocity = {0, 0, 0};
     /** 目标脚本加速度，格/秒²；默认不加速。 */ public double[] targetAcceleration = {0, 0, 0};
+    /** 可选到达点，默认空；非空时从第 0 刻的 target 沿各点匀速移动，替代 targetVelocity/targetAcceleration，末点后静止。 */ public TargetPoint[] targetPath = {};
     /** 测试停止球半径，格；不是武器引信半径。 */ public double targetRadius = 2;
     /** 平面地面世界 Y，格。 */ public double groundY = 64;
     /** 可选水平水面世界 Y，格；null 表示干燥，须高于 groundY。 */ public Double waterY;
     /** true 把场景目标观测交给实体制导执行器；false 只计算实体自由运动。 */ public boolean guidance = true;
+
+    /** 目标中心的到达点；第 0 刻起点只由 target 表达，避免同刻位置冲突。 */
+    public record TargetPoint(/** 到达时刻，刻；必须为 1..ticks 的整数并严格递增，20 刻等于 1 秒。 */ double tick,
+                              /** 到达点世界 X/Y/Z，格；必须为有限三元组。 */ double[] position) {}
+    /** 某个绝对时刻的目标观测，供真实实体读取；速度单位为格/秒。 */
+    public record TargetState(/** 目标中心世界坐标，格。 */ double[] position,
+                              /** 当前段世界速度，格/秒；末点后为零。 */ double[] velocity) {}
 
     /** 输入错误必须在积分前给出直接可读的提示。 */
     public void validate() {
@@ -51,6 +59,53 @@ public final class RVP_ProjectileSimulationScenario {
             throw new IllegalArgumentException("角度、groundY、targetRadius 必须有效，俯仰限于 ±90 度");
         }
         if (position[1] <= groundY) throw new IllegalArgumentException("发射点必须高于地面");
+        if (targetPath == null || targetPath.length > 256) throw new IllegalArgumentException("targetPath 必须为数组，最多 256 个到达点");
+        if (targetPath.length > 0 && target == null) throw new IllegalArgumentException("使用 targetPath 前必须启用 target");
+        double previousTick = 0;
+        for (TargetPoint point : targetPath) {
+            if (point == null || !Double.isFinite(point.tick()) || point.tick() != Math.rint(point.tick())
+                    || point.tick() <= previousTick || point.tick() > ticks) {
+                throw new IllegalArgumentException("轨迹点时刻须为严格递增的整数，且在 1..ticks 内");
+            }
+            // 调用统一三元组校验，明确拒绝缺失或非有限的到达位置。
+            vector(point.position(), "targetPath.position"); previousTick = point.tick();
+        }
+        if (target != null) {
+            // 调用统一脚本取样检查每段速度及终点，避免数值溢出进入生产制导。
+            targetAt(0);
+            for (TargetPoint point : targetPath) targetAt(point.tick());
+            targetAt(ticks);
+        }
+    }
+
+    /** 直接按绝对时刻取样，倒拖和重复运行不依赖历史；折点刻使用下一段速度，末点后停住。 */
+    public TargetState targetAt(double tick) {
+        if (target == null) return null;
+        double[] result = new double[3], velocity = new double[3];
+        double[] from = target;
+        double fromTick = 0;
+        for (TargetPoint point : targetPath) {
+            if (tick < point.tick()) {
+                double duration = point.tick() - fromTick, fraction = (tick - fromTick) / duration;
+                for (int axis = 0; axis < 3; axis++) {
+                    result[axis] = from[axis] + (point.position()[axis] - from[axis]) * fraction;
+                    velocity[axis] = (point.position()[axis] - from[axis]) * 20 / duration;
+                }
+                // 调用统一三元组校验，防止有效坐标之间的差值发生溢出。
+                vector(result, "目标轨迹位置"); vector(velocity, "目标轨迹速度");
+                return new TargetState(result, velocity);
+            }
+            from = point.position(); fromTick = point.tick();
+        }
+        if (targetPath.length > 0) return new TargetState(from.clone(), velocity);
+        double seconds = tick / 20.0;
+        for (int axis = 0; axis < 3; axis++) {
+            result[axis] = target[axis] + targetVelocity[axis] * seconds + 0.5 * targetAcceleration[axis] * seconds * seconds;
+            velocity[axis] = targetVelocity[axis] + targetAcceleration[axis] * seconds;
+        }
+        // 调用统一三元组校验，在原恒加速度模式中同样拒绝溢出。
+        vector(result, "目标脚本位置"); vector(velocity, "目标脚本速度");
+        return new TargetState(result, velocity);
     }
 
     /** 坐标和速度都要求有限三元组，不能靠数值容错掩盖坏输入。 */

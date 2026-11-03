@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "id": "260a",
+  "name": "260a",
+  "description": "调整目标运动与发射初态，观察真实实体运行结果。",
+  "weapon": "rvp:f16_aim260a",
+  "ticks": 600,
+  "position": [
+    5.967627,
+    89.087444,
+    551.323262
+  ],
+  "yaw": 1.3746932308196684,
+  "pitch": 16.760096253682462,
+  "vehicleVelocity": [
+    0,
+    0,
+    0
+  ],
+  "initialVelocity": null,
+  "parentRotation": null,
+  "parentVelocity": [
+    0,
+    0,
+    0
+  ],
+  "carrierRotation": [
+    0,
+    0,
+    0
+  ],
+  "coldLaunchTicks": 0,
+  "coldLaunchVelocity": [
+    0,
+    -20,
+    0
+  ],
+  "deploymentVelocity": null,
+  "smartFuseTarget": null,
+  "seed": 721,
+  "target": [
+    0,
+    164,
+    800
+  ],
+  "targetVelocity": [
+    20,
+    0,
+    0
+  ],
+  "targetAcceleration": [
+    3,
+    0,
+    0
+  ],
+  "targetRadius": 2,
+  "groundY": 64,
+  "waterY": null,
+  "guidance": true
+}

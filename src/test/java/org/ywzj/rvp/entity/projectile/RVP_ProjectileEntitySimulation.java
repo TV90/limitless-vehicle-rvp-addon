@@ -168,12 +168,12 @@ public final class RVP_ProjectileEntitySimulation {
 
     /** 目标按显式脚本提供位置/速度；弹体的预测、响应补偿和攻角求解仍调用生产代码。 */
     private void updateTarget(int tick) {
-        double seconds = tick / 20.0;
-        Vec3 position = vector(scene.target).add(vector(scene.targetVelocity).scale(seconds))
-                .add(vector(scene.targetAcceleration).scale(0.5 * seconds * seconds));
+        // 调用场景统一目标脚本，真实制导读取与编辑器一致的分段路线或恒加速度观测。
+        var state = scene.targetAt(tick);
+        Vec3 position = vector(state.position());
         target.setPos(position);
         target.setBoundingBox(new AABB(position, position).inflate(scene.targetRadius));
-        target.setDeltaMovement(vector(scene.targetVelocity).add(vector(scene.targetAcceleration).scale(seconds)).scale(1.0 / 20));
+        target.setDeltaMovement(vector(state.velocity()).scale(1.0 / 20));
     }
 
     /** 水面是外部环境观测；实体水中重力、摩擦和鱼雷入水过渡不在工具中重算。 */

@@ -6,7 +6,7 @@
 
 新增：[Three.js 工作台 RVP 弹体仿真](../tools/three-test-workbench/plugins/projectile/README.md) — `projectileSimulation` 只读根目录权威武器 JSON，直接执行真实弹体的气动与运动方法，覆盖六类实体、水中、冷发射、二脉冲和风漂；含与完整生产 Tick 的逐刻对照、初态设置和环境边界。
 
-新增：[弹体可视化用例生成器](../tools/three-test-workbench/plugins/projectile-scenario/README.md) — 工作台独立插件，载入现有场景，拖动发射点、目标和速度端点，分别调试机头/初速方向，时间轴预览目标恒加速度运动；支持全部当前字段、JSON 导入导出、草稿及新用例保存，复制命令后可回看真实 Java 仿真。
+新增：[弹体可视化用例生成器](../tools/three-test-workbench/plugins/projectile-scenario/README.md) — 工作台独立插件，载入现有场景，拖动发射点、目标和速度端点，分别调试机头/初速方向；可双击目标路线任意处插点、拖动轨迹点和修改到达时刻，预览转弯、爬升、停留或恒加速度运动；支持 JSON 导入导出、草稿及新用例保存，Java 仿真实际读取同一条目标路线。
 
 Gunner专题入口：[Gunner文档索引](RVP_gunner/README.md) — 行为配置、驾驶与公共飞控、寻路方案、武器/雷达和历史交接统一放在 `docs/RVP_gunner/`。
 新增：[Gunner 无客户端仿真与 Three.js 回放](RVP_gunner/RVP_Gunner无客户端仿真与ThreeJS回放_20261102.md) — 复用当前地面策略、同层评分、意图仲裁与新公共固定翼分支，Java 逐刻导出五类场景，浏览器按时间轴查看轨迹、目标、操作与事件；含运行命令和简化环境边界。

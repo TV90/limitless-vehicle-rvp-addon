@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "rvp_waypoint_target",
+  "name": "RVP 自由轨迹目标 · 转弯、爬升与停留",
+  "description": "对照编辑器和真实 Java 回放：20 刻横移，40 刻爬升转弯，60 刻折返，随后停留。轨迹点按到达时刻匀速连接。",
+  "weapon": "rvp:rafale_storm_shadow",
+  "ticks": 80,
+  "position": [0, 220, 0],
+  "vehicleVelocity": [0, 0, 60],
+  "yaw": 0,
+  "pitch": 0,
+  "groundY": 64,
+  "target": [120, 168, 1500],
+  "targetPath": [
+    {"tick": 20, "position": [160, 168, 1500]},
+    {"tick": 40, "position": [160, 208, 1460]},
+    {"tick": 60, "position": [120, 208, 1460]},
+    {"tick": 70, "position": [120, 208, 1460]}
+  ],
+  "targetRadius": 4
+}

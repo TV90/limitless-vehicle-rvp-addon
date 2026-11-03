@@ -22,6 +22,7 @@ export const DEFAULT_SCENARIO = {
   target: null, // 可选目标初始世界坐标，null 表示无目标。
   targetVelocity: [0, 0, 0], // 目标脚本初速度。
   targetAcceleration: [0, 0, 0], // 目标恒定加速度，格/秒²。
+  targetPath: [], // 可选到达点 {tick, position}；起点由 target 提供，非空时替代速度/加速度脚本。
   targetRadius: 2, // 几何停止球半径，格；不是引信半径。
   groundY: 64, // 平地或海底的世界高度。
   waterY: null, // 可选水平水面，必须高于地面。
@@ -61,6 +62,17 @@ export function normalizeScenario(input) {
   if (!finite(scene.targetRadius) || scene.targetRadius <= 0) throw new Error('目标停止球半径必须大于 0');
   if (!Number.isSafeInteger(scene.seed)) throw new Error('随机种子须为 JavaScript 可无损表达的整数（绝对值不超过 9007199254740991）');
   if (typeof scene.guidance !== 'boolean') throw new Error('guidance 必须是 true 或 false');
+  if (!Array.isArray(scene.targetPath) || scene.targetPath.length > 256) throw new Error('目标轨迹 targetPath 须为数组，最多 256 个到达点');
+  if (scene.targetPath.length && !scene.target) throw new Error('使用目标轨迹前须启用目标起点');
+  let previousTick = 0;
+  for (const point of scene.targetPath) {
+    if (!point || typeof point !== 'object' || Array.isArray(point)
+      || Object.keys(point).some(key => !['tick', 'position'].includes(key))) throw new Error('轨迹点仅接受 tick 和 position');
+    if (!Number.isInteger(point.tick) || point.tick <= previousTick || point.tick > scene.ticks) throw new Error('轨迹点时刻须为严格递增的整数，且在 1..运行时长内');
+    if (!vector(point.position)) throw new Error('轨迹点 position 必须是三个有限数值');
+    // 调用同一取样函数，检查每段起始速度，避免中途溢出但末点静止掩盖错误。
+    targetAt(scene, previousTick); previousTick = point.tick;
+  }
   if (scene.target) {
     // 调用同一目标解析式，提早发现最长时刻发生的数值溢出。
     targetAt(scene, scene.ticks);
@@ -68,14 +80,41 @@ export function normalizeScenario(input) {
   return scene;
 }
 
-/** 与 RVP_ProjectileEntitySimulation.updateTarget 一致：p(t)=p₀+v₀t+½at²，不积分导弹运动。 */
+/** 与 Java 场景同一规则：轨迹点之间匀速，转折刻取下一段速度，末点后静止；空路线用恒加速度。 */
 export function targetAt(scene, tick) {
   if (!scene.target) return null;
+  if (scene.targetPath?.length) {
+    let from = scene.target, fromTick = 0;
+    for (const point of scene.targetPath) {
+      if (tick < point.tick) {
+        const fraction = (tick - fromTick) / (point.tick - fromTick);
+        const velocity = point.position.map((p, i) => (p - from[i]) * 20 / (point.tick - fromTick));
+        const position = from.map((p, i) => p + (point.position[i] - p) * fraction);
+        if (!position.every(finite) || !velocity.every(finite)) throw new Error('目标轨迹超出有限数值范围，请减小坐标差');
+        return { position, velocity };
+      }
+      from = point.position; fromTick = point.tick;
+    }
+    return { position: [...from], velocity: [0, 0, 0] };
+  }
   const seconds = tick / 20;
   const position = scene.target.map((p, i) => p + scene.targetVelocity[i] * seconds + 0.5 * scene.targetAcceleration[i] * seconds * seconds);
   const velocity = scene.targetVelocity.map((v, i) => v + scene.targetAcceleration[i] * seconds);
   if (!position.every(finite) || !velocity.every(finite)) throw new Error('目标运动超出有限数值范围，请减小速度、加速度或时长');
   return { position, velocity };
+}
+
+/** 在任意整数刻插入到达点；首次编辑保留原终点，返回副本，原输入和已有点不被覆盖。 */
+export function insertTargetPoint(input, tick, position = null) {
+  const scene = normalizeScenario(input);
+  if (!scene.target) throw new Error('请先启用目标');
+  if (!Number.isInteger(tick) || tick < 1 || tick > scene.ticks) throw new Error('插点时刻须为 1..运行时长内的整数；第 0 刻请编辑起点');
+  if (scene.targetPath.some(point => point.tick === tick)) throw new Error('此刻已有轨迹点，请直接选择并编辑');
+  // 先按改动前的路线取样，插点不会移动已有点；恒加速度转路线时各段变成直线。
+  const sampled = position ?? targetAt(scene, tick).position;
+  if (!scene.targetPath.length && tick !== scene.ticks) scene.targetPath.push({ tick: scene.ticks, position: targetAt(scene, scene.ticks).position });
+  scene.targetPath.push({ tick, position: [...sampled] }); scene.targetPath.sort((a, b) => a.tick - b.tick);
+  return normalizeScenario(scene);
 }
 
 /** Minecraft 航向和正数抬头的俯仰，转换为世界 X/Y/Z 速度输入。 */
@@ -100,8 +139,8 @@ export function simulationCommand(scene) {
 /** 只生成几何观察记录：发射点静止、目标按脚本运动，绝不伪造导弹未来轨迹。 */
 export function buildPreviewReplay(input) {
   const scene = normalizeScenario(input);
-  const end = targetAt(scene, scene.ticks), span = scene.target ? Math.max(40, Math.hypot(...scene.target.map((v, i) => v - scene.position[i])),
-    Math.hypot(...end.position.map((v, i) => v - scene.position[i]))) : 100;
+  const end = targetAt(scene, scene.ticks), span = scene.target ? Math.max(40, ...[scene.target, ...scene.targetPath.map(point => point.position), end.position]
+    .map(position => Math.hypot(...position.map((v, i) => v - scene.position[i])))) : 100;
   const size = Math.max(2, span / 160);
   const objects = [{ id: 'launch', name: '发射点 / 机头方向', renderer: 'projectile-scenario:arrow', color: '#f2bd72', size: [size, size, size] }];
   if (scene.initialVelocity) objects.push({ id: 'velocity', name: '初速输入方向（非实体最终初速）', renderer: 'projectile-scenario:arrow', color: '#76d9c2', size: [size, size, size] });
@@ -114,7 +153,7 @@ export function buildPreviewReplay(input) {
       position: object.id === 'target' ? state.position.map((value, axis) => axis === 1 ? value - scene.targetRadius : value) : scene.position,
       yaw: object.id === 'velocity' ? velocityAngles.yaw : object.id === 'launch' ? scene.yaw : 0,
       pitch: object.id === 'velocity' ? velocityAngles.pitch : object.id === 'launch' ? scene.pitch : 0, roll: 0,
-      values: object.id === 'target' ? { velocity: state.velocity, preview: '目标恒加速脚本；不是导弹仿真' }
+      values: object.id === 'target' ? { velocity: state.velocity, preview: '目标运动脚本；不是导弹仿真' }
         : { preview: '发射初态示意；位置保持不动', initialVelocity: scene.initialVelocity, weapon: scene.weapon },
     })) };
   });
@@ -122,6 +161,6 @@ export function buildPreviewReplay(input) {
     description: '仅展示目标运动和发射初态；导弹真实飞行需运行 Java 仿真。', tickRate: 20, groundY: scene.groundY,
     objects, obstacles: [], frames, events: [], summary: [{ label: '预览时长（秒）', value: scene.ticks / 20 }],
     checks: [{ name: '几何预览', status: 'info', message: '没有执行实体飞行或自动命中断言' }],
-    coverage: ['当前场景的目标恒加速运动、机头方向与可选初速输入。'],
+    coverage: ['当前场景的目标到达点路线或恒加速度运动、机头方向与可选初速输入。'],
     limitations: ['没有计算导弹轨迹、制导、推力、碰撞或冷发射后的真实速度。', 'initialVelocity 仍由真实实体初始化处理，不保证等于实体最终初速。'] };
 }

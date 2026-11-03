@@ -10,7 +10,7 @@ import { PluginRegistry } from '../core/plugins.js';
 import { sampleReplay } from '../core/replay.js';
 import projectile from '../plugins/projectile/adapter.js';
 import scenarioPlugin from '../plugins/projectile-scenario/adapter.js';
-import { DEFAULT_SCENARIO, anglesFromVelocity, buildPreviewReplay, normalizeScenario, simulationCommand, targetAt, validWeaponId, velocityFromAngles } from '../plugins/projectile-scenario/scenario.js';
+import { DEFAULT_SCENARIO, anglesFromVelocity, buildPreviewReplay, insertTargetPoint, normalizeScenario, simulationCommand, targetAt, validWeaponId, velocityFromAngles } from '../plugins/projectile-scenario/scenario.js';
 
 /** 所有写入回归使用独立临时项目；真实仓库的场景和权威武器始终只读。 */
 async function setup(t) {
@@ -61,9 +61,41 @@ test('目标解析式按秒换算，与恒加速度运动一致且倒拖不受�
   assert.equal(targetAt(scene(), 50), null);
 });
 
+test('自由轨迹在中途转弯、停留和末点后静止，折点取下一段速度且支持倒拖', () => {
+  const input = scene({ ticks: 80, target: [100, 200, 300], targetVelocity: [999, 999, 999], targetAcceleration: [10, 10, 10],
+    targetPath: [{ tick: 20, position: [120, 200, 300] }, { tick: 40, position: [120, 220, 280] }, { tick: 60, position: [120, 220, 280] }] });
+  assert.deepEqual(targetAt(input, 10), { position: [110, 200, 300], velocity: [20, 0, 0] });
+  assert.deepEqual(targetAt(input, 20), { position: [120, 200, 300], velocity: [0, 20, -20] });
+  assert.deepEqual(targetAt(input, 30), { position: [120, 210, 290], velocity: [0, 20, -20] });
+  assert.deepEqual(targetAt(input, 30.5).position, [120, 210.5, 289.5]);
+  for (const tick of [40, 60, 80]) assert.deepEqual(targetAt(input, tick), { position: [120, 220, 280], velocity: [0, 0, 0] });
+  assert.deepEqual(targetAt(input, 0), { position: [100, 200, 300], velocity: [20, 0, 0] });
+  const replay = buildPreviewReplay(input);
+  assert.deepEqual(replay.frames[30].objects.find(o => o.id === 'target').position, [120, 208, 290]);
+});
+
+test('任意时刻插点保留原点和终点，排序后可无损导出；拒绝重复、越界、缺失坐标和溢出', () => {
+  const input = scene({ ticks: 80, target: [100, 200, 300], targetVelocity: [10, 0, 0] }), before = structuredClone(input);
+  const first = insertTargetPoint(input, 30);
+  assert.deepEqual(first.targetPath, [{ tick: 30, position: [115, 200, 300] }, { tick: 80, position: [140, 200, 300] }]);
+  assert.deepEqual(input, before);
+  const edited = insertTargetPoint(first, 10, [95, 220, 310]);
+  assert.deepEqual(edited.targetPath.map(p => p.tick), [10, 30, 80]);
+  assert.deepEqual(normalizeScenario(JSON.parse(JSON.stringify(edited))), edited);
+  for (const tick of [0, 30, 81, NaN, 1.5]) assert.throws(() => insertTargetPoint(first, tick));
+  const points = [{ tick: 20, position: [1, 2, 3] }];
+  for (const targetPath of [null, {}, [null], [{ tick: 0, position: [1, 2, 3] }], [{ tick: 1.5, position: [1, 2, 3] }],
+    [...points, ...points], [{ tick: 601, position: [1, 2, 3] }], [{ tick: 20, position: [1, 2] }],
+    [{ tick: 20, position: [1, Infinity, 3] }], [{ ...points[0], old_velocity: [1, 2, 3] }],
+    Array.from({ length: 257 }, (_, i) => ({ tick: i + 1, position: [1, 2, 3] }))]) assert.throws(() => scene({ target: [0, 164, 500], targetPath }));
+  assert.throws(() => scene({ targetPath: points }), /启用目标/);
+  assert.throws(() => scene({ target: [-1e308, 164, 500], targetPath: [{ tick: 20, position: [1e308, 164, 500] }] }), /有限数值/);
+  assert.equal(scene({ target: [0, 164, 500], targetPath: Array.from({ length: 256 }, (_, i) => ({ tick: i + 1, position: [i, 164, 500] })) }).targetPath.length, 256);
+});
+
 test('当前 Java 数据字段完整对应，全部已有场景可无损填默认值后导出', async () => {
   const java = await readFile(fileURLToPath(new URL('../../../src/test/java/org/ywzj/rvp/projectile/simulation/RVP_ProjectileSimulationScenario.java', import.meta.url)), 'utf8');
-  const keys = [...java.matchAll(/public (?:int|float|long|boolean|double(?:\[\])?|Double|String) (\w+)\s*[=;]/g)].map(match => match[1]);
+  const keys = [...java.matchAll(/public (?:int|float|long|boolean|double(?:\[\])?|Double|String|TargetPoint\[\]) (\w+)\s*[=;]/g)].map(match => match[1]);
   assert.deepEqual(Object.keys(DEFAULT_SCENARIO).sort(), keys.sort(), 'Java 增加输入字段时编辑器也须显式支持');
   const root = fileURLToPath(new URL('../../../src/test/resources/projectile-simulation/', import.meta.url));
   const files = (await readdir(root)).filter(file => file.endsWith('.json'));
@@ -110,18 +142,20 @@ test('与真实 Java 回放的目标观测逐刻比较，预览目标没有另�
   let index;
   try { index = JSON.parse(await readFile(join(root, 'index.json'), 'utf8')); }
   catch (error) { if (error.code === 'ENOENT') { t.skip('先运行 projectileSimulation 以验证真实目标观测'); return; } throw error; }
-  let count = 0;
+  let count = 0, pathCount = 0;
   for (const entry of index.replays) {
     const replay = JSON.parse(await readFile(join(root, entry.file), 'utf8'));
-    if (!replay.scene.target || !replay.scene.targetAcceleration.some(v => v)) continue;
+    if (!replay.scene.target || !(replay.scene.targetAcceleration.some(v => v) || replay.scene.targetPath?.length)) continue;
     const input = normalizeScenario(replay.scene);
     for (const frame of replay.frames) {
       const target = frame.objects.find(object => object.id === 'target');
       // Java 记录采用球底坐标，而输入与目标脚本采用球心坐标。
       assert.ok(target); closeVector(targetAt(input, frame.tick).position, target.position.map((value, axis) => axis === 1 ? value + input.targetRadius : value)); count++;
+      if (input.targetPath.length) pathCount++;
     }
   }
   assert.ok(count > 0, '必须实际核对加速目标');
+  assert.ok(pathCount > 60, '必须实际核对转弯和停留路线，不能只测首帧');
 });
 
 test('新工具通过清单自动发现，静态工具页可打开，服务端模块保持不公开', async t => {
@@ -143,7 +177,8 @@ test('保存只创建新场景，重复 ID/同名坏文件不会覆盖；原文�
   const { origin, scenarioRoot, weaponRoot } = await setup(t), url = `${origin}/api/plugins/projectile-scenario/scenarios`;
   const before = await readFile(join(scenarioRoot, 'template.json')), weaponBefore = await readFile(join(weaponRoot, 'probe.json'));
   const save = input => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
-  const input = scene({ id: 'new_case', initialVelocity: [20, 10, -30], target: [0, 164, 500], targetAcceleration: [3, 0, 0] });
+  const input = scene({ id: 'new_case', initialVelocity: [20, 10, -30], target: [0, 164, 500], targetAcceleration: [3, 0, 0],
+    targetPath: [{ tick: 40, position: [40, 180, 500] }, { tick: 80, position: [40, 180, 450] }] });
   assert.equal((await save(input)).status, 201);
   assert.deepEqual(JSON.parse(await readFile(join(scenarioRoot, 'new_case.json'), 'utf8')), input);
   assert.equal((await save({ ...input, pitch: 15 })).status, 409);

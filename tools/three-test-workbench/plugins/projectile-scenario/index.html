@@ -24,11 +24,11 @@
     <section class="preview" aria-label="场景三维编辑预览">
       <div id="preview-host"></div>
       <div class="preview-heading"><div class="eyebrow">SCENARIO / 几何预览</div><h2 id="preview-title">自定义弹体测试</h2><p>玫红：目标完整路线　金色：机头朝向　青绿：初速输入</p></div>
-      <div class="preview-tools"><div role="group" aria-label="相机视角"><button id="iso" class="active">三维</button><button id="top">俯视</button><button id="side">侧视</button><button id="fit">适配全景</button></div>
-        <label for="drag-mode">画面拖动</label><select id="drag-mode"><option value="launch">发射点</option><option value="target">目标起点</option><option value="initialVelocity">初速箭头端点</option><option value="targetVelocity">目标速度箭头端点</option><option value="none">仅旋转相机</option></select></div>
+      <div class="preview-tools"><div role="group" aria-label="相机视角"><button id="iso" class="active">三维</button><button id="top">俯视</button><button id="side">侧视</button><button id="fit">适配全景</button><button id="focus-target">聚焦目标路线</button></div>
+        <label for="drag-mode">画面拖动</label><select id="drag-mode"><option value="launch">发射点</option><option value="target">目标起点</option><option value="pathPoint">选中的轨迹点</option><option value="initialVelocity">初速箭头端点</option><option value="targetVelocity">目标速度箭头端点</option><option value="none">仅旋转相机</option></select></div>
       <div class="preview-legend"><span><i class="launch-dot"></i>机头</span><span><i class="velocity-dot"></i>初速输入</span><span><i class="target-dot"></i>目标</span><span>X → 东 / Y ↑ 高度 / Z → 南</span></div>
       <div id="preview-error" class="preview-error" hidden></div>
-      <div class="preview-readout"><span id="target-position">目标 —</span><span id="target-speed">速度 —</span><small>拖动彩色坐标轴调整参数；空白处旋转，滚轮缩放。箭头长度按画面缩放。</small></div>
+      <div class="preview-readout"><span id="target-position">目标 —</span><span id="target-speed">速度 —</span><small>双击玫红路线任意处插点；单击轨迹点后拖动彩色坐标轴。空白处旋转，滚轮缩放。</small></div>
     </section>
     <aside class="editor-panel">
       <nav class="tabs" aria-label="参数分组"><button data-tab="launch" class="active">发射初态</button><button data-tab="target">目标运动</button><button data-tab="environment">环境 / 高级</button><button data-tab="json">JSON</button></nav>
@@ -47,10 +47,24 @@
           <p class="help">初速输入会交给真实实体初始化；冷发射、平台速度继承及武器规则可能继续改变它。金色机头和青绿速度箭头可朝不同方向。</p>
         </section>
         <section data-panel="target" hidden>
-          <div class="panel-title">目标运动 <small>恒定加速度脚本</small></div>
-          <p class="help">目标位置 = 起点 + 初速 × 秒数 + ½ × 加速度 × 秒数²。与 Java 场景中的目标脚本一致；当前格式支持直线与恒加速度曲线。</p>
+          <div class="panel-title">目标运动 <small>与 Java 仿真使用同一路线</small></div>
+          <label class="field"><span>运动方式</span><select id="target-motion"><option value="analytic">初速度 + 恒定加速度</option><option value="path">自由轨迹 · 按时刻到达各点</option></select></label>
+          <p id="motion-help" class="help">设置初速度与加速度，或切换自由轨迹，在任意时刻添加、移动轨迹点。</p>
           <label class="field"><span>快速设置运动</span><select id="target-preset"><option value="">选择预设…</option><option value="stationary">静止</option><option value="crossing">沿 +X 横穿，30 格/秒</option><option value="incoming">朝发射点接近，40 格/秒</option><option value="receding">背离发射点，40 格/秒</option><option value="climbing">向上爬升，20 格/秒</option><option value="accelerating">沿 +X 加速，初速 15、加速度 3</option></select></label>
           <div id="target-fields"></div>
+          <div id="analytic-target-fields"></div>
+          <div id="path-controls" class="path-controls" hidden>
+            <div class="panel-title">轨迹点 <small id="path-count"></small></div>
+            <p class="help">每个点表示“第几刻到达这里”；点间匀速直行，最后一点后停住。选点会跳到该时刻，橙色圈表示当前选中点。</p>
+            <label class="field"><span>选择要编辑的点</span><select id="path-points" size="5" aria-label="轨迹点列表"></select></label>
+            <label class="field"><span>到达时刻（刻；20 刻 = 1 秒）</span><input id="path-tick" type="number" step="1" min="1"><small id="path-seconds" class="help"></small></label>
+            <div class="triple"><label>X（格）<input id="path-x" type="number" step="any" aria-label="轨迹点 X"></label><label>Y（格）<input id="path-y" type="number" step="any" aria-label="轨迹点 Y"></label><label>Z（格）<input id="path-z" type="number" step="any" aria-label="轨迹点 Z"></label></div>
+            <button id="delete-path-point" type="button">删除选中点</button>
+            <label class="field"><span>插点时刻（可先拖动下方时间轴）</span><input id="path-insert-tick" type="number" step="1" min="1" aria-label="插点时刻"></label>
+            <button id="add-path-point" type="button">在此刻插点并编辑</button>
+            <p class="help">也可双击画面中的玫红路线插点。添加时沿原路线取位置，再拖动坐标轴或输入坐标改变路线。修改时刻不能越过前后点；最多 256 个到达点。</p>
+          </div>
+          <div id="target-radius-field"></div>
           <p class="help">关闭目标后导出 target: null。目标球只作为仿真停止条件，不等于武器引信范围。移动 GPS 用例的装订坐标仍由生产代码处理。</p>
         </section>
         <section data-panel="environment" hidden>
@@ -66,7 +80,7 @@
   </main>
   <footer class="editor-footer">
     <div class="transport"><button id="play" aria-label="播放目标运动">▶</button><button id="previous" aria-label="上一刻">❮</button><button id="next" aria-label="下一刻">❯</button><strong id="time">0.00 s</strong><span id="duration">/ 30.00 s</span><label for="rate">预览速度</label><select id="rate"><option value="0.25">0.25×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="8">8×</option></select></div>
-    <label class="sr-only" for="timeline">目标预览时间轴</label><input id="timeline" type="range" min="0" max="600" value="0" step="1">
+    <label class="sr-only" for="timeline">目标预览时间轴</label><input id="timeline" type="range" min="0" max="600" value="0" step="1" list="path-ticks"><datalist id="path-ticks"></datalist>
     <div class="save-bar"><span id="draft-status" class="muted">有效参数自动保留为本机草稿</span><button id="download" disabled>下载场景 JSON</button><button id="save" class="primary" disabled>保存为新用例</button><button id="copy-command" disabled>复制仿真命令</button></div>
     <details class="run-help"><summary>怎样查看真实导弹轨迹？</summary><p>先保存用例，在项目根目录运行以下命令，再到回放工作台“刷新目录”，选择“RVP 弹体仿真”的对应场景。结果写入独立目录，不改写原有的完整场景索引。</p><pre id="command"></pre></details>
   </footer>
