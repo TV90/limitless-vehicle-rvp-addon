@@ -36,6 +36,7 @@ import org.ywzj.rvp.vehicle.BoneDircmConfig;
 import org.ywzj.rvp.vehicle.BoneEngineConfig;
 import org.ywzj.rvp.vehicle.BoneJammerConfig;
 import org.ywzj.rvp.vehicle.BoneModuleType;
+import org.ywzj.rvp.vehicle.BoneTurretTraverseConfig;
 
 import org.ywzj.rvp.vehicle.RVP_BoneModuleStateTable;
 import org.ywzj.rvp.vehicle.RVP_BoneCumulativeDamageTable;
@@ -644,14 +645,13 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             RVP_BoneCumulativeDamageTable.accumulate(vehicleId, boneName, moduleTriggerDamage, vehicle.level().getGameTime());
             syncBoneDamageProgress(vehicle);
         }
-        boolean anyDestroyed = false;
+        boolean anyDestroyed = updateTurretTraverseStage(vehicle, boneName, shooter);
         boolean destroyedEra = false;
         String destroyedRadarBone = null;
         for (BoneModuleType type : result.modules()) {
             if (type == BoneModuleType.ENGINE || type == BoneModuleType.ENGINE_DAMAGED
-                    || type == BoneModuleType.BARREL) {
-                // 引擎/炮管不走单发直毁路径：失效完全由各自累计（engine/barrel 子对象阈值）驱动
-                //（见 accumulateEngineDamage/accumulateBarrelDamage），循环里重复判定会跳档
+                    || type == BoneModuleType.BARREL || type.isTurretTraverse()) {
+                // 分档部件按自身配置阈值处理，通用 min_damage 不得提前击毁。
                 continue;
             }
             // [RVP] 累计失效判定（原单发 min_damage 门槛废除）：通用累计 ≥ 累计阈值（min_damage）
@@ -930,6 +930,8 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
      * 未来新增类型兜底尾位。骨的位次 = 骨上**最靠前的失效可修类型**在序列中的位置。
      */
     public static final List<BoneModuleType> DEVICE_REPAIR_PRIORITY = List.of(
+            BoneModuleType.TURRET_TRAVERSE,
+            BoneModuleType.TURRET_TRAVERSE_DAMAGED,
             BoneModuleType.BARREL,
             BoneModuleType.BARREL_DAMAGED,
             BoneModuleType.ENGINE,
@@ -1024,6 +1026,10 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             return -1f;
         }
         BoneModuleConfig moduleConfig = cfg.moduleByBoneName.get(boneName);
+        var traverse = resolveTurretTraverseConfig(vehicle, boneName);
+        if (traverse != null) {
+            return traverse.thresholdHeavy();
+        }
         if (moduleConfig != null && Float.isFinite(moduleConfig.minTriggerDamage())) {
             return moduleConfig.minTriggerDamage();
         }
@@ -1036,6 +1042,33 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             return barrel.threshold();
         }
         return -1f;
+    }
+
+    /** 按骨取得方向机配置，验证绑定指向本车可回转武器站。 */
+    public @Nullable BoneTurretTraverseConfig resolveTurretTraverseConfig(AbstractVehicle vehicle, String boneName) {
+        VehicleHitboxConfig config = configs.get(vehicle.getVehicleId());
+        if (config == null || "__vehicle__".equals(boneName)) return null;
+        BoneModuleConfig bone = config.moduleByBoneName.get(boneName);
+        if (bone == null || bone.turretTraverse() == null) return null;
+        var part = vehicle.getPartUnit(bone.turretTraverse().partId()).orElse(null);
+        if (!(part instanceof WeaponUnit unit)) return null;
+        float nominalSpeed = unit.getData().getRotInfo().yRotSpeed;
+        return Float.isFinite(nominalSpeed) && nominalSpeed > 0f ? bone.turretTraverse() : null;
+    }
+
+    /** 直击与爆炸共用骨累计值，只在跨档时更新持久化状态。 */
+    private boolean updateTurretTraverseStage(AbstractVehicle vehicle, String boneName, @Nullable Entity shooter) {
+        var config = resolveTurretTraverseConfig(vehicle, boneName);
+        if (config == null) return false;
+        UUID id = vehicle.getUUID();
+        if (RVP_BoneModuleStateTable.isModuleDestroyed(id, boneName, BoneModuleType.TURRET_TRAVERSE)) return false;
+        int stage = config.stage(RVP_BoneCumulativeDamageTable.getAccumulated(id, boneName));
+        if (stage == 2 && RVP_BoneModuleStateTable.destroyModule(id, boneName, BoneModuleType.TURRET_TRAVERSE)) {
+            RVP_BoneModuleStateTable.restoreModule(id, boneName, BoneModuleType.TURRET_TRAVERSE_DAMAGED);
+            notifyModuleHit(shooter, vehicle, S2CModuleHitNotify.KIND_MODULE_DESTROYED, BoneModuleType.TURRET_TRAVERSE);
+            return true;
+        }
+        return stage == 1 && RVP_BoneModuleStateTable.destroyModule(id, boneName, BoneModuleType.TURRET_TRAVERSE_DAMAGED);
     }
 
     public static void syncBoneModuleState(AbstractVehicle vehicle) {
@@ -1426,14 +1459,16 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                     hasEngine = true;
                 } else if (type == BoneModuleType.BARREL || type == BoneModuleType.BARREL_DAMAGED) {
                     hasBarrel = true;
-                } else if (type != BoneModuleType.MAINTENANCE
+                } else if (!type.isTurretTraverse() && type != BoneModuleType.MAINTENANCE
                         && RVP_BoneModuleStateTable.isModuleActive(vehicleId, boneName, type)
                         && Float.isFinite(moduleConfig.minTriggerDamage())
                         && moduleConfig.minTriggerDamage() > 0f) {
                     hasDestroyableDevice = true;
                 }
             }
-            if (hasEra || (!hasEngine && !hasBarrel && !hasDestroyableDevice)) {
+            boolean hasTraverse = resolveTurretTraverseConfig(vehicle, boneName) != null
+                    && RVP_BoneModuleStateTable.isModuleActive(vehicleId, boneName, BoneModuleType.TURRET_TRAVERSE);
+            if (hasEra || (!hasEngine && !hasBarrel && !hasDestroyableDevice && !hasTraverse)) {
                 continue; // ERA 排除；无任何可损伤角色（如纯维修骨）排除
             }
             candidates.add(boneName);
@@ -1574,19 +1609,23 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             } else {
                 // 设备骨：累计 ≥ min_damage → 逐模块失效（只毁设备类型）
                 BoneModuleConfig moduleConfig = cfg.moduleByBoneName.get(boneName);
-                if (moduleConfig == null || !Float.isFinite(moduleConfig.minTriggerDamage())
-                        || moduleConfig.minTriggerDamage() <= 0f) {
+                if (moduleConfig == null || ((!Float.isFinite(moduleConfig.minTriggerDamage())
+                        || moduleConfig.minTriggerDamage() <= 0f) && moduleConfig.turretTraverse() == null)) {
                     continue;
                 }
                 float accumulated = RVP_BoneCumulativeDamageTable.accumulate(vehicleId, boneName, credit, vehicle.level().getGameTime());
                 anyAccumulated = true;
-                if (accumulated + 1.0E-3f < moduleConfig.minTriggerDamage()) {
+                anyDestroyed |= updateTurretTraverseStage(vehicle, boneName, shooter);
+                float deviceThreshold = moduleConfig.minTriggerDamage();
+                if (!Float.isFinite(deviceThreshold) || deviceThreshold <= 0f
+                        || accumulated + 1.0E-3f < deviceThreshold) {
                     continue;
                 }
                 for (BoneModuleType type : moduleConfig.modules()) {
                     if (type == BoneModuleType.ERA || type == BoneModuleType.ENGINE
                             || type == BoneModuleType.ENGINE_DAMAGED || type == BoneModuleType.BARREL
-                            || type == BoneModuleType.BARREL_DAMAGED || type == BoneModuleType.MAINTENANCE) {
+                            || type == BoneModuleType.BARREL_DAMAGED || type.isTurretTraverse()
+                            || type == BoneModuleType.MAINTENANCE) {
                         continue;
                     }
                     if (RVP_BoneModuleStateTable.destroyModule(vehicleId, boneName, type)) {
@@ -1595,7 +1634,9 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                         notifyModuleHit(shooter, vehicle, S2CModuleHitNotify.KIND_MODULE_DESTROYED, type);
                     }
                 }
+                continue;
             }
+            anyDestroyed |= updateTurretTraverseStage(vehicle, boneName, shooter);
         }
         if (anyAccumulated) {
             syncBoneDamageProgress(vehicle);
@@ -2181,7 +2222,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                 }
                 java.util.Set<BoneModuleType> modules = java.util.EnumSet.of(BoneModuleType.ECM_ACTIVE);
                 BoneModuleConfig synthetic = new BoneModuleConfig(Float.POSITIVE_INFINITY, 0f, modules,
-                        null, null, null, null, vehicleEcmActive, null, null, null, true);
+                        null, null, null, null, vehicleEcmActive, null, null, null, null, true);
                 moduleMap.put("__vehicle__", synthetic);
             }
             // 顶层无骨骼的 maintenance（无骨骼快速维修）：同款挂到虚拟骨骼 __vehicle__，始终存活；
@@ -2193,7 +2234,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                 }
                 java.util.Set<BoneModuleType> modules = java.util.EnumSet.of(BoneModuleType.MAINTENANCE);
                 BoneModuleConfig synthetic = new BoneModuleConfig(Float.POSITIVE_INFINITY, 0f, modules,
-                        null, null, null, null, null, vehicleMaintenance, null, null, true);
+                        null, null, null, null, null, vehicleMaintenance, null, null, null, true);
                 moduleMap.put("__vehicle__", synthetic);
             }
             if ((map == null || map.isEmpty())
@@ -2382,6 +2423,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             @Nullable BoneMaintenanceConfig maintenance,
             @Nullable BoneEngineConfig engine,
             @Nullable BoneBarrelConfig barrel,
+            @Nullable BoneTurretTraverseConfig turretTraverse,
             boolean smoke
     ) {
         boolean hasModules() {
@@ -2412,6 +2454,11 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             if (!Float.isFinite(explosion) || explosion < 0f) {
                 explosion = 0f;
             }
+            // 一级标记只能由累计伤害写入。缺少合法绑定的方向机条目不注册。
+            modules.remove(BoneModuleType.TURRET_TRAVERSE_DAMAGED);
+            var traverse = modules.contains(BoneModuleType.TURRET_TRAVERSE)
+                    ? BoneTurretTraverseConfig.parse(obj.get("turret_traverse")) : null;
+            if (traverse == null) modules.remove(BoneModuleType.TURRET_TRAVERSE);
             return new BoneModuleConfig(minTriggerDamage, explosion, modules,
                     BoneJammerConfig.parse(obj.get("jammer")), BoneApsConfig.parse(obj.get("aps")),
                     BoneDircmConfig.parse(obj.get("dircm")),
@@ -2420,6 +2467,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                     BoneMaintenanceConfig.parse(obj.get("maintenance")),
                     BoneEngineConfig.parse(obj.get("engine")),
                     BoneBarrelConfig.parse(obj.get("barrel")),
+                    traverse,
                     GsonHelper.getAsBoolean(obj, "smoke", true));
         }
 

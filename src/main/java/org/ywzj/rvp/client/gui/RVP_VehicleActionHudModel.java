@@ -1,17 +1,26 @@
 package org.ywzj.rvp.client.gui;
 
 import org.ywzj.rvp.uav.RVP_AuxiliaryHudSnapshot;
+import java.util.ArrayList;
 import java.util.List;
 
-/** 动作条的纯展示模型；角色、冷却和许可全部来自服务端快照。 */
+/** 动作条的纯展示模型；辅助载具状态来自服务端快照，武器动作来自当前操作武器站。 */
 public final class RVP_VehicleActionHudModel {
-    public enum Action { DEPLOY, SWITCH, MAP, STATUS }
+    public enum Action { DEPLOY, SWITCH, MAP, STATUS, SEEKER, FIRE_CONTROL, QUICK_LOCK }
     public enum Phase { READY, DISABLED, COOLING, DEPLOYED }
     public record Card(Action action, Phase phase, boolean enabled, int cooldownSeconds) {}
     /** 所有几何使用 1920×1080 参考画布，GUI scale 不影响最终物理尺寸。 */
     public record Layout(float scale, float left, float top, float totalWidth) {}
     public static final int CARD_WIDTH = 88, CARD_HEIGHT = 104, GAP = 8, BOTTOM_MARGIN = 24;
     private RVP_VehicleActionHudModel() {}
+
+    public static List<Card> cards(RVP_AuxiliaryHudSnapshot state, boolean seeker, boolean fireControl, boolean quickLock) {
+        List<Card> cards = new ArrayList<>(cards(state));
+        if (seeker) cards.add(ready(Action.SEEKER));
+        if (fireControl) cards.add(ready(Action.FIRE_CONTROL));
+        if (quickLock) cards.add(ready(Action.QUICK_LOCK));
+        return cards;
+    }
 
     public static List<Card> cards(RVP_AuxiliaryHudSnapshot state) {
         Card map = ready(Action.MAP), status = ready(Action.STATUS);
@@ -31,7 +40,7 @@ public final class RVP_VehicleActionHudModel {
         return new Card(action, enabled ? Phase.READY : Phase.DISABLED, enabled, 0);
     }
 
-    /** 两卡、三卡、四卡都按真实总宽度居中，不给隐藏入口预留空槽。 */
+    /** 按可见卡片总宽度居中。 */
     public static Layout layout(int guiWidth, int guiHeight, int count) {
         float scale = Math.max(0F, Math.min(guiWidth / 1920F, guiHeight / 1080F));
         float total = count <= 0 ? 0 : count * CARD_WIDTH + (count - 1) * GAP;

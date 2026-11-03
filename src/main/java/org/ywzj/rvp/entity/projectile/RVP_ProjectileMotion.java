@@ -244,8 +244,7 @@ public final class RVP_ProjectileMotion {
             velocity = clampSpeed(projectile, velocity, data);
         }
         projectile.setDeltaMovement(velocity);
-        projectile.setPos(projectile.position().add(velocity));
-        projectile.flightDistance += velocity.length();
+        projectile.advanceProjectile(velocity);
         // 调用本项目弹体速率状态入口，分离当前速率与只增不减的历史峰值。
         projectile.updateFlightSpeedState(velocity);
 
@@ -594,8 +593,7 @@ public final class RVP_ProjectileMotion {
             velocity = clampSpeed(missile, velocity, data);
         }
         missile.setDeltaMovement(velocity);
-        missile.setPos(missile.position().add(velocity));
-        missile.flightDistance += velocity.length();
+        missile.advanceProjectile(velocity);
         // 调用本项目弹体速率状态入口，使 HITL 转向损失不会在下一 Tick 被历史峰值回填。
         missile.updateFlightSpeedState(velocity);
     }

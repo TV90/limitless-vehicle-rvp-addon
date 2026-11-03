@@ -427,6 +427,7 @@
   "gui.ywzj_rvp.equipment.cm_smoke": "Smoke",
   "gui.ywzj_rvp.equipment.ammo": "Ammo %s/%s",
   "gui.ywzj_rvp.module.barrel": "Barrel",
+  "gui.ywzj_rvp.module.turret_traverse": "Turret Traverse",
   "ui.rvp.barrel_destroyed": "Barrel destroyed - repair required",
   "gui.ywzj_rvp.equipment.cat_barrel": "Barrel",
   "gui.ywzj_rvp.hud.label_flare": "FLA",
@@ -575,5 +576,8 @@
   "hud.ywzj_rvp.action.switch_auxiliary": "Switch",
   "hud.ywzj_rvp.action.tactical_map": "Map",
   "hud.ywzj_rvp.action.vehicle_status": "Status",
-  "hud.ywzj_rvp.action.deployed_auxiliary": "Deployed"
+  "hud.ywzj_rvp.action.deployed_auxiliary": "Deployed",
+  "hud.ywzj_rvp.action.seeker": "Seeker",
+  "hud.ywzj_rvp.action.fire_control": "FCS Mode",
+  "hud.ywzj_rvp.action.quick_lock": "Quick Lock"
 }

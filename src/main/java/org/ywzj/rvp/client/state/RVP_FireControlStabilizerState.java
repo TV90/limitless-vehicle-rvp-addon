@@ -41,22 +41,30 @@ public final class RVP_FireControlStabilizerState {
         return resolveInitialMode(resolveAllowedMask(unit));
     }
 
+    public static boolean canToggleMode(WeaponUnit unit) {
+        return Integer.bitCount(resolveToggleMask(unit)) > 1;
+    }
+
+    private static int resolveToggleMask(@Nullable WeaponUnit unit) {
+        return unit != null && isEligible(unit) ? resolveAllowedMask(unit) : 0;
+    }
+
     /** 火控稳定器键按下时切换稳定模式。由按键消费方保证是 FIRE_CONTROL_STABILIZER 键。 */
     public static boolean tryHandleToggleKey(@Nullable WeaponUnit unit) {
-        if (unit == null || !isEligible(unit)) {
+        int allowedMask = resolveToggleMask(unit);
+        if (allowedMask == 0) {
             // [RVP] 诊断（/rvpdebug flags lead_fc on）：T 键切换被资格判定拒绝时落盘原因，
             // 定位"切稳定无效（武器种类/模式/传感器任一在客户端不成立）"。
             RVP_LeadFcDebug.logToggleRejected(unit);
             return false;
         }
-        int allowedMask = resolveAllowedMask(unit);
         // 单模式子集（载具只配了一种火控模式）时整键静默：不切模式、不弹提示、不清半自动微调。
         // 2026-10-17 用户裁定：多弹种载具只配一种模式就是为了把该键位让给"切换弹种"，
         // 旧实现会原地"切换"同一模式并弹出模式提示（观感=瞬间切走又回退）+ 清掉微调偏置。
         if (Integer.bitCount(allowedMask) <= 1) {
             return false;
         }
-        Mode mode = nextAllowedMode(getMode(unit), resolveAllowedMask(unit));
+        Mode mode = nextAllowedMode(getMode(unit), allowedMask);
         MODES.put(unit, mode);
         // 调用本项目半自动微调状态，在任意模式切换时清除旧目标偏置，防止重新进入半自动后突然跳向旧方向。
         RVP_SemiAutoLeadTrimState.clear(unit);

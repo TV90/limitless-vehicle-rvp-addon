@@ -348,7 +348,8 @@ public final class RVP_MaintenanceRuntimeManager {
                 if (type == BoneModuleType.RADAR) {
                     RVP_RadarModuleEnforcer.restoreRadar(vehicle, bone);
                 } else if (type == BoneModuleType.ENGINE || type == BoneModuleType.ENGINE_DAMAGED
-                        || type == BoneModuleType.BARREL || type == BoneModuleType.BARREL_DAMAGED) {
+                        || type == BoneModuleType.BARREL || type == BoneModuleType.BARREL_DAMAGED
+                        || type.isTurretTraverse()) {
                     RVP_BoneCumulativeDamageTable.clear(vehicleId, bone);
                 }
             }

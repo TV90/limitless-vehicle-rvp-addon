@@ -299,6 +299,11 @@ public class RVP_ClientHmdState {
         return findHmdRadar(weaponUnit);
     }
 
+    /** 雷达头瞄、仅格斗雷达和光电快速锁定共用快速锁定键。 */
+    public static boolean supportsQuickLock(WeaponUnit weaponUnit) {
+        return findHmdRadar(weaponUnit) != null || supportsEoHmd(weaponUnit);
+    }
+
     public Vec3 resolveRadarAimDir(WeaponUnit weaponUnit, RadarUnit radarUnit) {
         if (weaponUnit == null) {
             return VectorUtil.rotToVec(smoothPitch, smoothYaw).normalize();
@@ -368,9 +373,7 @@ public class RVP_ClientHmdState {
             return false;
         }
         WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
-        if (weaponUnit == null
-                || weaponUnit.getFireControlSensorType() != WeaponUnitData.FireControlSensorType.EO
-                || !vehicleHasNoRadar(weaponUnit)) {
+        if (!supportsEoHmd(weaponUnit)) {
             return false;
         }
         channels.enableEo();
@@ -388,6 +391,12 @@ public class RVP_ClientHmdState {
     public void disableEoHmd() {
         channels.disableEo();
         eoScanCounter = 0;
+    }
+
+    private static boolean supportsEoHmd(@Nullable WeaponUnit weaponUnit) {
+        return weaponUnit != null
+                && weaponUnit.getFireControlSensorType() == WeaponUnitData.FireControlSensorType.EO
+                && vehicleHasNoRadar(weaponUnit);
     }
 
     /**

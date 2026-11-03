@@ -382,6 +382,7 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
         Set<String> helipadBones = parseHelipadBones(obj);
         ResourceLocation armorType = parseArmorType(obj);
         Float maxIncidenceAngle = parseMaxIncidenceAngle(obj);
+        boolean obbTopIgnoresIncidence = GsonHelper.getAsBoolean(obj, "rvp_obb_top_ignore_incidence", true);
         if (groundContactPartIds.isEmpty()
                 && physicsOnlyBones.isEmpty()
                 && moddingOnlyMulti.isEmpty()
@@ -392,7 +393,8 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
                 && autoCollective == null
                 && helipadBones.isEmpty()
                 && armorType == null
-                && maxIncidenceAngle == null) {
+                && maxIncidenceAngle == null
+                && obbTopIgnoresIncidence) {
             return VehicleExtendedConfig.EMPTY;
         }
         return new VehicleExtendedConfig(
@@ -408,7 +410,8 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
                 autoCollective,
                 Set.copyOf(helipadBones),
                 armorType,
-                maxIncidenceAngle
+                maxIncidenceAngle,
+                obbTopIgnoresIncidence
         );
     }
 
@@ -833,10 +836,12 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
              * 判定、爆炸引信衰减与调试包统一使用钳后角度。消费方
              * {@code RVP_VehicleExtendedConfigManager#getMaxIncidenceAngle}。
              */
-            @Nullable Float maxIncidenceAngle
+            @Nullable Float maxIncidenceAngle,
+            /** OBB 局部 +Y 面是否免除跳弹和直击角度倍率，默认开启。 */
+            boolean obbTopIgnoresIncidence
     ) {
         public static final VehicleExtendedConfig EMPTY = new VehicleExtendedConfig(
-                Set.of(), null, Set.of(), Map.of(), Map.of(), Map.of(), 1.0f, 0.0f, false, null, Set.of(), null, null);
+                Set.of(), null, Set.of(), Map.of(), Map.of(), Map.of(), 1.0f, 0.0f, false, null, Set.of(), null, null, true);
 
         /**
          * [RVP] 自动总距模式参数（{@code rvp_auto_collective} 块）：
@@ -869,7 +874,8 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
                     || autoCollective != null
                     || !helipadBones.isEmpty()
                     || armorType != null
-                    || maxIncidenceAngle != null;
+                    || maxIncidenceAngle != null
+                    || !obbTopIgnoresIncidence;
         }
 
         public boolean hasPhysicsOnlyBones() {

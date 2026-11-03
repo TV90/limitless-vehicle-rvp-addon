@@ -85,20 +85,19 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
     }
 
     @Override
-    protected Vec3 collisionSegmentStart() {
+    protected Vec3 collisionSegmentOrigin() {
         return tickSegmentStart;
-    }
-
-    @Override
-    protected Vec3 collisionSegmentEnd() {
-        return tickSegmentStart.add(getDeltaMovement());
     }
 
     /** Entry from {@link RVP_BaseBullet#tick()}. */
     public void tickBullet() {
         tickSegmentStart = position();
         if (level().isClientSide()) {
-            predictBounceBeforeMotion();
+            if (bounceLeft > 0) {
+                performAmmoEntityTickHit(tickSegmentStart, tickSegmentStart.add(getDeltaMovement()));
+            } else {
+                resetRicochetDisplacement();
+            }
             // 调用本项目客户端桥：机枪类若启用纯粒子模式，同样按实体 Tick 生成主体与尾迹。
             RVP_ClientActionsAccess.tickParticleProjectile(this);
             // 客户端本地补渲轨迹粒子（force=true 绕过原版 32 格粒子裁剪，见基类注释）
@@ -115,28 +114,33 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
     /**
      * Client-side bounce before motion (entity then block, same order as {@link #tickHit()}).
      */
-    private void predictBounceBeforeMotion() {
-        if (bounceLeft <= 0) {
-            return;
-        }
-        Vec3 motion = getDeltaMovement();
+    @Override
+    protected Vec3 predictCollisionSegment(Vec3 start, Vec3 end, boolean reflected) {
+        Vec3 motion = end.subtract(start);
         if (motion.lengthSqr() <= 1.0E-6) {
-            return;
+            return null;
         }
-        Vec3 end = tickSegmentStart.add(motion);
-        BulletHitResult entityResult = findEntityOnPathForSegment(tickSegmentStart, end, motion);
-        if (entityResult != null
+        BulletHitResult entityResult = findEntityOnPathForSegment(start, end, motion);
+        BlockHitResult block = reflected ? clipBlockSegment(start, end) : null;
+        boolean blockFirst = block != null && block.getType() != HitResult.Type.MISS && entityResult != null
+                && start.distanceToSqr(block.getLocation()) < start.distanceToSqr(entityResult.getLocation());
+        if (!blockFirst && entityResult != null
                 && entityResult.getEntity() != vehicle
-                && (vehicle == null || !vehicle.getPassengers().contains(entityResult.getEntity()))
-                && tryBounceFromEntityHit(entityResult, ywzj_rvp$impactAngleCapFor(entityResult.getEntity()))) {
-            applyBounceVisualState(position(), getDeltaMovement(), getYRot(), getXRot(), bounceLeft);
-            return;
+                && (vehicle == null || !vehicle.getPassengers().contains(entityResult.getEntity()))) {
+            if (!isObbTopImpactIgnoringIncidence(entityResult)
+                    && tryBounceFromEntityHit(entityResult, ywzj_rvp$impactAngleCapFor(entityResult.getEntity()))) {
+                applyBounceVisualState(position(), getDeltaMovement(), getYRot(), getXRot(), bounceLeft);
+            }
+            return entityResult.getLocation();
         }
-        BlockHitResult hit = level().clip(new ClipContext(
-                tickSegmentStart, end, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, this));
-        if (hit.getType() != HitResult.Type.MISS && tryBounceFromBlockHit(hit)) {
+        if (block == null) block = clipBlockSegment(start, end);
+        if (block.getType() == HitResult.Type.MISS) {
+            return null;
+        }
+        if (tryBounceFromBlockHit(block)) {
             applyBounceVisualState(position(), getDeltaMovement(), getYRot(), getXRot(), bounceLeft);
         }
+        return block.getLocation();
     }
 
     @Override
@@ -258,9 +262,10 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
         // 调用本项目共享无制导炮弹步进；位置与速度更新顺序保持本体 Bullet 语义。
         RVP_UnguidedBallisticMath.Step step = RVP_UnguidedBallisticMath.stepCannon(
                 position(), movement, cannonFriction, cannonGravity);
-        double nextPosX = step.position().x;
-        double nextPosY = step.position().y;
-        double nextPosZ = step.position().z;
+        Vec3 displacement = motionDisplacement(movement);
+        double nextPosX = getX() + displacement.x;
+        double nextPosY = getY() + displacement.y;
+        double nextPosZ = getZ() + displacement.z;
         // 调用服务端实体 Tick 就绪查询，在移动前确认目标区块不仅已加载且允许实体 Tick；
         // 普通机枪 Bullet 不强加载区块；远程炮火路径已在前置门确认就绪，仍用同一检查兜底。
         if (level() instanceof ServerLevel serverLevel
@@ -269,7 +274,7 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
             return;
         }
         setPos(nextPosX, nextPosY, nextPosZ);
-        flightDistance += movement.length();
+        flightDistance += displacement.length();
 
         float friction = cannonFriction;
         float gravity = cannonGravity;

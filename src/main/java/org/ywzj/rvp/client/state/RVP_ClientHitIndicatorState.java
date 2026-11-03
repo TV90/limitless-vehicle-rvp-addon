@@ -44,6 +44,8 @@ public final class RVP_ClientHitIndicatorState {
 
     /** 单次命中事件 */
     public static final class HitEvent {
+        /** 服务端冻结的轨迹与命中骨骼锚点，不引用实时目标。 */
+        public final org.ywzj.rvp.replay.RVP_HitReplay.Clip replay;
         public final int entityId;
         public final Vec3 hitPosition;
         public final Vec3 hitVector;
@@ -69,6 +71,7 @@ public final class RVP_ClientHitIndicatorState {
         public final long hitTime;
 
         public HitEvent(S2CRvpHitIndicator msg) {
+            this.replay = msg.replay;
             this.entityId = msg.entityId;
             this.hitPosition = msg.hitPosition;
             this.hitVector = msg.hitVector;
@@ -106,6 +109,9 @@ public final class RVP_ClientHitIndicatorState {
             LOGGER.info("[RVP-HitUI] push: entityId={} bone={} dmg={} radius={}",
                     msg.entityId, msg.boneDisplayName, msg.damage, msg.explosionRadius);
         }
+        // 在清理通知列表前先更新共享历史；换 UUID 即使复用了数字 ID 也必须重置。
+        if (msg.replay != null && (msg.replay.reset() || !RVP_ClientHitReplay.matches(msg.replay))) clear();
+        RVP_ClientHitReplay.accept(msg.replay);
         lastHitTime = System.currentTimeMillis();
         // 换载具清空；同一载具的多次命中累积展示“命中过程”
         if (!events.isEmpty() && events.get(0).entityId != msg.entityId) {
@@ -134,6 +140,12 @@ public final class RVP_ClientHitIndicatorState {
         accumulatedDamage += msg.damage;
         // 与本体的命中提示二选一：收到 RVP 命中事件即清空本体事件源，避免两套 UI 同时显示
         org.ywzj.vehicle.client.gui.VehicleHitIndicatorOverlay.events.clear();
+    }
+
+    /** 世界切换和显示超时统一清空，避免带着旧命中跨维度。 */
+    public static void clear() {
+        events.clear();
+        accumulatedDamage = 0;
     }
 
     public static void clientTick() {

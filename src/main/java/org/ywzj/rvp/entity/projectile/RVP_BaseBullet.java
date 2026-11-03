@@ -46,6 +46,7 @@ import org.ywzj.rvp.weapon.data.RVP_GuidanceData;
 import org.ywzj.rvp.weapon.effects.RVP_VehicleExplosion;
 import org.ywzj.rvp.weapon.effects.RVP_ExplosionWallOcclusion;
 import org.ywzj.rvp.weapon.util.RVP_BounceUtil;
+import org.ywzj.rvp.weapon.util.RVP_ObbHitUtil;
 import org.ywzj.rvp.weapon.util.RVP_WallPenetrationUtil;
 import org.ywzj.rvp.weapon.damage.RVP_DamageApplier;
 import org.ywzj.rvp.network.RVP_BulletHitDebugNetworking;
@@ -315,6 +316,17 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     protected int bounceFuseCountdown = -1;
     protected float bounceIncidenceAngleMin;
     protected boolean bounceOnVehicle;
+    /** 限制贴面反复跳弹导致的单刻重复扫掠。 */
+    private static final int MAX_RICOCHETS_PER_TICK = 8;
+    /** 当前碰撞段的起点，未扫掠时为空。 */
+    private Vec3 collisionSweepStart;
+    /** 当前碰撞段的终点，供法线、命中骨和穿墙查询读取。 */
+    private Vec3 collisionSweepEnd;
+    /** 本段发生跳弹时的真实接触点，未跳弹时为空。 */
+    private Vec3 ricochetContact;
+    /** 反弹后实际扫过且允许移动的末段，空值表示正常运动。 */
+    private Vec3 ricochetDisplacement;
+
     protected double flightDistance;
     /** 最近一次撞击的入射角（度），用于落点爆炸伤害衰减。 */
     protected float lastImpactIncidenceAngleDeg = Float.NaN;
@@ -2004,6 +2016,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
      */
     @Override
     public void tick() {
+        // 命中历史只记录玩家弹体的刻起点；不复制模型，不强载区块。
+        org.ywzj.rvp.replay.RVP_HitReplayRecorder.recordProjectile(this);
         boolean traceLifecycle = RVP_ProjectileLifecycleDebug.isEnabled() && !level().isClientSide();
         long tickStartNanos = traceLifecycle ? System.nanoTime() : 0L;
         super.tick();
@@ -2629,7 +2643,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         // 穿越目标点导致绕圈乱晃），这里只做位置平移。
         // 被干扰期间接管已被取消（tickTopAttackFuse），保持与 tickGuidance 一致。
         if (smartFuseActive && jammingStrength <= 0.0) {
-            setPos(position().add(getDeltaMovement()));
+            setPos(position().add(motionDisplacement(getDeltaMovement())));
             return;
         }
         if (submunitionDeploymentMotionActive) {
@@ -2718,10 +2732,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         synchronizeDeploymentComponentsAfterClamp(composed, clamped);
 
         setDeltaMovement(clamped);
-        setPos(position().add(clamped));
+        advanceProjectile(clamped);
         deploymentLastComposedVelocity = clamped;
         updateFlightSpeedState(clamped);
-        flightDistance += clamped.length();
         RVP_ProjectileMotion.applyRotationFromVelocity(this, clamped);
     }
 
@@ -2759,9 +2772,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                         position(), velocity, rvpData);
                 velocity = step.velocity();
                 setDeltaMovement(velocity);
-                setPos(step.position());
+                advanceProjectile(velocity);
                 updateFlightSpeedState(velocity);
-                flightDistance += velocity.length();
                 RVP_ProjectileMotion.applyRotationFromVelocity(this, velocity);
                 return;
             }
@@ -2784,9 +2796,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             velocity = RVP_ProjectileMotion.applyInducedDrag(this, velocity, rvpData);
         }
         setDeltaMovement(velocity);
-        setPos(position().add(velocity));
+        advanceProjectile(velocity);
         updateFlightSpeedState(velocity);
-        flightDistance += velocity.length();
         RVP_ProjectileMotion.applyRotationFromVelocity(this, velocity);
     }
 
@@ -3374,12 +3385,16 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
      * Hit-scan segment; matches {@link AmmoEntity#tickHit()} ({@code position} → {@code position + deltaMovement}).
      * {@link RVP_BulletEntity} overrides timing to run before integrating motion (like {@link org.ywzj.vehicle.entity.weapon.BulletEntity}).
      */
-    protected Vec3 collisionSegmentStart() {
+    protected Vec3 collisionSegmentOrigin() {
         return position();
     }
 
-    protected Vec3 collisionSegmentEnd() {
-        return position().add(getDeltaMovement());
+    protected final Vec3 collisionSegmentStart() {
+        return collisionSweepStart == null ? collisionSegmentOrigin() : collisionSweepStart;
+    }
+
+    protected final Vec3 collisionSegmentEnd() {
+        return collisionSweepStart == null ? collisionSegmentOrigin().add(getDeltaMovement()) : collisionSweepEnd;
     }
 
     /**
@@ -3444,11 +3459,89 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     protected void performAmmoEntityTickHit(Vec3 startVec, Vec3 endVec) {
-        programmableAirburstSegmentStart = startVec;
-        programmableAirburstSegmentEnd = endVec;
+        resetRicochetDisplacement();
+        boolean client = level().isClientSide();
+        double remainingTime = 1.0;
+        try {
+            for (int leg = 0; ; leg++) {
+                collisionSweepStart = startVec;
+                collisionSweepEnd = endVec;
+                ricochetContact = null;
+                if (!client) {
+                    programmableAirburstSegmentStart = startVec;
+                    programmableAirburstSegmentEnd = endVec;
+                }
+                Vec3 hit = client ? predictCollisionSegment(startVec, endVec, leg > 0)
+                        : scanCollisionSegment(startVec, endVec, leg > 0);
+                if (ricochetContact == null) {
+                    if (leg > 0) {
+                        // 移动只能到已检测的终点；命中后由碰撞结算决定弹体位置。
+                        ricochetDisplacement = hit == null ? endVec.subtract(startVec) : Vec3.ZERO;
+                        if (hit != null && isAlive()) {
+                            if (client) {
+                                ricochetDisplacement = hit.subtract(startVec);
+                            } else {
+                                programmableAirburstSegmentEnd = hit;
+                                flightDistance += startVec.distanceTo(hit);
+                            }
+                        }
+                    }
+                    return;
+                }
+
+                Vec3 step = endVec.subtract(startVec);
+                double fraction = Mth.clamp(ricochetContact.subtract(startVec).dot(step) / step.lengthSqr(), 0.0, 1.0);
+                remainingTime *= 1.0 - fraction;
+                flightDistance += step.length() * fraction;
+                ricochetDisplacement = Vec3.ZERO;
+                if (!client) {
+                    // 引信先结算已走完的入射段，避免把装甲后的假直线计入程距。
+                    programmableAirburstSegmentEnd = ricochetContact;
+                    if (tickSelfDestruct()) {
+                        programmableAirburstSegmentStart = programmableAirburstSegmentEnd;
+                        return;
+                    }
+                    tickProgrammableAirburst();
+                }
+                if (!isAlive() || remainingTime <= 1.0e-6 || leg + 1 >= MAX_RICOCHETS_PER_TICK) {
+                    // 已结算的入射段不得在运动后重复计入程距。
+                    programmableAirburstSegmentStart = programmableAirburstSegmentEnd;
+                    return;
+                }
+                startVec = position();
+                endVec = startVec.add(getDeltaMovement().scale(remainingTime));
+            }
+        } finally {
+            collisionSweepStart = null;
+            collisionSweepEnd = null;
+        }
+    }
+
+    /** 客户端仅预测碰撞位置和跳弹，不结算伤害。 */
+    protected Vec3 predictCollisionSegment(Vec3 start, Vec3 end, boolean reflected) {
+        return null;
+    }
+
+    protected final void resetRicochetDisplacement() {
+        ricochetDisplacement = null;
+    }
+
+    /** 反弹的位移与瞬时速度分开，余刻比例不影响下一刻的速度积分。 */
+    protected final Vec3 motionDisplacement(Vec3 velocity) {
+        return ricochetDisplacement == null ? velocity : ricochetDisplacement;
+    }
+
+    /** 按实际允许的位移推进并累计路程，速度由各自弹道积分器负责。 */
+    protected final void advanceProjectile(Vec3 velocity) {
+        Vec3 displacement = motionDisplacement(velocity);
+        setPos(position().add(displacement));
+        flightDistance += displacement.length();
+    }
+
+    private Vec3 scanCollisionSegment(Vec3 startVec, Vec3 endVec, boolean reflected) {
         Vec3 step = endVec.subtract(startVec);
         if (step.lengthSqr() < 1.0E-12) {
-            return;
+            return null;
         }
 
         boolean entityCollisionSafetyActive = isEntityCollisionSafetyActive();
@@ -3459,34 +3552,39 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         boolean jamVehicleImmune = isJamVehicleCollisionImmune() && entityResult != null
                 && (entityResult.getEntity() instanceof AbstractVehicle
                 || entityResult.getEntity() instanceof ServerPlayer);
-        if (!jamVehicleImmune && entityResult != null
+        BlockHitResult blockResult = reflected && !isBlockCollisionSafetyActive()
+                ? clipBlockSegment(startVec, endVec) : null;
+        boolean blockFirst = blockResult != null && blockResult.getType() != HitResult.Type.MISS
+                && entityResult != null && startVec.distanceToSqr(blockResult.getLocation())
+                < startVec.distanceToSqr(entityResult.getLocation());
+        if (!blockFirst && !jamVehicleImmune && entityResult != null
                 && entityResult.getEntity() != vehicle
                 && (vehicle == null || !vehicle.getPassengers().contains(entityResult.getEntity()))
                 && !piercedLivingIds.contains(entityResult.getEntity().getId())) {
             // 调用小口径声音服务：飞行段截止于实际实体命中点，不检查目标之后的延长路径。
             RVP_SmallCaliberSoundService.publishIncoming(this, startVec, entityResult.getLocation());
             handleEntityImpact(entityResult);
-            return;
+            return entityResult.getLocation();
         }
 
         if (!entityCollisionSafetyActive && getFlightTickCount() > 5 && entityResult == null) {
             if (tryAmmoProximityFuze(startVec, endVec)) {
-                return;
+                return position();
             }
         }
 
         if (!isBlockCollisionSafetyActive()) {
-            BlockHitResult blockResult = level().clip(
-                    new ClipContext(startVec, endVec, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, this));
+            if (blockResult == null) blockResult = clipBlockSegment(startVec, endVec);
             if (blockResult.getType() != HitResult.Type.MISS) {
                 // 调用小口径声音服务：飞行段截止于首个方块命中点，不检查未穿透的墙后路径。
                 RVP_SmallCaliberSoundService.publishIncoming(this, startVec, blockResult.getLocation());
                 onAmmoBlockHit(blockResult);
-                return;
+                return blockResult.getLocation();
             }
         }
         // 调用小口径声音服务：本 Tick 没有碰撞时检查整段飞行路径。
         RVP_SmallCaliberSoundService.publishIncoming(this, startVec, endVec);
+        return null;
     }
 
     protected boolean isEntityCollisionSafetyActive() {
@@ -3566,11 +3664,11 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                     continue;
                 }
                 if (normalizedResult.getEntity() instanceof AbstractVehicle targetVehicle) {
-                    Vec3 nonPhysicsHit = RVP_PhysicsOnlyCollisionHelper.closestNonPhysicsOnlyHitPosition(targetVehicle, startVec, endVec);
+                    var nonPhysicsHit = RVP_PhysicsOnlyCollisionHelper.closestNonPhysicsOnlyHit(targetVehicle, startVec, endVec);
                     if (nonPhysicsHit == null) {
                         continue;
                     }
-                    normalizedResult = new BulletHitResult(targetVehicle, nonPhysicsHit, normalizedResult.isHeadshot());
+                    normalizedResult = new VehicleObbHitResult(targetVehicle, nonPhysicsHit, normalizedResult.isHeadshot());
                 }
                 double hitDistance = startVec.distanceToSqr(normalizedResult.getLocation());
                 if (hitDistance < closestDistance) {
@@ -3833,8 +3931,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         }
         // 调用本体碰撞根解析方法，把 PartEntity 命中统一归并到固定翼/旋翼载具后再做空中目标判定。
         Entity impactTarget = ywzj_rvp$resolveCollisionRoot(entity);
-        Vec3 normal = RVP_BounceUtil.impactNormal(
-                entity, collisionSegmentStart(), collisionSegmentEnd(), result.getLocation(), velocity);
+        Vec3 normal = entityImpactNormal(result, velocity);
         // 调用 RVP 命中火花出口：在跳弹返回及伤害结算前广播一次真实接触，未造成伤害也可擦出火星。
         org.ywzj.rvp.weapon.impact.RVP_VehicleImpactSparks.publish(
                 level(), impactTarget, resolveWeaponConfig(), result.getLocation(), normal, velocity);
@@ -3845,7 +3942,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         float impactAngleCap = Math.min(ywzj_rvp$vehicleImpactAngleCap(impactTarget),
                 ywzj_rvp$hitBoneImpactAngleCap(impactTarget));
         rememberImpactIncidence(velocity, normal, impactAngleCap);
-        if (tryBounceFromEntityHit(result, impactAngleCap)) {
+        boolean ignoresIncidence = isObbTopImpactIgnoringIncidence(result);
+        if (!ignoresIncidence && tryBounceFromEntityHit(result, impactAngleCap, normal)) {
             return;
         }
         if (impactTarget instanceof AbstractVehicle vehicle && explosion != null && explosion.explode
@@ -3859,7 +3957,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         } else directExplosionHitbox = null;
         boolean hbmFuseTriggered = RVP_RadarContactHelper.triggerHbmMissileFuze(entity, result.getLocation());
         if (!hbmFuseTriggered) {
-            applyEntityHitDamage(entity, result);
+            applyEntityHitDamage(entity, result, ignoresIncidence);
         }
         if (entity instanceof LivingEntity && livingPenetrationLeft > 0) {
             livingPenetrationLeft--;
@@ -3895,7 +3993,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         discard();
     }
 
-    protected void applyEntityHitDamage(Entity entity, BulletHitResult result) {
+    protected void applyEntityHitDamage(Entity entity, BulletHitResult result, boolean ignoresIncidence) {
         Entity hitRoot = ywzj_rvp$resolveCollisionRoot(entity);
         if (hitRoot != null) {
             if (proximityDamagedIds.contains(hitRoot.getId())) {
@@ -3923,7 +4021,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         // 0.6 格宽的生物不该因为擦边吃掉 90% 伤害（其法线取自 AABB 最近面，斜射时角度虚高）。
         // 载具 AbstractVehicle 不是 LivingEntity，仍按入射角衰减并受上界钳制；玩家是 LivingEntity，
         // 与生物一并豁免。
-        float incidenceMult = entity instanceof LivingEntity ? 1f : incidenceDecayFactor(effectiveIncidence);
+        float incidenceMult = ignoresIncidence || entity instanceof LivingEntity ? 1f : incidenceDecayFactor(effectiveIncidence);
         float penetrationMult = penetrationDamageFactor();
         RVP_WeaponData config = resolveWeaponConfig();
         float vehicleMult = config != null ? config.getDirectDamageFactor().getFactor(entity) : 1f;
@@ -4003,35 +4101,6 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 reportedDamage = actualDealt;
             }
         }
-        if (owner instanceof ServerPlayer shooter && entity instanceof AbstractVehicle targetVehicle
-                && !level().isClientSide()
-                && RVP_VehicleHitboxFactorManager.INSTANCE.isHitIndicatorRvpEnabled(targetVehicle)) {
-            String boneDisp = hitboxRes == null ? null
-                    : RVP_VehicleHitboxFactorManager.INSTANCE.resolveHitboxDisplayName(
-                            targetVehicle, hitboxRes.hitBoneName());
-            String ammoKey = config != null ? config.getName() : "";
-            ResourceLocation weaponId = getWeaponId();
-            // 直击 HE 等带爆炸的弹药：附带爆炸半径，客户端据此渲染随爆炸范围扩大的扩散圈
-            float explosionRadius = explosion != null && explosion.explode ? explosion.radius : 0f;
-            // 来袭方向直接用弹体当前速度方向（getDeltaMovement）：位移方向在命中 tick 可能
-            // 因 setPos/反弹而指向乱，实测会连累红线与弹体方向一起错。
-            Vec3 vel = getDeltaMovement();
-            RVP_Network.CHANNEL.send(
-                    PacketDistributor.PLAYER.with(() -> shooter),
-                    S2CRvpHitIndicator.create(
-                            targetVehicle.getId(),
-                            result.getLocation(),
-                            vel.lengthSqr() > 1.0E-6 ? vel.normalize() : Vec3.ZERO,
-                            reportedDamage,
-                            boneDisp,
-                            ammoKey,
-                            weaponId == null ? null : weaponId.toString(),
-                            targetVehicle.position(),
-                            targetVehicle.getDisplayId() == null ? null
-                                    : targetVehicle.getDisplayId().toString(),
-                            explosionRadius,
-                            hitboxRes == null ? null : hitboxRes.hitBoneName()));
-        }
         if (hitboxRes != null && entity instanceof AbstractVehicle targetVehicle && !level().isClientSide()) {
             // 记录直击命中的载具，用于 triggerExplosion 中区分 HE 直击与非直击
             directHitVehicleIds.add(targetVehicle.getId());
@@ -4048,6 +4117,35 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 RVP_VehicleHitboxFactorManager.INSTANCE.tryDestroyBoneModules(
                         targetVehicle, hitboxRes, preHitboxDamage, owner, true, finalDamage);
             }
+        }
+        if (owner instanceof ServerPlayer shooter && entity instanceof AbstractVehicle targetVehicle
+                && !level().isClientSide()
+                && RVP_VehicleHitboxFactorManager.INSTANCE.isHitIndicatorRvpEnabled(targetVehicle)) {
+            String boneDisp = hitboxRes == null ? null
+                    : RVP_VehicleHitboxFactorManager.INSTANCE.resolveHitboxDisplayName(
+                            targetVehicle, hitboxRes.hitBoneName());
+            String ammoKey = config != null ? config.getName() : "";
+            ResourceLocation weaponId = getWeaponId();
+            // 直击 HE 等带爆炸的弹药：附带爆炸半径，客户端据此渲染随爆炸范围扩大的扩散圈
+            float explosionRadius = explosion != null && explosion.explode ? explosion.radius : 0f;
+            // 来袭方向直接用弹体当前速度方向（getDeltaMovement）：位移方向在命中 tick 可能
+            // 因 setPos/反弹而指向乱，实测会连累红线与弹体方向一起错。
+            Vec3 vel = getDeltaMovement();
+            RVP_Network.CHANNEL.send(
+                    PacketDistributor.PLAYER.with(() -> shooter),
+                    org.ywzj.rvp.replay.RVP_HitReplayRecorder.attach(S2CRvpHitIndicator.create(
+                            targetVehicle.getId(),
+                            result.getLocation(),
+                            vel.lengthSqr() > 1.0E-6 ? vel.normalize() : Vec3.ZERO,
+                            reportedDamage,
+                            boneDisp,
+                            ammoKey,
+                            weaponId == null ? null : weaponId.toString(),
+                            targetVehicle.position(),
+                            targetVehicle.getDisplayId() == null ? null
+                                    : targetVehicle.getDisplayId().toString(),
+                            explosionRadius,
+                            hitboxRes == null ? null : hitboxRes.hitBoneName()), shooter, targetVehicle, this));
         }
         if (entity instanceof LivingEntity livingEntity) {
             livingEntity.invulnerableTime = 0;
@@ -4100,11 +4198,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     /**
-     * [RVP] 供子类（客户端弹跳预测 {@code RVP_BulletEntity.predictBounceBeforeMotion}）使用的
+     * [RVP] 供子类（客户端弹跳预测）使用的
      * 上界入口：内部先做碰撞根归并再查上界，与服务端 {@code handleEntityImpact} 判定一致。
      */
     protected float ywzj_rvp$impactAngleCapFor(@Nullable Entity entity) {
-        return ywzj_rvp$vehicleImpactAngleCap(ywzj_rvp$resolveCollisionRoot(entity));
+        Entity root = ywzj_rvp$resolveCollisionRoot(entity);
+        return Math.min(ywzj_rvp$vehicleImpactAngleCap(root), ywzj_rvp$hitBoneImpactAngleCap(root));
     }
 
     /**
@@ -4220,7 +4319,11 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         if (!level().isClientSide() && bounceFuseTick > 0 && bounceFuseCountdown < 0) {
             bounceFuseCountdown = bounceFuseTick;
         }
-        setPos(hitLocation.add(normal.scale(0.08)));
+        ricochetContact = hitLocation;
+        // OBB 由 float 计算，按坐标精度微移出表面，避免复碰原面或跨过邻接薄盒。
+        double separation = Math.max(1.0e-4, 2.0 * Math.max(Math.ulp((float) hitLocation.x),
+                Math.max(Math.ulp((float) hitLocation.y), Math.ulp((float) hitLocation.z))));
+        setPos(hitLocation.add(normal.scale(separation)));
         setDeltaMovement(reflected);
         applyRotationFromVelocity(reflected);
         RVP_ProjectileLifecycleDebug.noteEvent(this,
@@ -4251,19 +4354,42 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         return true;
     }
 
-    protected boolean tryBounceFromEntityHit(BulletHitResult result, float impactAngleCap) {
-        Entity entity = result.getEntity();
-        if (!isBounceEnabledForEntity(entity)) {
-            return false;
+    protected boolean isObbTopImpactIgnoringIncidence(BulletHitResult result) {
+        return result instanceof VehicleObbHitResult vehicleHit
+                && RVP_VehicleExtendedConfigManager.INSTANCE.get(vehicleHit.vehicle).obbTopIgnoresIncidence()
+                && RVP_ObbHitUtil.isTopFace(vehicleHit.hit.obb(), result.getLocation());
+    }
+
+    private static final class VehicleObbHitResult extends BulletHitResult {
+        private final AbstractVehicle vehicle;
+        private final RVP_PhysicsOnlyCollisionHelper.ObbHit hit;
+
+        private VehicleObbHitResult(AbstractVehicle vehicle, RVP_PhysicsOnlyCollisionHelper.ObbHit hit, boolean headshot) {
+            super(vehicle, hit.position(), headshot);
+            this.vehicle = vehicle;
+            this.hit = hit;
         }
-        Vec3 velocity = getDeltaMovement();
-        Vec3 normal = RVP_BounceUtil.impactNormal(
-                entity, collisionSegmentStart(), collisionSegmentEnd(), result.getLocation(), velocity);
-        if (!tryApplyBounce(result.getLocation(), normal, impactAngleCap)) {
+    }
+
+    protected boolean tryBounceFromEntityHit(BulletHitResult result, float impactAngleCap) {
+        return tryBounceFromEntityHit(result, impactAngleCap, entityImpactNormal(result, getDeltaMovement()));
+    }
+
+    private boolean tryBounceFromEntityHit(BulletHitResult result, float impactAngleCap, Vec3 normal) {
+        if (!isBounceEnabledForEntity(result.getEntity()) || !tryApplyBounce(result.getLocation(), normal, impactAngleCap)) {
             return false;
         }
         onBounceApplied();
         return true;
+    }
+
+    private Vec3 entityImpactNormal(BulletHitResult result, Vec3 velocity) {
+        if (result instanceof VehicleObbHitResult vehicleHit) {
+            // 使用碰撞已选中的可受击盒，避免较外层的纯物理盒改变反射法线。
+            return RVP_ObbHitUtil.faceNormalAtHit(vehicleHit.hit.obb(), result.getLocation(), velocity);
+        }
+        return RVP_BounceUtil.impactNormal(result.getEntity(), collisionSegmentStart(), collisionSegmentEnd(),
+                result.getLocation(), velocity);
     }
 
     /** Hook after a bounce; resets rotation lerp anchors on both sides. */
@@ -4887,12 +5013,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         ResourceLocation weaponId = getWeaponId();
         RVP_Network.CHANNEL.send(
                 PacketDistributor.PLAYER.with(() -> shooter),
-                S2CRvpHitIndicator.create(target.getId(), pos, hitVector, damage, "", "",
+                org.ywzj.rvp.replay.RVP_HitReplayRecorder.attach(S2CRvpHitIndicator.create(target.getId(), pos, hitVector, damage, "", "",
                         weaponId == null ? null : weaponId.toString(),
                         target.position(),
                         target instanceof AbstractVehicle tv && tv.getDisplayId() != null
                                 ? tv.getDisplayId().toString() : null,
-                        explosionRadius));
+                        explosionRadius), shooter, target, this));
     }
 
     protected void detonateFuseAt(Vec3 pos, FuseDetonation kind) {

@@ -38,6 +38,9 @@ import org.joml.Vector4f;
 import org.slf4j.Logger;
 import org.ywzj.rvp.client.state.RVP_ClientBoneModuleState;
 import org.ywzj.rvp.client.state.RVP_ClientHitIndicatorState;
+import org.ywzj.rvp.client.state.RVP_ClientHitReplay;
+import org.ywzj.rvp.replay.RVP_HitReplay;
+import org.ywzj.rvp.replay.RVP_ReplayPose;
 import org.ywzj.rvp.client.state.RVP_ClientHitNotifyState;
 import org.ywzj.rvp.debug.RVP_DebugFlags;
 import org.ywzj.vehicle.client.resource.ClientAssetsManager;
@@ -281,7 +284,7 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
         // 命中时刻位置有偏差，渲染期间平移到 atHit，避免命中特效相对模型偏移出展示框。
         Vec3 savedEntityPos = null;
         List<RVP_ClientHitIndicatorState.HitEvent> evts = RVP_ClientHitIndicatorState.getEvents();
-        if (!evts.isEmpty()) {
+        if (!evts.isEmpty() && !RVP_ClientHitReplay.isProxy(entity)) {
             Vec3 atHit = evts.get(0).entityPosAtHit;
             if (atHit != null && atHit.distanceToSqr(entity.position()) > 1.0E-6) {
                 savedEntityPos = entity.position();
@@ -377,7 +380,8 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
         double modelX = x0 + (int) (8 / guiScale) + (double) modelAreaW / 2;
         double modelY = modelTop + (double) modelAreaH / 2;
 
-        Vec3 viewVec = RVP_ClientHitIndicatorState.getHitPosition().subtract(entity.position());
+        // 观察角锁定在首个命中时刻，回放平移不会拖动展板相机绕目标乱转。
+        Vec3 viewVec = evts.get(0).hitPosition.subtract(evts.get(0).entityPosAtHit);
         // yaw 跟随受击水平方向（绕 Y 旋转不改变模型投影大小）
         float yaw = (float) Math.toDegrees(Math.atan2(viewVec.x, viewVec.z));
         // 展示俯仰固定为轻微俯视（约 5°），不随命中点高度变化：
@@ -419,6 +423,7 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
                     // 展板"状态回放延迟"：渲染期间动画脚本的爆反状态查询回到 0.5 秒前，
                     // 刚被摧毁的爆反骨块在展板里晚 0.5 秒消失；渲染结束立即清除，世界渲染不受影响。
                     RVP_ClientBoneModuleState.setRenderDelay(RENDER_DELAY_MS);
+                    RVP_ClientHitReplay.beginRender(finalEntity);
                     try {
                         dispatcher.render(finalEntity, 0, 0, 0, 0, 1.0F,
                                 gg.pose(), gg.bufferSource(), 15728880);
@@ -448,6 +453,8 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
 
     private static Entity resolveEntity(Minecraft mc) {
         int entityId = RVP_ClientHitIndicatorState.getEntityId();
+        Entity replay = RVP_ClientHitReplay.entity(entityId);
+        if (replay != null) return replay;
         Entity entity = mc.level.getEntity(entityId);
         if (entity != null) {
             return entity;
@@ -543,20 +550,49 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
                 break;
             }
         }
+        int historicalProjectiles = 0;
         for (RVP_ClientHitIndicatorState.HitEvent event : events) {
-            long elapsed = now - event.hitTime;
+            long elapsed = RVP_ClientHitReplay.elapsed(event);
             if (elapsed < 0) {
                 continue;
             }
             // 命中点/爆炸中心（模型空间 = 相对实体位置，与模型几何同一基准）
             Vec3 hitModel = event.hitPosition.subtract(entity.position());
             Vec3 incoming = event.incomingDir;
+            if (RVP_ClientHitReplay.isProxy(entity) && RVP_ClientHitReplay.matches(event.replay)
+                    && entity instanceof AbstractVehicle vehicle) {
+                hitModel = RVP_ReplayPose.resolve(vehicle, event.replay.anchor(), false).subtract(entity.position());
+                incoming = RVP_ReplayPose.resolve(vehicle, event.replay.anchor(), true);
+                if (elapsed < RVP_ClientHitIndicatorState.FLY_MS) {
+                    // 真实历史轨迹可能尚在展板外，保持目标比例，不伪造四米飞行段。
+                    boolean duplicatedExplosion = event.boneDisplayName.isEmpty() && events.stream().anyMatch(other ->
+                            !other.boneDisplayName.isEmpty() && other.replay != null
+                                    && other.replay.impactTick() == event.replay.impactTick());
+                    if (!duplicatedExplosion && historicalProjectiles++ < 32)
+                        renderHistoricalFlight(gg, matrix, entity, event);
+                    continue;
+                }
+            }
             if (event.boneDisplayName.isEmpty()) {
                 renderExplosionAnimation(gg, matrix, event, hitModel, incoming, elapsed, scale, hasDirectHit);
             } else {
                 renderDirectAnimation(gg, matrix, event, hitModel, incoming, elapsed, scale);
             }
         }
+    }
+
+    /** 世界轨迹与载具历史共享一条 tick 时间轴；出生前/缺帧不凭空补弹道。 */
+    private static void renderHistoricalFlight(GuiGraphics gg, Matrix4f matrix, Entity entity,
+                                               RVP_ClientHitIndicatorState.HitEvent event) {
+        double tick = RVP_ClientHitReplay.clock();
+        Vec3 current = RVP_HitReplay.projectileAt(event.replay.projectile(), tick);
+        if (current == null) return;
+        Vec3 previous = RVP_HitReplay.projectileAt(event.replay.projectile(), tick - 0.1);
+        Vec3 incoming = previous == null || previous.distanceToSqr(current) < 1e-10 ? event.incomingDir
+                : previous.subtract(current).normalize();
+        Vec3 position = current.subtract(entity.position());
+        if (hasProjectileModel(event)) renderProjectileModel(gg, position, incoming);
+        else renderTracer(gg, matrix, position, incoming);
     }
 
     /**
