@@ -155,7 +155,7 @@ class RVP_AttackAngleInertiaModelTest {
     void coastingSettlesWithStateMemory() {
         var state = new RVP_AttackAngleState(15, -20, 3, -4);
         for (int tick = 0; tick < 150; tick++) {
-            // 调用保留的惯量执行器单独验证代码仍可工作，不经过当前已停用惯量的运行入口。
+            // 调用惯量执行器单独验证长期收敛，状态必须连续传递。
             state = RVP_AttackAngleInertiaModel.step(VELOCITY, state, VELOCITY, LIMITS, 900);
             assertTrue(RVP_BallisticTrajectoryMath.isFinite(state.direction()));
         }
@@ -178,7 +178,7 @@ class RVP_AttackAngleInertiaModelTest {
         assertEquals(result, RVP_PIPAttackAngleController.solve(VELOCITY, input, target, limits, null, 250));
     }
 
-    /** 保留的惯量执行器仍有大质量首刻滞后，停用只改变运行入口而不删除原有算法。 */
+    /** 惯量执行器仍有大质量首刻滞后，不能通过恢复总开关绕过质量响应。 */
     @Test
     void retainedInertiaStillLimitsHeavyFirstStep() {
         var limits = new RVP_AeroSteeringLimits(100.0, 0.5f, 10, 1, 0, 0, true, 30);
@@ -186,5 +186,41 @@ class RVP_AttackAngleInertiaModelTest {
         var state = RVP_AttackAngleInertiaModel.step(VELOCITY, REST, new Vec3(1, 0, 0), limits, 900);
         assertTrue(state.yawRateDeg() < 0);
         assertTrue(RVP_BallisticTrajectoryMath.angleBetween(VELOCITY, state.direction()) < Math.toRadians(10));
+    }
+
+    /** MICA 同档参数的首刻大指令先取比例响应与线性动压上限的较小者，再建立角速度。 */
+    @Test
+    void lowSpeedNoseStepUsesLinearPressureCapBeforeInertia() {
+        var limits = new RVP_AeroSteeringLimits(null, 0.14f, 5.5, 1, 0, 0, true, 60);
+        Vec3 velocity = new Vec3(0, 0, 1);
+        // 调用正式执行器；最低动压为 0.05，90° × 0.14 × 0.05 = 0.63°/刻。
+        var next = RVP_AttackAngleModel.solve(velocity, REST, new Vec3(1, 0, 0), limits, 112);
+        double cap = 90.0 * (double) 0.14f * 0.05;
+        double expected = cap * (1.0 - Math.exp(-1.0 / Math.sqrt(1.12)));
+        assertEquals(expected, -next.state().yawDeg(), 1.0E-9);
+        assertEquals(cap, RVP_AttackAngleInertiaModel.maxTurnDeg(1, limits), 1.0E-12);
+        // 小误差仍按原比例响应，不能不分误差大小每刻都转满上限。
+        var small = RVP_AttackAngleModel.solve(velocity, REST,
+                new RVP_AttackAngleState(0, 0.1, 0, 0).direction(), limits, 112);
+        assertEquals(0.1 * (double) 0.14f * Math.sqrt(0.05)
+                * (1.0 - Math.exp(-1.0 / Math.sqrt(1.12))), small.state().yawDeg(), 1.0E-9);
+    }
+
+    /** 斜向双轴与突然降动压时，旧角速度不能突破三维总机头转角上限。 */
+    @Test
+    void combinedNoseTurnAndStoredRatesStayWithinPressureCap() {
+        var state = new RVP_AttackAngleState(0, 0, 30, -40);
+        Vec3 velocity = new Vec3(0, 0, 1);
+        var limits = new RVP_AeroSteeringLimits(0.0, 0.5f, 5.5, 0.01, 0, 0, true, 60);
+        for (int tick = 0; tick < 120; tick++) {
+            Vec3 desired = tick < 60 ? new Vec3(1, -1, 1) : new Vec3(-1, 1, 1);
+            // 调用真实执行器，从同一个不可变状态推进并核对总夹角，而非只检查两个角度分量。
+            var next = RVP_AttackAngleModel.solve(velocity, state, desired, limits, 900).state();
+            double turn = Math.toDegrees(RVP_BallisticTrajectoryMath.angleBetween(state.direction(), next.direction()));
+            assertTrue(turn <= 2.25 + 1.0E-8, "总机头转角=" + turn);
+            assertTrue(Math.abs(next.pitchRateDeg()) <= 2.25 + 1.0E-8);
+            assertTrue(Math.abs(next.yawRateDeg()) <= 2.25 + 1.0E-8);
+            state = next;
+        }
     }
 }

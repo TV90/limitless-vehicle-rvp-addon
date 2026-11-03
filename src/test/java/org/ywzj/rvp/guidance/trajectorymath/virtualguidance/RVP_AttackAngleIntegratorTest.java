@@ -76,8 +76,11 @@ class RVP_AttackAngleIntegratorTest {
         // 调用本项目虚拟积分器对比相同满载指令的能量结算。
         var drag = integrator.step(state(), target, parameters(20, 0.2, false, false, 0, 10.0));
         var constant = integrator.step(state(), target, parameters(20, 0.2, true, false, 0, 10.0));
-        // 无惯量比例响应在此大指令下到达 20 度锥边，独立验证满载诱导阻力只扣一次。
-        assertEquals(8.0, drag.state().velocity().length(), EPSILON);
+        // 首刻机头仅建立部分攻角，独立用正弦载荷与平方阻力计算应扣除的速率。
+        // 本组推进质量为 10 kg，有效惯量命中 0.6 下限，不应错用 100 kg 基准响应。
+        double alpha = Math.toRadians(10.0 * (1.0 - Math.exp(-1.0 / 0.6)));
+        double load = Math.sin(alpha) / Math.sin(Math.toRadians(20.0));
+        assertEquals(10.0 - 0.2 * load * load * 10.0, drag.state().velocity().length(), EPSILON);
         assertEquals(10.0, constant.state().velocity().length(), EPSILON);
     }
 
@@ -96,14 +99,13 @@ class RVP_AttackAngleIntegratorTest {
                 first.flightDistance(), first.flightTick(), first.remainingLife(), first.secondPulseStartTick());
         var lost = integrator.step(aligned, new RVP_VirtualGuidanceInput(null), parameters).state();
         assertTrue(second.velocity().distanceTo(lost.velocity()) > 0.001);
-        // 保留相同机头但注入旧角速度；停用惯量后，这些残留状态不能影响后续航迹。
+        // 保留相同机头但删除角速度；轨迹必须改变，防止虚实交接时静默丢失惯量记忆。
         var noRates = new RVP_VirtualTrajectoryState(first.position(), first.velocity(),
                 first.xRot(), first.yRot(), first.peakFlightSpeed(), first.flightDistance(),
-                first.flightTick(), first.remainingLife(), first.secondPulseStartTick(), 30, -40);
+                first.flightTick(), first.remainingLife(), first.secondPulseStartTick(), 0, 0);
         var reset = integrator.step(noRates, new RVP_VirtualGuidanceInput(null), parameters).state();
-        assertEquals(second, reset);
-        assertEquals(0, second.pitchRateDeg());
-        assertEquals(0, second.yawRateDeg());
+        assertTrue(second.velocity().distanceTo(reset.velocity()) > 0.001);
+        assertNotEquals(0, second.yawRateDeg());
     }
 
     /** 连续百 Tick 验证虚拟编排与实体使用的纯模型一致，姿态仅在同步边界转为 float。 */

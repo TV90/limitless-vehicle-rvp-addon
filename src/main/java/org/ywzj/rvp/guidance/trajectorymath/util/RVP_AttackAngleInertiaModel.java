@@ -29,6 +29,22 @@ public final class RVP_AttackAngleInertiaModel {
                 * Math.sqrt(RVP_AeroSteeringModel.resolveDynamicPressureFactor(speed, limits));
     }
 
+    /**
+     * 本刻机头转角上限，度/Tick；满动压上限沿用 90° 参考偏转乘既有机头响应比例。
+     * 线性乘动压而非其平方根，使低速/稀薄空气下的大离轴指令不能迅速建立满攻角。
+     */
+    public static double maxTurnDeg(double speed, RVP_AeroSteeringLimits limits) {
+        // 调用既有响应与动压解析，实体、PIP 逆解、虚拟态和前视共用同一上限。
+        return MAX_RATE * RVP_AttackAngleModel.bodyResponse(limits)
+                * RVP_AeroSteeringModel.resolveDynamicPressureFactor(speed, limits);
+    }
+
+    /** 前视用的保守姿态响应比例，同时考虑比例增益与建立满攻角所需的转角预算。 */
+    public static double effectiveResponse(double speed, RVP_AeroSteeringLimits limits) {
+        // 调用正式执行器的两种限制，避免预测继续假定旧比例响应总能达到。
+        return Math.min(response(speed, limits), maxTurnDeg(speed, limits) / limits.attackAngleLimitDeg());
+    }
+
     /** 指数松弛保证最小惯量小于 1 时仍无数值增益过冲。 */
     public static double rateResponse(double mass) {
         // 调用统一有效惯量公式，使前向推进和 PIP 反解严格同源。
@@ -45,11 +61,13 @@ public final class RVP_AttackAngleInertiaModel {
         // 调用最近等价角表示，跨竖直方向的几度修正不能变成 180° 偏航。
         var target = state.nearestRotation(command);
         double authority = response(velocity.length(), limits);
+        double maxTurn = maxTurnDeg(velocity.length(), limits);
         double gain = rateResponse(mass);
         double pitchError = target.pitchDeg() - state.pitchDeg();
         double yawError = Mth.wrapDegrees(target.yawDeg() - state.yawDeg());
-        double pitchRate = advanceRate(state.pitchRateDeg(), pitchError, authority, gain);
-        double yawRate = advanceRate(state.yawRateDeg(), yawError, authority, gain);
+        // 调用受动压限幅的比例角速度，再按质量惯量平滑；旧角速度在平滑后仍须受同一上限约束。
+        double pitchRate = advanceRate(state.pitchRateDeg(), pitchError, authority, gain, maxTurn);
+        double yawRate = advanceRate(state.yawRateDeg(), yawError, authority, gain, maxTurn);
         double pitch = state.pitchDeg() + pitchRate;
         double yaw = Mth.wrapDegrees(state.yawDeg() + yawRate);
         // 恰好到达目标或越过目标时耗散角速度；反向指令下未到目标前仍保留惯性。
@@ -58,6 +76,8 @@ public final class RVP_AttackAngleInertiaModel {
         // 调用极点折回，保持存储角合法；仅换坐标表示，不跳转机头方向或增加转向权限。
         var next = new RVP_AttackAngleState(pitch, yaw,
                 pitchRate, yawRate).foldPole();
+        // 调用三维总转角裁决，防止双轴斜向叠加或存档残留角速度绕过本刻动压上限。
+        next = limitTurn(state, next, maxTurn);
         // 调用共用夹角工具检测饱和，再移除朝锥外的角速度分量，保留边界切向响应。
         if (RVP_BallisticTrajectoryMath.angleBetween(axis, next.direction())
                 > Math.toRadians(limits.attackAngleLimitDeg()) + 1.0E-10) {
@@ -91,10 +111,24 @@ public final class RVP_AttackAngleInertiaModel {
     }
 
     /** 各轴独立稳定松弛；跨过目标时耗散至静止，反向指令仍需先消除原有角速度。 */
-    private static double advanceRate(double previous, double error, double authority, double gain) {
-        double target = Mth.clamp(error * authority, -MAX_RATE, MAX_RATE);
-        double rate = previous + (target - previous) * gain;
+    private static double advanceRate(double previous, double error, double authority, double gain, double maxTurn) {
+        double target = Mth.clamp(error * authority, -maxTurn, maxTurn);
+        double rate = Mth.clamp(previous + (target - previous) * gain, -maxTurn, maxTurn);
         return error != 0.0 && rate * error > 0.0 && Math.abs(rate) > Math.abs(error) ? error : rate;
+    }
+
+    /** 按机头方向的实际夹角限幅；返回角速度同步缩减，下一刻不能重新带回被裁掉的运动。 */
+    private static RVP_AttackAngleState limitTurn(RVP_AttackAngleState state,
+                                                 RVP_AttackAngleState next, double maxTurn) {
+        // 调用球面工具测量总机头转角，不能只限制俯仰和偏航后允许对角方向超限。
+        Vec3 body = state.direction();
+        double turn = RVP_BallisticTrajectoryMath.angleBetween(body, next.direction());
+        double cap = Math.toRadians(maxTurn);
+        if (turn <= cap + 1.0E-12) return next;
+        // 调用最近等价姿态解码，保留跨竖直方向时真实的俯仰转向及角速度符号。
+        var clipped = state.nearestRotation(RVP_BallisticTrajectoryMath.slerpDirection(body, next.direction(), cap / turn));
+        return new RVP_AttackAngleState(clipped.pitchDeg(), clipped.yawDeg(),
+                clipped.pitchDeg() - state.pitchDeg(), Mth.wrapDegrees(clipped.yawDeg() - state.yawDeg())).foldPole();
     }
 
     /** 按速度轴限制总攻角，避免逐轴限幅在对角方向突破圆锥。 */

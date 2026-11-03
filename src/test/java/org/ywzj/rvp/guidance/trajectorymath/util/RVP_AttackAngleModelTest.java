@@ -32,13 +32,13 @@ class RVP_AttackAngleModelTest {
         assertEquals(0.0, RVP_AeroSteeringModel.inducedDragLoss(0.2, result.loadFactor(), 10.0));
     }
 
-    /** 无惯量的大指令可在本刻到达攻角锥边；速度仍受 G 预算限制。 */
+    /** 大指令先受攻角锥和质量惯量约束，速度仍受实际载荷对应的 G 预算限制。 */
     @Test
     void saturationSeparatesBodyFromVelocityAndHonorsG() {
         // 调用本项目模型以及夹角工具，验证受控机头锥与实际速度的独立性。
         var result = RVP_AttackAngleModel.solve(FORWARD, FORWARD, RIGHT, limits(10.0, 0.5f, 20.0));
-        assertEquals(Math.toRadians(20.0), result.attackAngleRadians(), EPSILON);
-        assertEquals(1.0, result.loadFactor(), EPSILON);
+        assertEquals(Math.toRadians(10.0 * (1.0 - Math.exp(-1.0))), result.attackAngleRadians(), EPSILON);
+        assertTrue(result.loadFactor() > 0.0 && result.loadFactor() < 1.0);
         assertEquals(10.0, result.velocity().length(), EPSILON);
         assertEquals(10.0 * PhysicsEngine.G * result.loadFactor(),
                 result.velocity().subtract(FORWARD).length(), EPSILON);
@@ -50,9 +50,9 @@ class RVP_AttackAngleModelTest {
     void partialLoadUsesSineRatioAndSquaredDrag() {
         double angle = Math.toRadians(10.0);
         Vec3 desired = new Vec3(Math.sin(angle), 0.0, Math.cos(angle));
-        // 调用本项目无惯量模型，10 度指令按 0.5 比例建立 5 度攻角。
+        // 调用本项目惯量模型，10 度指令按 0.5 比例及基准质量的指数响应建立攻角。
         var result = RVP_AttackAngleModel.solve(FORWARD, FORWARD, desired, limits(10.0, 0.5f, 20.0));
-        double expected = Math.sin(Math.toRadians(5.0))
+        double expected = Math.sin(Math.toRadians(5.0 * (1.0 - Math.exp(-1.0))))
                 / Math.sin(Math.toRadians(20.0));
         assertEquals(expected, result.loadFactor(), EPSILON);
         // 调用本项目诱导阻力公式，保证新的载荷定义仍只扣一次平方代价。
@@ -74,8 +74,8 @@ class RVP_AttackAngleModelTest {
                 low.velocity().subtract(FORWARD).length(), EPSILON);
         assertEquals(low.velocity().subtract(FORWARD).length(),
                 slow.velocity().subtract(slowVelocity).length(), EPSILON);
-        assertEquals(high.bodyDirection(), low.bodyDirection());
-        assertEquals(high.bodyDirection(), slow.bodyDirection());
+        assertTrue(high.attackAngleRadians() > low.attackAngleRadians());
+        assertEquals(low.bodyDirection(), slow.bodyDirection());
     }
 
     /** 绝对角速率与最大 G 同时存在时取较紧限制。 */
@@ -125,7 +125,7 @@ class RVP_AttackAngleModelTest {
         assertEquals(FORWARD, invalid.velocity());
     }
 
-    /** 丢锁后把当前速度作为指令，残留机头角逐 Tick 回正，不能瞬间归零。 */
+    /** 丢锁后保留真实角速度，允许短暂继续偏转，但最终须收敛回速度轴。 */
     @Test
     void noTargetSettlesResidualAngleOverTime() {
         var limits = limits(1.0, 0.5f, 20.0);
@@ -133,30 +133,29 @@ class RVP_AttackAngleModelTest {
         var initial = RVP_AttackAngleModel.solve(FORWARD, FORWARD, RIGHT, limits);
         var next = RVP_AttackAngleModel.solve(initial.velocity(), initial.state(), initial.velocity(), limits, 100);
         assertTrue(next.loadFactor() > 0.0);
-        assertTrue(next.loadFactor() < initial.loadFactor());
         double previous = next.loadFactor();
-        for (int tick = 0; tick < 80; tick++) {
+        for (int tick = 0; tick < 150; tick++) {
             next = RVP_AttackAngleModel.solve(next.velocity(), next.state(), next.velocity(), limits, 100);
             assertTrue(next.loadFactor() >= 0 && next.loadFactor() <= 1);
-            assertTrue(next.loadFactor() <= previous + EPSILON);
             previous = next.loadFactor();
         }
         assertTrue(previous < 0.001);
     }
 
-    /** 运行入口忽略质量与存档残留角速度，防止只关前向积分却继续携带惯量影响。 */
+    /** 正式入口必须恢复质量响应与角速度记忆，且保持输入快照不变。 */
     @Test
-    void disabledInertiaIgnoresMassAndRestoredAngularRates() {
+    void enabledInertiaUsesMassAndRestoredAngularRates() {
         var rest = new RVP_AttackAngleState(5, -10, 0, 0);
         var spinning = new RVP_AttackAngleState(5, -10, 30, -40);
         var limits = limits(10.0, 0.5f, 30.0);
-        // 调用正式实体/虚拟共用入口，轻重质量和非零角速度必须得到同一个实际结果。
-        var expected = RVP_AttackAngleModel.solve(FORWARD, rest, RIGHT, limits, 10);
-        for (double mass : new double[]{10, 900, Double.NaN}) {
-            assertEquals(expected, RVP_AttackAngleModel.solve(FORWARD, spinning, RIGHT, limits, mass));
-        }
-        assertEquals(0, expected.state().pitchRateDeg());
-        assertEquals(0, expected.state().yawRateDeg());
+        // 调用正式实体/虚拟共用入口，重弹首刻更慢，已有角速度必须参与本刻推进。
+        assertTrue(RVP_AttackAngleModel.INERTIA_ENABLED);
+        var light = RVP_AttackAngleModel.solve(FORWARD, rest, RIGHT, limits, 10);
+        var heavy = RVP_AttackAngleModel.solve(FORWARD, rest, RIGHT, limits, 900);
+        assertTrue(RVP_BallisticTrajectoryMath.angleBetween(rest.direction(), light.bodyDirection())
+                > RVP_BallisticTrajectoryMath.angleBetween(rest.direction(), heavy.bodyDirection()));
+        assertNotEquals(heavy, RVP_AttackAngleModel.solve(FORWARD, spinning, RIGHT, limits, 900));
+        assertNotEquals(0, heavy.state().yawRateDeg());
         assertEquals(new RVP_AttackAngleState(5, -10, 30, -40), spinning);
     }
 

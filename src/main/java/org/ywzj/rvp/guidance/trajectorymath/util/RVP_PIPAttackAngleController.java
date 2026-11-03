@@ -33,7 +33,7 @@ public final class RVP_PIPAttackAngleController {
             return 0.0D;
         }
         double response = Mth.clamp(
-                RVP_AttackAngleInertiaModel.response(velocity.length(), limits), 0.0D, 1.0D);
+                RVP_AttackAngleInertiaModel.effectiveResponse(velocity.length(), limits), 0.0D, 1.0D);
         double inertia = RVP_AttackAngleInertiaModel.effectiveInertia(mass);
         return Mth.clamp(1.0D + inertia * (1.0D - response), 0.0D, 3.0D);
     }
@@ -129,14 +129,18 @@ public final class RVP_PIPAttackAngleController {
             // 调用共用增益和角度转换反解保留的双轴执行器，扣除上一 Tick 尚未消散的角速度。
             double response = RVP_AttackAngleInertiaModel.response(speed, limits);
             double gain = RVP_AttackAngleInertiaModel.rateResponse(mass);
+            // 调用正式机头转角上限；逆解只能请求本刻舵面可提供的角速度，不能靠放大指令穿透限幅。
+            double maxTurn = RVP_AttackAngleInertiaModel.maxTurnDeg(speed, limits);
             // 调用与前向执行器相同的等价角选择，保证跨极点时逆解与正式推进方向一致。
             var target = state.nearestRotation(desiredBody);
             double pitchStep = target.pitchDeg() - state.pitchDeg();
             double yawStep = Mth.wrapDegrees(target.yawDeg() - state.yawDeg());
-            double pitchCommand = response <= EPSILON ? state.pitchDeg() : state.pitchDeg()
-                    + (pitchStep - (1.0 - gain) * state.pitchRateDeg()) / (gain * response);
-            double yawCommand = response <= EPSILON ? state.yawDeg() : state.yawDeg()
-                    + (yawStep - (1.0 - gain) * state.yawRateDeg()) / (gain * response);
+            double pitchTargetRate = Mth.clamp(
+                    (pitchStep - (1.0 - gain) * state.pitchRateDeg()) / gain, -maxTurn, maxTurn);
+            double yawTargetRate = Mth.clamp(
+                    (yawStep - (1.0 - gain) * state.yawRateDeg()) / gain, -maxTurn, maxTurn);
+            double pitchCommand = response <= EPSILON ? state.pitchDeg() : state.pitchDeg() + pitchTargetRate / response;
+            double yawCommand = response <= EPSILON ? state.yawDeg() : state.yawDeg() + yawTargetRate / response;
             // 两轴逆解只提供指令，不绕过攻角锥或把过大的偏航误差环绕成反向指令。
             command = new RVP_AttackAngleState(state.pitchDeg()
                     + Mth.clamp(pitchCommand - state.pitchDeg(), -179.9, 179.9),

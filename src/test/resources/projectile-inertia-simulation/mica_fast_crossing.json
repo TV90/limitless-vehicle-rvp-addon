@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "id": "mica_fast_crossing",
+  "name": "MICA-NG 高速横穿 PIP",
+  "description": "双轴惯量与动压机头限幅：使用权威武器配置和真实实体制导、运动入口，观察低速响应与首次交会。",
+  "weapon": "rvp:ebrc_mica_ng",
+  "ticks": 600,
+  "position": [
+    0,
+    164,
+    0
+  ],
+  "yaw": 0,
+  "pitch": 0,
+  "vehicleVelocity": [
+    0,
+    0,
+    80
+  ],
+  "groundY": 64,
+  "target": [
+    0,
+    164,
+    600
+  ],
+  "targetVelocity": [
+    35,
+    0,
+    0
+  ],
+  "targetRadius": 1,
+  "guidance": true,
+  "seed": 721
+}

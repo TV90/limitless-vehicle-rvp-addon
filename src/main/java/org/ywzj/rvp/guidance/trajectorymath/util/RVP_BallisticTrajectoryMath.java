@@ -384,7 +384,7 @@ public final class RVP_BallisticTrajectoryMath {
             return Mth.clamp(1.0 / Math.max(RVP_AttackAngleModel.bodyResponse(limits), 0.05), 1.0, 20.0);
         }
         // 调用真实执行器响应公式；有限上限防止低动压时追点跳过整条弹道。
-        double response = RVP_AttackAngleInertiaModel.response(speed, limits);
+        double response = RVP_AttackAngleInertiaModel.effectiveResponse(speed, limits);
         return Mth.clamp(1.0 / Math.max(response, 0.05) + 3.0, 3.0, 23.0);
     }
 

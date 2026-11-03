@@ -25,7 +25,7 @@ public final class RVP_RvpTrajectoryIntegrator implements RVP_VirtualTrajectoryI
     /** 当前 RVP 纯数学弹道实现的稳定标识，用于校验持久化状态兼容性。 */
     public static final String ID = "rvp_current";
     /** 当前 RVP 纯数学弹道状态版本，用于阻止不兼容状态继续积分。 */
-    public static final int VERSION = 12;
+    public static final int VERSION = 13;
 
     /** {@inheritDoc} */
     @Override

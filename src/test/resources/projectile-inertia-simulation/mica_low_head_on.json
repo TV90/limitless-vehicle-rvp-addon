@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "id": "mica_low_head_on",
+  "name": "MICA-NG 低速迎头 PIP",
+  "description": "双轴惯量与动压机头限幅：使用权威武器配置和真实实体制导、运动入口，观察低速响应与首次交会。",
+  "weapon": "rvp:ebrc_mica_ng",
+  "ticks": 600,
+  "position": [
+    0,
+    164,
+    0
+  ],
+  "yaw": 0,
+  "pitch": 0,
+  "vehicleVelocity": [
+    0,
+    0,
+    0
+  ],
+  "groundY": 64,
+  "target": [
+    80,
+    164,
+    450
+  ],
+  "targetVelocity": [
+    0,
+    0,
+    -30
+  ],
+  "targetRadius": 1,
+  "guidance": true,
+  "seed": 721
+}

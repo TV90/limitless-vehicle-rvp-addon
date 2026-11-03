@@ -5,13 +5,13 @@ import net.minecraft.world.phys.Vec3;
 import org.ywzj.vehicle.vehicle.PhysicsEngine;
 
 /**
- * 机体轴和速度轴分离的降阶模型；当前按比例推进机头，双轴有效惯量代码保留但停用。
+ * 机体轴和速度轴分离的降阶模型；双轴有效惯量与动压机头转角上限共同约束姿态。
  * 使用游戏化的总攻角升力曲线；没有风场时速度轴视为相对气流方向。
  * 纯函数不访问实体、世界或客户端，实体和虚拟中段共用。
  */
 public final class RVP_AttackAngleModel {
     /** 双轴有效惯量总开关；false 恢复无角速度记忆的机头响应，实体、PIP 与虚拟弹道共用。 */
-    public static final boolean INERTIA_ENABLED = false;
+    public static final boolean INERTIA_ENABLED = true;
     /** 非零方向和速度的判定阈值。 */
     private static final double EPSILON = 1.0E-8;
     /** 显式 G 优先时的姿态响应比例，避免同时配置 turning_factor 改变 G 主控语义。 */
@@ -56,7 +56,7 @@ public final class RVP_AttackAngleModel {
                 ? desiredDirection.normalize() : axis;
         RVP_AttackAngleState next;
         if (INERTIA_ENABLED) {
-            // 调用保留的双轴有效惯量执行器，重新启用时仍只推进一次角速度和姿态。
+            // 调用双轴有效惯量执行器，统一限制低动压机头转角，且只推进一次角速度和姿态。
             next = RVP_AttackAngleInertiaModel.step(current, state, desired, limits, mass);
         } else {
             // 调用原攻角阶段的球面插值：机头按既有响应比例转动，不读取质量或旧角速度。
