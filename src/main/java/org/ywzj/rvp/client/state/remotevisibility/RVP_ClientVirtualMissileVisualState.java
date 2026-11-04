@@ -204,6 +204,20 @@ public final class RVP_ClientVirtualMissileVisualState {
     /** 光效查询与尾烟发射共用不随暂停推进的客户端动画刻。 */
     public static long animationTick() { return animationTick; }
 
+    /** 仅既有电视会话按编号读取已授权显示对象；不加入世界或雷达目标表，不建立新操控权限。 */
+    @Nullable
+    public static RVP_MissileEntity controlVisual(int entityId, float partialTick) {
+        ensureWorld(Minecraft.getInstance());
+        for (Visual visual : VISUALS.values()) {
+            if (visual.entity.getId() != entityId || visual.timeline.expired(animationTick)) continue;
+            applyPose(visual, visual.timeline.sample(frameTime(partialTick)));
+            // 只填充原来从生成包读取的镜头/HUD 参数，不运行弹体 Tick。
+            visual.entity.initializeVirtualDisplayControls();
+            return visual.entity;
+        }
+        return null;
+    }
+
     /** 授权按水平距离，远平面按实际三维距离；高空导弹不能在 8192 格球面被误裁掉。 */
     public static double farPlaneDistance(Vec3 camera, float partialTick) {
         ensureWorld(Minecraft.getInstance());
@@ -248,6 +262,8 @@ public final class RVP_ClientVirtualMissileVisualState {
         entity.setXRot(pose.pitch()); entity.xRotO = pose.pitch();
         entity.setDeltaMovement(visual.timeline.latest().velocity());
         entity.tickCount = pose.flightTick();
+        // 只还原制导阶段的显示事实，操作手 HUD 不因代理缺少实体 Tick 而误退回主段。
+        entity.getGuidancePhaseState().restore(visual.timeline.latest().guidancePhase());
     }
 
     /** 正常世界实体必须同时匹配 ID、UUID 且存活。 */

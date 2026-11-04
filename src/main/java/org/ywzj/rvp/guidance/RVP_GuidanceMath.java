@@ -16,6 +16,8 @@ public final class RVP_GuidanceMath {
         if (entity == null || lockMinHeight == 0) {
             return true;
         }
+        // 非虚拟目标也可能刚卸载，导引头不能通过兼容高度门重新加载它的区块。
+        if (!entity.level().hasChunkAt(entity.blockPosition())) return false;
         int groundY = entity.level().getHeight(
                 net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING,
                 entity.getBlockX(), entity.getBlockZ());

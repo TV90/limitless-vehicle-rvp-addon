@@ -138,6 +138,7 @@ class S2CVirtualMissileVisualSnapshotTest {
     /** 机头故意不沿速度方向，当前燃烧窗口与最晚燃尽也故意不同。 */
     private static Entry entry(int id, ResourceLocation weapon) {
         return new Entry(new UUID(0, id), id, weapon, new Vec3(id, 100, -200), new Vec3(3, 1, 0),
-                179, -30, 1_000_000, RVP_VirtualFlightPhase.VIRTUAL_CRUISE, MotorPhase.PRIMARY, 17, 1200);
+                179, -30, 1_000_000, RVP_VirtualFlightPhase.VIRTUAL_CRUISE, MotorPhase.PRIMARY, 17, 1200,
+                org.ywzj.rvp.guidance.RVP_GuidancePhase.TERMINAL);
     }
 }

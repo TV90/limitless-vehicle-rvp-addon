@@ -77,7 +77,8 @@ public final class RVP_VirtualMissileVisualSync {
                     || !missile.isAlive() || state.trajectoryEntityInvalidated) continue;
             try {
                 // 调用只读显示提取；没有有效缓存对象的异常记录交由原管理器处理。
-                candidates.add(new Candidate(sample(missile, state.phase), state.ownerUuid, state.shooterVehicleUuid));
+                candidates.add(new Candidate(sample(missile, state.phase), state.ownerUuid, state.shooterVehicleUuid,
+                        missile.rvp$isHitlActive()));
             } catch (IllegalArgumentException exception) {
                 // 无效视觉数据不影响权威弹道，也不在同步层补算。
             }
@@ -108,7 +109,9 @@ public final class RVP_VirtualMissileVisualSync {
                 double distanceSquared = dx * dx + dz * dz;
                 boolean owned = player.getUUID().equals(candidate.ownerUuid())
                         || vehicle != null && vehicle.getUUID().equals(candidate.vehicleUuid());
-                if (isVisible(distanceSquared, owned, discovered.contains(entry.flightUuid()))) {
+                // 已建立的电视会话沿用原操控距离；普通观察者仍遵守 8192 格视觉边界。
+                if (isVisible(distanceSquared, owned, discovered.contains(entry.flightUuid()))
+                        || candidate.controlled() && player.getUUID().equals(candidate.ownerUuid())) {
                     choices.add(new Choice(entry, owned, locked.contains(entry.flightUuid()),
                             distanceSquared, observer.previous.containsKey(entry.flightUuid())));
                 }
@@ -173,7 +176,7 @@ public final class RVP_VirtualMissileVisualSync {
         return new Entry(missile.getUUID(), missile.getId(), missile.getWeaponId(), trajectory.position(),
                 trajectory.velocity(), trajectory.yRot(), trajectory.xRot(), trajectory.flightTick(), phase,
                 !burning ? MotorPhase.IDLE : second ? MotorPhase.SECOND_PULSE : MotorPhase.PRIMARY,
-                remaining, missile.ticksUntilMotorStopsBurning());
+                remaining, missile.ticksUntilMotorStopsBurning(), snapshot.guidancePhase());
     }
 
     /** 仅从已存在的接触对象取 UUID，防同整数编号被别的实体复用。 */
@@ -231,7 +234,8 @@ public final class RVP_VirtualMissileVisualSync {
     }
 
     /** @param entry 共享不可变样本 @param ownerUuid 保存的发射者 @param vehicleUuid 保存的发射车 */
-    private record Candidate(Entry entry, UUID ownerUuid, UUID vehicleUuid) { }
+    private record Candidate(Entry entry, UUID ownerUuid, UUID vehicleUuid,
+                             /** 是否仍处于既有电视/人工操控会话。 */ boolean controlled) { }
 
     /**
      * @param entry 已通过视觉资格的样本

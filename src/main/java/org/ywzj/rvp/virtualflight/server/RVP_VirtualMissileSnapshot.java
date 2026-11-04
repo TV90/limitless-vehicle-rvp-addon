@@ -37,7 +37,7 @@ import java.util.UUID;
  */
 public record RVP_VirtualMissileSnapshot(
         RVP_VirtualTrajectoryState trajectory,
-        Vec3 targetPosition,
+        @Nullable Vec3 targetPosition,
         @Nullable Vec3 lastGuidancePosition,
         @Nullable UUID targetEntityUuid,
         Vec3 lastKnownTargetVelocity,

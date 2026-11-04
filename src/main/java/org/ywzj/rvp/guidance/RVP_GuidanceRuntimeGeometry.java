@@ -171,7 +171,7 @@ public final class RVP_GuidanceRuntimeGeometry {
     }
 
     private static boolean contains(RVP_Range<Float> range, double value) {
-        return range == null || range.contains((float) value);
+        return Double.isFinite(value) && (range == null || range.contains((float) value));
     }
 
     private static double altitudeAgl(RVP_BaseBullet projectile, Vec3 target,
@@ -183,6 +183,9 @@ public final class RVP_GuidanceRuntimeGeometry {
         }
         int x = Mth.floor(target.x);
         int z = Mth.floor(target.z);
+        // 新准入的虚拟导引头也不能因目标高度门加载远方地形；未知高度按本刻不可确认处理。
+        if (projectile.isVirtualMidcourseTarget()
+                && !projectile.level().hasChunkAt(net.minecraft.core.BlockPos.containing(target))) return Double.NaN;
         int groundY = projectile.level().getHeight(Heightmap.Types.MOTION_BLOCKING, x, z);
         return target.y - groundY;
     }

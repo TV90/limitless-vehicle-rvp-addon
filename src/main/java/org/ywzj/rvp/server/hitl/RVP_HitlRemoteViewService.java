@@ -193,6 +193,14 @@ public final class RVP_HitlRemoteViewService {
     }
 
     /** 操作者不能借观察会话离车、跨维度或操纵其他人的导弹。 */
+    /** 配置重载重建计算对象时更新既有会话引用；不增加观察者或操控权限。 */
+    public static void replaceMissile(RVP_MissileEntity previous, RVP_MissileEntity replacement) {
+        if (!(previous.level() instanceof ServerLevel level)) return;
+        State state = STATES.get(level.getServer());
+        if (state == null) return;
+        for (Session session : state.sessions.values()) if (session.missile == previous) session.missile = replacement;
+    }
+
     private static boolean valid(Session session) {
         ServerPlayer player = session.player;
         RVP_MissileEntity missile = session.missile;
@@ -306,7 +314,7 @@ public final class RVP_HitlRemoteViewService {
         /** 会话身份、连接和实际导弹均不可替换。 */
         final UUID id = UUID.randomUUID();
         final ServerPlayer player;
-        final RVP_MissileEntity missile;
+        RVP_MissileEntity missile;
         final ServerLevel level;
         final RVP_HitlRemoteViewData config;
         /** 经服务器上限约束的实际窗口和控制距离。 */

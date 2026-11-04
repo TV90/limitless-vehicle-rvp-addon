@@ -59,6 +59,46 @@ public final class RVP_SubmunitionRunner {
         return false;
     }
 
+    /** 不生成子体的到期预检，允许虚拟管理器在布撒前恢复原实体。 */
+    public boolean willReleaseWithin(int ticks) {
+        return !globallyDisabled && waves.stream().anyMatch(wave -> wave.eventsRemaining > 0
+                && wave.config.getTriggers().contains(RVP_EnumSubmunitionTrigger.IN_FLIGHT)
+                && wave.sprinkleTimer <= Math.max(1, ticks));
+    }
+
+    /** 只递减尚未到期的布撒计时，绝不在未加载区块生成子体或消耗释放次数。 */
+    public void advanceVirtualDelay() {
+        if (globallyDisabled) return;
+        for (WaveState wave : waves) if (wave.eventsRemaining > 0 && wave.sprinkleTimer > 0
+                && wave.config.getTriggers().contains(RVP_EnumSubmunitionTrigger.IN_FLIGHT)) wave.sprinkleTimer--;
+    }
+
+    /** 保存真实/虚拟交接中的剩余波次，避免恢复或读档后重新从第一波开始。 */
+    public net.minecraft.nbt.CompoundTag saveVirtualState() {
+        var tag = new net.minecraft.nbt.CompoundTag();
+        tag.putBoolean("disabled", globallyDisabled);
+        var entries = new net.minecraft.nbt.ListTag();
+        for (WaveState wave : waves) {
+            var entry = new net.minecraft.nbt.CompoundTag();
+            entry.putInt("remaining", wave.eventsRemaining); entry.putInt("timer", wave.sprinkleTimer);
+            entry.putBoolean("fired", wave.oneShotFired); entries.add(entry);
+        }
+        tag.put("waves", entries);
+        return tag;
+    }
+
+    /** 只恢复与当前配置波次数匹配的状态，配置变化不擅自追加旧载荷。 */
+    public void restoreVirtualState(net.minecraft.nbt.CompoundTag tag) {
+        var entries = tag.getList("waves", net.minecraft.nbt.Tag.TAG_COMPOUND);
+        if (entries.size() != waves.size()) return;
+        globallyDisabled = tag.getBoolean("disabled");
+        for (int index = 0; index < waves.size(); index++) {
+            var entry = entries.getCompound(index); WaveState wave = waves.get(index);
+            wave.eventsRemaining = Math.max(0, entry.getInt("remaining"));
+            wave.sprinkleTimer = Math.max(0, entry.getInt("timer")); wave.oneShotFired = entry.getBoolean("fired");
+        }
+    }
+
     /** @return true if parent should be discarded this tick */
     public boolean tickInFlight(RVP_BaseBullet parent) {
         if (globallyDisabled || parent.level().isClientSide()) {

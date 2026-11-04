@@ -34,7 +34,8 @@ public final class RVP_HitlDesignateOverlay {
             return;
         }
 
-        Entity entity = mc.level.getEntity(RVP_ClientHitlState.getActiveMissileId());
+        // 调用既有会话的统一显示入口，导弹虚拟化期间保留镜头/操控显示，不新增目标权限。
+        Entity entity = RVP_ClientHitlState.resolveActiveMissile(mc);
         if (!(entity instanceof RVP_MissileEntity missile)) {
             return;
         }

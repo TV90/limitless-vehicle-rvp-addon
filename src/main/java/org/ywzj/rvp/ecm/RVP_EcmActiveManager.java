@@ -339,9 +339,9 @@ public final class RVP_EcmActiveManager {
      * 每 TICK_INTERVAL 调用一次，刷新干扰剩余 tick。
      */
     private static void tickActiveJamming(ServerLevel level, List<ActiveInfo> activeInfos) {
-        // 收集本维度内所有存活弹药
+        // 收集本维度真实和虚拟弹药，脱离世界实体列表不能使导引头免疫主动干扰。
         List<RVP_BaseBullet> bullets = new ArrayList<>();
-        for (Entity entity : level.getEntities().getAll()) {
+        for (Entity entity : org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.allEntities(level)) {
             if (entity instanceof RVP_BaseBullet bullet && bullet.isAlive()) {
                 bullets.add(bullet);
             }

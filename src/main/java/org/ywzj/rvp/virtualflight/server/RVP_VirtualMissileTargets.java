@@ -117,7 +117,8 @@ public final class RVP_VirtualMissileTargets {
     public static void replaceReferences(Level level, Entity previous, @Nullable Entity replacement) {
         if (level instanceof ServerLevel serverLevel) {
             // 调用已加载实体索引，交接不读取或加载远方区块。
-            replaceReferences(serverLevel.getEntities().getAll(), previous, replacement);
+            // 所有类型都可虚拟后，另一枚虚拟拦截弹也可能持有旧目标引用，必须一起交接。
+            replaceReferences(allEntities(serverLevel), previous, replacement);
         }
     }
 

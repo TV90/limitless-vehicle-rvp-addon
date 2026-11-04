@@ -66,7 +66,7 @@ public final class RVP_VirtualMissileManager {
      * 在真实导弹完成本 Tick 运动、引信和路径提交后尝试原子转入虚拟态。
      *
      * <p>调用链：资格检查 → UUID 去重 → 创建完整快照 → 写入 SavedData →
-     * 标记专用移除语义 → {@link Entity#discard()}。只有持久化记录注册成功才移除实体。</p>
+     * 原对象退出世界索引与调度。只有持久化记录注册成功才移出实体。</p>
      *
      * @param missile 仍处于服务端世界且存活的 RVP 类型化导弹
      * @return 成功注册并移除真实实体时为 {@code true}
@@ -106,21 +106,18 @@ public final class RVP_VirtualMissileManager {
         RVP_VirtualMissileSavedData savedData = RVP_VirtualMissileSavedData.get(level);
         if (!state.isStructurallyValid() || !savedData.add(state)) return false;
         state.targetEntityId = missile.getId();
-        // 调用计算对象入口并交接已有雷达/拦截弹引用，真实弹移除前目标身份就已连续。
-        RVP_MissileEntity target = RVP_EntityTrajectoryIntegrator.getOrCreateEntity(
-                level, state, data, shooterVehicle, owner instanceof LivingEntity living ? living : null);
-        // 本体按上一刻位移修正直击盒，转换当刻必须沿用原真实弹的位移历史。
-        target.xOld = missile.xOld; target.yOld = missile.yOld; target.zOld = missile.zOld;
-        RVP_VirtualMissileTargets.replaceReferences(level, missile, target);
+        // 权威容器接管同一个对象，雷达、在途拦截弹和电视会话的对象引用自然连续。
+        // 不再用只保存 GPS 字段的新对象替换，所有导引头、操控、干扰和布撒波次均原样保留。
+        state.trajectoryEntity = missile;
+        state.runtimeData = missile.saveVirtualRuntimeData();
 
         RVP_VirtualMissileDebug.noteEntered();
         RVP_VirtualMissileDebug.lifecycle(state, RVP_VirtualFlightReason.REAL_TO_VIRTUAL,
                 "eligibility=" + eligibility);
-        // 先标记专用移除原因，再调用普通 discard，让生命周期日志能识别转换语义。
-        missile.beginVirtualMidcourseRemoval();
         // 先预告已登记的视觉身份，再移除真实弹，客户端同 UUID 来源可无缝接上。
         RVP_VirtualMissileVisualSync.syncLevel(level);
-        missile.discard();
+        // 调用原版同步移出索引/实体调度的专用交接方法，只保留不入世的同一计算对象。
+        missile.detachForVirtualMidcourse();
         // 调用独立同步服务，客户端先取得虚拟表示，再接收本体的真实实体移除包。
         RVP_VirtualMissileTargetSync.syncLevel(level);
         return true;
@@ -143,6 +140,8 @@ public final class RVP_VirtualMissileManager {
             return;
         }
 
+        // 读档时先建立全部目标身份再重绑，A 弹不能因为 B 弹尚未创建就永久丢掉虚拟目标引用。
+        initializeLoadedTargets(refs);
         List<StateRef> restoreCandidates = new ArrayList<>();
         for (StateRef ref : refs) {
             RVP_VirtualMissileState state = ref.state;
@@ -156,7 +155,7 @@ public final class RVP_VirtualMissileManager {
                 terminate(ref, RVP_VirtualFlightReason.WEAPON_DATA_MISSING, "weapon not present/current RVP missile");
                 continue;
             }
-            // 调用当前准入检查；热重载引入世界依赖后不能让计算对象继续执行不支持的导引头或引信逻辑。
+            // 调用当前准入检查；热重载关闭虚拟化或破坏恢复配置后终止该记录。
             if (RVP_VirtualMissileEligibility.evaluateConfiguration(data) != RVP_VirtualMissileEligibility.Result.ELIGIBLE) {
                 terminate(ref, RVP_VirtualFlightReason.CONFIGURATION_CHANGED, "virtual flight configuration no longer eligible");
                 continue;
@@ -170,8 +169,13 @@ public final class RVP_VirtualMissileManager {
             RVP_EntityTrajectoryIntegrator.getOrCreateEntity(ref.level, state, data,
                     resolveVehicle(ref.level, state.shooterVehicleUuid), resolveLivingEntity(ref.level, state.ownerUuid));
             if (state.phase == RVP_VirtualFlightPhase.VIRTUAL_CRUISE) {
+                // 所有制导类型均可虚拟；即将发生碰撞、引信或布撒时先停在当前点申请恢复。
+                if (state.trajectoryEntity.needsVirtualWorldRestoration()) {
+                    restoreCandidates.add(ref);
+                    continue;
+                }
                 // 调用本项目目标点解析器和虚拟状态更新入口；目标实体仍加载时滚动刷新位置/速度，
-                // 查询只读取已经加载的实体；固定 GPS 准入本身不因此扩展为动态目标制导。
+                // 查询只读取已经加载的实体，正式导引头仍在原对象上决定是否继续跟踪。
                 refreshLiveTargetMotion(ref, state);
                 // 巡航态调用一次实体飞行计算；失败时 integrateOneTick 已负责终止记录。
                 if (!integrateOneTick(ref, data)) continue;
@@ -179,7 +183,8 @@ public final class RVP_VirtualMissileManager {
                         + state.trajectory().velocity().z * state.trajectory().velocity().z);
                 double trigger = Math.max(data.getVirtualMidcourseData().getRestoreTargetDistance(),
                         horizontalSpeed * data.getVirtualMidcourseData().getRestoreLeadTick());
-                if (state.trajectory().position().distanceTo(state.snapshot.targetPosition()) <= trigger) {
+                if (state.snapshot.targetPosition() != null
+                        && state.trajectory().position().distanceTo(state.snapshot.targetPosition()) <= trigger) {
                     restoreCandidates.add(ref);
                 }
             } else {
@@ -223,6 +228,29 @@ public final class RVP_VirtualMissileManager {
         fairnessCursor = 0;
     }
 
+    /** 仅对读档后没有计算对象的记录执行两步初始化；常规飞行不会重复恢复运行态。 */
+    private static void initializeLoadedTargets(List<StateRef> refs) {
+        List<StateRef> created = new ArrayList<>();
+        for (StateRef ref : refs) {
+            RVP_VirtualMissileState state = ref.state;
+            if (state.trajectoryEntity != null) continue;
+            // 调用当前配置索引和准入检查，失效记录留给正式循环终止，不能先创建一个错误目标。
+            RVP_WeaponData data = resolveWeapon(state.weaponId);
+            if (data == null || data.getWeaponKind() != RVP_EnumWeaponKind.MISSILE
+                    || RVP_VirtualMissileEligibility.evaluateConfiguration(data) != RVP_VirtualMissileEligibility.Result.ELIGIBLE
+                    || !state.trajectoryImplementationId.equals(RVP_EntityTrajectoryIntegrator.ID)
+                    || state.trajectoryStateVersion != RVP_EntityTrajectoryIntegrator.VERSION) continue;
+            // 第一遍只建立同维度稳定身份，不推进飞行。
+            RVP_EntityTrajectoryIntegrator.getOrCreateEntity(ref.level, state, data,
+                    resolveVehicle(ref.level, state.shooterVehicleUuid), resolveLivingEntity(ref.level, state.ownerUuid));
+            created.add(ref);
+        }
+        for (StateRef ref : created) {
+            // 第二遍重绑目标、导引头指定与命中历史，此时其它新读档虚拟目标都已可查询。
+            ref.state.trajectoryEntity.restoreVirtualRuntimeData(ref.state.runtimeData);
+        }
+    }
+
     /** 在不强制加载目标区块的前提下刷新虚拟弹的最后已知目标运动。 */
     private static void refreshLiveTargetMotion(StateRef ref, RVP_VirtualMissileState state) {
         Entity target = resolveEntity(ref.level, state.snapshot.targetEntityUuid());
@@ -253,6 +281,8 @@ public final class RVP_VirtualMissileManager {
         // 调用实体运动适配器：计算对象不加入世界，只执行与真实实体相同的制导和运动方法。
         RVP_VirtualTrajectoryResult result = RVP_EntityTrajectoryIntegrator.step(ref.level, state, data,
                 resolveVehicle(ref.level, state.shooterVehicleUuid), resolveLivingEntity(ref.level, state.ownerUuid));
+        // 正式导引头可能被拦截或主动终止，已经移除的记录不能在后续快照提交中复活。
+        if (!ref.data.contains(state.flightUuid)) return false;
         RVP_VirtualMissileDebug.noteIntegrationNanos(System.nanoTime() - start);
         // 调用实体运动日志出口，快照已由实际执行链写回，不能再按虚拟规则重置 GPS/发动机状态。
         RVP_VirtualMissileDebug.trajectoryTick(state, before, data, result);
@@ -404,20 +434,26 @@ public final class RVP_VirtualMissileManager {
         LivingEntity owner = resolveLivingEntity(ref.level, state.ownerUuid);
         AbstractVehicle shooterVehicle = resolveVehicle(ref.level, state.shooterVehicleUuid);
         // 调用虚拟计算同款恢复入口，完整保留实际机头姿态、当前速率和 PRESET 参考点。
-        RVP_MissileEntity missile = RVP_EntityTrajectoryIntegrator.createEntity(ref.level, state, data, shooterVehicle, owner);
+        RVP_MissileEntity missile = RVP_EntityTrajectoryIntegrator.getOrCreateEntity(ref.level, state, data, shooterVehicle, owner);
         // Chunk 已 ready 后才进行有限碰撞查询；该调用不会触发区块生成。
         Vec3 safePosition = findSafeRestorePosition(ref.level, missile, state.trajectory().position(),
                 state.trajectory().velocity());
-        if (safePosition == null) return false;
-        missile.setPos(safePosition);
-        Entity target = resolveEntity(ref.level, state.snapshot.targetEntityUuid());
-        if (target != null && target.isAlive()) missile.setTargetEntity(target);
-        // 只有全部状态和稳定 UUID 写回后才将实体加入世界。
-        if (!ref.level.addFreshEntity(missile)) return false;
-        if (state.trajectoryEntity != null) {
-            // 调用现有引用交接，恢复后雷达和已在途拦截弹继续追同一 UUID/会话 ID。
-            RVP_VirtualMissileTargets.replaceReferences(ref.level, state.trajectoryEntity, missile);
+        if (safePosition == null) {
+            // 搜索复用了权威对象，失败必须回到快照位置，不能把最后一个试探点当成新轨迹。
+            missile.setPos(state.trajectory().position());
+            return false;
         }
+        missile.setPos(safePosition);
+        // 继续使用原对象的最新目标；等待期间的电视指定不能被上一完成态快照覆盖。
+        // 只有全部状态和稳定 UUID 写回后才将实体加入世界。
+        missile.prepareVirtualMidcourseRestoration();
+        if (!ref.level.addFreshEntity(missile)) {
+            missile.setVirtualMidcourseTarget(true);
+            missile.setPos(state.trajectory().position());
+            return false;
+        }
+        // 原对象已经重新交给世界；清除缓存引用后删除记录，不能把刚入世的实体再次标记失效。
+        state.trajectoryEntity = null;
         // 首次路径请求把控制权交回常规 5 Tick 滚动区块保护。
         missile.primeDynamicChunkPath();
         return true;

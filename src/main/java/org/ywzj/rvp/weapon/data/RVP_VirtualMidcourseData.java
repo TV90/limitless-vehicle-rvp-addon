@@ -3,7 +3,7 @@ package org.ywzj.rvp.weapon.data;
 import com.google.gson.annotations.SerializedName;
 
 /**
- * 固定 GPS 目标虚拟中段配置。
+ * 所有 RVP 导弹共用的虚拟中段配置，默认关闭，按武器显式启用。
  *
  * <p>阶段 B 由服务器 SavedData 持久化运行状态；本类只定义准入、恢复和安全上限。
  * 转向约束统一读取 {@link RVP_ProjectileData}，避免真实态与虚拟态使用两套机动参数。</p>
@@ -35,7 +35,10 @@ public final class RVP_VirtualMidcourseData {
      * 避免同一枚弹只在虚拟态切换另一条高度曲线。
      */
     @SerializedName("cruise_altitude") private Double cruiseAltitude;
-    /** 目标更新方式；默认 FIXED_SNAPSHOT，阶段 B 只接受该值。 */
+    /**
+     * 备用目标点的存储方式，无单位，默认 FIXED_SNAPSHOT，当前 schema 只接受该值。
+     * 仅在 enabled=true 时校验；实际追踪、电视操控和改靶仍由各制导源运行，不限制导弹类型。
+     */
     @SerializedName("target_update_mode") private String targetUpdateMode = "FIXED_SNAPSHOT";
     /** 恢复超时策略；默认 DISCARD，阶段 B 只接受该值。 */
     @SerializedName("on_restore_timeout") private String onRestoreTimeout = "DISCARD";

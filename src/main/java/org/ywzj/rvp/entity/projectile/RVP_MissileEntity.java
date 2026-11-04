@@ -91,6 +91,8 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     private int hitlEnterViewResendTicks;
     /** 武器配置 {@code hitl_right_click_detonate}：HITL 视角下右键 = 提前引爆（客户端通过 spawn 数据读取）。 */
     private boolean hitlRightClickDetonate;
+    /** 虚拟态收到已授权的右键引爆请求后，恢复实体再执行原爆炸链。 */
+    private boolean virtualHitlDetonationPending;
     /** 显式远程观察配置，仅服务端持有完整参数；客户端只接收 enabled 标志。 */
     private org.ywzj.rvp.weapon.data.RVP_HitlRemoteViewData hitlRemoteView;
     /** 本发弹体是否启用了远程观察，随 spawn 数据同步。 */
@@ -104,7 +106,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     /**
      * 中继失援标志（2026-10-06 实时语义，替代旧版永久锁存 {@code activeSeekerSupportReleased}）：
      * 每 tick 由"有 designated 且支持链不可用"重算，<b>无记忆</b>——雷达重新照射目标后下一 tick
-     * 即自动恢复中继重绑，不存在"脱锁/关雷达后永久失效"。仅服务端制导逻辑使用，不进 NBT/同步。
+     * 即自动恢复中继重绑，不存在"脱锁/关雷达后永久失效"。随服务端虚拟运行态保存，不发到显示消息。
      */
     private boolean activeSeekerRelayLost;
     /** 中继连续失援计数（tick）：失援期间弹冻结最后已知点滑行，达到滑行自毁上限后自爆。 */
@@ -448,7 +450,8 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
      * {@code Channel} 频道，否则 Forge 报 Invalid message）。</p>
      */
     private void tickMissileTrackAlert(RVP_EnumGuidanceType activeType) {
-        if (level().isClientSide()) {
+        // 本维度没有玩家就没有实体追踪接收者，跳过无用的告警包构造和发送。
+        if (level().isClientSide() || level().players().isEmpty()) {
             return;
         }
         byte typeCode = switch (activeType) {
@@ -771,6 +774,10 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
                 }
             }
             blockedNow = hitlRemoteRadioBlocked;
+        } else if (isVirtualMidcourseTarget() && level() instanceof ServerLevel serverLevel) {
+            // 普通电视弹转虚拟后也使用无加载射线；未启用远程模式时，未知路径不能冒充可通信。
+            var result = org.ywzj.rvp.server.hitl.RVP_HitlRadioPath.check(serverLevel, this, start, end);
+            blockedNow = org.ywzj.rvp.server.hitl.RVP_HitlRadioPath.blocks(result, true);
         } else {
             BlockHitResult hit = level().clip(new ClipContext(start, end, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, this));
             blockedNow = hit.getType() == HitResult.Type.BLOCK;
@@ -886,7 +893,8 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         if (hitlControlMode != RVP_EnumHitlControlMode.MOUSE || seq <= hitlInputSeq) {
             return;
         }
-        if (hitlRemoteConfigured && (!Float.isFinite(yaw) || !Float.isFinite(pitch))) return;
+        // 所有操控链都拒绝坏数值，虚拟状态不能把非法舵量存入后续实体恢复快照。
+        if (!Float.isFinite(yaw) || !Float.isFinite(pitch)) return;
         this.hitlInputYaw = yaw;
         this.hitlInputPitch = pitch;
         this.hitlInputSeq = seq;
@@ -1035,12 +1043,27 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         if (level().isClientSide() || !hitlEnabled) {
             return;
         }
+        if (isVirtualMidcourseTarget()) {
+            virtualHitlDetonationPending = true;
+            return;
+        }
         hitlEnabled = false;
         explodeAndDiscard(position());
     }
 
     /** 仅显式配置的两类 HITL 会话获得远程同步能力。 */
     public boolean rvp$isRemoteHitlConfigured() { return hitlRemoteConfigured; }
+
+    /** 只暴露待处理事实，虚拟管理器不能在未加载位置直接引爆。 */
+    public boolean hasVirtualHitlDetonationPending() { return virtualHitlDetonationPending; }
+
+    /** 实体已经恢复并通过区块路径门后，执行原来已授权的右键引爆请求。 */
+    public boolean tickVirtualHitlDetonation() {
+        if (!virtualHitlDetonationPending) return false;
+        virtualHitlDetonationPending = false;
+        rvp$hitlDetonate();
+        return !isAlive();
+    }
 
     public boolean rvp$isHitlActive() {
         return hitlEnabled && hitlLife > 0;
@@ -1067,6 +1090,86 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     public boolean rvp$isHitlMouseSteering() {
         return hitlEnabled && hitlControlMode == RVP_EnumHitlControlMode.MOUSE;
     }
+
+    /** 保存电视操控和主动导引头的跨刻状态，配置参数仍由当前武器数据初始化。 */
+    @Override
+    public net.minecraft.nbt.CompoundTag saveVirtualRuntimeData() {
+        // 调用基类运行态出口，保留反制、引信、波次和目标运动历史。
+        var tag = super.saveVirtualRuntimeData();
+        tag.putBoolean("virtualHitlDetonationPending", virtualHitlDetonationPending);
+        tag.putInt("hitlLife", hitlLife);
+        tag.putInt("hitlInputSeq", hitlInputSeq);
+        tag.putInt("hitlLinkBlockedTicks", hitlLinkBlockedTicks);
+        tag.putInt("hitlRemoteNextRadioCheck", hitlRemoteNextRadioCheck);
+        tag.putInt("activeSeekerRelayLostTicks", activeSeekerRelayLostTicks);
+        tag.putInt("relayLostSelfDestructTicks", relayLostSelfDestructTicks);
+        tag.putFloat("hitlInputYaw", hitlInputYaw);
+        tag.putFloat("hitlInputPitch", hitlInputPitch);
+        tag.putFloat("hitlSteeringYaw", hitlSteeringYaw);
+        tag.putFloat("hitlSteeringPitch", hitlSteeringPitch);
+        tag.putBoolean("hitlEnabled", hitlEnabled);
+        tag.putBoolean("hitlLinkBlocked", hitlLinkBlocked);
+        tag.putBoolean("hitlLinkSevered", hitlLinkSevered);
+        tag.putBoolean("hitlRemoteAttempted", hitlRemoteAttempted);
+        tag.putBoolean("hitlRemoteRadioBlocked", hitlRemoteRadioBlocked);
+        tag.putBoolean("activeSeekerRelayLost", activeSeekerRelayLost);
+        tag.putBoolean("countermeasurePhaseActive", countermeasurePhaseActive);
+        tag.putString("hitlControlMode", hitlControlMode.name());
+        tag.putString("hitlSignalSource", hitlSignalSource.name());
+        // 调用真实/虚拟统一指定目标出口，虚拟拦截目标也必须保存稳定 UUID。
+        Entity designated = rvp$getActiveSeekerDesignatedTargetEntity();
+        if (designated != null) tag.putUUID("activeSeekerDesignatedUuid", designated.getUUID());
+        if (hitlObbTargetUuid != null) tag.putUUID("hitlObbTargetUuid", hitlObbTargetUuid);
+        if (hitlTargetObb != null) {
+            tag.putString("hitlObbBone", hitlTargetObb.bone());
+            tag.putInt("hitlObbIndex", hitlTargetObb.index());
+        }
+        return tag;
+    }
+
+    /** 恢复命令序号、舵量和导引头状态；会话授权仍由原服务管理器验证。 */
+    @Override
+    public void restoreVirtualRuntimeData(net.minecraft.nbt.CompoundTag tag) {
+        // 调用基类恢复，不能因导弹子类重新建立目标而清掉速度/加速度历史。
+        super.restoreVirtualRuntimeData(tag);
+        if (tag.isEmpty()) return;
+        virtualHitlDetonationPending = tag.getBoolean("virtualHitlDetonationPending");
+        hitlLife = tag.getInt("hitlLife");
+        hitlInputSeq = tag.getInt("hitlInputSeq");
+        hitlLinkBlockedTicks = tag.getInt("hitlLinkBlockedTicks");
+        hitlRemoteNextRadioCheck = tag.getInt("hitlRemoteNextRadioCheck");
+        activeSeekerRelayLostTicks = tag.getInt("activeSeekerRelayLostTicks");
+        relayLostSelfDestructTicks = tag.getInt("relayLostSelfDestructTicks");
+        hitlInputYaw = tag.getFloat("hitlInputYaw");
+        hitlInputPitch = tag.getFloat("hitlInputPitch");
+        hitlSteeringYaw = tag.getFloat("hitlSteeringYaw");
+        hitlSteeringPitch = tag.getFloat("hitlSteeringPitch");
+        hitlEnabled = tag.getBoolean("hitlEnabled");
+        hitlLinkBlocked = tag.getBoolean("hitlLinkBlocked");
+        hitlLinkSevered = tag.getBoolean("hitlLinkSevered");
+        hitlRemoteAttempted = tag.getBoolean("hitlRemoteAttempted");
+        hitlRemoteRadioBlocked = tag.getBoolean("hitlRemoteRadioBlocked");
+        activeSeekerRelayLost = tag.getBoolean("activeSeekerRelayLost");
+        countermeasurePhaseActive = tag.getBoolean("countermeasurePhaseActive");
+        hitlControlMode = RVP_EnumHitlControlMode.valueOf(tag.getString("hitlControlMode"));
+        hitlSignalSource = HitlSignalSource.valueOf(tag.getString("hitlSignalSource"));
+        Entity designated = resolveVirtualRuntimeEntity(tag, "activeSeekerDesignatedUuid");
+        activeSeekerDesignatedTargetId = designated == null ? Integer.MIN_VALUE : designated.getId();
+        hitlObbTargetUuid = tag.hasUUID("hitlObbTargetUuid") ? tag.getUUID("hitlObbTargetUuid") : null;
+        hitlTargetObb = tag.contains("hitlObbBone") ? new org.ywzj.rvp.util.RVP_NamedVehicleObbs.Key(
+                tag.getString("hitlObbBone"), tag.getInt("hitlObbIndex")) : null;
+    }
+
+    /** 纯显示代理没有生成包；仅建立镜头/HUD 所需的只读配置，不初始化飞行或建立服务端会话。 */
+    public void initializeVirtualDisplayControls() {
+        // 调用客户端安全配置出口，公共类不直接引用 Minecraft 等客户端类型。
+        var data = getResolvedWeaponConfig();
+        if (data != null && data.getGuidanceData() instanceof RVP_GuidanceDataHITL hitl && !hitlEnabled) {
+            initNewSchemaHitl(data, hitl, new AimRot(getXRot(), getYRot()));
+            hitlRemoteAttempted = true;
+        }
+    }
+
 
     @Override
     public void writeSpawnData(FriendlyByteBuf buffer) {

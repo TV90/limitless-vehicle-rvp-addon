@@ -89,7 +89,8 @@ public final class RVP_ClientSaclosState {
             laserHudPos = clientPoint;
             return;
         }
-        Entity entity = mc.level.getEntity(RVP_ClientHitlState.getActiveMissileId());
+        // 调用既有会话的统一显示入口，导弹虚拟化期间保留镜头/操控显示，不新增目标权限。
+        Entity entity = RVP_ClientHitlState.resolveActiveMissile(mc);
         if (entity instanceof RVP_MissileEntity missile && missile.isAlive()) {
             laserHudPos = missile.getTargetPos();
         } else {
@@ -157,7 +158,8 @@ public final class RVP_ClientSaclosState {
 
     private static void acquireTrackedMissile(LocalPlayer player, Level level) {
         if (trackedMissileId >= 0) {
-            Entity tracked = level.getEntity(trackedMissileId);
+            // 只接续先前已跟踪的操作手弹体，虚拟显示不用于发现新的可锁目标。
+            Entity tracked = resolveTrackedMissile(Minecraft.getInstance(), trackedMissileId);
             if (tracked instanceof RVP_BaseBullet bullet && bullet.isAlive()) {
                 pendingAcquireTicks = 0;
                 return;
@@ -236,6 +238,16 @@ public final class RVP_ClientSaclosState {
         serverTargetingActive = false;
     }
 
+    /** 只按既有发射跟踪编号接续纯显示代理，实际操控仍由服务端射手身份校验。 */
+    @Nullable
+    private static Entity resolveTrackedMissile(Minecraft mc, int entityId) {
+        if (mc.level == null || entityId < 0) return null;
+        Entity local = mc.level.getEntity(entityId);
+        if (local != null && local.isAlive()) return local;
+        return org.ywzj.rvp.client.state.remotevisibility.RVP_ClientVirtualMissileVisualState.controlVisual(
+                entityId, mc.getFrameTime());
+    }
+
     public static boolean isGuiding() {
         Minecraft mc = Minecraft.getInstance();
         LocalPlayer player = mc.player;
@@ -244,13 +256,14 @@ public final class RVP_ClientSaclosState {
         }
 
         if (RVP_ClientHitlState.isDesignateMode()) {
-            Entity missile = mc.level.getEntity(RVP_ClientHitlState.getActiveMissileId());
+            // 调用既有会话的统一显示入口，导弹虚拟化期间保留镜头/操控显示，不新增目标权限。
+            Entity missile = RVP_ClientHitlState.resolveActiveMissile(mc);
             return missile instanceof RVP_BaseBullet bullet
                     && bullet.isAlive();
         }
 
         if (trackedMissileId >= 0) {
-            Entity missile = mc.level.getEntity(trackedMissileId);
+            Entity missile = resolveTrackedMissile(mc, trackedMissileId);
             if (missile instanceof RVP_BaseBullet bullet && bullet.isAlive()) {
                 return RVP_ClientSaclosGuidance.isInSaclosPhase(bullet);
             }

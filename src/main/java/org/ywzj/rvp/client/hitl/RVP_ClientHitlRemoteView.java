@@ -186,7 +186,8 @@ public final class RVP_ClientHitlRemoteView {
             if (session.age > 20) clear(true);
             return;
         }
-        var missile = session.level.getEntity(session.missileId);
+        // 调用既有会话的统一显示入口，导弹虚拟化期间保留镜头/操控显示，不新增目标权限。
+        var missile = RVP_ClientHitlState.resolveActiveMissile(mc);
         if (missile != null) {
             if (!missile.getUUID().equals(session.missileUuid)) {
                 clear(true);

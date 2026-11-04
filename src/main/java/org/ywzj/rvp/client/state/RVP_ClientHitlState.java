@@ -334,7 +334,8 @@ public class RVP_ClientHitlState {
             vehicleWaitTicks = 0;
         }
 
-        Entity e = mc.level.getEntity(activeMissileId);
+        // 调用会话限定的真实/虚拟显示入口，真实实体移除后电视镜头继续跟随原飞行身份。
+        Entity e = resolveActiveMissile(mc);
         RVP_MissileEntity missile = e instanceof RVP_MissileEntity m ? m : null;
         if (missile != null) {
             if (missile.isRemoved()) {
@@ -384,7 +385,7 @@ public class RVP_ClientHitlState {
                 markRightClickConsumed(mc.level.getGameTime());
             }
             // 右键：默认退出视角；武器配置 hitl_right_click_detonate 时改为提前引爆
-            Entity hitlMissile = mc.level == null ? null : mc.level.getEntity(activeMissileId);
+            Entity hitlMissile = resolveActiveMissile(mc);
             if (hitlMissile instanceof RVP_MissileEntity rvpMissile
                     && rvpMissile.rvp$isHitlRightClickDetonate()) {
                 RVP_Network.CHANNEL.sendToServer(C2SHitlDetonate.of(activeMissileId));
@@ -608,12 +609,23 @@ public class RVP_ClientHitlState {
         if (!RVP_Keys.HITL_SWITCH_VIDEO_MODE.consumeClick()) {
             return;
         }
-        Entity entity = mc.level == null ? null : mc.level.getEntity(activeMissileId);
+        Entity entity = resolveActiveMissile(mc);
         if (!(entity instanceof RVP_MissileEntity missile)) {
             return;
         }
         videoMode = nextVideoMode(missile, videoMode);
         videoModeUserSelected = true;
+    }
+
+    /** 查找当前已经建立的电视会话弹体，视觉缓存只提供画面，C2S 仍由服务端校验归属。 */
+    @org.jetbrains.annotations.Nullable
+    public static RVP_MissileEntity resolveActiveMissile(Minecraft mc) {
+        if (mc.level == null || activeMissileId < 0) return null;
+        Entity real = mc.level.getEntity(activeMissileId);
+        if (real instanceof RVP_MissileEntity missile && missile.isAlive()) return missile;
+        // 调用独立显示缓存，代理不入世界，不进入雷达或通用目标枚举。
+        return org.ywzj.rvp.client.state.remotevisibility.RVP_ClientVirtualMissileVisualState.controlVisual(
+                activeMissileId, mc.getFrameTime());
     }
 
     private static RVP_EnumVideoMode normalizeVideoMode(RVP_MissileEntity missile, RVP_EnumVideoMode preferred) {

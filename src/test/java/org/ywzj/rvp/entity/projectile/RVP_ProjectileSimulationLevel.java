@@ -24,6 +24,8 @@ public final class RVP_ProjectileSimulationLevel extends ServerLevel {
     private net.minecraft.world.level.entity.EntityLookup<net.minecraft.world.entity.Entity> entityLookup;
     /** 原版实体查询器；虚拟目标仍不加入此索引。 */
     private net.minecraft.world.level.entity.LevelEntityGetter<net.minecraft.world.entity.Entity> entityGetter;
+    /** 仅提供 getChunkNow 的只读区块源，用于真实虚拟弹地形预检，不运行加载或区块调度。 */
+    private ReadOnlyChunkSource chunkSource;
 
     /** 服务器构造需要磁盘存档和线程；测试用 environment 分配，仅提供下面显式实现的查询。 */
     private RVP_ProjectileSimulationLevel() { super(null, null, null, null, null, null, null, false, 0, List.of(), false, null); }
@@ -49,6 +51,9 @@ public final class RVP_ProjectileSimulationLevel extends ServerLevel {
                 new net.minecraft.world.level.entity.EntitySectionStorage<>(net.minecraft.world.entity.Entity.class,
                         ignored -> net.minecraft.world.level.entity.Visibility.HIDDEN));
         RVP_ProjectileSimulationBootstrap.write(net.minecraft.world.level.Level.class, level, "dimension", net.minecraft.world.level.Level.OVERWORLD);
+        level.chunkSource = RVP_ProjectileSimulationBootstrap.environment(ReadOnlyChunkSource.class);
+        level.chunkSource.view = RVP_ProjectileSimulationBootstrap.environment(ReadOnlyChunk.class);
+        level.chunkSource.view.world = level;
         return level;
     }
 
@@ -68,6 +73,10 @@ public final class RVP_ProjectileSimulationLevel extends ServerLevel {
     @Override public net.minecraft.world.level.storage.DimensionDataStorage getDataStorage() { return dataStorage; }
     /** 给完整生产 Tick 的只读驻留统计一个稳定身份。 */ @Override public net.minecraft.server.MinecraftServer getServer() { return serverIdentity; }
     /** 测试环境全部区块已就绪，不引入真实区块载入延迟。 */ @Override public boolean hasChunkAt(BlockPos position) { return true; }
+    /** 数值环境地形全部已加载；生产视线裁剪可以读取固定平地，不启动真实区块源。 */
+    @Override public boolean isLoaded(BlockPos position) { return true; }
+    /** 数值世界只允许查询已有视图，不为虚拟段预检启动真实区块源。 */
+    @Override public net.minecraft.server.level.ServerChunkCache getChunkSource() { return chunkSource; }
     /** 返回本刻观测时间。 */ @Override public long getGameTime() { return observationTick; }
     /** 不模拟区块等待；这个边界不会改变实体运动公式。 */ @Override public boolean isPositionEntityTicking(BlockPos position) { return true; }
     /** 生产制导离地高度查询使用同一个 groundY；无地形依赖的测试不得调用。 */
@@ -75,6 +84,8 @@ public final class RVP_ProjectileSimulationLevel extends ServerLevel {
         if (terrainQueriesForbidden) throw new AssertionError("无地形依赖的飞行不应查询高度图");
         return (int) Math.floor(groundY);
     }
+    /** 场景覆盖较大的竖直范围；不依赖真实维度注册表，也不改写物理高度值。 */
+    @Override public int getHeight() { return 32768; }
     /** 场景允许超出原版建筑高度的飞行，地形仍是同一平面。 */ @Override public int getMinBuildHeight() { return (int) Math.floor(groundY) - 64; }
     /** 引信只查询固定平面的空气/实心状态，不加载地形或改写近炸判定。 */
     @Override public net.minecraft.world.level.block.state.BlockState getBlockState(BlockPos position) {
@@ -84,6 +95,27 @@ public final class RVP_ProjectileSimulationLevel extends ServerLevel {
     /** 按场景水面回答生产鱼雷的“上方仍是水”检查。 */
     @Override public FluidState getFluidState(BlockPos position) {
         return waterY != null && position.getY() >= groundY && position.getY() < waterY ? water : air;
+    }
+
+    /** 不复制地形公式，只把现有固定平地环境暴露给生产 getChunkNow 查询。 */
+    private static final class ReadOnlyChunkSource extends net.minecraft.server.level.ServerChunkCache {
+        /** 所有场景坐标共用的只读视图，实际位置仍由原环境方法判断。 */ private ReadOnlyChunk view;
+        private ReadOnlyChunkSource() { super(null, null, null, null, null, null, 0, 0, false, null, null, null); }
+        @Override public net.minecraft.world.level.chunk.LevelChunk getChunkNow(int x, int z) { return view; }
+        @Override public net.minecraft.world.level.chunk.ChunkAccess getChunk(int x, int z,
+                net.minecraft.world.level.chunk.ChunkStatus status, boolean create) {
+            throw new AssertionError("数值环境不得执行同步区块加载");
+        }
+    }
+
+    /** 地形、流体读数来自同一个场景，不替换射线或任何弹体计算。 */
+    private static final class ReadOnlyChunk extends net.minecraft.world.level.chunk.LevelChunk {
+        /** 提供平地和水面观测的原数值环境。 */ private RVP_ProjectileSimulationLevel world;
+        private ReadOnlyChunk() { super(null, new net.minecraft.world.level.ChunkPos(0, 0)); }
+        @Override public net.minecraft.world.level.block.state.BlockState getBlockState(BlockPos pos) { return world.getBlockState(pos); }
+        @Override public FluidState getFluidState(BlockPos pos) { return world.getFluidState(pos); }
+        @Override public net.minecraft.world.level.block.entity.BlockEntity getBlockEntity(BlockPos pos,
+                net.minecraft.world.level.chunk.LevelChunk.EntityCreationType creation) { return null; }
     }
     /** 环境没有玩家，不产生网络或音效接收者。 */ @Override public List<net.minecraft.server.level.ServerPlayer> players() { return List.of(); }
 

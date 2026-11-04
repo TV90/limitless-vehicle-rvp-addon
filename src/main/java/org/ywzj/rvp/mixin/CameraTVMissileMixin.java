@@ -69,7 +69,8 @@ public abstract class CameraTVMissileMixin {
         }
 
         float[] pose = null;
-        Entity e = mc.level.getEntity(RVP_ClientHitlState.getActiveMissileId());
+        // 调用既有会话的统一显示入口，导弹虚拟化期间保留镜头/操控显示，不新增目标权限。
+        Entity e = RVP_ClientHitlState.resolveActiveMissile(mc);
         if (e instanceof RVP_MissileEntity missile && !e.isRemoved()) {
             pose = RVP_ClientHitlCamera.updateSmoothedPose(missile, pPartialTick);
         } else if (RVP_ClientHitlCamera.hasPose()) {

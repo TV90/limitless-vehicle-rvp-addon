@@ -463,6 +463,13 @@ public final class RVP_CountermeasureState {
      */
     private static boolean isLineOfSightBlocked(Entity seeker, Vec3 targetPos) {
         Level level = seeker.level();
+        if (seeker instanceof org.ywzj.rvp.entity.projectile.RVP_BaseBullet bullet
+                && bullet.isVirtualMidcourseTarget() && level instanceof net.minecraft.server.level.ServerLevel serverLevel) {
+            // 调用虚拟飞行的只读地形视图，保留正式方块遮挡语义，形状访问邻块也不得加载。
+            return org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileWorldAccess.loadedTerrain(serverLevel)
+                    .clip(new ClipContext(seeker.position(), targetPos,
+                            ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, seeker)).getType() != HitResult.Type.MISS;
+        }
         Vec3 clampEnd = clampRayToLoadedChunks(level, seeker.position(), targetPos);
         if (clampEnd == null) {
             return false;

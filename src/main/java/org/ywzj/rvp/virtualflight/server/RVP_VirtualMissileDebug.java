@@ -76,7 +76,7 @@ public final class RVP_VirtualMissileDebug {
                 reason, state.flightUuid, state.originalEntityId, state.weaponId, state.dimension, state.phase,
                 state.lastUpdatedGameTime, state.trajectory().flightTick(), state.trajectory().remainingLife(),
                 state.trajectory().position(), state.trajectory().velocity(), state.snapshot.targetPosition(),
-                state.trajectory().position().distanceTo(state.snapshot.targetPosition()),
+                state.snapshot.targetPosition() == null ? -1 : state.trajectory().position().distanceTo(state.snapshot.targetPosition()),
                 state.trajectory().flightDistance(), state.restoreWaitTicks, state.restoreAttemptCount,
                 state.trajectoryImplementationId, state.trajectoryStateVersion, detail);
     }

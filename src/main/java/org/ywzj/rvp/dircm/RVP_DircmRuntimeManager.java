@@ -163,7 +163,8 @@ public final class RVP_DircmRuntimeManager {
 
         // 当前目标维护
         if (channel.busyTargetId >= 0) {
-            Entity target = vehicle.level().getEntity(channel.busyTargetId);
+            // 既有照射通道可继续持有虚拟弹，后续仍按原 UUID 和敌我规则校验。
+            Entity target = org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.resolve(vehicle.level(), channel.busyTargetId);
             // SBW 联动：被照射的 SBW 红外（guideType=0）导弹占用通道，光束期内持续偏转
             if (RVP_SuperbWarfareCompat.isLoaded() && target != null && !target.isRemoved()
                     && RVP_SuperbWarfareCompat.isSbwMissile(target)
@@ -299,7 +300,9 @@ public final class RVP_DircmRuntimeManager {
         AABB box = vehicle.getBoundingBox().inflate(config.detectRadius());
         double bestSqr = Double.MAX_VALUE;
         RVP_BaseBullet best = null;
-        for (Entity entity : vehicle.level().getEntities(vehicle, box, e -> true)) {
+        // 调用现有目标合并入口，虚拟化不能使导弹绕过载具的定向红外反制。
+        for (Entity entity : org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.merge(
+                vehicle.level(), box, vehicle.level().getEntities(vehicle, box, e -> true), e -> e != vehicle)) {
             if (!(entity instanceof RVP_BaseBullet bullet) || !entity.isAlive()) {
                 continue;
             }

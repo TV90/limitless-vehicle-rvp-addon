@@ -65,15 +65,24 @@ public record S2CVirtualMissileVisualSnapshot(ResourceLocation dimension, UUID s
      * @param motorPhase 权威发动机当前阶段
      * @param motorBurnRemainingTicks 当前燃烧窗口的剩余飞行刻，不含未来点火等待
      * @param trailHoldRemainingTicks 距最晚燃尽的剩余刻，仅用于现有尾烟保持期
+     * @param guidancePhase 当前主段/末段制导阶段，仅显示和操作提示使用，不执行客户端制导
      */
     public record Entry(UUID flightUuid, int entityId, ResourceLocation weaponId, Vec3 position, Vec3 velocity,
             float yaw, float pitch, int flightTick, RVP_VirtualFlightPhase phase, MotorPhase motorPhase,
-            int motorBurnRemainingTicks, int trailHoldRemainingTicks) {
+            int motorBurnRemainingTicks, int trailHoldRemainingTicks, org.ywzj.rvp.guidance.RVP_GuidancePhase guidancePhase) {
+        /** 常规主段样本的便捷构造器，实际网络始终编码完整阶段字段。 */
+        public Entry(UUID flightUuid, int entityId, ResourceLocation weaponId, Vec3 position, Vec3 velocity,
+                float yaw, float pitch, int flightTick, RVP_VirtualFlightPhase phase, MotorPhase motorPhase,
+                int motorBurnRemainingTicks, int trailHoldRemainingTicks) {
+            this(flightUuid, entityId, weaponId, position, velocity, yaw, pitch, flightTick, phase, motorPhase,
+                    motorBurnRemainingTicks, trailHoldRemainingTicks, org.ywzj.rvp.guidance.RVP_GuidancePhase.MAIN);
+        }
         public Entry {
             Objects.requireNonNull(flightUuid, "flightUuid");
             requireResource(weaponId);
             Objects.requireNonNull(phase, "phase");
             Objects.requireNonNull(motorPhase, "motorPhase");
+            Objects.requireNonNull(guidancePhase, "guidancePhase");
             if (entityId < 0 || flightTick < 0 || !finite(position) || !finite(velocity)
                     || !Float.isFinite(yaw) || !Float.isFinite(pitch)
                     || motorBurnRemainingTicks < 0 || motorBurnRemainingTicks > MAX_BURN_TICKS
@@ -199,6 +208,7 @@ public record S2CVirtualMissileVisualSnapshot(ResourceLocation dimension, UUID s
         buffer.writeByte(entry.motorPhase().ordinal());
         buffer.writeVarInt(entry.motorBurnRemainingTicks());
         buffer.writeVarInt(entry.trailHoldRemainingTicks());
+        buffer.writeByte(entry.guidancePhase().ordinal());
     }
 
     /** 逐项构造时执行同编码端一致的数值校验。 */
@@ -206,12 +216,12 @@ public record S2CVirtualMissileVisualSnapshot(ResourceLocation dimension, UUID s
         return new Entry(buffer.readUUID(), buffer.readVarInt(), readResource(buffer), readVector(buffer),
                 readVector(buffer), buffer.readFloat(), buffer.readFloat(), buffer.readVarInt(),
                 readEnum(buffer, RVP_VirtualFlightPhase.values()), readEnum(buffer, MotorPhase.values()),
-                buffer.readVarInt(), buffer.readVarInt());
+                buffer.readVarInt(), buffer.readVarInt(), readEnum(buffer, org.ywzj.rvp.guidance.RVP_GuidancePhase.values()));
     }
 
-    /** 单条记录精确大小；向量共 48 字节，角度 8 字节，两个阶段各 1 字节。 */
+    /** 单条记录精确大小；向量共 48 字节，角度 8 字节，飞行、发动机、制导阶段各 1 字节。 */
     private static int entrySize(Entry entry) {
-        return 74 + FriendlyByteBuf.getVarIntSize(entry.entityId()) + resourceSize(entry.weaponId())
+        return 75 + FriendlyByteBuf.getVarIntSize(entry.entityId()) + resourceSize(entry.weaponId())
                 + FriendlyByteBuf.getVarIntSize(entry.flightTick())
                 + FriendlyByteBuf.getVarIntSize(entry.motorBurnRemainingTicks())
                 + FriendlyByteBuf.getVarIntSize(entry.trailHoldRemainingTicks());

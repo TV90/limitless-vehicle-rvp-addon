@@ -218,6 +218,14 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     private Vec3 virtualMidcourseLaunchPosition = Vec3.ZERO;
     /** 专用转换移除标志，使 remove/debug/HITL 清理可区分普通 discard。 */
     private boolean virtualizingMidcourse;
+    /** 世界交互恢复后的短暂冷却，单位飞行刻，防止同一位置连续真实/虚拟切换。 */
+    private int virtualReentryFlightTick;
+    /** 虚拟制导强制耗尽寿命时延后到已恢复实体的当前位置结算，避免额外移动一刻才引爆。 */
+    private boolean virtualLifeEndPending;
+    /** 读档后发射车尚未加载时保留的制导武器站名称，等待同车重新出现再绑定。 */
+    @Nullable private String virtualShooterWeaponUnitId;
+    /** 读档后待重绑的实际发射站名称，线导起点不能改绑到别的枪管。 */
+    @Nullable private String virtualLaunchWeaponUnitId;
     /** 仅目标适配器置位：本对象代表一条虚拟飞行记录，不是世界中的真实弹体。 */
     private boolean virtualMidcourseTarget;
     /** 客户端虚拟目标采用服务端同步的地面高度；真实弹和服务端对象不设置此值。 */
@@ -2069,6 +2077,14 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 return;
             }
 
+            // 世界路径已就绪后才执行虚拟阶段延期的世界结算，不在虚拟对象上创建爆炸。
+            if (virtualLifeEndPending) {
+                virtualLifeEndPending = false;
+                if (rvpData.getFuseData().isDetonateOnLifeEnd()) explodeAndDiscard(position());
+                else discard();
+                return;
+            }
+            if (this instanceof RVP_MissileEntity missile && missile.tickVirtualHitlDetonation()) return;
             updateCount++;
             // 主动ECM干扰倒计时递减（服务端写入后每 tick 自减，归零即恢复）
             if (ecmActiveJamRemainTick > 0) {
@@ -2232,30 +2248,103 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
 
     /**
      * 未加入世界的虚拟计算对象只执行实体的飞行计算，不运行 Entity.tick、碰撞、引信、尾迹或区块申请。
-     * 准入器保证这里只处理已结束冷发射、无实时世界依赖的固定 GPS 导弹。
+     * 所有制导源共用此入口；冷发射阶段留在真实态，世界结算发生前由管理器提前恢复。
      */
     public final void tickVirtualMidcourseFlight() {
+        Vec3 origin = position();
         // 调用原版姿态历史入口，让制导所见的上一刻角度与正常实体调度一致。
         setOldPosAndRot();
         tickCount++;
         updateCount++;
+        // 发射者卸载后仍按保存的归属继续飞行；主动干扰计时不依赖世界实体调度。
+        if (ecmActiveJamRemainTick > 0) ecmActiveJamRemainTick--;
+        // 虚拟对象不经过世界实体事件循环，在这里推进一次反制时钟，恢复等待时保持暂停。
+        if (dircmJammed) org.ywzj.rvp.dircm.RVP_DircmRuntimeManager.tickJammedProjectile(this);
+        // 子母弹仅推进尚未到期的布撒计时；实际生成前由管理器恢复真实实体。
+        if (submunitionRunner != null) submunitionRunner.advanceVirtualDelay();
         // 调用真实实体同一制导和动态分派运动方法，推力、二脉冲、风偏、恒速与阻力均不另行计算。
         tickKinematicGuidance();
         tickMotion();
-        life--;
+        // 复用真实运动段累计口径，延迟引信、测距空爆和距离自毁不会在虚拟段丢失计数。
+        double travelled = position().distanceTo(origin);
+        var fuse = rvpData.getFuseData();
+        if (fuse.isProgrammableAirburst() && !airburstTriggered
+                && airburstDist > fuse.getAirburstMeasureMin() && airburstDist < fuse.getAirburstMeasureMax())
+            airburstTravelled += travelled;
+        if (!selfDestructTriggered && rvpData.getProjectileData().resolveSelfDestructDistance(getWeaponKind()) > 0)
+            selfDestructTravelled += travelled;
+        // 线导锚点继续跟随原发射武器站，虚拟化不重选枪管或清掉操作者输入。
+        tickWireLink();
+        // 制导器本刻可能主动令寿命归零；保留当前位置，先恢复再走原来的寿命末端爆炸。
+        if (life <= 0 && rvpData != null && rvpData.getFuseData().isDetonateOnLifeEnd()) virtualLifeEndPending = true;
+        else life--;
     }
 
     /** 这些状态需要载具实时姿态或沿途世界交互，结束后才能交给无世界 Tick 的虚拟计算对象。 */
     public final boolean hasWorldDependentMidcourseMotion() {
         // 调用本项目点火时序，冷发射/延迟点火完成前仍由真实实体和发射平台推进。
-        return rvpData == null || getFlightTickCount() < RVP_ProjectileMotion.resolveMotorIgnitionTick(this, rvpData)
-                || isInWater() || submunitionDeploymentMotionActive || smartFuseActive
-                || dircmJammed || ecmActiveJamRemainTick > 0;
+        return rvpData == null || getFlightTickCount() < virtualReentryFlightTick
+                || getFlightTickCount() < RVP_ProjectileMotion.resolveMotorIgnitionTick(this, rvpData)
+                || isInWater() || submunitionDeploymentMotionActive || smartFuseActive;
     }
 
-    /** 在 discard 前标记“真实转虚拟”专用移除语义。 */
-    public final void beginVirtualMidcourseRemoval() {
+    /** 原版公开生命周期接口同步移出空间索引、追踪和实体调度，保留原对象的全部导引头/操控状态。 */
+    public final void detachForVirtualMidcourse() {
         virtualizingMidcourse = true;
+        // 先归还真实弹路径租约，再使用非销毁移除原因；不会触发虚拟记录自己的终止回调。
+        RVP_ChunkPathLoadManager.releaseEntity(this);
+        // 调用既有生命周期诊断，仍能识别这次移出属于虚拟转换而非击毁。
+        RVP_ProjectileLifecycleDebug.noteRemoved(this, Entity.RemovalReason.UNLOADED_TO_CHUNK);
+        setRemoved(Entity.RemovalReason.UNLOADED_TO_CHUNK);
+        // setRemoved 的世界回调已经完成移出；只清移除标志，不重新加入世界。
+        unsetRemoved();
+        virtualMidcourseTarget = true;
+        virtualizingMidcourse = false;
+    }
+
+    /** 成功入世前撤销虚拟目标身份，失败时管理器会恢复该标志。 */
+    public final void prepareVirtualMidcourseRestoration() {
+        virtualMidcourseTarget = false;
+        virtualizingMidcourse = false;
+        virtualReentryFlightTick = getFlightTickCount() + 20;
+    }
+
+    /** 仅判断下一小段是否即将发生世界结算；不运行引信、不创建子体、不加载地形。 */
+    public final boolean needsVirtualWorldRestoration() {
+        if (rvpData == null) return false;
+        int lead = Math.max(2, Math.min(20, rvpData.getVirtualMidcourseData().getRestoreLeadTick()));
+        double distance = Math.max(1, getDeltaMovement().length()) * (lead + 2);
+        var fuse = rvpData.getFuseData();
+        if (virtualLifeEndPending || this instanceof RVP_MissileEntity missile && missile.hasVirtualHitlDetonationPending()
+                || life <= lead && fuse.isDetonateOnLifeEnd()
+                || rvpData.getDelayFuse() > 0 && updateCount + lead >= rvpData.getDelayFuse()
+                || bounceFuseCountdown >= 0 || topAttackTriggerTick >= 0 || smartFuseActive
+                || dircmJammed && !dircmHitlTemporary && dircmSelfDestructTick > 0 && dircmSelfDestructTick <= lead
+                || submunitionRunner != null && submunitionRunner.willReleaseWithin(lead)) return true;
+        float selfDistance = rvpData.getProjectileData().resolveSelfDestructDistance(getWeaponKind());
+        if (selfDistance > 0 && selfDestructTravelled + distance >= selfDistance) return true;
+        if (fuse.isProgrammableAirburst() && airburstDist > fuse.getAirburstMeasureMin()
+                && airburstDist < fuse.getAirburstMeasureMax()
+                && !airburstTriggered && airburstTravelled + distance >= airburstDist + fuse.getAirburstOffset()) return true;
+        // 已加载实体和现有虚拟目标只作近场筛选，真正的直击/近炸/攻顶仍由正式实体链判定。
+        double radius = Math.max(rvpData.getProximityFuseDist() * fuse.getProximityRadiusAmmoFactor(),
+                fuse.isTopAttackFuseEnabled() ? fuse.getTopAttackFuseDistance() : 0);
+        var area = getBoundingBox().expandTowards(getDeltaMovement().scale(lead)).inflate(Math.max(2, radius));
+        if (level() instanceof net.minecraft.server.level.ServerLevel serverLevel) {
+            // 遍历实际已加载实体而非枚举巨大包围盒的所有区块截面，巨型载具也按真实包围盒参与。
+            for (Entity candidate : org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.allEntities(serverLevel)) {
+                if (candidate != this && candidate != getOwner() && candidate != shooterVehicle
+                        && candidate.isAlive() && candidate.getBoundingBox().intersects(area)) return true;
+            }
+        }
+        // 调用无加载副作用的地形预检；路径部分缺失也不能漏掉中间已加载的墙体或水体。
+        Vec3 end = position().add(getDeltaMovement().scale(lead));
+        if (org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileWorldAccess.hasKnownObstacle(
+                level(), this, position(), end)) return true;
+        // 近地引信同样先恢复再结算；向下预留本次飞行可能消耗的距离，不读取未知高度图。
+        return fuse.getGroundProximityFuseDistance() > 0
+                && org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileWorldAccess.hasKnownObstacle(
+                        level(), this, position(), position().add(0, -fuse.getGroundProximityFuseDistance() - distance, 0));
     }
 
     /** @return 当前 remove 是否由成功虚拟化触发。 */
@@ -2351,6 +2440,281 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         irSeekerLossGraceStarted = snapshot.irSeekerLossGraceStarted();
     }
 
+    /** 保存完整导引头、反制、操作源和世界结算计数；只供服务端交接和存档，不发送到客户端。 */
+    public CompoundTag saveVirtualRuntimeData() {
+        CompoundTag tag = new CompoundTag();
+        // 实体时钟与飞行时钟分别保存，区块等待前的干扰截止刻不能在重建后错位。
+        tag.putInt("runtimeVersion", 1);
+        tag.putBoolean("virtualLifeEndPending", virtualLifeEndPending);
+        tag.putInt("entityTickCount", tickCount);
+        tag.putInt("chunkWaitTotal", entityData.get(DATA_CHUNK_WAIT_TOTAL));
+        if (shooterWeaponUnit != null) virtualShooterWeaponUnitId = shooterWeaponUnit.getId();
+        if (launchWeaponUnit != null) virtualLaunchWeaponUnitId = launchWeaponUnit.getId();
+        if (virtualShooterWeaponUnitId != null) tag.putString("shooterWeaponUnit", virtualShooterWeaponUnitId);
+        if (virtualLaunchWeaponUnitId != null) tag.putString("launchWeaponUnit", virtualLaunchWeaponUnitId);
+        tag.putInt("wireBoltIndex", wireBoltIndex);
+        tag.putInt("airburstDist", airburstDist);
+        tag.putInt("submunitionDepth", submunitionDepth);
+        tag.putInt("livingPenetrationLeft", livingPenetrationLeft);
+        tag.putInt("wallPenetrationLeft", wallPenetrationLeft);
+        tag.putInt("penetrationEventCount", penetrationEventCount);
+        tag.putInt("bounceLeft", bounceLeft);
+        tag.putInt("bouncesConsumed", bouncesConsumed);
+        tag.putInt("bounceFuseCountdown", bounceFuseCountdown);
+        tag.putInt("seekerShutOffUntilTick", seekerShutOffUntilTick);
+        tag.putInt("antiRadiationNextScanTick", antiRadiationNextScanTick);
+        tag.putInt("antiRadiationMemoryLeftTick", antiRadiationMemoryLeftTick);
+        tag.putInt("armPreselectExclusiveLeftTick", armPreselectExclusiveLeftTick);
+        // 整数实体编号仅本次运行有效，持久化引用统一保存 UUID，避免重启后误认别的实体。
+        writeVirtualRuntimeEntityId(tag, "preselectedVehicleUuid", preselectedVehicleId);
+        tag.putInt("preselectedRadarIndex", preselectedRadarIndex);
+        tag.putInt("motorIgnitionStartTick", motorIgnitionStartTick);
+        tag.putInt("guidanceStageIndex", guidanceStageIndex);
+        tag.putInt("guidanceStageEnteredTick", guidanceStageEnteredTick);
+        tag.putInt("guidanceOverlapResolveIndex", guidanceOverlapResolveIndex);
+        tag.putInt("jammingExpireTick", jammingExpireTick);
+        writeVirtualRuntimeEntityId(tag, "dircmSourceVehicleUuid", dircmSourceVehicleId);
+        tag.putInt("dircmJamRemainTick", dircmJamRemainTick);
+        tag.putInt("dircmNoRedesignateTick", dircmNoRedesignateTick);
+        tag.putInt("dircmSelfDestructTick", dircmSelfDestructTick);
+        tag.putInt("jammingNextScanTick", jammingNextScanTick);
+        writeVirtualRuntimeEntityId(tag, "jammingSourceVehicleUuid", jammingSourceVehicleId);
+        tag.putInt("jammingOffsetRefreshTick", jammingOffsetRefreshTick);
+        tag.putInt("jammingGraceExpireTick", jammingGraceExpireTick);
+        tag.putInt("jamVehicleNoCollisionUntilTick", jamVehicleNoCollisionUntilTick);
+        tag.putInt("jamGracePeriodUntilTick", jamGracePeriodUntilTick);
+        tag.putInt("ecmActiveJamRemainTick", ecmActiveJamRemainTick);
+        tag.putInt("guidanceMotionSampleTick", guidanceMotionSampleTick);
+        tag.putInt("virtualReentryFlightTick", virtualReentryFlightTick);
+        tag.putBoolean("airburstTriggered", airburstTriggered);
+        tag.putBoolean("selfDestructTriggered", selfDestructTriggered);
+        tag.putBoolean("launchTargetSnapshot", launchTargetSnapshot);
+        tag.putBoolean("terminalIrTargetAcquired", terminalIrTargetAcquired);
+        tag.putBoolean("antiRadiationLostPermanent", antiRadiationLostPermanent);
+        tag.putBoolean("antiRadiationSignalAcquired", antiRadiationSignalAcquired);
+        tag.putBoolean("dircmJammed", dircmJammed);
+        tag.putBoolean("dircmHitlTemporary", dircmHitlTemporary);
+        tag.putBoolean("smokeBreakLock", smokeBreakLock);
+        tag.putBoolean("ecmActiveNoReacquire", ecmActiveNoReacquire);
+        tag.putBoolean("ecmGpsOffsetApplied", ecmGpsOffsetApplied);
+        tag.putBoolean("radarUplinkTargeting", radarUplinkTargeting);
+        tag.putDouble("airburstTravelled", airburstTravelled);
+        tag.putDouble("selfDestructTravelled", selfDestructTravelled);
+        tag.putDouble("guidanceMotionConfidence", guidanceMotionConfidence);
+        tag.putDouble("dircmDeflectStrength", dircmDeflectStrength);
+        tag.putDouble("jammingStrength", jammingStrength);
+        tag.putDouble("jammingSideSign", jammingSideSign);
+        tag.putDouble("jammingHeadingRate", jammingHeadingRate);
+        tag.putDouble("jammingOffsetAngleDeg", jammingOffsetAngleDeg);
+        tag.putDouble("jammingOffsetBaseBlocks", jammingOffsetBaseBlocks);
+        tag.putDouble("jammingOffsetDownBlocks", jammingOffsetDownBlocks);
+        tag.putFloat("penetrationDamageMultiplier", penetrationDamageMultiplier);
+        tag.putFloat("penetrationSpeedMultiplier", penetrationSpeedMultiplier);
+        writeRemoteVec3(tag, "wirePivot", wirePivot);
+        writeRemoteVec3(tag, "wirePivotPrev", wirePivotPrev);
+        writeRemoteVec3(tag, "wirePivotBase", wirePivotBase);
+        writeRemoteVec3(tag, "wirePivotLocal", wirePivotLocal);
+        writeRemoteVec3(tag, "wirePivotLocalPrev", wirePivotLocalPrev);
+        writeRemoteVec3(tag, "topAttackSpawnPosition", topAttackSpawnPosition);
+        writeRemoteVec3(tag, "smartFuseTargetPos", smartFuseTargetPos);
+        writeRemoteVec3(tag, "guidanceMotionPosition", guidanceMotionPosition);
+        writeRemoteVec3(tag, "guidanceMotionVelocity", guidanceMotionVelocity);
+        writeRemoteVec3(tag, "guidanceMotionAcceleration", guidanceMotionAcceleration);
+        writeRemoteVec3(tag, "armPreselectLastPos", armPreselectLastPos);
+        writeRemoteVec3(tag, "saclosOffsetVec", saclosOffsetVec);
+        writeRemoteVec3(tag, "saclosVelVec", saclosVelVec);
+        writeRemoteVec3(tag, "saclosLastPhysVec", saclosLastPhysVec);
+        writeRemoteVec3(tag, "jammingOffsetDir", jammingOffsetDir);
+        writeRemoteVec3(tag, "smokeInertialPoint", smokeInertialPoint);
+        if (guidanceMotionTargetUuid != null) tag.putUUID("guidanceMotionTargetUuid", guidanceMotionTargetUuid);
+        if (targetEntity != null) tag.putUUID("targetEntityUuid", targetEntity.getUUID());
+        if (smartFuseDetectEntity != null) tag.putUUID("smartFuseDetectEntityUuid", smartFuseDetectEntity.getUUID());
+        // 命中去重集合和布撒波次保持连续，不能因真实/虚拟转换重新授予穿透或释放次数。
+        writeVirtualRuntimeIds(tag, "piercedLiving", piercedLivingIds);
+        writeVirtualRuntimeIds(tag, "directHit", directHitIds);
+        writeVirtualRuntimeIds(tag, "proximityDamaged", proximityDamagedIds);
+        tag.putIntArray("stickyPhases", guidanceStickyPhaseIndices.stream().mapToInt(Integer::intValue).toArray());
+        CompoundTag stages = new CompoundTag();
+        guidanceStageEnteredTicks.forEach((index, tick) -> stages.putInt(Integer.toString(index), tick));
+        tag.put("stageEnteredTicks", stages);
+        var radiation = new net.minecraft.nbt.ListTag();
+        radiationPulseTickMap.forEach((key, tick) -> {
+            CompoundTag entry = new CompoundTag();
+            // 辐射源键的高 32 位是实体编号，低 32 位是雷达站序号；跨重启只保留稳定身份。
+            writeVirtualRuntimeEntityId(entry, "vehicleUuid", (int) (key >> 32));
+            if (entry.hasUUID("vehicleUuid")) {
+                entry.putInt("radarIndex", (int) (long) key); entry.putInt("tick", tick); radiation.add(entry);
+            }
+        });
+        tag.put("radiationPulseTicks", radiation);
+        if (submunitionRunner != null) tag.put("submunitionRunner", submunitionRunner.saveVirtualState());
+        return tag;
+    }
+
+    /** 恢复运行态，实际位置/速度/机头仍由类型化快照负责；不调用制导、引信或发射初始化。 */
+    public void restoreVirtualRuntimeData(CompoundTag tag) {
+        if (tag.isEmpty()) return;
+        virtualLifeEndPending = tag.getBoolean("virtualLifeEndPending");
+        tickCount = Math.max(0, tag.getInt("entityTickCount"));
+        entityData.set(DATA_CHUNK_WAIT_TOTAL, Math.max(0, tag.getInt("chunkWaitTotal")));
+        wireBoltIndex = tag.getInt("wireBoltIndex");
+        airburstDist = tag.getInt("airburstDist");
+        submunitionDepth = tag.getInt("submunitionDepth");
+        livingPenetrationLeft = tag.getInt("livingPenetrationLeft");
+        wallPenetrationLeft = tag.getInt("wallPenetrationLeft");
+        penetrationEventCount = tag.getInt("penetrationEventCount");
+        bounceLeft = tag.getInt("bounceLeft");
+        bouncesConsumed = tag.getInt("bouncesConsumed");
+        bounceFuseCountdown = tag.getInt("bounceFuseCountdown");
+        seekerShutOffUntilTick = tag.getInt("seekerShutOffUntilTick");
+        antiRadiationNextScanTick = tag.getInt("antiRadiationNextScanTick");
+        antiRadiationMemoryLeftTick = tag.getInt("antiRadiationMemoryLeftTick");
+        armPreselectExclusiveLeftTick = tag.getInt("armPreselectExclusiveLeftTick");
+        preselectedVehicleId = resolveVirtualRuntimeEntityId(tag, "preselectedVehicleUuid");
+        preselectedRadarIndex = tag.getInt("preselectedRadarIndex");
+        motorIgnitionStartTick = tag.getInt("motorIgnitionStartTick");
+        guidanceStageIndex = tag.getInt("guidanceStageIndex");
+        guidanceStageEnteredTick = tag.getInt("guidanceStageEnteredTick");
+        guidanceOverlapResolveIndex = tag.getInt("guidanceOverlapResolveIndex");
+        jammingExpireTick = tag.getInt("jammingExpireTick");
+        dircmSourceVehicleId = resolveVirtualRuntimeEntityId(tag, "dircmSourceVehicleUuid");
+        dircmJamRemainTick = tag.getInt("dircmJamRemainTick");
+        dircmNoRedesignateTick = tag.getInt("dircmNoRedesignateTick");
+        dircmSelfDestructTick = tag.getInt("dircmSelfDestructTick");
+        jammingNextScanTick = tag.getInt("jammingNextScanTick");
+        jammingSourceVehicleId = resolveVirtualRuntimeEntityId(tag, "jammingSourceVehicleUuid");
+        jammingOffsetRefreshTick = tag.getInt("jammingOffsetRefreshTick");
+        jammingGraceExpireTick = tag.getInt("jammingGraceExpireTick");
+        jamVehicleNoCollisionUntilTick = tag.getInt("jamVehicleNoCollisionUntilTick");
+        jamGracePeriodUntilTick = tag.getInt("jamGracePeriodUntilTick");
+        ecmActiveJamRemainTick = tag.getInt("ecmActiveJamRemainTick");
+        guidanceMotionSampleTick = tag.getInt("guidanceMotionSampleTick");
+        virtualReentryFlightTick = tag.getInt("virtualReentryFlightTick");
+        airburstTriggered = tag.getBoolean("airburstTriggered");
+        selfDestructTriggered = tag.getBoolean("selfDestructTriggered");
+        launchTargetSnapshot = tag.getBoolean("launchTargetSnapshot");
+        terminalIrTargetAcquired = tag.getBoolean("terminalIrTargetAcquired");
+        antiRadiationLostPermanent = tag.getBoolean("antiRadiationLostPermanent");
+        antiRadiationSignalAcquired = tag.getBoolean("antiRadiationSignalAcquired");
+        dircmJammed = tag.getBoolean("dircmJammed");
+        dircmHitlTemporary = tag.getBoolean("dircmHitlTemporary");
+        smokeBreakLock = tag.getBoolean("smokeBreakLock");
+        ecmActiveNoReacquire = tag.getBoolean("ecmActiveNoReacquire");
+        ecmGpsOffsetApplied = tag.getBoolean("ecmGpsOffsetApplied");
+        radarUplinkTargeting = tag.getBoolean("radarUplinkTargeting");
+        airburstTravelled = tag.getDouble("airburstTravelled");
+        selfDestructTravelled = tag.getDouble("selfDestructTravelled");
+        guidanceMotionConfidence = tag.getDouble("guidanceMotionConfidence");
+        dircmDeflectStrength = tag.getDouble("dircmDeflectStrength");
+        jammingStrength = tag.getDouble("jammingStrength");
+        jammingSideSign = tag.getDouble("jammingSideSign");
+        jammingHeadingRate = tag.getDouble("jammingHeadingRate");
+        jammingOffsetAngleDeg = tag.getDouble("jammingOffsetAngleDeg");
+        jammingOffsetBaseBlocks = tag.getDouble("jammingOffsetBaseBlocks");
+        jammingOffsetDownBlocks = tag.getDouble("jammingOffsetDownBlocks");
+        penetrationDamageMultiplier = tag.getFloat("penetrationDamageMultiplier");
+        penetrationSpeedMultiplier = tag.getFloat("penetrationSpeedMultiplier");
+        wirePivot = readRemoteVec3(tag, "wirePivot");
+        wirePivotPrev = readRemoteVec3(tag, "wirePivotPrev");
+        wirePivotBase = readRemoteVec3(tag, "wirePivotBase");
+        wirePivotLocal = readRemoteVec3(tag, "wirePivotLocal");
+        wirePivotLocalPrev = readRemoteVec3(tag, "wirePivotLocalPrev");
+        topAttackSpawnPosition = readRemoteVec3(tag, "topAttackSpawnPosition");
+        smartFuseTargetPos = readRemoteVec3(tag, "smartFuseTargetPos");
+        guidanceMotionPosition = readRemoteVec3(tag, "guidanceMotionPosition");
+        guidanceMotionVelocity = readRemoteVec3(tag, "guidanceMotionVelocity");
+        guidanceMotionAcceleration = readRemoteVec3(tag, "guidanceMotionAcceleration");
+        armPreselectLastPos = readRemoteVec3(tag, "armPreselectLastPos");
+        saclosOffsetVec = readRemoteVec3(tag, "saclosOffsetVec");
+        saclosVelVec = readRemoteVec3(tag, "saclosVelVec");
+        saclosLastPhysVec = readRemoteVec3(tag, "saclosLastPhysVec");
+        jammingOffsetDir = readRemoteVec3(tag, "jammingOffsetDir");
+        smokeInertialPoint = readRemoteVec3(tag, "smokeInertialPoint");
+        guidanceMotionTargetUuid = tag.hasUUID("guidanceMotionTargetUuid") ? tag.getUUID("guidanceMotionTargetUuid") : null;
+        // 调用已加载目标解析器，只重绑同维度已存在实体，不因读档加载目标区块。
+        targetEntity = resolveVirtualRuntimeEntity(tag, "targetEntityUuid");
+        smartFuseDetectEntity = resolveVirtualRuntimeEntity(tag, "smartFuseDetectEntityUuid");
+        restoreVirtualRuntimeIds(tag, "piercedLiving", piercedLivingIds);
+        restoreVirtualRuntimeIds(tag, "directHit", directHitIds);
+        restoreVirtualRuntimeIds(tag, "proximityDamaged", proximityDamagedIds);
+        guidanceStickyPhaseIndices.clear();
+        for (int id : tag.getIntArray("stickyPhases")) guidanceStickyPhaseIndices.add(id);
+        guidanceStageEnteredTicks.clear();
+        CompoundTag stages = tag.getCompound("stageEnteredTicks");
+        for (String key : stages.getAllKeys()) guidanceStageEnteredTicks.put(Integer.parseInt(key), stages.getInt(key));
+        radiationPulseTickMap.clear();
+        for (var item : tag.getList("radiationPulseTicks", net.minecraft.nbt.Tag.TAG_COMPOUND)) {
+            var entry = (CompoundTag) item;
+            int sourceId = resolveVirtualRuntimeEntityId(entry, "vehicleUuid");
+            if (sourceId >= 0) radiationPulseTickMap.put(((long) sourceId << 32)
+                    | (entry.getInt("radarIndex") & 0xffffffffL), entry.getInt("tick"));
+        }
+        // 调用原调度器的状态恢复，热重载不匹配的波次数由调度器拒绝接续。
+        if (submunitionRunner != null && tag.contains("submunitionRunner", net.minecraft.nbt.Tag.TAG_COMPOUND))
+            submunitionRunner.restoreVirtualState(tag.getCompound("submunitionRunner"));
+        virtualShooterWeaponUnitId = tag.contains("shooterWeaponUnit") ? tag.getString("shooterWeaponUnit") : null;
+        virtualLaunchWeaponUnitId = tag.contains("launchWeaponUnit") ? tag.getString("launchWeaponUnit") : null;
+        // 调用延后绑定入口；发射车尚未加载也保留站名，不能在下一次存档时丢掉操控来源。
+        bindVirtualSourceWeaponUnits();
+    }
+
+    /** 调用本体武器站公开标识重绑操作源，既支持立即恢复，也支持发射车稍后重新加载。 */
+    private void bindVirtualSourceWeaponUnits() {
+        if (shooterVehicle == null
+                || (virtualShooterWeaponUnitId == null || shooterWeaponUnit != null)
+                && (virtualLaunchWeaponUnitId == null || launchWeaponUnit != null)) return;
+        for (var part : shooterVehicle.getPartUnits()) if (part instanceof WeaponUnit unit) {
+            if (unit.getId() != null && unit.getId().equals(virtualShooterWeaponUnitId)) shooterWeaponUnit = unit;
+            if (unit.getId() != null && unit.getId().equals(virtualLaunchWeaponUnitId)) launchWeaponUnit = unit;
+        }
+    }
+
+    /** 将当前编号解析成稳定身份；只使用真实/虚拟已有目标，不创建新对象。 */
+    private void writeVirtualRuntimeEntityId(CompoundTag tag, String key, int entityId) {
+        // 调用统一目标解析器，读取当前会话的实体身份。
+        Entity entity = org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.resolve(level(), entityId);
+        if (entity != null) tag.putUUID(key, entity.getUUID());
+    }
+
+    /** 读档时按 UUID 重绑本次实体编号；目标未知就使用“未绑定”，不会误用旧编号。 */
+    private int resolveVirtualRuntimeEntityId(CompoundTag tag, String key) {
+        Entity entity = resolveVirtualRuntimeEntity(tag, key);
+        return entity == null ? -1 : entity.getId();
+    }
+
+    /** 命中去重集合以 UUID 保存，防止服务器重开后错误屏蔽新编号对应的无关目标。 */
+    private void writeVirtualRuntimeIds(CompoundTag tag, String key, Set<Integer> ids) {
+        var entries = new net.minecraft.nbt.ListTag();
+        for (int id : ids) {
+            CompoundTag entry = new CompoundTag();
+            writeVirtualRuntimeEntityId(entry, "uuid", id);
+            if (entry.hasUUID("uuid")) entries.add(entry);
+        }
+        tag.put(key, entries);
+    }
+
+    /** 恢复已加载的原命中目标，缺失目标不会以旧整数编号误认新实体。 */
+    private void restoreVirtualRuntimeIds(CompoundTag tag, String key, Set<Integer> ids) {
+        ids.clear();
+        for (var item : tag.getList(key, net.minecraft.nbt.Tag.TAG_COMPOUND)) {
+            int id = resolveVirtualRuntimeEntityId((CompoundTag) item, "uuid");
+            if (id >= 0) ids.add(id);
+        }
+    }
+
+    /** UUID 查询只读取已有目标，不把旧运行时整数编号当作跨服务器身份。 */
+    @Nullable
+    protected final Entity resolveVirtualRuntimeEntity(CompoundTag tag, String key) {
+        if (!tag.hasUUID(key) || !(level() instanceof net.minecraft.server.level.ServerLevel serverLevel)) return null;
+        UUID uuid = tag.getUUID(key);
+        Entity real = serverLevel.getEntity(uuid);
+        if (real != null && real.isAlive()) return real;
+        // 调用统一虚拟目标源；未初始化记录不会在这里被创建或推进。
+        for (var target : org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileManager.targets(serverLevel))
+            if (target.getUUID().equals(uuid)) return target;
+        return null;
+    }
+
     /*=======================虚拟中段弹体 END=======================*/
 
     /* ============新弹体chunk路径规划============ */
@@ -2390,8 +2754,14 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                                                      @Nullable LivingEntity sourceOwner) {
         if (!virtualMidcourseTarget) return;
         if (sourceVehicle != null) {
+            if (shooterVehicle != sourceVehicle) {
+                shooterWeaponUnit = null;
+                launchWeaponUnit = null;
+            }
             shooterVehicle = sourceVehicle;
             vehicle = sourceVehicle;
+            // 读档时来源稍后加载，按保存的站名接回制导和线导锚点。
+            bindVirtualSourceWeaponUnits();
         }
         // 调用原版弹射物所有者入口，保持所有者 UUID 与缓存引用一起更新。
         if (sourceOwner != null) setOwner(sourceOwner);

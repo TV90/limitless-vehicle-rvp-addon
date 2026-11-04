@@ -63,6 +63,14 @@ class RVP_VirtualEntityTrajectoryParityTest {
                 + "\"speed\":0.3,\"response\":0.1,\"turbulence\":0.03}", "", false, 6));
         cases.add(new FlightCase("thrust_curve", AERO
                 + ",\"thrust_curve\":{\"[[0,25]]\":15,\"[[26,55]]\":6}", "", false, 6));
+        // 每种正式制导源都执行完整生产 Tick 与虚拟入口逐刻对照，不用替身积分器模拟。
+        for (var type : org.ywzj.rvp.guidance.RVP_EnumGuidanceType.values()) {
+            // IOG 是内部惯导回退标识，当前武器 schema 禁止把它直接写成 guidance_type。
+            if (type == org.ywzj.rvp.guidance.RVP_EnumGuidanceType.GPS
+                    || type == org.ywzj.rvp.guidance.RVP_EnumGuidanceType.IOG) continue;
+            cases.add(new FlightCase("guidance_" + type, ENGINE,
+                    "\"guidance_type\":\"" + type + "\",\"max_guidance_angle\":180", false, 6));
+        }
         for (String trigger : List.of("speed", "speed_ratio", "distance", "apex")) {
             String condition = switch (trigger) {
                 case "speed" -> "\"second_pulse_trigger_speed\":100";
@@ -81,7 +89,8 @@ class RVP_VirtualEntityTrajectoryParityTest {
 
     @ParameterizedTest(name = "{0}") @MethodSource("cases")
     void virtualFlightAndRestoredFlightMatchEveryProductionTick(FlightCase sample) throws Exception {
-        String guidance = "\"guidance_type\":\"GPS\",\"max_guidance_angle\":180"
+        String guidance = sample.guidance.startsWith("\"guidance_type\"") ? sample.guidance
+                : "\"guidance_type\":\"GPS\",\"max_guidance_angle\":180"
                 + (sample.guidance.isEmpty() ? "" : "," + sample.guidance);
         String json = "{\"type\":\"rvp:missile\",\"life\":10000,\"projectile_data\":{" + sample.projectile
                 + "},\"guidance_data\":{" + guidance + "},\"virtual_midcourse_data\":{\"enabled\":true,"
@@ -104,6 +113,9 @@ class RVP_VirtualEntityTrajectoryParityTest {
         var reference = new RVP_ProjectileEntitySimulation(weapon.data(), weapon.kind(), scene,
                 (type, level) -> new ReferenceMissile(type, level, weapon.data().getWeaponId()));
         var actual = (RVP_MissileEntity) reference.entity();
+        // 非 GPS 用例装订了实际 Marker 目标；生产 UUID 恢复需要在已加载观测索引中找到它。
+        if (actual.getTargetEntity() != null)
+            ((RVP_ProjectileSimulationLevel) actual.level()).addObserver(actual.getTargetEntity());
         // 调用测试环境查询保护；普通 GPS 没有高度门，真实与虚拟飞行均不得偷偷读取地形。
         ((RVP_ProjectileSimulationLevel) actual.level()).forbidTerrainQueries();
         // 排除原版首次射击广播和离开发射者的碰撞查询，完整生产 Tick 的制导/运动仍不替换。
@@ -118,6 +130,8 @@ class RVP_VirtualEntityTrajectoryParityTest {
                 actual.createVirtualMidcourseKinematics(), actual.getId(), actual.getColdLaunchTimeTick(), 0, 0,
                 RVP_EntityTrajectoryIntegrator.ID, RVP_EntityTrajectoryIntegrator.VERSION,
                 RVP_VirtualFlightPhase.VIRTUAL_CRUISE, 0, 0, 0, 0);
+        // 与正式管理器相同，交接额外导引头/操控运行态；基础运动快照不能代替它。
+        state.runtimeData = actual.saveVirtualRuntimeData();
         assertTrue(state.isStructurallyValid());
         if (sample.cold) {
             assertTrue(actual.hasPresetProfileInitialized());

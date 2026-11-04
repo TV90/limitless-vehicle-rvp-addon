@@ -45,6 +45,10 @@ public final class RVP_VirtualMissileState {
     public RVP_VirtualMissileSnapshot snapshot;
     /** 位置/姿态之外的实体运动记忆，每刻与完整快照一起更新并持久化。 */
     public RVP_VirtualMissileKinematics kinematics;
+    /** 全类型导弹额外运行态，仅服务端保存，不发送给显示或雷达客户端。 */
+    public CompoundTag runtimeData = new CompoundTag();
+    /** 外部明确改坐标时下一刻提交；正常制导和电视操控不被上一完成态覆盖。 */
+    boolean guidanceTargetOverridePending;
     /** 未加入世界的运动计算对象，同时供雷达和拦截读取；不参与世界实体调度。 */
     @Nullable RVP_MissileEntity trajectoryEntity;
     /** 本次服务器会话的目标 ID；交接时沿用真实弹 ID，读档后重新分配，绝不持久化旧 ID。 */
@@ -63,10 +67,10 @@ public final class RVP_VirtualMissileState {
      * [RVP] RADAR 模式上行改靶标记（2026-10-02）：发射时射者处于 GPS RADAR 模式并成功标记
      * 雷达锁目标（≤25 格离地门）则为 true；{@code RVP_GpsRadarUplinkManager} 只对置位的
      * 虚拟弹按 {@link #radarUplinkIntervalSecond} 周期替换 snapshot 目标点。
-     * 运行时标记不入 NBT（存档恢复后视为普通固定目标弹，保持发射时目标快照）。
+     * 随额外运行态保存，读档后继续按当前武器参数和已加载雷达来源处理。
      */
     public boolean radarUplinkTargeting;
-    /** [RVP] 上行改靶间隔（秒，转虚拟时从武器配置快照）；运行时字段不入 NBT，缺省 5 秒。 */
+    /** [RVP] 上行改靶间隔（秒）；创建或重建计算对象时从当前武器配置读取，缺省 5 秒。 */
     public float radarUplinkIntervalSecond = 5.0f;
     /** 创建记录时所用的轨迹实现 ID。 */
     public final String trajectoryImplementationId;
@@ -174,6 +178,7 @@ public final class RVP_VirtualMissileState {
      * 调用方负责对所属 SavedData 标脏。
      */
     public void updateTargetPosition(Vec3 newTargetPosition) {
+        guidanceTargetOverridePending = true;
         snapshot = new RVP_VirtualMissileSnapshot(
                 snapshot.trajectory(), newTargetPosition, newTargetPosition,
                 snapshot.targetEntityUuid(), snapshot.lastKnownTargetVelocity(),
@@ -191,7 +196,7 @@ public final class RVP_VirtualMissileState {
      * 更新虚拟段当前目标位置和速度，保留其余弹载快照。
      *
      * <p>调用方仅在服务端成功解析到同维度目标实体时使用；目标不可见时保留上一次快照。
-     * 当前准入仍要求固定 GPS 点，不能据此绕过动态实体目标的准入限制。</p>
+     * 正式制导仍在原对象上处理捕获、失锁和操控，刷新快照不会替代这些判定。</p>
      */
     public void updateTargetMotion(Vec3 newTargetPosition, Vec3 newTargetVelocity) {
         snapshot = new RVP_VirtualMissileSnapshot(
@@ -207,12 +212,28 @@ public final class RVP_VirtualMissileState {
                 snapshot.irSeekerGraceUntilTick(), snapshot.irSeekerLossGraceStarted());
     }
 
+    /** 暂停等待期间也可收到操控命令；存档或配置重建前采集最新对象，不能退回上一飞行刻的目标。 */
+    void captureEntityState() {
+        if (trajectoryEntity == null) return;
+        if (!trajectoryEntityInvalidated) {
+            Vec3 pendingTarget = snapshot.targetPosition();
+            // 调用正式快照出口，采集新的指定目标、阶段和延后结算标志，不推进飞行。
+            snapshot = trajectoryEntity.createVirtualMidcourseSnapshot();
+            kinematics = trajectoryEntity.createVirtualMidcourseKinematics();
+            // 上行改靶可能尚未提交给对象，保留这份已明确更新的权威坐标。
+            if (guidanceTargetOverridePending) updateTargetPosition(pendingTarget);
+        }
+        runtimeData = trajectoryEntity.saveVirtualRuntimeData();
+    }
+
     /**
      * 把本条权威记录编码为独立 NBT。
      *
      * @return 包含状态 schema 版本的完整 CompoundTag
      */
     public CompoundTag save() {
+        // 保存最新命令，而非仅保存最近一个已完成飞行刻；外部改轨迹仍由权威快照优先。
+        captureEntityState();
         CompoundTag tag = new CompoundTag();
         tag.putInt("stateSchemaVersion", STATE_SCHEMA_VERSION);
         tag.putUUID("flightUuid", flightUuid);
@@ -225,6 +246,7 @@ public final class RVP_VirtualMissileState {
         tag.put("snapshot", saveSnapshot(snapshot));
         // 调用实体运动记忆编码器，保存下一刻实际制导和二脉冲判定仍需使用的状态。
         tag.put("kinematics", kinematics.save());
+        tag.put("runtimeData", runtimeData.copy());
         tag.putInt("originalEntityId", originalEntityId);
         tag.putInt("coldLaunchTimeTick", coldLaunchTimeTick);
         tag.putLong("enteredGameTime", enteredGameTime);
@@ -261,7 +283,6 @@ public final class RVP_VirtualMissileState {
             CompoundTag snapshotTag = tag.getCompound("snapshot");
             if (!snapshotTag.contains("position", Tag.TAG_COMPOUND)
                     || !snapshotTag.contains("velocity", Tag.TAG_COMPOUND)
-                    || !snapshotTag.contains("targetPosition", Tag.TAG_COMPOUND)
                     || !snapshotTag.contains("remainingLife", Tag.TAG_INT)) return Optional.empty();
             Vec3 launch = readVec3(tag.getCompound("launchPosition"));
             // 基础必需字段确认后才调用完整快照解码器。
@@ -277,8 +298,12 @@ public final class RVP_VirtualMissileState {
                     tag.getString("trajectoryImplementationId"), tag.getInt("trajectoryStateVersion"), phase,
                     Math.max(tag.getInt("virtualFlightTicks"), 0), Math.max(tag.getInt("restoreWaitTicks"), 0),
                     Math.max(tag.getInt("restoreAttemptCount"), 0), tag.getLong("restoreRequestedGameTime"));
+            // 额外运行态是可选 NBT；原有 GPS 记录保持可读，不迁移武器 JSON 或改写历史存档。
+            state.runtimeData = tag.getCompound("runtimeData").copy();
+            state.radarUplinkTargeting = state.runtimeData.getBoolean("radarUplinkTargeting");
             // 最终统一执行有限坐标、寿命、实现 ID 等结构校验。
-            return state.isStructurallyValid() ? Optional.of(state) : Optional.empty();
+            return validRuntimeExtension(state.runtimeData) && finiteRuntimeData(state.runtimeData, 0)
+                    && state.isStructurallyValid() ? Optional.of(state) : Optional.empty();
         } catch (RuntimeException ignored) {
             return Optional.empty();
         }
@@ -292,10 +317,11 @@ public final class RVP_VirtualMissileState {
     public boolean isStructurallyValid() {
         RVP_VirtualTrajectoryState trajectory = trajectory();
         return flightUuid != null && dimension != null && weaponId != null
+                && runtimeData != null
                 && kinematics != null && kinematics.isValid()
                 && trajectoryImplementationId != null && !trajectoryImplementationId.isBlank()
                 && validVec(launchPosition) && validVec(trajectory.position()) && validVec(trajectory.velocity())
-                && validVec(snapshot.targetPosition()) && validOptionalVec(snapshot.lastGuidancePosition())
+                && validOptionalVec(snapshot.targetPosition()) && validOptionalVec(snapshot.lastGuidancePosition())
                 && validVec(snapshot.lastKnownTargetVelocity())
                 && validOptionalVec(snapshot.gpsTargetOffset())
                 && validOptionalVec(snapshot.topAttackLaunchPosition())
@@ -338,7 +364,7 @@ public final class RVP_VirtualMissileState {
         tag.putInt("flightTick", t.flightTick());
         tag.putInt("remainingLife", t.remainingLife());
         tag.putInt("secondPulseStartTick", t.secondPulseStartTick());
-        tag.put("targetPosition", writeVec3(snapshot.targetPosition()));
+        putOptionalVec(tag, "targetPosition", snapshot.targetPosition());
         putOptionalVec(tag, "lastGuidancePosition", snapshot.lastGuidancePosition());
         putUuid(tag, "targetEntityUuid", snapshot.targetEntityUuid());
         tag.put("lastKnownTargetVelocity", writeVec3(snapshot.lastKnownTargetVelocity()));
@@ -369,7 +395,7 @@ public final class RVP_VirtualMissileState {
                 tag.getDouble("flightDistance"), tag.getInt("flightTick"), tag.getInt("remainingLife"),
                 tag.getInt("secondPulseStartTick"), tag.getDouble("pitchRateDeg"), tag.getDouble("yawRateDeg"));
         return new RVP_VirtualMissileSnapshot(
-                trajectory, readVec3(tag.getCompound("targetPosition")),
+                trajectory, readOptionalVec(tag, "targetPosition"),
                 readOptionalVec(tag, "lastGuidancePosition"), getUuid(tag, "targetEntityUuid"),
                 tag.contains("lastKnownTargetVelocity", Tag.TAG_COMPOUND)
                         ? readVec3(tag.getCompound("lastKnownTargetVelocity")) : Vec3.ZERO,
@@ -403,6 +429,41 @@ public final class RVP_VirtualMissileState {
     @Nullable private static UUID getUuid(CompoundTag tag, String key) { return tag.hasUUID(key) ? tag.getUUID(key) : null; }
     /** 验证允许为 null 的向量。 */
     private static boolean validOptionalVec(@Nullable Vec3 value) { return value == null || validVec(value); }
+
+    /** 原有 GPS 记录的空扩展合法；非空扩展必须是完整的当前运行态，不能拼凑半份操控状态。 */
+    private static boolean validRuntimeExtension(CompoundTag tag) {
+        if (tag.isEmpty()) return true;
+        if (tag.getInt("runtimeVersion") != 1 || !tag.contains("hitlControlMode", Tag.TAG_STRING)
+                || !tag.contains("hitlSignalSource", Tag.TAG_STRING)) return false;
+        for (String vector : java.util.List.of("wirePivot", "wirePivotPrev", "wirePivotBase", "wirePivotLocal",
+                "wirePivotLocalPrev", "guidanceMotionVelocity", "guidanceMotionAcceleration", "saclosOffsetVec",
+                "saclosVelVec", "saclosLastPhysVec", "jammingOffsetDir")) {
+            if (!tag.contains(vector, Tag.TAG_COMPOUND)) return false;
+            var value = tag.getCompound(vector);
+            if (!value.contains("x") || !value.contains("y") || !value.contains("z")) return false;
+        }
+        return true;
+    }
+
+    /** 扩展运行态只接受有限数值和有界层级；只在读档时递归校验，飞行每刻不重复扫描整份 NBT。 */
+    private static boolean finiteRuntimeData(Tag tag, int depth) {
+        if (depth > 16) return false;
+        if (tag instanceof net.minecraft.nbt.NumericTag number) return Double.isFinite(number.getAsDouble());
+        if (tag instanceof CompoundTag compound) {
+            for (String key : compound.getAllKeys()) if (!finiteRuntimeData(compound.get(key), depth + 1)) return false;
+            try {
+                if (depth != 0) return true;
+                if (compound.contains("hitlControlMode")) org.ywzj.rvp.guidance.RVP_EnumHitlControlMode
+                        .valueOf(compound.getString("hitlControlMode"));
+                if (compound.contains("hitlSignalSource") && !java.util.Set.of("RADIO", "FIBER")
+                        .contains(compound.getString("hitlSignalSource"))) return false;
+                for (String key : compound.getCompound("stageEnteredTicks").getAllKeys()) Integer.parseInt(key);
+            } catch (IllegalArgumentException exception) { return false; }
+        } else if (tag instanceof net.minecraft.nbt.ListTag list) {
+            for (Tag value : list) if (!finiteRuntimeData(value, depth + 1)) return false;
+        }
+        return true;
+    }
     /** 验证向量有限且水平坐标未越过世界安全边界。 */
     private static boolean validVec(Vec3 value) {
         return value != null && Double.isFinite(value.x) && Double.isFinite(value.y) && Double.isFinite(value.z)

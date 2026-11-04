@@ -47,7 +47,8 @@ public class C2SHitlSteeringInput {
             ctx.setPacketHandled(true);
             return;
         }
-        Entity e = player.level().getEntity(msg.missileEntityId);
+        // 调用真实/虚拟统一查找；后续归属和远程会话校验继续约束当前操作者。
+        Entity e = org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.resolve(player.level(), msg.missileEntityId);
         if (!(e instanceof RVP_MissileEntity missile) || missile.getOwner() != player) {
             ctx.setPacketHandled(true);
             return;
