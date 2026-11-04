@@ -78,13 +78,8 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
     private String lastRowSignature = null;
     /** 队列 DOM 签名：era#dev 骨名序列（不变则跳过 replaceChildren 重建，2026-09-29）。 */
     private String lastQueueSignature = null;
-    /** DOM 变更后待强制重绘标记：AUI 对 init 之后的 DOM 变更是惰性绘制的，
-     *  requestStyleRecalc 只重算样式不触发重绘；置位后在下一帧走一次程序化 resize
-     *  （窗口缩放同款完整重布局+重绘路径）。 */
-    /** 骨名→模块类型分类表：随 refreshDynamic 10 帧节流刷新，俯视图逐帧绘制共用（OBB/失效态逐帧现读）。 */
+    /** 骨名→模块类型分类表：随 refreshDynamic 10 帧节流刷新，用于设备栏目和状态签名。 */
     private Map<String, Set<BoneModuleType>> cachedModules = Map.of();
-    /** 俯视图取景缓存（2026-09-29 闪烁根治）：跨帧冻结缩放包络，屏实例持有、开屏自然重置。 */
-    private final RVP_EquipSkeletonRenderer.Framing skeletonFraming = new RVP_EquipSkeletonRenderer.Framing();
     /** 俯视图画布矩形采用值（GUI 像素坐标）：scissor 与绘制区域来源。 */
     private int skeletonRectX0, skeletonRectY0, skeletonRectX1, skeletonRectY1;
     /** 是否已有稳定有效的画布矩形采用值（首帧/布局未完成前为 false，跳过俯视图绘制）。 */
@@ -649,17 +644,7 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
     // 俯视图（原生 scissor 绘制，div 注入路径已废弃——见 RVP_EquipSkeletonRenderer）
     // ─────────────────────────────────────────────────────────────
 
-    /**
-     * 俯视图原生绘制：AUI {@code super.render} 之后执行（AUI 无 post-render 钩子，不会被覆盖）。
-     * 画布矩形用 {@link #querySkeletonCanvasRect()} 的帧首预读采用值（项目唯一合法换算公式
-     * {@code rect × renderScale} 已在预读时完成）；scissor 裁剪画布区域，深度抬 z=400
-     * （tooltip 同级）——AUI 文档元素开深度写入且 z 从 1.0 起递增（物品最高 ~250），
-     * GuiGraphics.fill 的 z=0 顶点会被深度剔除，这是此前三次"原生不可见"的根因。
-     *
-     * <p>取景缩放跨帧冻结在 {@link #skeletonFraming}（2026-09-29 闪烁根治）：旧版每帧重算
-     * 自适应包络 → 炮塔回转/悬架微振时整图逐帧缩放平移（"帧间布局跳动"）；画布矩形
-     * 两帧稳定过滤后，回血期布局缓存失效的瞬时读数不再引发跳帧/scissor 跳动。</p>
-     */
+    /** 在现有 AUI 画布内调用本体俯视图；保留 scissor、稳定画布和原生绘制时序。 */
     private void renderSkeletonNative(GuiGraphics guiGraphics, float partialTick) {
         if (!skeletonRectValid) {
             // 尚无稳定有效矩形（首帧/布局未完成）：跳过，下一帧帧首预读重试
@@ -670,8 +655,8 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
         poseStack.pushPose();
         try {
             poseStack.translate(0, 0, 400);
-            RVP_EquipSkeletonRenderer.render(guiGraphics, vehicle, cachedModules,
-                    skeletonRectX0, skeletonRectY0, skeletonRectX1, skeletonRectY1, partialTick, skeletonFraming);
+            RVP_EquipSkeletonRenderer.render(guiGraphics, vehicle,
+                    skeletonRectX0, skeletonRectY0, skeletonRectX1, skeletonRectY1, partialTick);
             guiGraphics.flush();
         } finally {
             poseStack.popPose();

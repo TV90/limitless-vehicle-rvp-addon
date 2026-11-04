@@ -21,9 +21,9 @@ public final class RVP_CountermeasureSystemData {
     @SerializedName("launcher_parts")
     private List<String> launcherParts = new ArrayList<>();
 
-    /** 干扰物总数（弹舱容量），0 = 禁用该系统。 */
+    /** 干扰物总数（弹舱容量）；默认 0 = 未列装，必须显式配置正容量才启用。 */
     @SerializedName("total")
-    private int total = 32;
+    private int total = 0;
 
     /** 一轮发射数 m。 */
     @SerializedName("per_round")

@@ -115,7 +115,7 @@ class RVP_CountermeasureDataTest {
     @Test
     void defaultsApply() {
         String json = """
-                { "flare": { "launcher_parts": ["cm"] } }
+                { "flare": { "launcher_parts": ["cm"], "total": 32 } }
                 """;
         RVP_CountermeasureData data = RVP_CountermeasureData.parse(JsonParser.parseString(json));
         assertNotNull(data);
@@ -125,6 +125,14 @@ class RVP_CountermeasureDataTest {
         assertEquals(4, flare.getPerRound());
         assertEquals(8, flare.getBurstRounds());
         assertEquals(200, flare.getReloadTick());
+    }
+
+    /** 缺省容量不授予干扰物；空配置和未列装子系统保持禁用。 */
+    @Test
+    void omittedCapacityDoesNotEquipCountermeasures() {
+        for (String type : new String[]{"flare", "chaff", "smoke"}) {
+            assertNull(RVP_CountermeasureData.parse(JsonParser.parseString("{\"" + type + "\":{\"launcher_parts\":[\"cm\"]}}")));
+        }
     }
 
     /** 实际用法：传入整个载具 JSON（顶层 countermeasure 键），应正确提取子对象。 */

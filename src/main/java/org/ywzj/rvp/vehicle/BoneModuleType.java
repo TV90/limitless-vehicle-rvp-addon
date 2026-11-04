@@ -22,7 +22,7 @@ import java.util.Locale;
  *       失效后不再在被敌对雷达照射时生成假目标。</li>
  *   <li>{@link #ECM_ACTIVE}：主动电子战——按键触发的持续干扰设备（消费点 {@code RVP_EcmActiveManager}）。</li>
  *   <li>{@link #MAINTENANCE}：快速维修——载具内按键触发的回血 + 模块渐进恢复
- *       （消费点 {@code RVP_MaintenanceRuntimeManager}；缺省挂虚拟骨 {@code __vehicle__}，永不可被击毁）。</li>
+ *       （消费点 {@code RVP_MaintenanceRuntimeManager}；可显式挂虚拟骨 {@code __vehicle__}，永不可被击毁）。</li>
  *   <li>{@link #RADAR}：雷达部件（消费点 {@code RVP_RadarModuleEnforcer}）——模块失效后该骨对应的
  *       {@code RadarUnit} 被服务端强制 {@code toggle(false)} 关闭（清锁定目标），修好自动开机；
  *       不参与爆炸百分比破坏（只能直击打坏）。多雷达载具按雷达骨分粒度
@@ -45,7 +45,7 @@ public enum BoneModuleType {
     /**
      * 快速维修（MAINTENANCE）——载具内按键触发的回血 + 模块渐进恢复能力
      * （消费点 {@code RVP_MaintenanceRuntimeManager}）。
-     * 缺省经 {@code bone_modules} 挂在虚拟骨 {@code __vehicle__}（载具级能力、永不可被击毁）；
+     * 显式经 {@code bone_modules} 挂在虚拟骨 {@code __vehicle__}（载具级能力、永不可被击毁）；
      * 绑定实体骨时可被直击打掉——模块失效后快修无法触发，维修能力即告失去。
      */
     MAINTENANCE,

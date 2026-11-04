@@ -45,6 +45,8 @@ public final class RVP_CountermeasureConfigManager extends SimplePreparableReloa
         }
         Map<ResourceLocation, RVP_CountermeasureData> loaded = new HashMap<>();
         map.forEach((vehicleId, json) -> {
+            // 资源扫描入口只接受显式 countermeasure 块，不把本体顶层同名字段当作 RVP 设备。
+            if (json == null || !json.isJsonObject() || !json.getAsJsonObject().has("countermeasure")) return;
             RVP_CountermeasureData data = RVP_CountermeasureData.parse(json);
             if (data != null) {
                 loaded.put(vehicleId, data);

@@ -256,7 +256,7 @@ public final class RVP_EquipPanelData {
 
     /**
      * 面板左上俯视图的骨块集合：全部骨模块骨（含虚拟骨 {@code __vehicle__} 之外的实体骨）。
-     * 供 {@link RVP_EquipSkeletonRenderer} 着色（ERA 绿/红、设备骨蓝/红）。
+     * 供状态面板栏目缓存；OBB 绘制复用本体俯视图和统一模块档位配色。
      */
     public static Map<String, Set<BoneModuleType>> boneModules(AbstractVehicle vehicle) {
         return RVP_VehicleHitboxFactorManager.INSTANCE.resolveBoneModules(vehicle);

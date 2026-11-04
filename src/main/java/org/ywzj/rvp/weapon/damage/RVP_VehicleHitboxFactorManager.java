@@ -70,6 +70,8 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
 
     private Map<ResourceLocation, VehicleHitboxConfig> configs = Map.of();
     private Set<ResourceLocation> hidePassengerVehicles = Set.of();
+    /** 重载时冻结的模块视图；HUD 逐 OBB 查询只读共享表，不重复复制整车配置。 */
+    private Map<ResourceLocation, Map<String, Set<BoneModuleType>>> boneModuleViews = Map.of();
 
     @Override
     protected Map<ResourceLocation, JsonElement> prepare(ResourceManager resourceManager, ProfilerFiller profiler) {
@@ -99,6 +101,15 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             }
         });
         configs = Map.copyOf(loaded);
+        Map<ResourceLocation, Map<String, Set<BoneModuleType>>> views = new HashMap<>();
+        loaded.forEach((id, cfg) -> {
+            Map<String, Set<BoneModuleType>> bones = new HashMap<>();
+            cfg.moduleByBoneName.forEach((name, module) -> {
+                if (module != null && module.hasModules()) bones.put(name, Set.copyOf(module.modules()));
+            });
+            if (!bones.isEmpty()) views.put(id, Map.copyOf(bones));
+        });
+        boneModuleViews = Map.copyOf(views);
         hidePassengerVehicles = Set.copyOf(hideSet);
     }
 
@@ -361,34 +372,24 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         return out;
     }
 
-    /**
-     * 解析载具的快速维修模块绑定（{@code MAINTENANCE} 骨块模块 + {@code maintenance} 子配置）。
-     *
-     * <p>规范写法为 {@code bone_modules.__vehicle__.maintenance}（虚拟骨，载具级能力、
-     * 永不可被击毁）；绑定实体骨时骨块被击毁则维修失效（可被快修的模块恢复修回）。
-     * <b>2026-09-25 起全载具默认快修</b>：未显式配置的载具回退 {@link BoneMaintenanceConfig#defaults()}
-     * （冷却 15 秒、一次修复 30% 最大血量，虚拟骨 {@code __vehicle__} 承载）；
-     * 仅 {@code vehicle == null} 返回 null。供 {@code RVP_MaintenanceRuntimeManager} 使用。</p>
-     */
-    public @Nullable MaintenanceModuleBinding resolveMaintenanceModule(AbstractVehicle vehicle) {
-        if (vehicle == null) {
-            return null;
-        }
-        VehicleHitboxConfig cfg = configs.get(vehicle.getVehicleId());
-        if (cfg != null && cfg.moduleByBoneName != null && !cfg.moduleByBoneName.isEmpty()) {
+    /** 只有显式列装 MAINTENANCE 的载具才具有快速维修能力；已列装设备可省略数值参数。 */
+    public @Nullable MaintenanceModuleBinding resolveMaintenanceModule(@Nullable AbstractVehicle vehicle) {
+        // 调用同一配置入口；不再为未配置的本体包或其它载具包自动列装快修。
+        return resolveMaintenanceModule(vehicle == null ? null : vehicle.getVehicleId());
+    }
+
+    /** 按载具配置 ID 解析快修；数值默认值只补全已明确声明的设备参数。 */
+    public @Nullable MaintenanceModuleBinding resolveMaintenanceModule(@Nullable ResourceLocation vehicleId) {
+        VehicleHitboxConfig cfg = vehicleId == null ? null : configs.get(vehicleId);
+        if (cfg != null) {
             for (Map.Entry<String, BoneModuleConfig> entry : cfg.moduleByBoneName.entrySet()) {
-                BoneModuleConfig moduleConfig = entry.getValue();
-                if (moduleConfig != null && moduleConfig.maintenance() != null
-                        && moduleConfig.modules() != null && moduleConfig.modules().contains(BoneModuleType.MAINTENANCE)) {
-                    return new MaintenanceModuleBinding(entry.getKey(), moduleConfig.maintenance());
+                BoneModuleConfig module = entry.getValue();
+                if (module != null && module.maintenance() != null && module.modules().contains(BoneModuleType.MAINTENANCE)) {
+                    return new MaintenanceModuleBinding(entry.getKey(), module.maintenance());
                 }
             }
         }
-        // [RVP] 2026-09-25 全载具默认快修（用户定版）：未显式配置 maintenance 的载具回退默认配置
-        // （冷却 300t=15 秒，生效 20t × 1.5%/tick = 一次修复 30% 最大血量），挂在永不可毁的
-        // 虚拟骨 __vehicle__ 上（虚拟骨不进任何击毁/失效路径，isModuleActive 缺省视为存活）；
-        // 显式配置（含绑实体骨的对抗性写法）仍在上方优先返回。
-        return new MaintenanceModuleBinding("__vehicle__", BoneMaintenanceConfig.defaults());
+        return null;
     }
 
     /**
@@ -908,19 +909,13 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
      * 的消费方（如辅助设备面板的行序号）应拿本表键集合去对照 {@code vehicle.getPartUnits()}
      * 的 JSON 顺序自行排序；无配置返回空 Map。</p>
      */
-    public Map<String, Set<BoneModuleType>> resolveBoneModules(AbstractVehicle vehicle) {
-        VehicleHitboxConfig cfg = configs.get(vehicle.getVehicleId());
-        if (cfg == null || cfg.moduleByBoneName == null || cfg.moduleByBoneName.isEmpty()) {
-            return Map.of();
-        }
-        Map<String, Set<BoneModuleType>> out = new HashMap<>();
-        for (Map.Entry<String, BoneModuleConfig> entry : cfg.moduleByBoneName.entrySet()) {
-            BoneModuleConfig moduleConfig = entry.getValue();
-            if (moduleConfig != null && moduleConfig.hasModules()) {
-                out.put(entry.getKey(), Set.copyOf(moduleConfig.modules()));
-            }
-        }
-        return out;
+    public Map<String, Set<BoneModuleType>> resolveBoneModules(@Nullable AbstractVehicle vehicle) {
+        return modulesForVehicleId(vehicle == null ? null : vehicle.getVehicleId());
+    }
+
+    /** 查询已显式声明的只读模块视图；命名空间不影响选择是否接管原生损伤配色。 */
+    public Map<String, Set<BoneModuleType>> modulesForVehicleId(@Nullable ResourceLocation vehicleId) {
+        return vehicleId == null ? Map.of() : boneModuleViews.getOrDefault(vehicleId, Map.of());
     }
 
     /**
@@ -2214,28 +2209,13 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             float armorMin = Math.max(0f, GsonHelper.getAsFloat(obj, "armor_min_damage", 0f));
             float armorMax = Math.max(0f, GsonHelper.getAsFloat(obj, "armor_max_damage", 0f));
             boolean hitIndicatorRvp = GsonHelper.getAsBoolean(obj, "hit_indicator_rvp", true);
-            // 顶层无骨骼的 ecm_active（无骨骼ECM）：直接挂到虚拟骨骼 __vehicle__，始终存活
+            // 显式载具级能力合并到虚拟骨；同一骨可同时挂 ECM 和快修，不能相互覆盖。
             BoneEcmActiveConfig vehicleEcmActive = BoneEcmActiveConfig.parse(obj.get("ecm_active"));
-            if (vehicleEcmActive != null) {
-                if (moduleMap == null) {
-                    moduleMap = new HashMap<>();
-                }
-                java.util.Set<BoneModuleType> modules = java.util.EnumSet.of(BoneModuleType.ECM_ACTIVE);
-                BoneModuleConfig synthetic = new BoneModuleConfig(Float.POSITIVE_INFINITY, 0f, modules,
-                        null, null, null, null, vehicleEcmActive, null, null, null, null, true);
-                moduleMap.put("__vehicle__", synthetic);
-            }
-            // 顶层无骨骼的 maintenance（无骨骼快速维修）：同款挂到虚拟骨骼 __vehicle__，始终存活；
-            // 规范写法是 bone_modules.__vehicle__.maintenance（MAINTENANCE 模块），顶层块为别名
             BoneMaintenanceConfig vehicleMaintenance = BoneMaintenanceConfig.parse(obj.get("maintenance"));
-            if (vehicleMaintenance != null && (moduleMap == null || !moduleMap.containsKey("__vehicle__"))) {
-                if (moduleMap == null) {
-                    moduleMap = new HashMap<>();
-                }
-                java.util.Set<BoneModuleType> modules = java.util.EnumSet.of(BoneModuleType.MAINTENANCE);
-                BoneModuleConfig synthetic = new BoneModuleConfig(Float.POSITIVE_INFINITY, 0f, modules,
-                        null, null, null, null, null, vehicleMaintenance, null, null, null, true);
-                moduleMap.put("__vehicle__", synthetic);
+            if (vehicleEcmActive != null || vehicleMaintenance != null) {
+                if (moduleMap == null) moduleMap = new HashMap<>();
+                moduleMap.put("__vehicle__", BoneModuleConfig.mergeVehicleCapabilities(
+                        moduleMap.get("__vehicle__"), vehicleEcmActive, vehicleMaintenance));
             }
             if ((map == null || map.isEmpty())
                     && (moduleMap == null || moduleMap.isEmpty())
@@ -2433,7 +2413,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         /**
          * 新配置 {@code bone_modules} 条目：模块集合 + 失效门槛 + ERA 爆炸档位 + 设备子对象。
          * ★命中倍率不在条目内（2026-09-27 统合）——统一由顶层 {@code hitbox_damage_factor} 提供；
-         * 显式 modules 数组缺省视为 [ERA]（兼容纯爆反骨简写）。
+         * 显式 modules 数组缺省或为空时不列装模块。
          * {@code smoke} 为部件失效冒烟开关（缺省 true，用户 2026-09-28 定版按部件选配）。
          */
         static @Nullable BoneModuleConfig parse(@Nullable JsonElement element) {
@@ -2444,10 +2424,8 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             float minTriggerDamage = parseMinTriggerDamage(obj);
             float explosion = GsonHelper.getAsFloat(obj, "explosion", 0f);
             Set<BoneModuleType> modules = parseModules(obj.get("modules"));
-            if (modules == null || modules.isEmpty()) {
-                modules = java.util.EnumSet.noneOf(BoneModuleType.class);
-                modules.add(BoneModuleType.ERA);
-            }
+            // 空条目不自动获得 ERA 或其它模块，设备列装必须由 modules 显式声明。
+            if (modules == null || modules.isEmpty()) return null;
             if (!Float.isFinite(minTriggerDamage) || minTriggerDamage < 0f) {
                 minTriggerDamage = Float.POSITIVE_INFINITY;
             }
@@ -2464,11 +2442,29 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                     BoneDircmConfig.parse(obj.get("dircm")),
                     BoneEcmPassiveConfig.parse(obj.get("ecm_passive")),
                     BoneEcmActiveConfig.parse(obj.get("ecm_active")),
-                    BoneMaintenanceConfig.parse(obj.get("maintenance")),
+                    modules.contains(BoneModuleType.MAINTENANCE)
+                            ? (obj.has("maintenance") ? BoneMaintenanceConfig.parse(obj.get("maintenance"))
+                            : BoneMaintenanceConfig.defaults()) : null,
                     BoneEngineConfig.parse(obj.get("engine")),
                     BoneBarrelConfig.parse(obj.get("barrel")),
                     traverse,
                     GsonHelper.getAsBoolean(obj, "smoke", true));
+        }
+
+        /** 合并两个显式载具级能力；骨条目已有的参数优先，保留其余模块与绑定。 */
+        private static BoneModuleConfig mergeVehicleCapabilities(@Nullable BoneModuleConfig original,
+                @Nullable BoneEcmActiveConfig ecm, @Nullable BoneMaintenanceConfig maintenance) {
+            BoneModuleConfig base = original == null ? new BoneModuleConfig(Float.POSITIVE_INFINITY, 0,
+                    Set.of(), null, null, null, null, null, null, null, null, null, true) : original;
+            Set<BoneModuleType> merged = java.util.EnumSet.noneOf(BoneModuleType.class);
+            merged.addAll(base.modules());
+            if (ecm != null) merged.add(BoneModuleType.ECM_ACTIVE);
+            if (maintenance != null) merged.add(BoneModuleType.MAINTENANCE);
+            return new BoneModuleConfig(base.minTriggerDamage(), base.explosion(), Set.copyOf(merged),
+                    base.jammer(), base.aps(), base.dircm(), base.ecmPassive(),
+                    base.ecmActive() == null ? ecm : base.ecmActive(),
+                    base.maintenance() == null ? maintenance : base.maintenance(),
+                    base.engine(), base.barrel(), base.turretTraverse(), base.smoke());
         }
 
         /** 通用触发阈值：优先 {@code min_damage}（新通用字段），回退 {@code min_trigger_damage}（旧 ERA 字段）。 */
