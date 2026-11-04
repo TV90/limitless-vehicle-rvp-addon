@@ -1,6 +1,7 @@
 package org.ywzj.rvp.client.render.remotevisibility;
 
 import org.junit.jupiter.api.Test;
+import org.ywzj.rvp.util.RVP_RemoteVehicleViewPolicy;
 import org.joml.Vector3f;
 import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteVehicleBillboardManager.RenderMode;
 import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteVehicleBillboardManager.SnapshotState;
@@ -67,7 +68,7 @@ class RVP_RemoteVehicleBillboardManagerTest {
     void sourceAndSnapshotAvailabilityChooseExpectedFallbacks() {
         RenderPolicy slotSource = new RenderPolicy(
                 true, false, RemoteVehicleBillboardSource.SLOT_TEXTURE,
-                RemoteVehicleSnapshotWarmupMode.HIDE, 25);
+                RemoteVehicleSnapshotWarmupMode.HIDE, 25, RVP_RemoteVehicleViewPolicy.DEFAULT);
         assertEquals(RenderMode.SLOT_TEXTURE,
                 RVP_RemoteVehicleBillboardManager.decideRenderMode(
                         slotSource, false, true, SnapshotState.MISSING));
@@ -160,6 +161,6 @@ class RVP_RemoteVehicleBillboardManagerTest {
                 aggressive,
                 forceAll,
                 RemoteVehicleBillboardSource.DYNAMIC_SNAPSHOT,
-                warmupMode, 25);
+                warmupMode, 25, RVP_RemoteVehicleViewPolicy.DEFAULT);
     }
 }

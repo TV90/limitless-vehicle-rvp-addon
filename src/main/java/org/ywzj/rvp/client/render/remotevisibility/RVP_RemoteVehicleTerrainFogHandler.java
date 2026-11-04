@@ -11,6 +11,8 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.config.RVP_CommonConfig;
+import org.ywzj.rvp.config.RVP_CommonConfig.TerrainFogMode;
+import org.ywzj.rvp.client.compat.distanthorizons.RVP_DistantHorizonsCompatBootstrap;
 
 /** 按 common 配置剔除普通地形雾，覆盖实际实体加载范围内仍由本体渲染的载具。 */
 @Mod.EventBusSubscriber(value = Dist.CLIENT, modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
@@ -31,7 +33,8 @@ public final class RVP_RemoteVehicleTerrainFogHandler {
         // 调用 RVP common 配置，同时尊重远距载具总开关与独立地形雾开关。
         boolean shouldRemove = shouldRemoveTerrainFog(
                 RVP_CommonConfig.isRemoteVehicleRenderingEnabled(),
-                RVP_CommonConfig.shouldRemoveRemoteVehicleTerrainFog(),
+                RVP_CommonConfig.getRemoteVehicleTerrainFogMode(),
+                RVP_DistantHorizonsCompatBootstrap.isDhRenderingEnabled(),
                 event.getMode(), event.getType(), restrictedByEffect);
         if (!shouldRemove) {
             return;
@@ -44,12 +47,14 @@ public final class RVP_RemoteVehicleTerrainFogHandler {
 
     /** 无客户端状态依赖的地形雾剔除判定，供特殊环境策略测试复用。 */
     static boolean shouldRemoveTerrainFog(boolean remoteRenderingEnabled,
-                                          boolean removeTerrainFog,
+                                          TerrainFogMode removalMode,
+                                          boolean dhRenderingEnabled,
                                           FogRenderer.FogMode fogMode,
                                           FogType fogType,
                                           boolean restrictedByEffect) {
         return remoteRenderingEnabled
-                && removeTerrainFog
+                && (removalMode == TerrainFogMode.ALWAYS
+                || removalMode == TerrainFogMode.DH_ENABLED && dhRenderingEnabled)
                 && fogMode == FogRenderer.FogMode.FOG_TERRAIN
                 && fogType == FogType.NONE
                 && !restrictedByEffect;

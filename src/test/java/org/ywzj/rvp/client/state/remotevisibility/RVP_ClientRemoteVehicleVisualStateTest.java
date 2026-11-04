@@ -46,7 +46,7 @@ class RVP_ClientRemoteVehicleVisualStateTest {
         // 调用协议策略访问器，仅替换本测试要验证的服务端高度值。
         return new RVP_ClientRemoteVehicleVisualState.RenderPolicy(
                 defaults.aggressiveLodBillboard(), defaults.forceAllVehicleBillboard(),
-                defaults.billboardSource(), defaults.dynamicSnapshotWarmupMode(), threshold);
+                defaults.billboardSource(), defaults.dynamicSnapshotWarmupMode(), threshold, defaults.viewPolicy());
     }
 
     /** 测试代理实体类型。 */

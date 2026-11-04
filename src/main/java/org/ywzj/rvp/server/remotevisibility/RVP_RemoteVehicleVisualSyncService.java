@@ -76,7 +76,11 @@ public final class RVP_RemoteVehicleVisualSyncService {
         ServerState state = SERVER_STATES.computeIfAbsent(server, ignored -> new ServerState());
         boolean enabled = isVisualSyncEnabled();
         int interval = Math.max(1, RVP_CommonConfig.getRemoteVehicleSyncIntervalTicks());
-        boolean syncDue = enabled && (!state.previouslyEnabled || server.getTickCount() % interval == 0);
+        boolean published = server.isPublished();
+        boolean allowsBeyond = org.ywzj.rvp.config.RVP_Config.allowsVehiclesBeyondViewDistance();
+        boolean policyChanged = state.policyDirty || published != state.previouslyPublished
+                || allowsBeyond != state.previouslyAllowsBeyond;
+        boolean syncDue = enabled && (!state.previouslyEnabled || policyChanged || server.getTickCount() % interval == 0);
 
         if (!enabled) {
             if (state.previouslyEnabled) {
@@ -88,9 +92,17 @@ public final class RVP_RemoteVehicleVisualSyncService {
             state.authorizedByDimension = synchronizeSnapshots(server, state);
         }
         state.previouslyEnabled = enabled;
+        state.previouslyPublished = published;
+        state.previouslyAllowsBeyond = allowsBeyond;
+        state.policyDirty = false;
         pruneDisconnectedSequences(server, state);
         // 调用 RVP 载具租约服务；视觉授权低频刷新，实体当前位置和速度路径每 Tick 刷新。
         RVP_RemoteVehicleChunkLeaseService.tick(server, state.authorizedByDimension);
+    }
+
+    /** 客户端范围变化时只标记一次，实际快照与租约仍在原服务端 Tick 入口统一更新。 */
+    static void requestPolicyRefresh(MinecraftServer server) {
+        SERVER_STATES.computeIfAbsent(server, ignored -> new ServerState()).policyDirty = true;
     }
 
     /** 玩家退出后删除本连接序号；租约服务同 Tick 会忽略已经离线的观察者。 */
@@ -210,7 +222,8 @@ public final class RVP_RemoteVehicleVisualSyncService {
                 observerCategory,
                 observerVehicleId,
                 allowedTypes,
-                RVP_CommonConfig.getRemoteVehicleMaxDistance(),
+                RVP_EntityTrackingRange.visualPolicy(player)
+                        .maximumDistance(RVP_CommonConfig.getRemoteVehicleMaxDistance()),
                 RVP_CommonConfig.getRemoteVehicleMaxTargetsPerPlayer(),
                 candidates);
 
@@ -443,6 +456,7 @@ public final class RVP_RemoteVehicleVisualSyncService {
                 RVP_CommonConfig.getRemoteVehicleBillboardSource(),
                 RVP_CommonConfig.getRemoteVehicleDynamicSnapshotWarmupMode(),
                 RVP_CommonConfig.getRemoteVehicleMinHeightAboveGroundWithoutDH(),
+                RVP_EntityTrackingRange.visualPolicy(player),
                 entries);
         RVP_Network.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), snapshot);
     }
@@ -505,6 +519,12 @@ public final class RVP_RemoteVehicleVisualSyncService {
         private final Map<UUID, Long> sequences = new LinkedHashMap<>();
         /** 上一 Tick 配置是否允许载具视觉，用于捕获关闭边沿。 */
         private boolean previouslyEnabled;
+        /** 上次是否开放 LAN，用于即时捕获单人世界转多人。 */
+        private boolean previouslyPublished;
+        /** 上次服务端是否允许扩展，用于运行中撤销或开放权限。 */
+        private boolean previouslyAllowsBeyond;
+        /** 客户端视距或扩展偏好变化，下一 Tick 必须刷新完整集合。 */
+        private boolean policyDirty;
         /** 最近一次完整快照重算得到的每维度授权并集。 */
         private Map<ResourceLocation, List<AuthorizedTarget>> authorizedByDimension = Map.of();
     }

@@ -92,6 +92,8 @@ public class RVP_ClientConfig {
     private final ForgeConfigSpec.BooleanValue rocketTrailVolume;
     /** 客户端每帧允许绘制的最大远距载具数。 */
     private final ForgeConfigSpec.IntValue remoteVehicleMaxRenderedVehicles;
+    /** 客户端是否请求显示实际视距外的载具，默认 true；多人服仍受服务端许可钳制。 */
+    private final ForgeConfigSpec.BooleanValue remoteVehicleAllowBeyondViewDistance;
     /** 客户端每帧允许绘制的最大无 LOD 高模载具数。 */
     private final ForgeConfigSpec.IntValue remoteVehicleMaxFallbackHighModels;
     /** 客户端远距载具样本允许的最大外推 tick 数。 */
@@ -214,6 +216,11 @@ public class RVP_ClientConfig {
         builder.pop();
 
         builder.push("remoteVehicleRendering");
+
+        remoteVehicleAllowBeyondViewDistance = builder
+                .comment("是否显示玩家实际视距外的载具。默认 true；多人服必须同时允许。",
+                        "关闭后立即停止扩展显示，并通知服务端收紧本玩家的授权范围。")
+                .define("allowBeyondViewDistance", true);
 
         remoteVehicleMaxRenderedVehicles = builder
                 .comment("客户端每帧允许绘制的最大远距载具数。范围：0..1024，默认：32",
@@ -338,6 +345,11 @@ public class RVP_ClientConfig {
     /** 返回本体爆炸视角晃动强度倍率（作用于 FirstPersonHandler.addExplosionShake），{@code 0..1}。 */
     public static float getExplosionShakeIntensity() {
         return INSTANCE != null ? INSTANCE.explosionShakeIntensity.get().floatValue() : 1.0F;
+    }
+
+    /** 返回本客户端是否请求扩展载具显示；不覆盖服务端禁用。 */
+    public static boolean allowsRemoteVehiclesBeyondViewDistance() {
+        return INSTANCE == null || INSTANCE.remoteVehicleAllowBeyondViewDistance.get();
     }
 
     /** 返回客户端每帧允许绘制的最大远距载具数。 */

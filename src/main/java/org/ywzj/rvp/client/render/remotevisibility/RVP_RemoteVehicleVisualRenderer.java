@@ -153,7 +153,8 @@ public final class RVP_RemoteVehicleVisualRenderer {
         for (RVP_ClientRemoteVehicleVisualState.RenderEntry entry
                 : RVP_ClientRemoteVehicleVisualState.renderEntries(level, event.getPartialTick())) {
             // 调用服务端策略，在投影、预算及 Billboard 预热之前排除无 DH 时过低的远距代理。
-            if (!renderPolicy.allowsHeightAboveGround(entry.heightAboveGround(), dhRenderingEnabled)) {
+            if (!RVP_ClientRemoteViewDistance.allowsVehiclePosition(entry.position())
+                    || !renderPolicy.allowsHeightAboveGround(entry.heightAboveGround(), dhRenderingEnabled)) {
                 continue;
             }
             double horizontalDistanceSquared = horizontalDistanceSquared(entry.position(), cameraPosition);

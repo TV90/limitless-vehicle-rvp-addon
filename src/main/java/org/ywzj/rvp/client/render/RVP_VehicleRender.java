@@ -5,6 +5,7 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.culling.Frustum;
 import net.minecraft.client.renderer.entity.EntityRendererProvider;
 import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteVehicleVisualRenderer;
+import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteViewDistance;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.client.render.entity.vehicle.VehicleRender;
 
@@ -21,7 +22,8 @@ public class RVP_VehicleRender<T extends AbstractVehicle> extends VehicleRender<
     public void render(T vehicle, float entityYaw, float partialTick, PoseStack poseStack,
                        MultiBufferSource bufferSource, int packedLight) {
         // 调用本帧交接名单，远距计划已接管时不再绘制真实载具及其附加视觉层。
-        if (RVP_RemoteVehicleVisualRenderer.ownsLoadedEntity(vehicle)) {
+        if (!RVP_ClientRemoteViewDistance.allowsNativeVehicle(vehicle)
+                || RVP_RemoteVehicleVisualRenderer.ownsLoadedEntity(vehicle)) {
             return;
         }
         super.render(vehicle, entityYaw, partialTick, poseStack, bufferSource, packedLight);
@@ -32,7 +34,8 @@ public class RVP_VehicleRender<T extends AbstractVehicle> extends VehicleRender<
     @Override
     public boolean shouldRender(T vehicle, Frustum frustum, double cameraX, double cameraY, double cameraZ) {
         // 调用同一交接名单，原生实体通道与 DH 真实载具保护层都会跳过已接管目标。
-        return !RVP_RemoteVehicleVisualRenderer.ownsLoadedEntity(vehicle)
+        return RVP_ClientRemoteViewDistance.allowsNativeVehicle(vehicle)
+                && !RVP_RemoteVehicleVisualRenderer.ownsLoadedEntity(vehicle)
                 && super.shouldRender(vehicle, frustum, cameraX, cameraY, cameraZ);
     }
 }

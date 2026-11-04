@@ -9,6 +9,8 @@ import net.minecraftforge.event.server.ServerStoppedEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.config.RVP_Config;
+import org.ywzj.rvp.util.RVP_RemoteVehicleViewPolicy;
 
 import java.util.HashMap;
 import java.util.IdentityHashMap;
@@ -49,10 +51,30 @@ public final class RVP_EntityTrackingRange {
     }
 
     /** 接受发送者自己的客户端视距，供下一次载具和弹药快照分别计算备用范围。 */
-    public static void updateClientViewDistance(ServerPlayer player, int chunks) {
+    public static void updateClientViewDistance(ServerPlayer player, int chunks, boolean allowBeyond) {
         // 调用范围表校验和写入，隔离同服不同玩家及不同服务器的设置。
-        CLIENT_VIEW_DISTANCES.computeIfAbsent(player.serverLevel().getServer(), ignored -> new ClientViewDistances())
-                .update(player.getUUID(), chunks);
+        MinecraftServer server = player.serverLevel().getServer();
+        ClientViewDistances distances = CLIENT_VIEW_DISTANCES.computeIfAbsent(server, ignored -> new ClientViewDistances());
+        int previousChunks = distances.get(player.getUUID(), -1);
+        boolean previousRequest = distances.requestsBeyond(player.getUUID());
+        distances.update(player.getUUID(), chunks, allowBeyond);
+        if (previousChunks != chunks || previousRequest != allowBeyond) {
+            // 调用现有视觉同步服务，下一 Tick 撤销旧范围，不等待可能被配置为十秒的同步周期。
+            RVP_RemoteVehicleVisualSyncService.requestPolicyRefresh(server);
+        }
+    }
+
+    /** 计算本连接的实际视距与多人许可，发送和客户端绘制使用同一份策略。 */
+    public static RVP_RemoteVehicleViewPolicy visualPolicy(ServerPlayer player) {
+        MinecraftServer server = player.serverLevel().getServer();
+        int serverChunks = server.getPlayerList().getViewDistance();
+        ClientViewDistances distances = CLIENT_VIEW_DISTANCES.get(server);
+        int clientChunks = distances == null ? serverChunks : distances.get(player.getUUID(), serverChunks);
+        boolean clientRequests = distances != null && distances.requestsBeyond(player.getUUID());
+        // 调用公共策略，专服和已开放 LAN 的内置服都执行服务端默认禁用。
+        return RVP_RemoteVehicleViewPolicy.forConnection(
+                server.isDedicatedServer(), server.isPublished(),
+                RVP_Config.allowsVehiclesBeyondViewDistance(), clientRequests, serverChunks, clientChunks);
     }
 
     /** 离服即清除上报，重连必须重新取得客户端当前设置。 */
@@ -95,13 +117,16 @@ public final class RVP_EntityTrackingRange {
     static final class ClientViewDistances {
         /** 玩家身份到最新客户端视距，单位区块。 */
         private final Map<UUID, Integer> distances = new HashMap<>();
+        /** 每连接的客户端扩展请求；首包前默认不授予扩展权限。 */
+        private final Map<UUID, Boolean> beyondRequests = new HashMap<>();
 
         /** 保存合法视距，非法请求不覆盖当前有效值。 */
-        void update(UUID player, int chunks) {
+        void update(UUID player, int chunks, boolean allowBeyond) {
             if (chunks < 2 || chunks > 32) {
                 throw new IllegalArgumentException("Remote view distance must be within 2..32 chunks");
             }
             distances.put(player, chunks);
+            beyondRequests.put(player, allowBeyond);
         }
 
         /** 返回指定玩家的上报值，首次上报前使用服务器视距。 */
@@ -109,9 +134,15 @@ public final class RVP_EntityTrackingRange {
             return distances.getOrDefault(player, fallback);
         }
 
+        /** 返回已校验连接的扩展请求，不读取其他玩家或客户端本地 common 配置。 */
+        boolean requestsBeyond(UUID player) {
+            return beyondRequests.getOrDefault(player, false);
+        }
+
         /** 结束连接时删除该玩家的值。 */
         void remove(UUID player) {
             distances.remove(player);
+            beyondRequests.remove(player);
         }
     }
 }

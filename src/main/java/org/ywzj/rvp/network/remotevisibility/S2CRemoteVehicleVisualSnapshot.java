@@ -5,6 +5,7 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.network.NetworkEvent;
+import org.ywzj.rvp.util.RVP_RemoteVehicleViewPolicy;
 import org.ywzj.rvp.config.RVP_CommonConfig.RemoteVehicleBillboardSource;
 import org.ywzj.rvp.config.RVP_CommonConfig.RemoteVehicleSnapshotWarmupMode;
 
@@ -23,6 +24,7 @@ import java.util.function.Supplier;
  * @param billboardSource Billboard 图像来源
  * @param dynamicSnapshotWarmupMode 动态快照预热期间的显示方式
  * @param minHeightAboveGroundWithoutDH 未开启 DH 时的最低离地高度，单位米（格）；默认 25，-1 禁用限制
+ * @param viewPolicy 本连接的服务端权威视距和超视距显示许可
  * @param entries 当前服务端授权的完整载具视觉条目集合
  */
 public record S2CRemoteVehicleVisualSnapshot(
@@ -34,6 +36,7 @@ public record S2CRemoteVehicleVisualSnapshot(
         RemoteVehicleBillboardSource billboardSource,
         RemoteVehicleSnapshotWarmupMode dynamicSnapshotWarmupMode,
         int minHeightAboveGroundWithoutDH,
+        RVP_RemoteVehicleViewPolicy viewPolicy,
         List<Entry> entries) {
     /** 单份载具视觉快照允许的最大条目数。 */
     public static final int MAX_ENTRIES = 1024;
@@ -58,6 +61,7 @@ public record S2CRemoteVehicleVisualSnapshot(
         if (minHeightAboveGroundWithoutDH < -1) {
             throw new IllegalArgumentException("RVP remote vehicle minimum height must be -1 or non-negative");
         }
+        Objects.requireNonNull(viewPolicy, "viewPolicy");
         Objects.requireNonNull(entries, "entries");
         if (entries.size() > MAX_ENTRIES) {
             throw new IllegalArgumentException("RVP remote vehicle entry count exceeds 1024");
@@ -78,6 +82,8 @@ public record S2CRemoteVehicleVisualSnapshot(
         buffer.writeEnum(message.billboardSource);
         buffer.writeEnum(message.dynamicSnapshotWarmupMode);
         buffer.writeInt(message.minHeightAboveGroundWithoutDH);
+        buffer.writeBoolean(message.viewPolicy.allowBeyondViewDistance());
+        buffer.writeVarInt(message.viewPolicy.viewDistanceChunks());
         buffer.writeVarInt(message.entries.size());
         for (Entry entry : message.entries) {
             writeEntry(buffer, entry);
@@ -99,6 +105,8 @@ public record S2CRemoteVehicleVisualSnapshot(
             RemoteVehicleSnapshotWarmupMode dynamicSnapshotWarmupMode =
                     buffer.readEnum(RemoteVehicleSnapshotWarmupMode.class);
             int minHeightAboveGroundWithoutDH = buffer.readInt();
+            RVP_RemoteVehicleViewPolicy viewPolicy = new RVP_RemoteVehicleViewPolicy(
+                    buffer.readBoolean(), buffer.readVarInt());
             int entryCount = buffer.readVarInt();
             if (entryCount < 0 || entryCount > MAX_ENTRIES) {
                 throw new DecoderException("RVP remote vehicle entry count exceeds 1024");
@@ -110,7 +118,7 @@ public record S2CRemoteVehicleVisualSnapshot(
             return new S2CRemoteVehicleVisualSnapshot(
                     dimension, serverGameTime, sequence,
                     aggressiveLodBillboard, forceAllVehicleBillboard,
-                    billboardSource, dynamicSnapshotWarmupMode, minHeightAboveGroundWithoutDH, entries);
+                    billboardSource, dynamicSnapshotWarmupMode, minHeightAboveGroundWithoutDH, viewPolicy, entries);
         } catch (DecoderException exception) {
             throw exception;
         } catch (RuntimeException exception) {

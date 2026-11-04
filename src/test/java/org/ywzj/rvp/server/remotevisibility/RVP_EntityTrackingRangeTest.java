@@ -6,6 +6,8 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 class RVP_EntityTrackingRangeTest {
     /** 同一种导弹随服务器视距变化，从 32 格到 512 格均需使用当时的实际上限。 */
@@ -53,14 +55,14 @@ class RVP_EntityTrackingRangeTest {
         UUID second = UUID.randomUUID();
         // 调用服务端正式使用的表，首次上报前沿用服务器值。
         assertEquals(32, distances.get(first, 32));
-        distances.update(first, 8);
-        distances.update(second, 16);
+        distances.update(first, 8, true);
+        distances.update(second, 16, true);
         assertEquals(128, RVP_EntityTrackingRange.limitToViewDistance(4096, 32, distances.get(first, 32)));
         assertEquals(256, RVP_EntityTrackingRange.limitToViewDistance(4096, 32, distances.get(second, 32)));
-        distances.update(first, 2);
+        distances.update(first, 2, true);
         assertEquals(32, RVP_EntityTrackingRange.limitToViewDistance(4096, 32, distances.get(first, 32)));
         assertEquals(16, distances.get(second, 32));
-        distances.update(first, 32);
+        distances.update(first, 32, true);
         assertEquals(512, RVP_EntityTrackingRange.limitToViewDistance(4096, 32, distances.get(first, 32)));
     }
 
@@ -73,6 +75,26 @@ class RVP_EntityTrackingRangeTest {
         assertEquals(0, RVP_EntityTrackingRange.limitToViewDistance(0, 32, 16));
     }
 
+    /** 扩展请求与视距同连接隔离，关闭、离服、重连均不遗留旧许可。 */
+    @Test
+    void extensionPreferenceIsPerConnectionAndRemovedOnLogout() {
+        var distances = new RVP_EntityTrackingRange.ClientViewDistances();
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        assertFalse(distances.requestsBeyond(first));
+        distances.update(first, 8, true);
+        distances.update(second, 16, false);
+        assertTrue(distances.requestsBeyond(first));
+        assertFalse(distances.requestsBeyond(second));
+        distances.update(first, 8, false);
+        assertFalse(distances.requestsBeyond(first));
+        distances.update(first, 16, true);
+        distances.remove(first);
+        assertFalse(distances.requestsBeyond(first));
+        assertEquals(32, distances.get(first, 32));
+        assertEquals(16, distances.get(second, 32));
+    }
+
     /** 断开连接删除上报，非法值也不能覆盖有效视距；不同服务器实例各持独立表。 */
     @Test
     void logoutAndSeparateServersDoNotReuseOldRange() {
@@ -80,9 +102,9 @@ class RVP_EntityTrackingRangeTest {
         var secondServer = new RVP_EntityTrackingRange.ClientViewDistances();
         UUID player = UUID.randomUUID();
         // 调用正式范围表，模拟两台服务器中相同玩家身份与离服清理。
-        firstServer.update(player, 8);
-        secondServer.update(player, 16);
-        assertThrows(IllegalArgumentException.class, () -> firstServer.update(player, 0));
+        firstServer.update(player, 8, true);
+        secondServer.update(player, 16, true);
+        assertThrows(IllegalArgumentException.class, () -> firstServer.update(player, 0, true));
         assertEquals(8, firstServer.get(player, 32));
         firstServer.remove(player);
         assertEquals(32, firstServer.get(player, 32));

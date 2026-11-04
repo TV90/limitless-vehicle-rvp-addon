@@ -11,6 +11,7 @@ import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.client.render.RVP_LodModelManager;
 import org.ywzj.rvp.config.RVP_ClientConfig;
+import org.ywzj.rvp.util.RVP_RemoteVehicleViewPolicy;
 import org.ywzj.rvp.config.RVP_CommonConfig.RemoteVehicleBillboardSource;
 import org.ywzj.rvp.config.RVP_CommonConfig.RemoteVehicleSnapshotWarmupMode;
 import org.ywzj.rvp.config.LauncherDeployRuntimeManager;
@@ -79,7 +80,7 @@ public final class RVP_ClientRemoteVehicleVisualState {
                 message.forceAllVehicleBillboard(),
                 message.billboardSource(),
                 message.dynamicSnapshotWarmupMode(),
-                message.minHeightAboveGroundWithoutDH());
+                message.minHeightAboveGroundWithoutDH(), message.viewPolicy());
 
         long clientTick = level.getGameTime();
         Set<Integer> retainedIds = new HashSet<>();
@@ -289,21 +290,24 @@ public final class RVP_ClientRemoteVehicleVisualState {
      * @param billboardSource Billboard 图像来源
      * @param dynamicSnapshotWarmupMode 动态快照预热期间的显示方式
      * @param minHeightAboveGroundWithoutDH 未开启 DH 时的最低离地高度，单位米（格）；默认 25，-1 禁用
+     * @param viewPolicy 本连接的服务端权威视距与超视距显示许可
      */
     public record RenderPolicy(boolean aggressiveLodBillboard,
                                boolean forceAllVehicleBillboard,
                                RemoteVehicleBillboardSource billboardSource,
                                RemoteVehicleSnapshotWarmupMode dynamicSnapshotWarmupMode,
-                               int minHeightAboveGroundWithoutDH) {
+                               int minHeightAboveGroundWithoutDH,
+                               RVP_RemoteVehicleViewPolicy viewPolicy) {
         /** 尚未收到服务端快照时使用的协议默认策略。 */
         public static final RenderPolicy DEFAULT = new RenderPolicy(
                 true,
                 false,
                 RemoteVehicleBillboardSource.DYNAMIC_SNAPSHOT,
                 RemoteVehicleSnapshotWarmupMode.HIDE,
-                25);
+                25, RVP_RemoteVehicleViewPolicy.DEFAULT);
 
         public RenderPolicy {
+            java.util.Objects.requireNonNull(viewPolicy, "viewPolicy");
             java.util.Objects.requireNonNull(billboardSource, "billboardSource");
             java.util.Objects.requireNonNull(dynamicSnapshotWarmupMode, "dynamicSnapshotWarmupMode");
             if (minHeightAboveGroundWithoutDH < -1) {

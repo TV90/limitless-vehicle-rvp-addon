@@ -8,19 +8,21 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class C2SRemoteViewDistanceTest {
-    /** 上报只含视距，不接受其他玩家编号，并覆盖正常值与上下限编解码。 */
+    /** 上报本人的视距与显示偏好，不接受其他玩家编号，并覆盖编解码上下限。 */
     @Test
     void roundTripPreservesClientRange() {
-        for (int chunks : new int[]{2, 8, 16, 32}) {
-            FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
-            try {
-                C2SRemoteViewDistance message = new C2SRemoteViewDistance(chunks);
-                // 调用实际网络编解码，确保端点收到的范围与客户端设置一致。
-                C2SRemoteViewDistance.encode(message, buffer);
-                assertEquals(message, C2SRemoteViewDistance.decode(buffer));
-                assertEquals(0, buffer.readableBytes());
-            } finally {
-                buffer.release();
+        for (boolean allowBeyond : new boolean[]{false, true}) {
+            for (int chunks : new int[]{2, 8, 16, 32}) {
+                FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
+                try {
+                    C2SRemoteViewDistance message = new C2SRemoteViewDistance(chunks, allowBeyond);
+                    // 调用实际网络编解码，确保端点收到的范围与客户端设置一致。
+                    C2SRemoteViewDistance.encode(message, buffer);
+                    assertEquals(message, C2SRemoteViewDistance.decode(buffer));
+                    assertEquals(0, buffer.readableBytes());
+                } finally {
+                    buffer.release();
+                }
             }
         }
     }
@@ -32,6 +34,7 @@ class C2SRemoteViewDistanceTest {
             FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
             try {
                 buffer.writeVarInt(chunks);
+                buffer.writeBoolean(true);
                 // 调用实际解码，异常请求在进入每玩家状态表之前就被拒绝。
                 assertThrows(IllegalArgumentException.class, () -> C2SRemoteViewDistance.decode(buffer));
             } finally {

@@ -43,7 +43,8 @@ public class RVP_Network {
     /** 协议 44：HITL 链路包增加权威锁点、OBB 身份及 DIRCM 禁锁剩余时间。 */
     /** 协议 45：新增每玩家客户端视距上报，导弹与载具近远交接随各自客户端设置动态变化。 */
     /** 协议 46：合并虚拟弹/动态视距消息与权威电视锁定状态，双端须一同更新。 */
-    private static final String PROTOCOL = "46";
+    /** 协议 47：视距上报附带客户端扩展请求，载具快照下发服务端实际视距与许可。 */
+    private static final String PROTOCOL = "47";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "main"))

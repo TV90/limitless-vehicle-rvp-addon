@@ -6,6 +6,7 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
+import org.ywzj.rvp.util.RVP_RemoteVehicleViewPolicy;
 import org.ywzj.rvp.config.RVP_CommonConfig.RemoteVehicleBillboardSource;
 import org.ywzj.rvp.config.RVP_CommonConfig.RemoteVehicleSnapshotWarmupMode;
 import org.ywzj.rvp.network.remotevisibility.S2CRemoteVehicleVisualSnapshot.LauncherDeployPhase;
@@ -44,7 +45,7 @@ class S2CRemoteVehicleVisualSnapshotTest {
                 true,
                 RemoteVehicleBillboardSource.SLOT_TEXTURE,
                 RemoteVehicleSnapshotWarmupMode.MODEL,
-                73,
+                73, new RVP_RemoteVehicleViewPolicy(true, 16),
                 List.of(entry(42)));
 
         assertEquals(message, roundTrip(message));
@@ -226,7 +227,7 @@ class S2CRemoteVehicleVisualSnapshotTest {
                 false,
                 RemoteVehicleBillboardSource.DYNAMIC_SNAPSHOT,
                 RemoteVehicleSnapshotWarmupMode.HIDE,
-                25,
+                25, RVP_RemoteVehicleViewPolicy.DEFAULT,
                 entries);
     }
 
@@ -237,6 +238,8 @@ class S2CRemoteVehicleVisualSnapshotTest {
         buffer.writeEnum(RemoteVehicleBillboardSource.DYNAMIC_SNAPSHOT);
         buffer.writeEnum(RemoteVehicleSnapshotWarmupMode.HIDE);
         buffer.writeInt(25);
+        buffer.writeBoolean(false);
+        buffer.writeVarInt(32);
     }
 
     /** 验证禁用值、零和最大高度不会在协议往返中丢失。 */
@@ -246,7 +249,7 @@ class S2CRemoteVehicleVisualSnapshotTest {
             var message = new S2CRemoteVehicleVisualSnapshot(
                     DIMENSION, 1L, 1L, true, false,
                     RemoteVehicleBillboardSource.DYNAMIC_SNAPSHOT,
-                    RemoteVehicleSnapshotWarmupMode.HIDE, threshold, List.of(entry(42)));
+                    RemoteVehicleSnapshotWarmupMode.HIDE, threshold, RVP_RemoteVehicleViewPolicy.DEFAULT, List.of(entry(42)));
             // 调用测试编解码辅助，验证服务端高度策略完整保留。
             assertEquals(message, roundTrip(message));
         }
@@ -258,7 +261,7 @@ class S2CRemoteVehicleVisualSnapshotTest {
         assertThrows(IllegalArgumentException.class, () -> new S2CRemoteVehicleVisualSnapshot(
                 DIMENSION, 1L, 1L, true, false,
                 RemoteVehicleBillboardSource.DYNAMIC_SNAPSHOT,
-                RemoteVehicleSnapshotWarmupMode.HIDE, -2, List.of()));
+                RemoteVehicleSnapshotWarmupMode.HIDE, -2, RVP_RemoteVehicleViewPolicy.DEFAULT, List.of()));
         FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
         try {
             buffer.writeResourceLocation(DIMENSION);
@@ -269,6 +272,8 @@ class S2CRemoteVehicleVisualSnapshotTest {
             buffer.writeEnum(RemoteVehicleBillboardSource.DYNAMIC_SNAPSHOT);
             buffer.writeEnum(RemoteVehicleSnapshotWarmupMode.HIDE);
             buffer.writeInt(-2);
+            buffer.writeBoolean(false);
+            buffer.writeVarInt(32);
             buffer.writeVarInt(0);
             // 调用实际网络解码入口，确认不能接受非法阈值。
             assertThrows(DecoderException.class, () -> S2CRemoteVehicleVisualSnapshot.decode(buffer));
@@ -276,4 +281,43 @@ class S2CRemoteVehicleVisualSnapshotTest {
             buffer.release();
         }
     }
+    /** 显式许可和拒绝、两端视距上下限均必须完整下发。 */
+    @Test
+    void viewPermissionAndActualRangeRoundTrip() {
+        for (boolean allowed : new boolean[]{false, true}) {
+            for (int chunks : new int[]{2, 8, 16, 32}) {
+                var message = new S2CRemoteVehicleVisualSnapshot(
+                        DIMENSION, 1L, 1L, true, false,
+                        RemoteVehicleBillboardSource.DYNAMIC_SNAPSHOT,
+                        RemoteVehicleSnapshotWarmupMode.HIDE, 25,
+                        new RVP_RemoteVehicleViewPolicy(allowed, chunks), List.of());
+                assertEquals(message, roundTrip(message));
+            }
+        }
+    }
+
+    /** 网络端非法视距不得变成大范围显示许可。 */
+    @Test
+    void invalidViewDistanceIsRejectedByDecoder() {
+        for (int chunks : new int[]{-1, 0, 1, 33, Integer.MAX_VALUE}) {
+            FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
+            try {
+                buffer.writeResourceLocation(DIMENSION);
+                buffer.writeLong(1L);
+                buffer.writeLong(1L);
+                buffer.writeBoolean(true);
+                buffer.writeBoolean(false);
+                buffer.writeEnum(RemoteVehicleBillboardSource.DYNAMIC_SNAPSHOT);
+                buffer.writeEnum(RemoteVehicleSnapshotWarmupMode.HIDE);
+                buffer.writeInt(25);
+                buffer.writeBoolean(true);
+                buffer.writeVarInt(chunks);
+                buffer.writeVarInt(0);
+                assertThrows(DecoderException.class, () -> S2CRemoteVehicleVisualSnapshot.decode(buffer));
+            } finally {
+                buffer.release();
+            }
+        }
+    }
+
 }

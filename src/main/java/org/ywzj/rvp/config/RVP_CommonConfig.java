@@ -41,6 +41,16 @@ public class RVP_CommonConfig {
         ALL_PLAYERS
     }
 
+    /** 普通地形迷雾的去除策略；特殊介质、失明和黑暗始终保留。 */
+    public enum TerrainFogMode {
+        /** 保留原版迷雾。 */
+        NEVER,
+        /** 仅 DH 地形渲染启用时去雾，关闭 DH 即恢复，默认模式。 */
+        DH_ENABLED,
+        /** 远距载具总开关开启时始终去雾。 */
+        ALWAYS
+    }
+
     /** 远距载具区块租约模式。 */
     public enum ChunkLoadingMode {
         /** 不为远距载具新增区块租约。 */
@@ -76,7 +86,7 @@ public class RVP_CommonConfig {
     /** 是否启用服务端权威的载具超视距同步。 */
     private final ForgeConfigSpec.BooleanValue remoteVehicleRenderingEnabled;
     /** 客户端是否剔除普通空气环境的地形雾。 */
-    private final ForgeConfigSpec.BooleanValue remoteVehicleRemoveTerrainFog;
+    private final ForgeConfigSpec.EnumValue<TerrainFogMode> remoteVehicleRemoveTerrainFog;
     /** 客户端在载具观瞄缩放时是否优先使用 LOD/基础高模路径。 */
     private final ForgeConfigSpec.BooleanValue remoteVehicleScopeZoomPreferModelRendering;
     /** 是否把没有任何有效整模型 LOD 的超视距载具改为 Billboard。 */
@@ -142,9 +152,10 @@ public class RVP_CommonConfig {
                 .comment("是否启用服务端权威的载具超视距视觉同步。默认：true")
                 .define("enabled", true);
         remoteVehicleRemoveTerrainFog = builder
-                .comment("是否在载具超视距渲染启用时剔除客户端普通地形雾，避免原生实体载具在实际实体加载边界前被雾墙遮挡。",
-                        "仅影响普通空气雾；水下、熔岩、细雪、失明和黑暗仍保留原版限制。默认：true")
-                .define("removeTerrainFog", true);
+                .comment("普通地形雾策略：NEVER 保留；DH_ENABLED 仅 DH 地形渲染开启时去除；ALWAYS 始终去除。",
+                        "默认 DH_ENABLED；关闭 DH 渲染后自动恢复，RVP 兼容模式 OFF 不代表关闭 DH 地形。",
+                        "仅影响普通空气地形雾，且仍受远距载具总开关控制；水下、熔岩、细雪、失明和黑暗保持原规则。")
+                .defineEnum("removeTerrainFog", TerrainFogMode.DH_ENABLED);
         remoteVehicleScopeZoomPreferModelRendering = builder
                 .comment("玩家正在使用载具、进入 SCOPE 观瞄视角且最终 FOV 达到缩放阈值时，",
                         "是否仅覆盖服务端 Billboard 策略，优先使用普通 LOD、无有效 LOD 时回退基础高模。",
@@ -233,9 +244,9 @@ public class RVP_CommonConfig {
         return INSTANCE != null && INSTANCE.remoteVehicleRenderingEnabled.get();
     }
 
-    /** 返回客户端是否应在载具超视距渲染启用时剔除普通地形雾。 */
-    public static boolean shouldRemoveRemoteVehicleTerrainFog() {
-        return INSTANCE == null || INSTANCE.remoteVehicleRemoveTerrainFog.get();
+    /** 返回普通空气地形雾策略，默认仅在 DH 地形渲染开启时去雾。 */
+    public static TerrainFogMode getRemoteVehicleTerrainFogMode() {
+        return INSTANCE != null ? INSTANCE.remoteVehicleRemoveTerrainFog.get() : TerrainFogMode.DH_ENABLED;
     }
 
     /** 返回客户端在载具观瞄缩放时是否应优先使用普通模型渲染路径。 */

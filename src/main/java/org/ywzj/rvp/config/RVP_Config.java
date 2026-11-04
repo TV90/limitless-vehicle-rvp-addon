@@ -20,6 +20,9 @@ public class RVP_Config {
 
     private final ForgeConfigSpec.DoubleValue hitlTvBreakLockTargetSpeedKph;
 
+    /** 多人服是否允许在玩家实际视距外显示载具，默认 false；普通单人世界豁免。 */
+    private final ForgeConfigSpec.BooleanValue allowVehiclesBeyondViewDistance;
+
     /** Parsed cache: sorted by maxRadius ascending. */
     private volatile List<CraterRule> parsedRules = List.of();
 
@@ -79,6 +82,20 @@ public class RVP_Config {
                 );
 
         builder.pop();
+
+        builder.push("remoteVehicleRendering");
+        allowVehiclesBeyondViewDistance = builder
+                .comment("多人游戏是否允许载具显示超出玩家实际视距。默认 false。",
+                        "实际视距取客户端渲染视距与服务端视距中较小值；安装 DH 也不能绕过。",
+                        "false：在服务端授权前限制距离；true：仍须客户端同时开启。",
+                        "未开放 LAN 的普通单人世界不受服务端默认值钳制。")
+                .define("allowBeyondViewDistance", false);
+        builder.pop();
+    }
+
+    /** 返回多人服超视距载具显示许可；客户端不能覆盖服务端禁用。 */
+    public static boolean allowsVehiclesBeyondViewDistance() {
+        return INSTANCE != null && INSTANCE.allowVehiclesBeyondViewDistance.get();
     }
 
     private CraterRule toRule(String entry) {
