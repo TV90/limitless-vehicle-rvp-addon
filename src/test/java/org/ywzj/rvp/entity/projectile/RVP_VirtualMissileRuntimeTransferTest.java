@@ -136,6 +136,32 @@ class RVP_VirtualMissileRuntimeTransferTest {
         }
     }
 
+    /** 跳弹余下的半刻位移只属于碰撞当刻，转虚拟后应继续按完整一刻的速度飞行。 */
+    @Test
+    void virtualFlightAfterRicochetMatchesRebuiltRuntime() {
+        // 数值环境没有网络接收者，通过正式视觉字段关闭火花广播，碰撞和反射仍执行生产实现。
+        var missile = missile("NONE", "\"collision_data\":{\"bounce\":1,\"bounce_strength\":1,\"bounce_min_block_hardness\":0},"
+                + "\"effects_data\":{\"vehicle_impact_sparks\":false,\"impact_particle\":\"none\"}");
+        missile.setPos(0.25, 1, 0.25);
+        missile.setDeltaMovement(new Vec3(2, -2, 0));
+        missile.updateCount = 20;
+        // 调用真实碰撞扫掠和运动方法，建立一次地面跳弹及其仅供当刻使用的剩余位移。
+        missile.performAmmoEntityTickHit(missile.position(), missile.position().add(missile.getDeltaMovement()));
+        assertEquals(1, missile.bouncesConsumed, "场景必须确实触发一次跳弹");
+        assertTrue(missile.motionDisplacement(missile.getDeltaMovement()).lengthSqr()
+                < missile.getDeltaMovement().lengthSqr(), "碰撞刻应只推进反弹后的剩余时长");
+        missile.tickMotion();
+        var loaded = RVP_VirtualMissileState.load(state(missile).save()).orElseThrow();
+        // 调用生产重建得到相同持久状态，原对象交接必须与重建后的下一刻结果一致。
+        var rebuilt = RVP_EntityTrajectoryIntegrator.createEntity(missile.level(), loaded, missile.getRvpData(), null, null);
+        missile.setVirtualMidcourseTarget(true);
+        missile.tickVirtualMidcourseFlight();
+        rebuilt.tickVirtualMidcourseFlight();
+        assertEquals(rebuilt.position(), missile.position());
+        assertEquals(rebuilt.getDeltaMovement(), missile.getDeltaMovement());
+        assertEquals(rebuilt.flightDistance, missile.flightDistance, 1.0e-9);
+    }
+
     @Test
     void liveTargetUuidRebindsAndAnUnguidedMissileMayHaveNoTarget() {
         var missile = missile("IR");

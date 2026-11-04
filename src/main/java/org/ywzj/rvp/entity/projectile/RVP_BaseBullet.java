@@ -2266,6 +2266,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
      */
     public final void tickVirtualMidcourseFlight() {
         Vec3 origin = position();
+        // 调用跳弹临时位移清理入口，上一真实刻的剩余位移不得限制新虚拟刻的完整运动。
+        resetRicochetDisplacement();
         // 调用原版姿态历史入口，让制导所见的上一刻角度与正常实体调度一致。
         setOldPosAndRot();
         tickCount++;
