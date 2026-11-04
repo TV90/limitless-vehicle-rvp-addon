@@ -9,6 +9,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.NotNull;
 import org.ywzj.rvp.entity.projectile.RVP_BulletEntity;
+import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteAmmoVisualRenderer;
 
 /**
  * {@link org.ywzj.vehicle.client.render.entity.weapon.BulletEntityRenderer} for {@link RVP_BulletEntity}.
@@ -38,7 +39,8 @@ public class RVP_BulletEntityRenderer extends EntityRenderer<RVP_BulletEntity> {
 
     @Override
     public boolean shouldRender(RVP_BulletEntity bullet, Frustum camera, double camX, double camY, double camZ) {
-        return true;
+        // 调用本帧交接名单，真实子弹超过本玩家视距后由远距批次绘制，粒子逻辑仍照常更新。
+        return !RVP_RemoteAmmoVisualRenderer.ownsLoadedEntity(bullet);
     }
 
     @Override

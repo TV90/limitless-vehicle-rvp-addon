@@ -18,6 +18,7 @@ import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.rvp.entity.projectile.RVP_RocketEntity;
 import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
+import org.ywzj.rvp.server.remotevisibility.RVP_EntityTrackingRange;
 import org.ywzj.vehicle.api.entity.RemoteTickEntity;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.entity.weapon.MissileEntity;
@@ -40,14 +41,10 @@ import java.util.Set;
 public final class RVP_RemoteAmmoVisualBroadcastService {
     /** 弹药视觉完整集合的同步周期，单位 tick。 */
     private static final int SYNC_INTERVAL_TICK = 5;
-    /** 原生实体追踪接管边界，单位格。 */
-    private static final double BASE_RANGE = 32.0D * 16.0D;
     /** 无条件弹药可视边界，单位格。 */
     private static final double UNCONDITIONAL_RANGE = 64.0D * 16.0D;
     /** 弹药超视距视觉最远边界，单位格。 */
     private static final double EXTENDED_RANGE = 256.0D * 16.0D;
-    /** 原生实体追踪接管边界平方。 */
-    private static final double BASE_RANGE_SQ = BASE_RANGE * BASE_RANGE;
     /** 无条件弹药可视边界平方。 */
     private static final double UNCONDITIONAL_RANGE_SQ = UNCONDITIONAL_RANGE * UNCONDITIONAL_RANGE;
     /** 弹药超视距视觉最远边界平方。 */
@@ -127,13 +124,10 @@ public final class RVP_RemoteAmmoVisualBroadcastService {
         return detectedIds;
     }
 
-    /** 构造本体远程实体接收器所需的弹药克隆数据。 */
+    /** 构造全部已授权弹药的克隆数据，使本体导弹也能在实际卸载边界前准备好显示对象。 */
     private static ServerBroadcastEntities buildPacket(List<Entity> eligible) {
         List<ServerBroadcastEntities.BroadcastEntity> entries = new ArrayList<>();
         for (Entity entity : eligible) {
-            if (!isSupplementalType(entity)) {
-                continue;
-            }
             CompoundTag data = new CompoundTag();
             entity.saveWithoutId(data);
             if (entity instanceof RemoteTickEntity remoteTickEntity) {
@@ -149,18 +143,14 @@ public final class RVP_RemoteAmmoVisualBroadcastService {
         return packet;
     }
 
-    /** 判断实体是否需要通过本体远程接收器补充克隆。 */
-    private static boolean isSupplementalType(Entity entity) {
-        return entity instanceof RocketEntity
+    /** 判断实体是否属于弹药超视距视觉支持类型。 */
+    private static boolean isSupportedType(Entity entity) {
+        return entity instanceof MissileEntity
+                || entity instanceof RocketEntity
                 || entity instanceof RVP_BulletEntity
                 || entity instanceof RVP_MissileEntity
                 || entity instanceof RVP_RocketEntity
                 || entity instanceof RVP_BombEntity;
-    }
-
-    /** 判断实体是否属于弹药超视距视觉支持类型。 */
-    private static boolean isSupportedType(Entity entity) {
-        return entity instanceof MissileEntity || isSupplementalType(entity);
     }
 
     /** 判断导弹或火箭发动机在当前服务端 tick 是否仍在燃烧。 */
@@ -220,7 +210,10 @@ public final class RVP_RemoteAmmoVisualBroadcastService {
         double dx = entity.getX() - player.getX();
         double dz = entity.getZ() - player.getZ();
         double distanceSq = dx * dx + dz * dz;
-        if (distanceSq <= BASE_RANGE_SQ || distanceSq > EXTENDED_RANGE_SQ) {
+        // 调用每玩家范围与重叠区计算，在该玩家实际近远切换之前准备好显示数据。
+        double handoverDistance = RVP_EntityTrackingRange.resolve(player, entity);
+        if (distanceSq < RVP_EntityTrackingRange.preparationDistanceSquared(handoverDistance)
+                || distanceSq > EXTENDED_RANGE_SQ) {
             return false;
         }
         if (entity instanceof RVP_BulletEntity && distanceSq > UNCONDITIONAL_RANGE_SQ) {

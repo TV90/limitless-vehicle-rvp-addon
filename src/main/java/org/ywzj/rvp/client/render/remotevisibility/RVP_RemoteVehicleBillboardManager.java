@@ -211,6 +211,18 @@ public final class RVP_RemoteVehicleBillboardManager {
         return plan.mode == RenderMode.NORMAL_MODEL;
     }
 
+    /** 确认本帧已有可绘制来源，预热等待且没有纹理时继续保留真实实体显示。 */
+    public static boolean isReadyForHandover(BillboardPlan plan) {
+        // 调用同一模式及纹理解析，避免刚生成快照后仍误判为等待，或隐藏尚无备用图的真实实体。
+        return isReadyForHandover(plan.mode, resolveRenderableTexture(plan) != null);
+    }
+
+    /** 对模型路径和实际纹理可用性作统一判断，缓存被淘汰的旧 READY 状态不能触发隐藏。 */
+    static boolean isReadyForHandover(RenderMode mode, boolean textureAvailable) {
+        // 调用既有高模预算分类，模型路径可立即绘制，其余路径必须已经持有有效纹理。
+        return mode == RenderMode.NORMAL_MODEL || usesHighModelBudget(mode) || textureAvailable;
+    }
+
     /**
      * 按预算器已经排好的优先级预热至多一张动态快照。
      * <p>

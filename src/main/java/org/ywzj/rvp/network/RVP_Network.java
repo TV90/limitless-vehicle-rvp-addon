@@ -40,7 +40,8 @@ public class RVP_Network {
     /** 协议 35：新增母车辅助载具候选选择请求和权威状态同步。 */
     /** 协议 36：显式配置的 HITL 远程观察窗口、区块、心跳及导弹 spawn 标志。 */
     /** 协议 42：新增虚拟中段雷达目标完整集合与实体恢复交接；客户端、服务端须一同更新。 */
-    private static final String PROTOCOL = "44";
+    /** 协议 45：新增每玩家客户端视距上报，导弹与载具近远交接随各自客户端设置动态变化。 */
+    private static final String PROTOCOL = "45";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "main"))
@@ -496,6 +497,13 @@ public class RVP_Network {
                 .encoder(org.ywzj.rvp.network.remotevisibility.S2CVirtualMissileVisualSnapshot::encode)
                 .decoder(org.ywzj.rvp.network.remotevisibility.S2CVirtualMissileVisualSnapshot::decode)
                 .consumerMainThread(org.ywzj.rvp.network.remotevisibility.S2CVirtualMissileVisualSnapshot::handle)
+                .add();
+        // 追加客户端视距消息，不改动既有消息编号；只允许客户端向服务器上报。
+        CHANNEL.messageBuilder(org.ywzj.rvp.network.remotevisibility.C2SRemoteViewDistance.class,
+                        id++, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(org.ywzj.rvp.network.remotevisibility.C2SRemoteViewDistance::encode)
+                .decoder(org.ywzj.rvp.network.remotevisibility.C2SRemoteViewDistance::decode)
+                .consumerMainThread(org.ywzj.rvp.network.remotevisibility.C2SRemoteViewDistance::handle)
                 .add();
     }
 }

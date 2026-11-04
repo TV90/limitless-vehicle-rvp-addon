@@ -16,8 +16,10 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.client.state.RVP_ClientProjectileRenderInterpolator;
+import org.ywzj.rvp.client.state.RVP_ClientHitlState;
 import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteAmmoVisualState;
 import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientVirtualMissileVisualState;
+import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteViewDistance;
 import org.ywzj.rvp.entity.projectile.RVP_BombEntity;
 import org.ywzj.rvp.entity.projectile.RVP_BulletEntity;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
@@ -48,16 +50,12 @@ import java.util.UUID;
 /** 只负责远程弹药克隆的超视距绘制、运动朝向和发动机尾迹。 */
 @Mod.EventBusSubscriber(modid = RVP_MOD.MOD_ID, value = Dist.CLIENT, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class RVP_RemoteAmmoVisualRenderer {
-    /** 原生实体追踪接管边界，单位格。 */
-    public static final double BASE_RANGE = 32.0D * 16.0D;
     /** 无条件弹药可视边界，单位格。 */
     public static final double UNCONDITIONAL_RANGE = 64.0D * 16.0D;
     /** 弹药视觉最远边界，单位格。 */
     public static final double EXTENDED_RANGE = 256.0D * 16.0D;
     /** 弹药视觉最低离地高度，供既有界面展示规则复用。 */
     public static final double MIN_AGL = 100.0D;
-    /** 原生实体追踪接管边界平方。 */
-    private static final double BASE_RANGE_SQ = BASE_RANGE * BASE_RANGE;
     /** 无条件弹药可视边界平方。 */
     private static final double UNCONDITIONAL_RANGE_SQ = UNCONDITIONAL_RANGE * UNCONDITIONAL_RANGE;
     /** 弹药视觉最远边界平方。 */
@@ -91,6 +89,8 @@ public final class RVP_RemoteAmmoVisualRenderer {
     private static final double VIRTUAL_VISUAL_RANGE = 8192;
     /** 当前模型/历史尾烟需要的三维绘制距离；没有虚拟来源时恢复真实远程分支原边界。 */
     private static double projectionDistance = EXTENDED_RANGE;
+    /** 本帧交给扩展远平面绘制的真实弹药；对象引用保证同编号的远程克隆不被误隐藏。 */
+    private static Map<Integer, Entity> loadedHandoverEntities = Map.of();
 
     private RVP_RemoteAmmoVisualRenderer() {
     }
@@ -98,6 +98,16 @@ public final class RVP_RemoteAmmoVisualRenderer {
     /** 在正常实体之后绘制服务端授权的远程弹药克隆。 */
     @SubscribeEvent
     public static void onRenderLevel(RenderLevelStageEvent event) {
+        if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_SKY) {
+            // 调用帧前交接准备，在正常实体绘制之前选择唯一显示来源。
+            prepareLoadedHandover();
+            return;
+        }
+        if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_LEVEL) {
+            // 调用帧末清理，之后的离屏预览不沿用本帧真实弹药引用。
+            clearHandover();
+            return;
+        }
         if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_PARTICLES) {
             closeParticleProjectionScope();
             return;
@@ -212,7 +222,7 @@ public final class RVP_RemoteAmmoVisualRenderer {
                                                     EntityRenderDispatcher dispatcher,
                                                     ResourceLocation currentDimension,
                                                     RenderLevelStageEvent event) {
-        // 独立显示分支先选唯一来源，不受乘车限制，也没有真实远程克隆的 512 格下限。
+        // 独立显示分支先选唯一来源，不受乘车或原生实体加载距离限制。
         boolean rendered = renderVirtualMissiles(minecraft, cameraPos, poseStack, buffers, dispatcher, event);
         if (!LocalVehiclePlayer.instance.onVehicle()) return rendered;
         for (LocalVehiclePlayer.ServerEntity remote : LocalVehiclePlayer.instance.serverEntities.values()) {
@@ -223,8 +233,20 @@ public final class RVP_RemoteAmmoVisualRenderer {
             // 雷达虚拟代理只有目标职责，不能借真实远程授权残留或视觉撤销继续绘制。
             if (entity instanceof RVP_BaseBullet bullet && bullet.isVirtualMidcourseTarget()
                     || RVP_ClientVirtualMissileVisualState.takesPrecedence(entity)) continue;
+            // 已加载且超过本玩家视距时，真实对象改走扩展远平面；其余真实实体继续走正常通道。
             Entity local = minecraft.level.getEntity(entity.getId());
-            if (local != null && local.isAlive() && local.getUUID().equals(entity.getUUID())) {
+            if (local != null) {
+                if (ownsLoadedEntity(local)) {
+                    Vec3 position = local.getPosition(event.getPartialTick());
+                    // 复用真实对象的姿态和本地尾烟，不改写位置、旧帧位置或重复生成远程尾烟。
+                    org.ywzj.rvp.client.light.RVP_RocketEngineLightQuery.update(
+                            local, position, event.getPartialTick());
+                    // 调用同一个类型化弹体渲染器；直接分派绘制不会再次执行原生 shouldRender 筛选。
+                    dispatcher.render(local, position.x - cameraPos.x, position.y - cameraPos.y,
+                            position.z - cameraPos.z, local.getYRot(), event.getPartialTick(),
+                            poseStack, buffers, LightTexture.FULL_BRIGHT);
+                    rendered = true;
+                }
                 continue;
             }
             long clientGameTime = minecraft.level.getGameTime();
@@ -274,6 +296,44 @@ public final class RVP_RemoteAmmoVisualRenderer {
         return rendered;
     }
 
+    /** 从服务端授权和已有远程记录中选择超过本玩家视距的真实弹药，缺少备用授权时保留原生绘制。 */
+    private static void prepareLoadedHandover() {
+        Map<Integer, Entity> handover = new HashMap<>();
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.level != null && minecraft.player != null && LocalVehiclePlayer.instance.onVehicle()) {
+            ResourceLocation dimension = minecraft.level.dimension().location();
+            for (LocalVehiclePlayer.ServerEntity remote : LocalVehiclePlayer.instance.serverEntities.values()) {
+                Entity clone = remote.entity;
+                if (clone == null || !isSupported(clone)
+                        || clone instanceof RVP_BaseBullet bullet && bullet.isVirtualMidcourseTarget()
+                        || RVP_ClientVirtualMissileVisualState.takesPrecedence(clone)) {
+                    continue;
+                }
+                Entity local = minecraft.level.getEntity(clone.getId());
+                // 调用现有授权、视距和电视导弹隐藏规则，普通实体与虚拟显示来源不能重复接管。
+                if (local != null && local.isAlive() && isSupported(local)
+                        && RVP_ClientRemoteAmmoVisualState.containsForTrail(
+                                dimension, clone.getId(), minecraft.level.getGameTime())
+                        && RVP_ClientRemoteViewDistance.isBeyondClientRange(local.position())
+                        && !RVP_ClientHitlState.shouldHideActiveMissileVfx(local)
+                        && isVisibleAtRange(local, local.position(), minecraft.gameRenderer.getMainCamera().getPosition())) {
+                    handover.put(local.getId(), local);
+                }
+            }
+        }
+        loadedHandoverEntities = Map.copyOf(handover);
+    }
+
+    /** 仅隐藏本帧已分配扩展远平面绘制的同一个真实弹药对象。 */
+    public static boolean ownsLoadedEntity(Entity entity) {
+        return loadedHandoverEntities.get(entity.getId()) == entity;
+    }
+
+    /** 清除本帧真实弹药引用，不影响仍需消散的尾烟。 */
+    public static void clearHandover() {
+        loadedHandoverEntities = Map.of();
+    }
+
     /** 使用专属实例和统一姿态绘制虚拟弹，不调用运动朝向修正或任何实体更新。 */
     private static boolean renderVirtualMissiles(Minecraft minecraft, Vec3 cameraPos, PoseStack poseStack,
             MultiBufferSource.BufferSource buffers, EntityRenderDispatcher dispatcher, RenderLevelStageEvent event) {
@@ -309,6 +369,8 @@ public final class RVP_RemoteAmmoVisualRenderer {
 
     /** 清除世界退出或维度切换后遗留的尾迹状态。 */
     public static void clear() {
+        // 调用交接清理，退出世界后不保留旧的真实实体对象。
+        clearHandover();
         TRAIL_STATES.clear();
         trailDimension = null;
         particleFarPlaneUntilTick = Long.MIN_VALUE;
@@ -346,12 +408,12 @@ public final class RVP_RemoteAmmoVisualRenderer {
         return vehicle.getVehicleModelInstance() != null;
     }
 
-    /** 应用弹药超视距距离边界。 */
+    /** 只应用弹药显示的最远距离；近远接管由服务端授权和真实实体是否仍加载决定。 */
     private static boolean isVisibleAtRange(Entity entity, Vec3 position, Vec3 cameraPos) {
         double dx = position.x - cameraPos.x;
         double dz = position.z - cameraPos.z;
         double distanceSq = dx * dx + dz * dz;
-        if (distanceSq <= BASE_RANGE_SQ || distanceSq > EXTENDED_RANGE_SQ) {
+        if (distanceSq > EXTENDED_RANGE_SQ) {
             return false;
         }
         return !(entity instanceof RVP_BulletEntity) || distanceSq <= UNCONDITIONAL_RANGE_SQ;

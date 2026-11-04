@@ -13,6 +13,7 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.culling.Frustum;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
@@ -32,6 +33,7 @@ import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteVehicleProjection.F
 import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteVehicleProjection.ProjectionPlan;
 import org.ywzj.rvp.client.state.RVP_ClientZoomState;
 import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteVehicleVisualState;
+import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteViewDistance;
 import org.ywzj.rvp.config.RVP_ClientConfig;
 import org.ywzj.vehicle.client.render.entity.vehicle.VehicleRender;
 import org.ywzj.vehicle.client.resource.ClientAssetsManager;
@@ -61,18 +63,31 @@ public final class RVP_RemoteVehicleVisualRenderer {
     private static final Logger LOGGER = LogUtils.getLogger();
     /** 是否已经报告过当前运行期不受支持的投影，避免逐帧刷日志。 */
     private static boolean warnedUnsupportedProjection;
+    /** 普通世界绘制在实体阶段前冻结的远距计划，实体阶段后仅消费一次。 */
+    private static RVP_RemoteVehicleFramePlan preparedWorldFrame;
+    /** 本帧已由远距计划接管的真实实体；保留对象引用，编号相同的代理不会误被隐藏。 */
+    private static Map<Integer, Entity> loadedHandoverEntities = Map.of();
 
     private RVP_RemoteVehicleVisualRenderer() {
     }
 
     /**
-     * 编排原版与 DH 两条唯一消费路由：DH 路径在 AFTER_SKY 预备，普通路径保持 AFTER_ENTITIES。
+     * 两条路由都在实体绘制前冻结交接名单；普通输出仍保持 AFTER_ENTITIES，DH 输出沿用原通道。
      */
     @SubscribeEvent
     public static void onRenderLevel(RenderLevelStageEvent event) {
-        if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_SKY
-                && RVP_DistantHorizonsCompatBootstrap.shouldPrepareDhRoute()) {
-            RVP_RemoteVehicleFramePlan remotePlan = prepareFrame(event, true);
+        if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_SKY) {
+            // 调用交接清理，下一帧重新按当前客户端视距、授权和预算选择真实实体的显示来源。
+            clearHandover();
+            boolean dhRoute = RVP_DistantHorizonsCompatBootstrap.shouldPrepareDhRoute();
+            RVP_RemoteVehicleFramePlan remotePlan = prepareFrame(event, dhRoute);
+            // 调用名单发布，在正常实体及 DH 真实载具保护层绘制前确定唯一来源。
+            publishHandover(remotePlan);
+            if (!dhRoute) {
+                preparedWorldFrame = remotePlan;
+                RVP_DhVehicleFrameCoordinator.clear();
+                return;
+            }
             // 调用本项目真实载具收集器，冻结客户端已加载载具的只读保护计划。
             var trackedPlan = RVP_DhTrackedVehicleCollector.collect(event);
             // 调用统一 DH 帧协调器，使 remote/tracked 任一非空都能进入 apply 前合成。
@@ -83,7 +98,12 @@ public final class RVP_RemoteVehicleVisualRenderer {
         }
         if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_LEVEL) {
             // 调用本项目帧协调器，执行 RVP_FIRST 或显式晚期降级并结束本帧。
-            RVP_DhVehicleFrameCoordinator.finishLateOutput(event);
+            try {
+                RVP_DhVehicleFrameCoordinator.finishLateOutput(event);
+            } finally {
+                // 调用交接清理，离屏预览或下一次世界渲染不能沿用本帧隐藏名单。
+                clearHandover();
+            }
             return;
         }
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_ENTITIES) {
@@ -96,7 +116,8 @@ public final class RVP_RemoteVehicleVisualRenderer {
         }
         // 调用本项目帧协调器，清除 DH 配置在帧中途关闭时遗留的未消费计划。
         RVP_DhVehicleFrameCoordinator.clear();
-        RVP_RemoteVehicleFramePlan framePlan = prepareFrame(event, false);
+        RVP_RemoteVehicleFramePlan framePlan = preparedWorldFrame;
+        preparedWorldFrame = null;
         if (framePlan != null) {
             // 调用本项目目标无关绘制入口，保持未安装 DH 时原有 AFTER_ENTITIES 像素路径。
             renderPrepared(framePlan, event.getCamera());
@@ -173,11 +194,14 @@ public final class RVP_RemoteVehicleVisualRenderer {
                     cameraPosition,
                     hasValidLod,
                     preferModelRendering);
-            if (level.getEntity(entry.entityId()) != null) {
+            Entity local = level.getEntity(entry.entityId());
+            // 调用玩家自身的客户端范围判断；真实实体仍加载也可以交接，本机载具始终保留原生显示。
+            if (local != null && (!RVP_ClientRemoteViewDistance.isBeyondClientRange(local.position())
+                    || RVP_ClientRemoteViewDistance.isLocalVehicle(local))) {
                 standbyPlans.add(billboardPlan);
                 continue;
             }
-            // 以本地实体是否存在决定接管，避免相机位置或插值滞后于 512 格门槛时再次隐藏。
+            // 已卸载目标继续沿用原交接；超过本玩家视距的已加载目标也进入远距预算。
             boolean fallbackHighModel = RVP_RemoteVehicleBillboardManager
                     .usesHighModelBudget(billboardPlan)
                     || (RVP_RemoteVehicleBillboardManager.usesNormalModelPath(billboardPlan)
@@ -260,11 +284,64 @@ public final class RVP_RemoteVehicleVisualRenderer {
         selectedBillboardPlans.addAll(standbyPlans);
         // 调用独立 Billboard 管理器，在切换远距投影前按预算优先级预热至多一张动态快照。
         RVP_RemoteVehicleBillboardManager.prepareOneSnapshot(selectedBillboardPlans);
+        // 调用同一纹理就绪判断：备用图尚未生成时不接管真实实体，也不生成两份显示。
+        selected = selected.stream().filter(candidate -> level.getEntity(candidate.entityId()) == null
+                || isReadyForHandover(contexts.get(candidate.entityId()))).toList();
+        if (selected.isEmpty()) {
+            return null;
+        }
         PoseStack savedPoseStack = new PoseStack();
         savedPoseStack.mulPoseMatrix(new Matrix4f(event.getPoseStack().last().pose()));
         return new RVP_RemoteVehicleFramePlan(level, selected, contexts, cameraPosition,
                 new org.joml.Quaternionf(event.getCamera().rotation()), savedPoseStack,
                 projectionPlan, event.getPartialTick());
+    }
+
+    /** 真实实体交接前确认远距计划确有可用纹理或已烘焙模型，缺资源时保留原生显示。 */
+    private static boolean isReadyForHandover(CandidateContext context) {
+        BillboardPlan plan = context.billboardPlan();
+        // 调用同一纹理就绪判断，等待中的快照不能提前隐藏真实实体。
+        if (!RVP_RemoteVehicleBillboardManager.isReadyForHandover(plan)) {
+            return false;
+        }
+        AbstractVehicle proxy = context.entry().proxy();
+        if (proxy.centerOffset == null) {
+            return false;
+        }
+        // 调用既有来源与 LOD 查询：已可用的图或 LOD 不依赖基础高模实例。
+        boolean normalModel = RVP_RemoteVehicleBillboardManager.usesNormalModelPath(plan);
+        if ((!normalModel && !RVP_RemoteVehicleBillboardManager.usesHighModelBudget(plan))
+                || normalModel && RVP_LodModelManager.hasRemoteLod(proxy)) {
+            return true;
+        }
+        BaseDisplay display = ClientAssetsManager.INSTANCE.getVehicleDisplay(proxy.getDisplayId()).orElse(null);
+        return display != null && display.getModel() != null && display.getModel().hasBakedModel()
+                && display.getTexture() != null && proxy.getVehicleModelInstance() != null;
+    }
+
+    /** 发布本帧实际入选的真实实体；未授权、被预算排除或备用图未就绪的目标保留原生显示。 */
+    private static void publishHandover(RVP_RemoteVehicleFramePlan plan) {
+        Map<Integer, Entity> handover = new HashMap<>();
+        if (plan != null) {
+            for (RVP_RemoteVehicleRenderBudget.Candidate candidate : plan.selected()) {
+                Entity local = plan.level().getEntity(candidate.entityId());
+                if (local != null) {
+                    handover.put(candidate.entityId(), local);
+                }
+            }
+        }
+        loadedHandoverEntities = Map.copyOf(handover);
+    }
+
+    /** 仅隐藏当前世界中被本帧远距计划接管的同一个真实对象。 */
+    public static boolean ownsLoadedEntity(Entity entity) {
+        return loadedHandoverEntities.get(entity.getId()) == entity;
+    }
+
+    /** 丢弃未消费计划及真实实体引用，供帧结束和退出连接共用。 */
+    public static void clearHandover() {
+        preparedWorldFrame = null;
+        loadedHandoverEntities = Map.of();
     }
 
     /** 在当前已绑定目标缓冲中绘制给定帧计划，并完整恢复扩展投影与雾。 */

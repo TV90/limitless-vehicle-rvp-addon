@@ -19,10 +19,6 @@ import java.util.Set;
 
 /** 服务端远距载具分类、配置 token 规范化与纯授权筛选策略。 */
 public final class RVP_RemoteVehicleVisibilityPolicy {
-    /** 原生实体追踪与远距视觉接管的水平距离边界，单位格。 */
-    static final double NATIVE_TRACKING_DISTANCE = 512.0D;
-    /** 提前 128 格发送备用视觉快照，覆盖低频同步与客户端简化图预热的交接空档。 */
-    static final double HANDOVER_PREPARE_DISTANCE = 384.0D;
     /** 雷达模式无需探测即可直接显示的水平距离边界，单位格。 */
     static final double RADAR_DIRECT_VISIBILITY_DISTANCE = 1024.0D;
 
@@ -124,7 +120,7 @@ public final class RVP_RemoteVehicleVisibilityPolicy {
         Objects.requireNonNull(mode, "mode");
         Objects.requireNonNull(allowedTargetTypes, "allowedTargetTypes");
         Objects.requireNonNull(candidates, "candidates");
-        if (mode == VisibilityMode.OFF || maxTargets <= 0 || maxDistance <= NATIVE_TRACKING_DISTANCE) {
+        if (mode == VisibilityMode.OFF || maxTargets <= 0 || maxDistance <= 0.0D) {
             return List.of();
         }
         if ((mode == VisibilityMode.RADAR_DETECTED || mode == VisibilityMode.VEHICLE_OCCUPANTS)
@@ -132,12 +128,13 @@ public final class RVP_RemoteVehicleVisibilityPolicy {
             return List.of();
         }
 
-        double prepareDistanceSq = HANDOVER_PREPARE_DISTANCE * HANDOVER_PREPARE_DISTANCE;
         double maximumDistanceSq = maxDistance * maxDistance;
         double directRadarDistanceSq = RADAR_DIRECT_VISIBILITY_DISTANCE * RADAR_DIRECT_VISIBILITY_DISTANCE;
         return candidates.stream()
                 .filter(candidate -> candidate.entityId() != observerVehicleId)
-                .filter(candidate -> candidate.horizontalDistanceSq() >= prepareDistanceSq
+                // 调用统一交接范围计算，让每个目标按服务端实际同步半径提前准备代理。
+                .filter(candidate -> candidate.horizontalDistanceSq()
+                        >= RVP_EntityTrackingRange.preparationDistanceSquared(candidate.handoverDistance())
                         && candidate.horizontalDistanceSq() <= maximumDistanceSq)
                 .filter(candidate -> observerCategory == null
                         || allowedTargetTypes.contains(candidate.category()))
@@ -146,7 +143,7 @@ public final class RVP_RemoteVehicleVisibilityPolicy {
                         || candidate.radarDetected())
                 // 已在远距的目标优先占用原有数量预算，近距备用条目只使用剩余名额。
                 .sorted(Comparator.comparing((Candidate candidate) -> candidate.horizontalDistanceSq()
-                                <= NATIVE_TRACKING_DISTANCE * NATIVE_TRACKING_DISTANCE)
+                                <= candidate.handoverDistance() * candidate.handoverDistance())
                         .thenComparingDouble(Candidate::horizontalDistanceSq)
                         .thenComparingInt(Candidate::entityId))
                 .limit(Math.max(0, maxTargets))
@@ -180,15 +177,18 @@ public final class RVP_RemoteVehicleVisibilityPolicy {
      * @param category 目标载具分类
      * @param horizontalDistanceSq 观察者到目标的水平距离平方，单位格平方
      * @param radarDetected 本机或授权数据链雷达当前是否发现目标
+     * @param handoverDistance 当前玩家的近远交接半径，综合服务端同步范围与客户端视距，单位格
      */
     public record Candidate(
             int entityId,
             VehicleCategory category,
             double horizontalDistanceSq,
-            boolean radarDetected) {
+            boolean radarDetected,
+            double handoverDistance) {
         public Candidate {
             Objects.requireNonNull(category, "category");
-            if (entityId < 0 || !Double.isFinite(horizontalDistanceSq) || horizontalDistanceSq < 0.0D) {
+            if (entityId < 0 || !Double.isFinite(horizontalDistanceSq) || horizontalDistanceSq < 0.0D
+                    || !Double.isFinite(handoverDistance) || handoverDistance < 0.0D) {
                 throw new IllegalArgumentException("Invalid remote vehicle visibility candidate");
             }
         }

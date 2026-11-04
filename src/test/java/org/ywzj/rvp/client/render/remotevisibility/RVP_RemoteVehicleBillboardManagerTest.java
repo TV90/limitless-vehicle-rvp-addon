@@ -138,6 +138,21 @@ class RVP_RemoteVehicleBillboardManagerTest {
         assertEquals(0, RVP_RemoteVehicleBillboardManager.snapshotCacheSize());
     }
 
+    /** 未生成或已淘汰备用图时不隐藏真实实体，刚生成的图与模型回退则可当帧接手。 */
+    @Test
+    void handoverWaitsForAnActualDrawableSource() {
+        // 调用生产交接决策，READY 标签本身不代表缓存中仍然有图。
+        assertFalse(RVP_RemoteVehicleBillboardManager.isReadyForHandover(RenderMode.DYNAMIC_PENDING_HIDE, false));
+        assertFalse(RVP_RemoteVehicleBillboardManager.isReadyForHandover(RenderMode.DYNAMIC_READY, false));
+        assertFalse(RVP_RemoteVehicleBillboardManager.isReadyForHandover(RenderMode.DYNAMIC_PENDING_SLOT, false));
+        assertTrue(RVP_RemoteVehicleBillboardManager.isReadyForHandover(RenderMode.DYNAMIC_PENDING_HIDE, true));
+        assertTrue(RVP_RemoteVehicleBillboardManager.isReadyForHandover(RenderMode.DYNAMIC_READY, true));
+        assertTrue(RVP_RemoteVehicleBillboardManager.isReadyForHandover(RenderMode.DYNAMIC_PENDING_SLOT, true));
+        assertTrue(RVP_RemoteVehicleBillboardManager.isReadyForHandover(RenderMode.NORMAL_MODEL, false));
+        assertTrue(RVP_RemoteVehicleBillboardManager.isReadyForHandover(RenderMode.HIGH_MODEL_FALLBACK, false));
+        assertTrue(RVP_RemoteVehicleBillboardManager.isReadyForHandover(RenderMode.DYNAMIC_PENDING_MODEL, false));
+    }
+
     /** 创建指定策略开关的服务端渲染策略。 */
     private static RenderPolicy policy(boolean aggressive, boolean forceAll,
                                        RemoteVehicleSnapshotWarmupMode warmupMode) {

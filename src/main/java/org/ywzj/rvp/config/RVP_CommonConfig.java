@@ -142,7 +142,7 @@ public class RVP_CommonConfig {
                 .comment("是否启用服务端权威的载具超视距视觉同步。默认：true")
                 .define("enabled", true);
         remoteVehicleRemoveTerrainFog = builder
-                .comment("是否在载具超视距渲染启用时剔除客户端普通地形雾，避免原生实体载具在 512 格接管边界前被雾墙遮挡。",
+                .comment("是否在载具超视距渲染启用时剔除客户端普通地形雾，避免原生实体载具在实际实体加载边界前被雾墙遮挡。",
                         "仅影响普通空气雾；水下、熔岩、细雪、失明和黑暗仍保留原版限制。默认：true")
                 .define("removeTerrainFog", true);
         remoteVehicleScopeZoomPreferModelRendering = builder

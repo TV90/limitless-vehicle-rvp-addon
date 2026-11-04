@@ -12,7 +12,7 @@ import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.config.RVP_CommonConfig;
 
-/** 按 common 配置剔除普通地形雾，覆盖仍由本体渲染的 512 格内载具。 */
+/** 按 common 配置剔除普通地形雾，覆盖实际实体加载范围内仍由本体渲染的载具。 */
 @Mod.EventBusSubscriber(value = Dist.CLIENT, modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class RVP_RemoteVehicleTerrainFogHandler {
     private RVP_RemoteVehicleTerrainFogHandler() {

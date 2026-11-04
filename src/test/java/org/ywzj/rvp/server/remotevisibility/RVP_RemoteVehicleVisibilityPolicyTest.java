@@ -135,6 +135,47 @@ class RVP_RemoteVehicleVisibilityPolicyTest {
                 4096, 32, candidates)));
     }
 
+    /** 服务端仅加载 8 区块时，128 格外的目标已是远距目标，不能继续等到旧的 384/512 格门槛。 */
+    @Test
+    void lowServerViewDistancePreparesAndPrioritizesTargetsBelow512Blocks() {
+        List<Candidate> candidates = List.of(
+                new Candidate(1, VehicleCategory.AIRCRAFT, 64 * 64, false, 128),
+                new Candidate(2, VehicleCategory.AIRCRAFT, 128 * 128, false, 128),
+                new Candidate(3, VehicleCategory.AIRCRAFT, 129 * 129, false, 128),
+                new Candidate(4, VehicleCategory.AIRCRAFT, 300 * 300, false, 128));
+        // 调用实际授权与预算策略，越过真实边界的目标先于尚未卸载的备用目标。
+        assertEquals(List.of(3, 4, 1, 2), ids(select(
+                VisibilityMode.ALL_PLAYERS, null, -1, Set.of(), 512, 32, candidates)));
+        assertEquals(List.of(3), ids(select(
+                VisibilityMode.ALL_PLAYERS, null, -1, Set.of(), 512, 1, candidates)));
+    }
+
+    /** 每个目标的加载半径可能因实体类型或乘员而不同，备用门槛和远距优先级必须分别判断。 */
+    @Test
+    void mixedTrackingRangesUseEachTargetsOwnHandoverBoundary() {
+        List<Candidate> candidates = List.of(
+                new Candidate(1, VehicleCategory.AIRCRAFT, 255.99 * 255.99, true, 384),
+                new Candidate(2, VehicleCategory.AIRCRAFT, 256 * 256, true, 384),
+                new Candidate(3, VehicleCategory.AIRCRAFT, 300 * 300, true, 384),
+                new Candidate(4, VehicleCategory.AIRCRAFT, 300 * 300, true, 256));
+        // 调用实际策略，半径 256 的目标已卸载，优先于半径 384 的备用目标；预热起点包含等号。
+        assertEquals(List.of(4, 2, 3), ids(select(
+                VisibilityMode.ALL_PLAYERS, null, -1, Set.of(), 4096, 32, candidates)));
+    }
+
+    /** 对配置了更长实体半径的目标，不得仍从固定 384 格提前占用远距快照名额。 */
+    @Test
+    void largerTrackingRangeMovesPreparationWindowOutward() {
+        List<Candidate> candidates = List.of(
+                new Candidate(1, VehicleCategory.AIRCRAFT, 895.99 * 895.99, true, 1024),
+                new Candidate(2, VehicleCategory.AIRCRAFT, 896 * 896, true, 1024),
+                new Candidate(3, VehicleCategory.AIRCRAFT, 1024 * 1024, true, 1024),
+                new Candidate(4, VehicleCategory.AIRCRAFT, 1025 * 1025, true, 1024));
+        // 调用实际策略，沿用 128 格重叠区并将真实边界以外的目标排在前面。
+        assertEquals(List.of(4, 2, 3), ids(select(
+                VisibilityMode.ALL_PLAYERS, null, -1, Set.of(), 4096, 32, candidates)));
+    }
+
     /** 观察者类型白名单在数量排序前过滤，空白名单合法且不会被绕过。 */
     @Test
     void observerTypeMatrixFiltersBeforeBudget() {
@@ -217,7 +258,8 @@ class RVP_RemoteVehicleVisibilityPolicyTest {
             VehicleCategory category,
             double distance,
             boolean radarDetected) {
-        return new Candidate(entityId, category, distance * distance, radarDetected);
+        // 既有用例显式模拟实体半径 512 格；新用例另行传入不同的实际加载距离。
+        return new Candidate(entityId, category, distance * distance, radarDetected, 512);
     }
 
     /** 提取稳定排序后的实体 ID。 */

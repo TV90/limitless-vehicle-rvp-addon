@@ -21,6 +21,7 @@ import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.ywzj.rvp.client.state.RVP_ClientHitlState;
+import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteAmmoVisualRenderer;
 import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteAmmoVisualState;
 import org.ywzj.rvp.debug.RVP_DebugFlags;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
@@ -230,6 +231,10 @@ public class RVP_BedrockProjectileEntityRenderer<T extends AmmoEntity> extends E
 
     @Override
     public boolean shouldRender(T entity, Frustum camera, double camX, double camY, double camZ) {
+        // 调用本帧显示来源名单，超过当前玩家视距的真实弹药只在扩展远平面中绘制一次。
+        if (RVP_RemoteAmmoVisualRenderer.ownsLoadedEntity(entity)) {
+            return false;
+        }
         if (entity instanceof RVP_MissileEntity && RVP_ClientHitlState.shouldHideActiveMissileVfx(entity)) {
             return false;
         }

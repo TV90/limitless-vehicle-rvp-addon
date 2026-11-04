@@ -199,7 +199,10 @@ public final class RVP_RemoteVehicleVisualSyncService {
             if (!Double.isFinite(horizontalDistanceSq)) {
                 continue;
             }
-            candidates.add(new Candidate(target.getId(), category, horizontalDistanceSq, radarDetected));
+            // 调用每玩家交接范围解析，让备用快照与远距优先预算同时跟随服务端范围和客户端视距。
+            double handoverDistance = RVP_EntityTrackingRange.resolve(player, target);
+            candidates.add(new Candidate(target.getId(), category, horizontalDistanceSq, radarDetected,
+                    handoverDistance));
         }
         // 调用纯可见性策略，在发送和租约汇总前完成服务端权威白名单、距离及数量裁剪。
         List<Candidate> selected = RVP_RemoteVehicleVisibilityPolicy.selectTargets(
