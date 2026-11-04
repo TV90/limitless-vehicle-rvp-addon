@@ -191,15 +191,28 @@ public class RVP_ClientGPSUtil {
         } else {
             start = mc.gameRenderer.getMainCamera().getPosition();
         }
-        Quaternionf rotation = new Quaternionf();
-        rotation.rotateYXZ(
-                (float) -Math.toRadians(LocalVehiclePlayer.instance.cameraAimRotY),
-                (float) Math.toRadians(LocalVehiclePlayer.instance.cameraAimRotX),
-                (float) Math.toRadians(LocalVehiclePlayer.instance.cameraAimRotZ)
-        );
-        Vector3f direction = new Vector3f(0, 0, 1);
-        rotation.transform(direction);
-        Vec3 end = start.add(new Vec3(direction).scale(LocalVehiclePlayer.renderDistance()));
+        Vec3 direction;
+        if (LocalVehiclePlayer.instance.viewType == LocalVehiclePlayer.ViewType.SCOPE
+                && !RVP_ClientHitlState.isActive()
+                && operatorUnit instanceof WeaponUnit station && station.withFocusLocker()
+                && station.getFocusLockPos() != null) {
+            // 调用本体相机与焦点读取，独立观瞄时 GPS 仍沿玩家看到的焦点方向选点。
+            // 不读 cameraAimRot：该逻辑状态仍表示尚在追赶的实际炮口方向。
+            start = mc.gameRenderer.getMainCamera().getPosition();
+            direction = station.getFocusLockPos().subtract(start).normalize();
+        } else {
+            Quaternionf rotation = new Quaternionf();
+            rotation.rotateYXZ(
+                    (float) -Math.toRadians(LocalVehiclePlayer.instance.cameraAimRotY),
+                    (float) Math.toRadians(LocalVehiclePlayer.instance.cameraAimRotX),
+                    (float) Math.toRadians(LocalVehiclePlayer.instance.cameraAimRotZ)
+            );
+            Vector3f forward = new Vector3f(0, 0, 1);
+            rotation.transform(forward);
+            direction = new Vec3(forward);
+        }
+        // 调用本体选点距离，GPS 的距离上限和方块命中规则保持原语义。
+        Vec3 end = start.add(direction.scale(LocalVehiclePlayer.renderDistance()));
         BlockHitResult hit = player.level().clip(new ClipContext(start, end, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, player));
         if (hit.getType() != HitResult.Type.BLOCK) {
             return null;

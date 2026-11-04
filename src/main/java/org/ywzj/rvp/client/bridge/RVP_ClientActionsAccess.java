@@ -15,6 +15,12 @@ public final class RVP_ClientActionsAccess {
 
     private RVP_ClientActionsAccess() {}
 
+    /** 经双端安全桥转交载具鼠标输入，Mixin 不直接加载任何纯客户端类型。 */
+    public static boolean handleVehiclePlayerTurn(double yawInput, double pitchInput) {
+        // 调用按物理端选择的输入实现；专用服务端不消费输入。
+        return INSTANCE.handleVehiclePlayerTurn(yawInput, pitchInput);
+    }
+
     /** 经双端安全桥接收虚拟目标，公共网络类不加载客户端状态缓存。 */
     public static void acceptVirtualMissileTargets(org.ywzj.rvp.network.S2CVirtualMissileTargets message) {
         // 调用物理侧实现；专用服务端保持空操作。
@@ -162,6 +168,12 @@ public final class RVP_ClientActionsAccess {
 
     /** 专用服务端空实现。 */
     private static final class NoopClientActions implements RVP_IClientActions {
+        @Override
+        public boolean handleVehiclePlayerTurn(double yawInput, double pitchInput) {
+            // 专用服务端没有本地鼠标、焦点观瞄或电视导弹画面。
+            return false;
+        }
+
         @Override
         public void acceptVirtualMissileTargets(org.ywzj.rvp.network.S2CVirtualMissileTargets message) {
             // 专用服务端不维护客户端雷达表示。

@@ -9,7 +9,10 @@ import org.ywzj.rvp.client.particle.RVP_ParticleProjectileEmitter;
 import org.ywzj.rvp.client.firesupport.RVP_ClientFireSupportState;
 import org.ywzj.rvp.client.firesupport.RVP_FireSupportMapTool;
 import org.ywzj.rvp.client.screen.RVP_TacticalMapScreen;
+import org.ywzj.rvp.client.state.RVP_ClientFocusLock;
+import org.ywzj.rvp.client.state.RVP_ClientHitlState;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
+import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.ParticleUtil;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
@@ -19,6 +22,35 @@ import net.minecraft.client.particle.Particle;
 /** 客户端真实动作实现。 */
 @OnlyIn(Dist.CLIENT)
 public final class RVP_ClientActions implements RVP_IClientActions {
+
+    /** 保留已有电视导弹输入语义，再把普通焦点拖动交给独立客户端状态。 */
+    @Override
+    public boolean handleVehiclePlayerTurn(double yawInput, double pitchInput) {
+        // 调用 HITL 会话判断，电视导弹操控优先于母车观瞄焦点。
+        if (!RVP_ClientHitlState.isActive()) {
+            // 调用焦点输入服务；未建立焦点时继续本体及已有半自动火控输入。
+            return RVP_ClientFocusLock.tryHandleTurn(yawInput, pitchInput);
+        }
+        // 调用焦点会话清理，避免离开电视导弹时复用母车旧渲染原点。
+        RVP_ClientFocusLock.clear();
+        if (RVP_ClientHitlState.isMouseSteering()) {
+            // 调用原有电视导弹转向，保持输入尺度及网络节奏。
+            RVP_ClientHitlState.applySteeringDelta(yawInput, pitchInput);
+            return true;
+        }
+        Minecraft minecraft = Minecraft.getInstance();
+        if (RVP_ClientHitlState.isDesignateMode() && minecraft.level != null) {
+            // 调用既有统一显示入口，保留真实/虚拟导弹指定视角的相同解析方式。
+            RVP_MissileEntity missile = RVP_ClientHitlState.resolveActiveMissile(minecraft);
+            if (missile != null) {
+                // 调用原有指定视角偏移，继续使用弹体配置的最大观察角度。
+                RVP_ClientHitlState.applyLookOffsetDelta(yawInput, pitchInput,
+                        missile.rvp$getHitlMaxLookOffsetDeg());
+                return true;
+            }
+        }
+        return false;
+    }
 
     @Override
     public void acceptVirtualMissileTargets(org.ywzj.rvp.network.S2CVirtualMissileTargets message) {

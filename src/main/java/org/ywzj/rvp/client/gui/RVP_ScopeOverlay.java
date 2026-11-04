@@ -23,6 +23,7 @@ import org.ywzj.rvp.config.UIPresetManager.UIPreset;
 import org.ywzj.rvp.config.VehicleUIPresetCache;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.client.state.RVP_ClientProjectileRenderInterpolator;
+import org.ywzj.rvp.client.state.RVP_FocusLockAim;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
 import org.ywzj.rvp.network.S2CExternalRadarSnapshot;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
@@ -31,6 +32,7 @@ import org.ywzj.rvp.util.RVP_RadarContactHelper;
 import org.ywzj.rvp.weapon.core.RVP_WeaponSensorHelper;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.vehicle.client.gui.VehicleAimAtOverlay;
+import org.ywzj.vehicle.client.gui.VehicleScopeOverlay;
 import org.ywzj.vehicle.client.render.util.Color;
 import org.ywzj.vehicle.client.render.util.GuiHelper;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
@@ -199,14 +201,14 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
 
     public void renderCrosshair(GuiGraphics guiGraphics, float partialTick, AbstractVehicle vehicle) {
         if (vehicle.getOwnOperatorUnit(LocalVehiclePlayer.instance.getPlayer()) instanceof WeaponUnit weaponUnit) {
-            Vec3 posO = VectorUtil.worldToScreen(weaponUnit.weaponHitPosO);
-            Vec3 pos = VectorUtil.worldToScreen(weaponUnit.weaponHitPos);
+            // 调用统一准星投影：先在世界坐标补出本帧落点，再由本帧相机投影，避免透视深度变化抖动。
+            Vec3 screenPosition = crosshairScreenPosition(weaponUnit, partialTick);
             PoseStack poseStack = guiGraphics.pose();
             poseStack.pushPose();
             {
                 poseStack.translate(
-                        Mth.lerp(partialTick, posO.x, pos.x),
-                        Mth.lerp(partialTick, posO.y, pos.y),
+                        screenPosition.x,
+                        screenPosition.y,
                         0);
                 if (weaponUnit.getOpticalSightType() == WeaponUnitData.OpticalSightType.CRT) {
                     poseStack.pushPose();
@@ -263,6 +265,44 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
                     VehicleAimAtOverlay.renderReloadProgress(guiGraphics, weaponUnit.independentWeapons.get(0), 4.4f, 0.8f, partialTick);
                 }
             }
+            poseStack.popPose();
+        }
+    }
+
+    /** 求本帧实际弹着点的屏幕位置，不把焦点请求点冒充炮口实际落点。 */
+    private static Vec3 crosshairScreenPosition(WeaponUnit weaponUnit, float partialTick) {
+        Vec3 worldPosition = weaponUnit.weaponHitPosO.lerp(weaponUnit.weaponHitPos,
+                Mth.clamp(partialTick, 0.0F, 1.0F));
+        // 调用本体当前相机矩阵投影，与本帧独立观瞄和载具位置插值使用同一时间。
+        return VectorUtil.worldToScreen(worldPosition);
+    }
+
+    /** 无 UI 预设时保留本体 CRT 样式，只修正焦点锁定期间的弹着点投影位置。 */
+    public static void renderVanillaCrosshair(VehicleScopeOverlay overlay, GuiGraphics graphics,
+                                              float partialTick, AbstractVehicle vehicle) {
+        // 调用本体当前武器站解析，修正只作用于本地观瞄焦点。
+        WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
+        if (weaponUnit == null || weaponUnit.getFocusLockPos() == null
+                || weaponUnit.getOpticalSightType() != WeaponUnitData.OpticalSightType.CRT) {
+            // 调用本体原绘制；光学瞄具遮罩始终留在屏幕中心，不受 CRT 落点修正影响。
+            overlay.renderCrosshair(graphics, partialTick, vehicle);
+            return;
+        }
+        // 调用新投影与本体旧投影计算差值，不临时改写武器站状态或复制本体准星样式。
+        Vec3 corrected = crosshairScreenPosition(weaponUnit, partialTick);
+        Vec3 oldPrevious = VectorUtil.worldToScreen(weaponUnit.weaponHitPosO);
+        Vec3 oldCurrent = VectorUtil.worldToScreen(weaponUnit.weaponHitPos);
+        Vec3 oldPosition = oldPrevious.lerp(oldCurrent, Mth.clamp(partialTick, 0.0F, 1.0F));
+        PoseStack poseStack = graphics.pose();
+        poseStack.pushPose();
+        try {
+            // 调用有限性检查，避免落点穿过相机平面时把非法偏移传入 GUI 矩阵。
+            if (RVP_FocusLockAim.isFinite(corrected) && RVP_FocusLockAim.isFinite(oldPosition)) {
+                poseStack.translate(corrected.x - oldPosition.x, corrected.y - oldPosition.y, 0.0D);
+            }
+            // 调用本体 CRT 绘制，完整保留原准星、焦点提示与距离文字。
+            overlay.renderCrosshair(graphics, partialTick, vehicle);
+        } finally {
             poseStack.popPose();
         }
     }
