@@ -31,7 +31,7 @@ public class RVP_RenderTypes extends RenderType {
                 VertexFormat.Mode.TRIANGLES,
                 256,
                 true,
-                true,
+                false, // 不透明批次不排序；AR 同样用此标志判定透明通道。
                 state
         );
     });
@@ -52,7 +52,7 @@ public class RVP_RenderTypes extends RenderType {
                 VertexFormat.Mode.TRIANGLES,
                 256,
                 true,
-                true,
+                false, // 不透明批次不排序；AR 同样用此标志判定透明通道。
                 state
         );
     });
@@ -117,7 +117,7 @@ public class RVP_RenderTypes extends RenderType {
                 VertexFormat.Mode.QUADS,
                 256,
                 true,
-                true,
+                false, // 不透明批次不排序；AR 同样用此标志判定透明通道。
                 state
         );
     });

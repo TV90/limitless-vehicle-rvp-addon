@@ -65,6 +65,11 @@ public class RVP_ClientConfig {
     /** 已注册的客户端配置规格；用于判断配置是否已加载，避免服务端读到未加载的值。 */
     private static ForgeConfigSpec CLIENT_SPEC;
 
+    /** 是否让大块不透明 mesh 使用 AR 已有的 dense 提交；只影响已安装 AR 的客户端。 */
+    private final ForgeConfigSpec.BooleanValue acceleratedDenseMesh;
+    /** 启用 dense 的单个 mesh 最小顶点记录数，不是模型总面数。 */
+    private final ForgeConfigSpec.IntValue acceleratedDenseMinVertices;
+
     /** 缩放观察时是否延后载具 LOD 切换。 */
     private final ForgeConfigSpec.BooleanValue lodZoomEnabled;
     /** 判定进入缩放观察状态的视场角比例。 */
@@ -109,6 +114,17 @@ public class RVP_ClientConfig {
     private final ForgeConfigSpec.BooleanValue distantHorizonsDiagnosticLayerColors;
 
     public RVP_ClientConfig(ForgeConfigSpec.Builder builder) {
+        builder.push("mesh");
+        acceleratedDenseMesh = builder
+                .comment("让较大的不透明 mesh 使用 AR 的 dense 提交，减少 sparse 路径逐顶点 CPU 写入。",
+                        "仅安装并启用 AcceleratedRendering 时生效；false 恢复原提交路径。")
+                .define("acceleratedDenseMesh", true);
+        acceleratedDenseMinVertices = builder
+                .comment("单个 mesh 的最小顶点记录数（不是面数）；默认 32768。",
+                        "小 mesh 继续遵从 AR 自身的 sparse/dense 策略，不改全局阈值。")
+                .defineInRange("acceleratedDenseMinVertices", 32768, 1024, 1000000);
+        builder.pop();
+
         builder.push("lod");
 
         lodZoomEnabled = builder
@@ -259,6 +275,18 @@ public class RVP_ClientConfig {
         builder.pop();
 
         builder.pop();
+    }
+
+    /** 配置加载前不启用可选渲染桥，避免资源准备阶段读取尚未加载的配置。 */
+    public static boolean isAcceleratedDenseMeshEnabled() {
+        return INSTANCE != null && CLIENT_SPEC != null && CLIENT_SPEC.isLoaded()
+                && INSTANCE.acceleratedDenseMesh.get();
+    }
+
+    /** 返回单个 mesh 的顶点记录阈值；未加载配置时使用默认 32768。 */
+    public static int getAcceleratedDenseMinVertices() {
+        return INSTANCE != null && CLIENT_SPEC != null && CLIENT_SPEC.isLoaded()
+                ? INSTANCE.acceleratedDenseMinVertices.get() : 32768;
     }
 
     public static boolean isLodZoomEnabled() {
