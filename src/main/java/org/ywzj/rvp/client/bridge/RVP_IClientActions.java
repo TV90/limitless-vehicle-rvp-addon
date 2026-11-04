@@ -10,6 +10,9 @@ public interface RVP_IClientActions {
     /** 转交既有载具鼠标入口；电视导弹优先，其次焦点锁定；服务端恒返回 false。 */
     boolean handleVehiclePlayerTurn(double yawInput, double pitchInput);
 
+    /** 焦点切换完成后保留真实命中语义；专用服务端为空操作。 */
+    void onFocusLockChanged(org.ywzj.vehicle.vehicle.part.WeaponUnit station);
+
     /** 接收虚拟弹体目标完整集合；专用服务端为空操作。 */
     void acceptVirtualMissileTargets(org.ywzj.rvp.network.S2CVirtualMissileTargets message);
 

@@ -3,6 +3,7 @@ package org.ywzj.rvp.mixin;
 import net.minecraft.world.entity.Entity;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
+import org.ywzj.rvp.client.bridge.RVP_ClientActionsAccess;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 import org.spongepowered.asm.mixin.Mixin;
@@ -121,6 +122,8 @@ public abstract class WeaponUnitFireControlLockMixin {
         } else if (self.getFocusLockPos() != null) {
             self.setFocusLockPos(null);
         }
+        // 调用双端安全桥，RF 回退到焦点时区分真实命中与未知距离；复用当前 HEAD 注入。
+        RVP_ClientActionsAccess.onFocusLockChanged(self);
         ci.cancel();
     }
 
@@ -129,6 +132,8 @@ public abstract class WeaponUnitFireControlLockMixin {
     @Inject(method = "fireControlLock", at = @At("TAIL"), remap = false)
     private void rvp$onFireControlLock(CallbackInfo ci) {
         WeaponUnit self = (WeaponUnit) (Object) this;
+        // 调用双端安全桥，覆盖本体非 RF 的焦点建立/解除；不改变已有实体锁定分流。
+        RVP_ClientActionsAccess.onFocusLockChanged(self);
 
         // 检查是否锁上了目标
         boolean locked = false;

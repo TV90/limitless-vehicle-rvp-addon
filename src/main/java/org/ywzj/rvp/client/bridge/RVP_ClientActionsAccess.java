@@ -21,6 +21,12 @@ public final class RVP_ClientActionsAccess {
         return INSTANCE.handleVehiclePlayerTurn(yawInput, pitchInput);
     }
 
+    /** 经双端安全桥转交焦点切换，既有 Mixin 不直接引用客户端选点服务。 */
+    public static void onFocusLockChanged(org.ywzj.vehicle.vehicle.part.WeaponUnit station) {
+        // 调用物理侧实现，专用服务端不会加载相机、射线或 DH 类型。
+        INSTANCE.onFocusLockChanged(station);
+    }
+
     /** 经双端安全桥接收虚拟目标，公共网络类不加载客户端状态缓存。 */
     public static void acceptVirtualMissileTargets(org.ywzj.rvp.network.S2CVirtualMissileTargets message) {
         // 调用物理侧实现；专用服务端保持空操作。
@@ -168,6 +174,11 @@ public final class RVP_ClientActionsAccess {
 
     /** 专用服务端空实现。 */
     private static final class NoopClientActions implements RVP_IClientActions {
+        @Override
+        public void onFocusLockChanged(org.ywzj.vehicle.vehicle.part.WeaponUnit station) {
+            // 专用服务端没有本地观瞄选点。
+        }
+
         @Override
         public boolean handleVehiclePlayerTurn(double yawInput, double pitchInput) {
             // 专用服务端没有本地鼠标、焦点观瞄或电视导弹画面。

@@ -3,11 +3,14 @@ package org.ywzj.rvp.client.compat.distanthorizons;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.logging.LogUtils;
 import net.minecraftforge.fml.ModList;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.Vec3;
 import org.slf4j.Logger;
 import org.ywzj.rvp.client.compat.distanthorizons.realvehicleprotect.RVP_DhTrackedVehicleModelCache;
 import org.ywzj.rvp.config.RVP_ClientConfig;
 
 import java.lang.reflect.InvocationTargetException;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * 不引用任何 DH 类型的客户端可选依赖入口。
@@ -30,8 +33,43 @@ public final class RVP_DistantHorizonsCompatBootstrap {
     private static final RVP_DhCompatAvailability AVAILABILITY = new RVP_DhCompatAvailability();
     /** DH 官方配置当前是否启用 LOD 渲染；桥初始化前保守视为启用。 */
     private static volatile boolean dhRenderingEnabled = true;
+    /** DH 初始化后安装的远景选点入口；未安装 DH 时保持 null，不加载 API 类型。 */
+    private static volatile FocusTerrainRaycaster focusTerrainRaycaster;
 
     private RVP_DistantHorizonsCompatBootstrap() {
+    }
+
+    /** 只有强类型桥校验版本成功后才安装公开地形查询，不依赖深度合成是否启用。 */
+    public static void installFocusTerrainRaycaster(FocusTerrainRaycaster raycaster) {
+        focusTerrainRaycaster = raycaster;
+    }
+
+    /** 返回远景选点是否可用；未安装或未完成 DH 初始化时不进行后台查询。 */
+    public static boolean canRaycastFocusTerrain() {
+        // 调用已有 DH 渲染状态查询，不将 RVP 深度合成开关误当成远景数据开关。
+        return focusTerrainRaycaster != null && isDhRenderingEnabled();
+    }
+
+    /** 异步查询远景真实表面；可选依赖不可用时返回已完成的空结果。 */
+    public static CompletableFuture<Vec3> raycastFocusTerrain(Level level, Vec3 origin,
+                                                              Vec3 direction, int maxDistance) {
+        // 调用能力检查，无 DH 环境不会解析强类型桥或启动后台线程。
+        if (!canRaycastFocusTerrain()) {
+            return CompletableFuture.completedFuture(null);
+        }
+        try {
+            // 调用已安装的官方 API 桥，结果由焦点服务按世界、武器站和输入代次验证。
+            return focusTerrainRaycaster.raycast(level, origin, direction, maxDistance);
+        } catch (RuntimeException | LinkageError unavailable) {
+            return CompletableFuture.completedFuture(null);
+        }
+    }
+
+    /** 不暴露任何 DH 类型的可选远景射线接口。 */
+    @FunctionalInterface
+    public interface FocusTerrainRaycaster {
+        /** 查询指定世界中射线前方的真实远景表面，距离单位为方块。 */
+        CompletableFuture<Vec3> raycast(Level level, Vec3 origin, Vec3 direction, int maxDistance);
     }
 
     /** 在客户端 setup 队列中检查可选依赖并安装强类型桥。 */

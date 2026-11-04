@@ -23,6 +23,12 @@ import net.minecraft.client.particle.Particle;
 @OnlyIn(Dist.CLIENT)
 public final class RVP_ClientActions implements RVP_IClientActions {
 
+    @Override
+    public void onFocusLockChanged(org.ywzj.vehicle.vehicle.part.WeaponUnit station) {
+        // 调用焦点服务，在本体 R 键分流完成后重查带命中语义的视线。
+        RVP_ClientFocusLock.onFocusLockChanged(station);
+    }
+
     /** 保留已有电视导弹输入语义，再把普通焦点拖动交给独立客户端状态。 */
     @Override
     public boolean handleVehiclePlayerTurn(double yawInput, double pitchInput) {

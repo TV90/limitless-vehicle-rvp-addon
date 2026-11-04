@@ -199,7 +199,11 @@ public class RVP_ClientGPSUtil {
             // 调用本体相机与焦点读取，独立观瞄时 GPS 仍沿玩家看到的焦点方向选点。
             // 不读 cameraAimRot：该逻辑状态仍表示尚在追赶的实际炮口方向。
             start = mc.gameRenderer.getMainCamera().getPosition();
-            direction = station.getFocusLockPos().subtract(start).normalize();
+            // 调用统一焦点方向，未知距离的方向锁定不能从临时位置代理反算。
+            direction = RVP_ClientFocusLock.lockDirection(station, start);
+            if (direction == null) {
+                return null;
+            }
         } else {
             Quaternionf rotation = new Quaternionf();
             rotation.rotateYXZ(

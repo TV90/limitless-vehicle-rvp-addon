@@ -3,6 +3,8 @@ package org.ywzj.rvp.client.compat.distanthorizons;
 import com.seibel.distanthorizons.api.DhApi;
 import com.seibel.distanthorizons.api.enums.config.EDhApiRenderingApi;
 import com.seibel.distanthorizons.api.interfaces.render.IDhApiRenderProxy;
+import com.seibel.distanthorizons.api.interfaces.world.IDhApiLevelWrapper;
+import com.seibel.distanthorizons.api.interfaces.data.IDhApiTerrainDataCache;
 import com.seibel.distanthorizons.api.methods.events.DhApiEventRegister;
 import com.seibel.distanthorizons.api.methods.events.abstractEvents.DhApiAfterDhInitEvent;
 import com.seibel.distanthorizons.api.methods.events.abstractEvents.DhApiBeforeApplyShaderRenderEvent;
@@ -12,10 +14,18 @@ import com.seibel.distanthorizons.api.methods.events.sharedParameterObjects.DhAp
 import com.seibel.distanthorizons.api.methods.events.sharedParameterObjects.DhApiRenderParam;
 import com.seibel.distanthorizons.api.objects.DhApiResult;
 import com.seibel.distanthorizons.api.objects.math.DhApiMat4f;
+import com.seibel.distanthorizons.api.objects.data.DhApiRaycastResult;
 import net.minecraft.client.Minecraft;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
 import org.ywzj.rvp.config.RVP_ClientConfig;
 import org.ywzj.rvp.client.light.RVP_ScreenLightPass;
+import org.ywzj.rvp.client.state.RVP_FocusLockAim;
+
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * Distant Horizons API 7 强类型桥。
@@ -38,6 +48,12 @@ public final class RVP_DhApi7Bridge {
     private static final BeforeCleanupHandler BEFORE_CLEANUP_HANDLER = new BeforeCleanupHandler();
     /** 是否已经注册初始化事件，防止客户端 setup 重入。 */
     private static boolean initializationEventBound;
+    /** 远景数据可能访问磁盘，单个守护工作线程执行；焦点服务最多保留一个未完成请求。 */
+    private static final ExecutorService FOCUS_TERRAIN_EXECUTOR = Executors.newSingleThreadExecutor(task -> {
+        Thread worker = new Thread(task, "RVP-FocusTerrain");
+        worker.setDaemon(true);
+        return worker;
+    });
 
     private RVP_DhApi7Bridge() {
     }
@@ -74,6 +90,9 @@ public final class RVP_DhApi7Bridge {
             disable("DH_API_TOO_OLD", "api=" + apiVersion + ", required>=7.0.1 and <8.0.0");
             return;
         }
+
+        // 调用无 DH 类型的可选入口安装远景选点，CPU 地形查询不依赖 OpenGL 合成能力。
+        RVP_DistantHorizonsCompatBootstrap.installFocusTerrainRaycaster(RVP_DhApi7Bridge::raycastFocusTerrain);
 
         IDhApiRenderProxy renderProxy = DhApi.Delayed.renderProxy;
         if (renderProxy == null || DhApi.Delayed.configs == null) {
@@ -117,6 +136,58 @@ public final class RVP_DhApi7Bridge {
         }
         // 调用本项目无 DH 类型入口，确认版本、原生渲染器与 apply 事件均已就绪。
         RVP_DistantHorizonsCompatBootstrap.markDepthCompositeReady();
+    }
+
+    /** 通过官方 API 查询远景地形；世界匹配在客户端完成，耗时扫描放到后台。 */
+    private static CompletableFuture<Vec3> raycastFocusTerrain(Level level, Vec3 origin,
+                                                               Vec3 direction, int maxDistance) {
+        var repository = DhApi.Delayed.terrainRepo;
+        var world = DhApi.Delayed.worldProxy;
+        if (repository == null || world == null || !world.worldLoaded()) {
+            return CompletableFuture.completedFuture(null);
+        }
+        IDhApiLevelWrapper selected = null;
+        // 调用官方世界枚举与原版世界对象出口，不按维度显示名猜测，避免跨维度误命中。
+        for (IDhApiLevelWrapper wrapper : world.getAllLoadedLevelWrappers()) {
+            if (wrapper.getWrappedMcObject() == level) {
+                selected = wrapper;
+                break;
+            }
+        }
+        if (selected == null) {
+            // 调用官方单人世界入口：DH 单人联机共用的数据层可能暴露服务端世界包装，
+            // 不能只用客户端对象身份匹配；仍核对真实维度键，禁止按显示名或首项猜测。
+            IDhApiLevelWrapper singlePlayer = world.getSinglePlayerLevel();
+            if (singlePlayer != null && singlePlayer.getWrappedMcObject() instanceof Level wrapped
+                    && wrapped.dimension().equals(level.dimension())) {
+                selected = singlePlayer;
+            }
+        }
+        if (selected == null) {
+            return CompletableFuture.completedFuture(null);
+        }
+        IDhApiLevelWrapper queryLevel = selected;
+        return CompletableFuture.supplyAsync(() -> {
+            // 调用官方缓存创建/关闭接口，单次查询结束后释放可能持有的远景区域数据。
+            try (IDhApiTerrainDataCache cache = repository.createSoftCache()) {
+                // 调用官方 raycast，只读已存在的 DH 数据，不请求原版区块加载或远处地形生成。
+                DhApiResult<DhApiRaycastResult> result = repository.raycast(queryLevel,
+                        origin.x, origin.y, origin.z, (float) direction.x, (float) direction.y,
+                        (float) direction.z, maxDistance, cache);
+                if (result == null || !result.success || result.payload == null
+                        || result.payload.dataPoint == null || result.payload.pos == null) {
+                    return null;
+                }
+                var hit = result.payload;
+                var column = hit.dataPoint;
+                // 调用视线与地形柱求交，DH pos.y 是柱底而不是玩家瞄准的表面。
+                return RVP_FocusLockAim.terrainColumnIntersection(origin, direction, maxDistance,
+                        hit.pos.x, hit.pos.z, column.bottomYBlockPos, column.topYBlockPos, column.detailLevel);
+            } catch (RuntimeException | LinkageError unavailable) {
+                // 换世界、数据尚未就绪或可选 API 失败时保留方向锁定，不把失败变成假坐标。
+                return null;
+            }
+        }, FOCUS_TERRAIN_EXECUTOR);
     }
 
     /** 在 apply 前查询本帧纹理并执行一次深度感知合成；任何失败均不取消 DH 事件。 */

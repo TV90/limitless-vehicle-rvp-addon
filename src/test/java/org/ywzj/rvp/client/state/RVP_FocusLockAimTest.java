@@ -4,6 +4,7 @@ import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -68,9 +69,9 @@ class RVP_FocusLockAimTest {
     }
 
     @Test
-    void skyRayMissKeepsRangeAndRealHitChangesIt() {
+    void finitePointTrimKeepsRangeUntilActualRayResultChangesIt() {
         RVP_FocusLockAim aim = new RVP_FocusLockAim();
-        // 调用正式状态，未提供新命中代表选点射线落空，沿用原距离。
+        // 调用正式状态，单独累加鼠标只计算候选方向；真实命中语义由 acceptRay 接收。
         aim.acceptTarget(Vec3.ZERO, new Vec3(0.0D, 0.0D, 200.0D));
         aim.turn(Vec3.ZERO, 15.0D, 4.0D);
         assertEquals(200.0D, aim.target().length(), 1.0E-8D);
@@ -79,6 +80,153 @@ class RVP_FocusLockAimTest {
         aim.acceptTarget(Vec3.ZERO, aim.direction(Vec3.ZERO).scale(30.0D));
         aim.turn(Vec3.ZERO, 0.2D, 0.1D);
         assertEquals(30.0D, aim.target().length(), 1.0E-8D);
+    }
+
+    @Test
+    void missingTerrainDoesNotPinRenderDistanceEndpointWhileVehicleMoves() {
+        Vec3 origin = new Vec3(0.0D, 200.0D, 0.0D);
+        // 调用独立几何构造模拟八区块视距、向下五度但远处地形未加载的视线。
+        Vec3 sight = direction(0.0D, 5.0D);
+        Vec3 oldMissEndpoint = origin.add(sight.scale(128.0D));
+        Vec3 movedOrigin = origin.add(0.0D, 0.0D, 100.0D);
+        Vec3 oldBearing = oldMissEndpoint.subtract(movedOrigin);
+        double oldPitch = -Math.toDegrees(Math.atan2(oldBearing.y, Math.hypot(oldBearing.x, oldBearing.z)));
+        assertTrue(oldPitch > 22.0D, "旧逻辑前进一百格会从五度下俯漂到二十二度以上");
+
+        for (int frames : new int[]{30, 60, 120, 144, 240}) {
+            RVP_FocusLockAim aim = new RVP_FocusLockAim();
+            // 调用正式射线接收：null 表示真实 MISS，不能把视距末端当成地面。
+            aim.acceptRay(origin, sight, null);
+            long revision = aim.revision();
+            for (int frame = 0; frame <= frames; frame++) {
+                double time = (double) frame / frames;
+                Vec3 observer = origin.add(20.0D * time, 100.0D * time, 2000.0D * time);
+                // 调用正式代理刷新，长距离前进、横移及爬升都不改变锁住的世界方向。
+                aim.rebase(observer);
+                assertDirection(aim.direction(observer), sight);
+                assertEquals(revision, aim.revision());
+                assertEquals(origin, aim.rayOrigin());
+            }
+            assertTrue(aim.isDirectionLocked());
+        }
+    }
+
+    @Test
+    void realDistantTerrainStillUsesFixedWorldPointAndCorrectParallax() {
+        Vec3 origin = new Vec3(0.0D, 200.0D, 0.0D);
+        Vec3 terrain = new Vec3(0.0D, 64.0D, 2500.0D);
+        RVP_FocusLockAim aim = new RVP_FocusLockAim();
+        // 调用真实命中接收，地形位于普通视距之外也应保持同一世界坐标。
+        aim.acceptRay(origin, terrain.subtract(origin).normalize(), terrain);
+        Vec3 moved = origin.add(300.0D, 50.0D, 500.0D);
+        aim.rebase(moved);
+
+        assertFalse(aim.isDirectionLocked());
+        assertEquals(terrain, aim.target());
+        // 调用方向断言，真实地面点不能被本次修复错误地改成完全不补偿视差的方向锁。
+        assertDirection(aim.direction(moved), terrain.subtract(moved).normalize());
+        assertTrue(aim.direction(moved).distanceTo(terrain.subtract(origin).normalize()) > 0.1D);
+    }
+
+    @Test
+    void draggingFromNearWallIntoUnknownTerrainDropsFalseNearRange() {
+        RVP_FocusLockAim aim = new RVP_FocusLockAim();
+        // 调用正式状态模拟先命中近墙、再向天空/未加载远景拖动。
+        aim.acceptRay(Vec3.ZERO, direction(0.0D, 0.0D), new Vec3(0.0D, 0.0D, 30.0D));
+        aim.turn(Vec3.ZERO, 2.0D, -1.0D);
+        Vec3 requested = aim.direction(Vec3.ZERO);
+        aim.acceptRay(Vec3.ZERO, requested, null);
+        Vec3 moved = new Vec3(0.0D, 20.0D, 200.0D);
+        aim.rebase(moved);
+
+        assertTrue(aim.isDirectionLocked());
+        // 调用方向断言，已越过旧墙面距离仍能保持请求方向，不转向脚下或身后。
+        assertDirection(aim.direction(moved), requested);
+    }
+
+    @Test
+    void delayedTerrainReplyUsesOriginalRayWhileObserverKeepsMoving() {
+        Vec3 origin = new Vec3(0.0D, 200.0D, 0.0D);
+        Vec3 terrain = new Vec3(0.0D, 64.0D, 2500.0D);
+        RVP_FocusLockAim aim = new RVP_FocusLockAim();
+        // 调用正式未命中接收并捕获后台请求代次，查询期间模拟车辆继续前进。
+        aim.acceptRay(origin, terrain.subtract(origin).normalize(), null);
+        long requestRevision = aim.revision();
+        Vec3 moved = origin.add(0.0D, 20.0D, 300.0D);
+        aim.rebase(moved);
+        assertTrue(aim.acceptTerrainTarget(requestRevision, terrain));
+
+        assertFalse(aim.isDirectionLocked());
+        assertEquals(terrain, aim.target());
+        // 调用方向断言，结果对应最初的世界地面点，而不是把旧方向套在新观察位置上。
+        assertDirection(aim.direction(moved), terrain.subtract(moved).normalize());
+    }
+
+    @Test
+    void delayedTerrainReplyCannotOverrideNewMouseInputOrClearedLock() {
+        RVP_FocusLockAim aim = new RVP_FocusLockAim();
+        // 调用正式状态，在后台查询未完成时继续拖动，旧代次必须被拒绝。
+        aim.acceptRay(Vec3.ZERO, direction(0.0D, 0.0D), null);
+        long oldRevision = aim.revision();
+        aim.turn(Vec3.ZERO, 15.0D, 5.0D);
+        assertFalse(aim.acceptTerrainTarget(oldRevision, new Vec3(0.0D, 0.0D, 2500.0D)));
+        assertDirection(aim.direction(Vec3.ZERO), direction(15.0D, 5.0D));
+
+        long latestRevision = aim.revision();
+        // 调用正式清理模拟解锁/换世界，已结束的会话不能被迟到结果重新锁上。
+        aim.clear();
+        assertFalse(aim.acceptTerrainTarget(latestRevision, new Vec3(0.0D, 0.0D, 2500.0D)));
+        assertNull(aim.target());
+    }
+
+    @Test
+    void missingInvalidOrBackwardTerrainReplyKeepsDirectionLock() {
+        RVP_FocusLockAim aim = new RVP_FocusLockAim();
+        // 调用正式未命中接收，数据缺失、非法坐标和身后命中都不能伪造地面。
+        aim.acceptRay(Vec3.ZERO, new Vec3(0.0D, 0.0D, 1.0D), null);
+        long revision = aim.revision();
+        assertFalse(aim.acceptTerrainTarget(revision, null));
+        assertFalse(aim.acceptTerrainTarget(revision, new Vec3(Double.NaN, 0.0D, 3000.0D)));
+        assertFalse(aim.acceptTerrainTarget(revision, new Vec3(0.0D, 0.0D, -3000.0D)));
+        assertTrue(aim.isDirectionLocked());
+        // 调用方向断言，数据失败不会引起默认向下或向后的镜头修正。
+        assertDirection(aim.direction(new Vec3(0.0D, 100.0D, 500.0D)), new Vec3(0.0D, 0.0D, 1.0D));
+    }
+
+    @Test
+    void terrainColumnHitUsesSightSurfaceInsteadOfColumnBottom() {
+        Vec3 origin = new Vec3(0.5D, 200.0D, 0.0D);
+        Vec3 expected = new Vec3(0.5D, 100.0D, 2000.5D);
+        Vec3 sight = expected.subtract(origin).normalize();
+        // 调用正式远景求交，柱底在四十格，玩家瞄准的是一百格的上表面。
+        Vec3 hit = RVP_FocusLockAim.terrainColumnIntersection(origin, sight, 48000.0D,
+                0, 2000, 40, 100, 0);
+
+        assertNotNull(hit);
+        assertEquals(0.0D, hit.distanceTo(expected), 1.0E-7D);
+        assertEquals(100.0D, hit.y, 1.0E-8D);
+        // 调用方向断言，锁点必须留在原始视线上，不能改成远景柱底或柱中心。
+        assertDirection(hit.subtract(origin).normalize(), sight);
+    }
+
+    @Test
+    void coarseTerrainColumnHandlesNegativeCoordinatesAndRejectsOutOfRangeRay() {
+        Vec3 origin = new Vec3(-7.0D, 160.0D, -2000.0D);
+        Vec3 expected = new Vec3(-7.0D, 100.0D, -9.0D);
+        Vec3 sight = expected.subtract(origin).normalize();
+        // 调用正式求交验证四格宽远景柱在负坐标处向负无穷对齐。
+        Vec3 hit = RVP_FocusLockAim.terrainColumnIntersection(origin, sight, 48000.0D,
+                -7, -9, 80, 100, 2);
+        assertNotNull(hit);
+        assertEquals(0.0D, hit.distanceTo(expected), 1.0E-7D);
+
+        // 调用正式边界检查，射程不足、倒置高度或非法尺寸应回退为未知距离。
+        assertNull(RVP_FocusLockAim.terrainColumnIntersection(origin, sight, 500.0D,
+                -7, -9, 80, 100, 2));
+        assertNull(RVP_FocusLockAim.terrainColumnIntersection(origin, sight, 48000.0D,
+                -7, -9, 100, 80, 2));
+        assertNull(RVP_FocusLockAim.terrainColumnIntersection(origin, sight, 48000.0D,
+                -7, -9, 80, 100, -1));
     }
 
     @Test
