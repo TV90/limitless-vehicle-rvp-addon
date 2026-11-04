@@ -141,6 +141,10 @@ public final class RVP_ClientProjectileRenderInterpolator {
     /** 解析一个远距 RVP/本体弹药广播克隆的包围盒中心。 */
     @Nullable
     private static Vec3 resolveRemoteAmmoCenter(Entity entity, float partialTick) {
+        // 只为已存在的目标查询同 UUID/会话 ID 的统一显示姿态，不从视觉集合生成雷达目标。
+        Vec3 virtualCenter = org.ywzj.rvp.client.state.remotevisibility.RVP_ClientVirtualMissileVisualState
+                .targetRenderCenter(entity, partialTick);
+        if (virtualCenter != null) return virtualCenter;
         if (entity instanceof RVP_RemoteHbmMissileEntity) {
             // 调用本项目 HBM 快照时钟，复用远距弹体最多 5 Tick 的速度外推；不改代理真实坐标。
             long sampleTick = RVP_ClientHbmMissileState.getSnapshotGameTime(entity);

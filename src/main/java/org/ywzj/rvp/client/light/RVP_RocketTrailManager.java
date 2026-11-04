@@ -9,6 +9,7 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.function.Predicate;
 
 /** 世界空间烟段缓存；不依赖粒子引擎或显卡，导弹移除后旧烟继续按自身寿命消散。 */
@@ -104,6 +105,24 @@ public final class RVP_RocketTrailManager {
     public void stop(int id) {
         Source source = sources.get(id);
         if (source != null) { source.head = null; }
+    }
+
+    /** 旧表示退出时同时核对 UUID，不能断开同编号新弹刚登记的烟链。 */
+    public void stop(int id, UUID flightUuid) {
+        Source source = sources.get(id);
+        if (source != null && (source.flightUuid == null || source.flightUuid.equals(flightUuid))) source.head = null;
+    }
+
+    /** 同一个会话编号若被另一个 UUID 复用，只断开烟头，旧世界烟继续按寿命消散。 */
+    public void bindIdentity(int id, UUID flightUuid) {
+        // 调用现有有界来源入口，身份登记同样受来源数预算约束。
+        Source source = source(id);
+        if (source.flightUuid != null && !source.flightUuid.equals(flightUuid)) {
+            source.head = null;
+            source.lastTick = Long.MIN_VALUE / 2;
+            source.lastLocalTick = Long.MIN_VALUE / 2;
+        }
+        source.flightUuid = flightUuid;
     }
 
     /** 世界烟段先做可见性筛选和远距直线合并，再公平分配来源预算；不按环境光距离截断。 */
@@ -266,6 +285,8 @@ public final class RVP_RocketTrailManager {
 
     /** 单来源烟段链；头节点仅用于下一次连接，与已排出烟的生命周期分离。 */
     private static final class Source {
+        /** 同步编号当前对应的飞行身份，ID 被复用时只断链而不删除旧烟。 */
+        private UUID flightUuid;
         /** 按生成先后保存的世界烟段。 */
         private final ArrayDeque<Segment> segments = new ArrayDeque<>();
         /** 最新空中尾迹节点，贴地烟浪不更新它。 */

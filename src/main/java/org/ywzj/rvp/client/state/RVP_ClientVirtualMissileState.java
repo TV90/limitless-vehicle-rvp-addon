@@ -60,6 +60,8 @@ public final class RVP_ClientVirtualMissileState {
             // 调用本体远程弹体数据入口，恢复分角度信号、武器标识及发射者引用。
             target.readData(entry.data());
             target.setVirtualMidcourseTarget(true);
+            // 通知独立显示层这次仅更新雷达代理，不能被误认成恢复后的真实远程广播。
+            org.ywzj.rvp.client.state.remotevisibility.RVP_ClientVirtualMissileVisualState.noteRadarUpdate(target);
             target.setVirtualMidcourseGroundHeight(entry.groundHeight());
             TARGETS.put(entry.entityId(), target);
             Entity local = current.getEntity(entry.entityId());

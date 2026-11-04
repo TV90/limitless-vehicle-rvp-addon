@@ -650,6 +650,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
 
     @Override
     public void readData(CompoundTag data) {
+        // 每次真实远程/雷达数据读取只登记本地接收版本，供虚拟显示交接区分同一客户端刻的更新。
+        remoteVisualUpdateRevision++;
         // 调用本体 RemoteTickEntity 的远程数据接收入口：标记当前对象为超视距客户端视觉克隆，
         // 供 RVP 类型化弹体渲染器改用服务端燃烧快照，避免读取未同步的本地发动机默认状态。
         remoteVisualClone = true;
@@ -712,6 +714,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     public final boolean isRemoteVisualClone() {
         return remoteVisualClone;
     }
+
+    /** 仅本地运行时接收版本，不入存档、不新增网络字段，也不影响任何飞行或燃烧计数。 */
+    public final long getRemoteVisualUpdateRevision() { return remoteVisualUpdateRevision; }
+
+    /** 远程显示数据的本地接收版本；同刻多次 readData 仍能区分，避免恢复时误认旧雷达代理。 */
+    private long remoteVisualUpdateRevision;
 
     @Override
     protected void defineSynchedData() {

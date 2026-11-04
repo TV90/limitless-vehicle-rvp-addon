@@ -118,6 +118,8 @@ public final class RVP_VirtualMissileManager {
                 "eligibility=" + eligibility);
         // 先标记专用移除原因，再调用普通 discard，让生命周期日志能识别转换语义。
         missile.beginVirtualMidcourseRemoval();
+        // 先预告已登记的视觉身份，再移除真实弹，客户端同 UUID 来源可无缝接上。
+        RVP_VirtualMissileVisualSync.syncLevel(level);
         missile.discard();
         // 调用独立同步服务，客户端先取得虚拟表示，再接收本体的真实实体移除包。
         RVP_VirtualMissileTargetSync.syncLevel(level);
@@ -191,6 +193,8 @@ public final class RVP_VirtualMissileManager {
         for (int i = 0; i < Math.min(MAX_RESTORE_ENTRIES_PER_TICK, restoreCandidates.size()); i++) {
             StateRef ref = restoreCandidates.get(i);
             ref.state.phase = RVP_VirtualFlightPhase.RESTORE_REQUESTED;
+            // 本刻末推送暂停事实，不能等到下一个双数刻才让画面停下。
+            RVP_VirtualMissileVisualSync.requestSync(ref.level);
             ref.state.restoreRequestedGameTime = ref.level.getGameTime();
             ref.data.setDirty();
             RVP_VirtualMissileDebug.noteRestoreRequested();
@@ -302,6 +306,9 @@ public final class RVP_VirtualMissileManager {
             ref.state.grantedRestoreChunks.add(chunk.toLong());
             // 唯一的新增 Ticket 写入点；不会同步取得或生成 Chunk。
             refreshTicket(ref.level, ref.state, chunk);
+            // 等待阶段变化本刻末提交视觉快照，后续位置和燃烧计数保持暂停。
+            if (ref.state.phase != RVP_VirtualFlightPhase.RESTORE_WAITING_CHUNKS)
+                RVP_VirtualMissileVisualSync.requestSync(ref.level);
             ref.state.phase = RVP_VirtualFlightPhase.RESTORE_WAITING_CHUNKS;
             ref.data.setDirty();
         }
@@ -362,6 +369,8 @@ public final class RVP_VirtualMissileManager {
             RVP_VirtualMissileDebug.noteRestored();
             RVP_VirtualMissileDebug.lifecycle(state, RVP_VirtualFlightReason.VIRTUAL_TO_REAL, "");
             ref.data.remove(state.flightUuid);
+            // 只读实际已入世真实弹的最终位置，本刻末合并恢复交接集合。
+            RVP_VirtualMissileVisualSync.requestSync(ref.level);
             // 调用同步服务，明确交接回真实实体，不能被客户端当成拦截销毁。
             RVP_VirtualMissileTargetSync.syncLevel(ref.level);
         } else {
@@ -495,6 +504,8 @@ public final class RVP_VirtualMissileManager {
         }
         ref.state.grantedRestoreChunks.clear();
         ref.data.remove(ref.state.flightUuid);
+        // 终止/拦截后的视觉撤销本刻提交，不改原有伤害和区块票据结算顺序。
+        RVP_VirtualMissileVisualSync.requestSync(ref.level);
     }
 
     /** 当前维度全部存活虚拟目标；巡航和等待恢复均保留，不加载区块或额外推进飞行。 */

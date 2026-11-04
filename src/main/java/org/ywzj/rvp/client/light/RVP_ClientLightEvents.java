@@ -106,6 +106,9 @@ public final class RVP_ClientLightEvents {
     public static void onEntityLeave(EntityLeaveLevelEvent event) {
         if (event.getLevel().isClientSide()) {
             LOCAL_ENGINES.remove(event.getEntity());
+            // 真实弹转虚拟时显示代理可能已经接管同 UUID，旧实体离开不能删掉新来源登记的光效。
+            if (org.ywzj.rvp.client.state.remotevisibility.RVP_ClientVirtualMissileVisualState
+                    .hasIdentity(event.getEntity().getId(), event.getEntity().getUUID())) return;
             // 调用 UUID 删除入口，销毁、区块卸载不等到两 tick 心跳超时。
             RVP_ScreenLightManager.INSTANCE.removePersistent(event.getEntity().getUUID());
             RVP_RocketPlumeManager.INSTANCE.remove(event.getEntity().getUUID());

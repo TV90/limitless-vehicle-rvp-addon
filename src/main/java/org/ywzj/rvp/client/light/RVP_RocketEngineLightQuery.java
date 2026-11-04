@@ -20,6 +20,11 @@ public final class RVP_RocketEngineLightQuery {
         // 调用 RVP 弹体客户端安全配置，避免客户端 rvpData 尚未赋值而永久无光。
         RVP_WeaponData data = bullet.getResolvedWeaponConfig();
         if (data == null || !data.getProjectileData().hasRocketEngine()) { return false; }
+        // 按对象引用识别独立虚拟显示实例，不能把同 UUID 雷达代理的默认发动机字段当权威事实。
+        var visual = org.ywzj.rvp.client.state.remotevisibility.RVP_ClientVirtualMissileVisualState.owned(bullet);
+        if (visual != null) return visual.timeline().motorPhase(
+                org.ywzj.rvp.client.state.remotevisibility.RVP_ClientVirtualMissileVisualState.animationTick())
+                != org.ywzj.rvp.network.remotevisibility.S2CVirtualMissileVisualSnapshot.MotorPhase.IDLE;
         // 调用严格快照出口，明确燃尽或 10 tick 没同步都立即熄火，不沿用尾烟宽限。
         return bullet.isRemoteVisualClone()
                 ? RVP_ClientRemoteAmmoVisualState.isMotorBurningFresh(bullet.level().dimension().location(),
@@ -70,11 +75,17 @@ public final class RVP_RocketEngineLightQuery {
         float caliber = effects.hasCaliberOverride() ? effects.getCaliber() : 0F;
         RVP_LightParameters parameters = RVP_LightParameters.engine(caliber);
         // 调用燃尽倒计时，一级充足燃烧期最亮，临近燃尽略收敛；燃尽状态仍由事实立即关闭。
-        int remaining = bullet.isRemoteVisualClone()
+        // 虚拟对象未运行发动机 Tick，阶段、当前窗口和亮度倒计时必须从同一时间线读取。
+        var virtualVisual = org.ywzj.rvp.client.state.remotevisibility.RVP_ClientVirtualMissileVisualState.owned(bullet);
+        long animationTick = org.ywzj.rvp.client.state.remotevisibility.RVP_ClientVirtualMissileVisualState.animationTick();
+        int remaining = virtualVisual != null ? virtualVisual.timeline().motorRemaining(animationTick) : bullet.isRemoteVisualClone()
                 ? RVP_ClientRemoteAmmoVisualState.getMotorBurnRemainingTicks(bullet.level().dimension().location(), bullet.getId())
                 : bullet.ticksUntilMotorStopsBurning();
         // 调用共用阶段包络，二脉冲改变颜色/强度，口径决定的共同半径保持不变。
-        RVP_LightParameters phased = RVP_LightParameters.enginePhase(parameters, bullet.isSecondMotorPulseBurningNow(), remaining);
+        boolean secondPulse = virtualVisual != null ? virtualVisual.timeline().motorPhase(animationTick)
+                == org.ywzj.rvp.network.remotevisibility.S2CVirtualMissileVisualSnapshot.MotorPhase.SECOND_PULSE
+                : bullet.isSecondMotorPulseBurningNow();
+        RVP_LightParameters phased = RVP_LightParameters.enginePhase(parameters, secondPulse, remaining);
         // 调用持续光更新，喷口先计算再按相机位置转换，避免远坐标浮点抖动。
         Vec3 position = nozzle(bullet, renderOrigin, partialTick);
         // 调用分组开关：照亮走 engineLight，广域橙晕走 missileHalo；任一开启都需要这盏持续光。

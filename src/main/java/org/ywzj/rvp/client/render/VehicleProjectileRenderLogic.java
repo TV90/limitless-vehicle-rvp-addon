@@ -66,7 +66,10 @@ final class VehicleProjectileRenderLogic {
                                         ResourceLocation fallbackModel, ResourceLocation fallbackTexture) {
         poseStack.pushPose();
         Vec3 root = Vec3.ZERO;
-        RotationSample sample = sampleSmoothedRotation(ammo, entityYaw, partialTick);
+        // 调用专用显示归属门，虚拟显示已经统一插值，模型不能再比喷口/HUD 多平滑一次。
+        boolean virtualVisual = org.ywzj.rvp.client.state.remotevisibility.RVP_ClientVirtualMissileVisualState.owned(ammo) != null;
+        RotationSample sample = virtualVisual ? new RotationSample(ammo.getYRot(), ammo.getXRot())
+                : sampleSmoothedRotation(ammo, entityYaw, partialTick);
         poseStack.rotateAround(Axis.YP.rotationDegrees(-sample.yaw()),
                 (float) root.x, (float) root.y, (float) root.z);
         poseStack.rotateAround(Axis.XP.rotationDegrees(sample.pitch()),
@@ -75,10 +78,13 @@ final class VehicleProjectileRenderLogic {
         ResourceLocation texture = null;
         ResourceLocation weaponId = ammo.getWeaponId();
         VehicleBedrockModel ammoModel = null;
+        // 保存当前 display，独立显示对象没有生成包，绘制层负责创建专用模型运行时。
+        BaseDisplay currentDisplay = null;
         if (weaponId != null) {
             Optional<BaseDisplay> weaponDisplayOptional = ClientAssetsManager.INSTANCE.getWeaponDisplay(weaponId);
             if (weaponDisplayOptional.isPresent()) {
                 BaseDisplay weaponDisplay = weaponDisplayOptional.get();
+                currentDisplay = weaponDisplay;
                 if (weaponDisplay.getModel() != null) {
                     ammoModel = weaponDisplay.getModel();
                 }
@@ -93,7 +99,22 @@ final class VehicleProjectileRenderLogic {
 
         // v2 烘焙路径（sbmv2）：与 AmmoEntityRenderer.render() 一致
         BakedModelInstance modelInstance = ammo.getModelInstance();
-        if (ammoModel != null && ammoModel.hasBakedModel() && modelInstance != null) {
+        // 调用虚拟弹显示模型缓存；资源暂缺时跳过，避免把 v2 模型按不完整的 v1 路径绘制。
+        RVP_VirtualMissileModelRuntime.Runtime visualRuntime = virtualVisual
+                ? RVP_VirtualMissileModelRuntime.resolve(ammo, currentDisplay) : null;
+        if (virtualVisual && ammoModel != null && ammoModel.hasBakedModel() && visualRuntime == null) {
+            poseStack.popPose();
+            return;
+        }
+        if (visualRuntime != null) {
+            // 调用独立动画更新，同一游戏刻多次绘制不重复推进，所有弹体使用各自的烘焙实例。
+            visualRuntime.updatePose();
+            try {
+                ammoModel.renderToBuffer(visualRuntime.instance, poseStack, bufferSource, texture, packedLight);
+            } finally {
+                visualRuntime.instance.applyPose(visualRuntime.instance.getBindPose());
+            }
+        } else if (ammoModel != null && ammoModel.hasBakedModel() && modelInstance != null) {
             var runner = ammo.getAnimationRunner();
             if (runner != null) {
                 runner.tick();

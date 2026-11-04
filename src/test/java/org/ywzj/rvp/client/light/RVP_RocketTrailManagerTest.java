@@ -8,6 +8,31 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /** 世界轨迹、近远接管、暂停/卸载和齐射预算回归，不以测试内粒子模拟替代生产管理器。 */
 class RVP_RocketTrailManagerTest {
+    @Test
+    void oldUuidCleanupCannotBreakTheNewOwnerOfTheSameSourceId() {
+        var oldUuid = new java.util.UUID(0, 1);
+        var newUuid = new java.util.UUID(0, 2);
+        manager.beginWorld(world, 1);
+        manager.bindIdentity(1, newUuid);
+        manager.append(1, Vec3.ZERO, Vec3.ZERO, PROFILE, false);
+        manager.stop(1, oldUuid);
+        manager.beginWorld(world, 2);
+        manager.append(1, new Vec3(4, 0, 0), Vec3.ZERO, PROFILE, false);
+        assertTrue(all().stream().anyMatch(segment -> !segment.start().equals(segment.end())));
+    }
+
+    @Test
+    void sameIdWithDifferentUuidStartsANewChainAndKeepsOldSmokeAlive() {
+        manager.beginWorld(world, 1);
+        manager.bindIdentity(1, new java.util.UUID(0, 1));
+        manager.append(1, Vec3.ZERO, Vec3.ZERO, PROFILE, false);
+        manager.beginWorld(world, 2);
+        manager.bindIdentity(1, new java.util.UUID(0, 2));
+        manager.append(1, new Vec3(4, 0, 0), Vec3.ZERO, PROFILE, false);
+        assertEquals(2, manager.size());
+        assertTrue(all().stream().allMatch(segment -> segment.start().equals(segment.end())));
+    }
+
     /** 固定世界身份，不需要启动游戏或显卡。 */
     private final Object world = new Object();
     /** 测试使用的实际生产管理器实例，各用例互不共享状态。 */

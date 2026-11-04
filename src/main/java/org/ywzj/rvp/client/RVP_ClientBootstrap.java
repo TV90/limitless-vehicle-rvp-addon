@@ -86,6 +86,9 @@ public final class RVP_ClientBootstrap {
                             ? Long.MIN_VALUE : Minecraft.getInstance().level.getGameTime()));
             // 安装 RVP 载具视觉公共消费端，把完整集合交给非世界代理状态管理器。
             RVP_RemoteVehicleVisualEndpoint.install(RVP_ClientRemoteVehicleVisualState::accept);
+            // 安装独立虚拟弹显示消费者，只写视觉缓存，不写本体远程目标表。
+            org.ywzj.rvp.network.remotevisibility.RVP_VirtualMissileVisualEndpoint.install(
+                    org.ywzj.rvp.client.state.remotevisibility.RVP_ClientVirtualMissileVisualState::accept);
             // 安装炮火支援公共端口，阶段 C 的 profile、请求结果和任务状态只写入客户端快照。
             RVP_FireSupportClientEndpoint.install(RVP_ClientFireSupportState.INSTANCE);
             // 安装 Gunner Profile 公共端口，使服务端 JSON 列表生成创造栏物品变体。

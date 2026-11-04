@@ -21,6 +21,8 @@ public final class RVP_RocketTrailEmitter {
         // 调用世界身份检查，客户端 tick 早于首个渲染帧时也能安全登记。
         RVP_RocketTrailManager manager = RVP_RocketTrailManager.INSTANCE;
         manager.beginWorld(mc.level, mc.level.getGameTime());
+        // 登记 UUID，近距实体、真实克隆和虚拟显示接管同一编号时不能连接别的弹的烟。
+        manager.bindIdentity(bullet.getId(), bullet.getUUID());
         if (!Float.isFinite(scale) || scale <= 0) {
             // 调用公共弹体停烟门控约定的零尺寸断链，不抹掉已经存在的世界烟段。
             manager.stop(bullet.getId()); return;
@@ -64,6 +66,8 @@ public final class RVP_RocketTrailEmitter {
         RVP_RocketTrailManager manager = RVP_RocketTrailManager.INSTANCE;
         // 调用同一世界检查；烟浪和空中尾烟分别去重，不相互吞掉采样。
         manager.beginWorld(mc.level, mc.level.getGameTime());
+        // 烟浪与空中尾烟共用来源身份，防会话编号复用接上旧路径。
+        manager.bindIdentity(bullet.getId(), bullet.getUUID());
         int lifetime = Math.max(40, Math.min(600, Math.round((80 + 20 * random(bullet.getId(), mc.level.getGameTime())) * scale)));
         // 调用独立冲刷烟密度，增加遮盖程度，不连带加浓空中尾烟或延长烟团寿命。
         var profile = new RVP_RocketTrailManager.Profile(Math.min(scale, 64), RVP_RocketTrailParameters.WASH_DENSITY, 0, lifetime, 0,

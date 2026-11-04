@@ -32,6 +32,8 @@ public final class RVP_ClientReloadListeners {
         event.registerReloadListener(RVP_PylonDisplayReloadListener.INSTANCE);
         // 注册远距载具代理清理器，资源重载后由后续权威快照按新 display/模型重建。
         event.registerReloadListener(RVP_RemoteVehicleVisualReloadListener.INSTANCE);
+        // 注册虚拟显示模型重载，代理不经生成包，必须显式释放旧烘焙实例和动画。
+        event.registerReloadListener(org.ywzj.rvp.client.render.RVP_VirtualMissileModelRuntime.INSTANCE);
         // 注册温压粒子贴图覆盖率扫描，使资源包替换贴图后动态预算仍读取真实 alpha 面积。
         event.registerReloadListener(RVP_ThermobaricParticleCoverage.INSTANCE);
         // 注册温压预设资源重载器，使 F3+T 后新爆炸使用最新的类型化预设快照。

@@ -40,7 +40,7 @@ public class RVP_Network {
     /** 协议 35：新增母车辅助载具候选选择请求和权威状态同步。 */
     /** 协议 36：显式配置的 HITL 远程观察窗口、区块、心跳及导弹 spawn 标志。 */
     /** 协议 42：新增虚拟中段雷达目标完整集合与实体恢复交接；客户端、服务端须一同更新。 */
-    private static final String PROTOCOL = "42";
+    private static final String PROTOCOL = "43";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "main"))
@@ -488,6 +488,14 @@ public class RVP_Network {
                 .encoder(S2CVirtualMissileTargets::encode)
                 .decoder(S2CVirtualMissileTargets::decode)
                 .consumerMainThread(S2CVirtualMissileTargets::handle)
+                .add();
+
+        // 虚拟弹独立视觉完整集合；公共端口保证专服注册时不加载客户端类。
+        CHANNEL.messageBuilder(org.ywzj.rvp.network.remotevisibility.S2CVirtualMissileVisualSnapshot.class,
+                        id++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(org.ywzj.rvp.network.remotevisibility.S2CVirtualMissileVisualSnapshot::encode)
+                .decoder(org.ywzj.rvp.network.remotevisibility.S2CVirtualMissileVisualSnapshot::decode)
+                .consumerMainThread(org.ywzj.rvp.network.remotevisibility.S2CVirtualMissileVisualSnapshot::handle)
                 .add();
     }
 }
