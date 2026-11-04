@@ -153,6 +153,18 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
             LocalVehiclePlayer.instance.sendMessage("ui.need_lock_entity");
             return false;
         }
+        // AIR的独立红外授权不依赖RF站级锁；硬锁/有效雷达支持仍走原雷达发射通道。
+        if (data.getGuidanceData().getGuidanceType() == org.ywzj.rvp.guidance.RVP_EnumGuidanceType.AIR
+                && requiresEntityLock(data)) {
+            Entity radarTarget = org.ywzj.rvp.radar.RVP_RadarRoleHelper.getEffectiveRfLockedEntity(unit);
+            if (!org.ywzj.rvp.guidance.runtime.RVP_AirSeekerRelaySupport.isAvailable(unit, radarTarget)) {
+                Entity armed = org.ywzj.rvp.client.state.RVP_IrSeekerStateTable.getArmedEntity(unit, data.getWeaponId());
+                if (armed != null && RVP_IrLockHelper.isTargetWithinHoldLimits(getWeaponUnit(), armed, data)) {
+                    unit.setLockedEntity(armed);
+                    return true;
+                }
+            }
+        }
         boolean isIrLaunchWeapon = RVP_IrLockHelper.isIrLaunchWeapon(data);
         if (requiresEntityLock(data)) {
             boolean isIrHmdManaged = data.getWeaponKind() == RVP_EnumWeaponKind.MISSILE
@@ -547,9 +559,8 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
             return false;
         }
         RVP_WeaponData data = getData();
-        return data.usesGuidanceType(org.ywzj.rvp.guidance.RVP_EnumGuidanceType.IR)
-                || data.isRadarHoming()
-                || data.isAntiRadiationMissile();
+        // 调用主阶段能力出口；末段IR只能由飞行中时序自行启动。
+        return data.hasLaunchSeeker();
     }
 
     @Override

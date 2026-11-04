@@ -3,13 +3,9 @@ package org.ywzj.rvp.mixin;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
-import org.ywzj.rvp.config.RVP_VehicleExtendedConfigManager;
 import org.ywzj.vehicle.client.gui.VehicleWeaponOverlay;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
-import org.ywzj.vehicle.vehicle.weapon.VehicleMultiWeapons;
-
-import java.util.List;
 
 /**
  * [RVP] 武器栏（右下角弹药 HUD）对「只能用改装工具切弹」的多弹种槽的适配（2026-10-21，适配本体新版武器栏）。
@@ -44,50 +40,6 @@ public class VehicleWeaponOverlayMixin {
     )
     private AbstractVehicleWeapon<?> ywzj_rvp$collapseModdingOnlyMulti(WeaponUnit self, AbstractVehicleWeapon<?> weapon) {
         AbstractVehicleWeapon<?> resolved = self.proxyWeapon(weapon);
-        if (!(resolved instanceof VehicleMultiWeapons multi) || !ywzj_rvp$isFlatModdingOnlyMulti(multi)) {
-            return resolved;
-        }
-        // 折叠成当前弹种：名称/余弹/装填进度都随之取当前弹种，F 提示与弹药子列表自然消失。
-        AbstractVehicleWeapon<?> selected = multi.getSelectedWeapon();
-        return selected != null ? selected : resolved;
-    }
-
-    /** 平铺的 modding-only 多弹种槽（非分组载体、子项不含多弹种组）⇒ HUD 只显示当前弹种。 */
-    private static boolean ywzj_rvp$isFlatModdingOnlyMulti(VehicleMultiWeapons multi) {
-        for (AbstractVehicleWeapon<?> sub : multi.getSubWeapons()) {
-            if (sub instanceof VehicleMultiWeapons) {
-                return false; // 分组载体（T90M：AP 组 + HE 组）：保留弹药子列表 + [F] 提示
-            }
-        }
-        WeaponUnit owner = multi.getWeaponUnit();
-        if (owner == null) {
-            return false;
-        }
-        // 顶层槽位索引：按武器对象身份在所属站的三个列表里找（代理槽也能落到真实所属站）
-        int index = ywzj_rvp$indexOf(owner.weapons, multi);
-        if (index < 0) {
-            index = ywzj_rvp$indexOf(owner.secondaryWeapons, multi);
-        }
-        if (index < 0) {
-            index = ywzj_rvp$indexOf(owner.independentWeapons, multi);
-        }
-        if (index < 0) {
-            return false; // 嵌套在别处的多弹种组（弹药子列表里的一层）：不动
-        }
-        if (RVP_VehicleExtendedConfigManager.INSTANCE.isGroupedSlotCarrier(
-                owner.getVehicle(), owner.getId(), index)) {
-            return false; // 分组载体：F 键大组切换真实可用
-        }
-        // modding_only_multi：F 键被拦截，切弹只能靠改装工具 ⇒ 折叠
-        return RVP_VehicleExtendedConfigManager.INSTANCE.shouldBlockRuntimeMultiCycle(owner, index);
-    }
-
-    private static int ywzj_rvp$indexOf(List<AbstractVehicleWeapon<?>> list, AbstractVehicleWeapon<?> target) {
-        for (int i = 0; i < list.size(); i++) {
-            if (list.get(i) == target) {
-                return i;
-            }
-        }
-        return -1;
+        return org.ywzj.rvp.vehicle.RVP_ModdingWeaponPresentation.collapse(self, resolved);
     }
 }

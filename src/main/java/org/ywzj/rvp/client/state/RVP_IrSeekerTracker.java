@@ -71,6 +71,25 @@ public final class RVP_IrSeekerTracker {
      * 非 HMD IR 路径入口（mixin 对任意传感器的 IR 发射武器都会调用）：
      * 扫描候选 → dwell 累积 → 满则 armed。
      */
+    /** AIR无硬雷达锁时独立红外搜锁，并在RF父类清锁后恢复已授权的红外站锁。 */
+    public static boolean tickAirBeforeRadar(WeaponUnit unit, RVP_WeaponBase weapon) {
+        Entity hard = org.ywzj.rvp.radar.RVP_RadarRoleHelper.getLockedRadarEntity(unit);
+        if (hard != null && org.ywzj.rvp.guidance.runtime.RVP_AirSeekerRelaySupport.isAvailable(unit, hard)) return false;
+        Entity external = org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper.getClientLockedEntity(
+                unit.getVehicle(), unit.getVehicle().level().dimension().location());
+        if (external != null && org.ywzj.rvp.guidance.runtime.RVP_AirSeekerRelaySupport.isAvailable(unit, external)) return false;
+        // 调用原红外驻留入口，不复用RF计时、雷达探测表或旧的站级目标引用。
+        tickFor(unit, weapon);
+        Entity armed = RVP_IrSeekerStateTable.getArmedEntity(unit, weapon.getData().getWeaponId());
+        WeaponUnit geo = weapon.getWeaponUnit() == null ? unit : weapon.getWeaponUnit();
+        if (armed != null && RVP_IrLockHelper.isTargetWithinHoldLimits(geo, armed, weapon.getData())) {
+            WeaponUnit root = rootOf(unit);
+            if (root.getLockedEntity() != armed) root.setLockedEntity(armed);
+            return true;
+        }
+        return getTrackingCandidate(unit, weapon.getData().getWeaponId()) != null;
+    }
+
     public static void tickFor(WeaponUnit unit, RVP_WeaponBase rvpWeapon) {
         RVP_WeaponData data = rvpWeapon.getData();
         if (data.isEnableIrHmd() && data.getGuidanceData().getGuidanceType()
@@ -92,6 +111,12 @@ public final class RVP_IrSeekerTracker {
         RVP_IrSeekerStateTable.State st = RVP_IrSeekerStateTable.stateFor(root, weaponId);
         int dwell = RVP_GuidanceDataIR.resolveLockDwellTick(data.getGuidanceData());
         int grace = RVP_GuidanceDataIR.resolveDwellGraceTick(data.getGuidanceData());
+        Entity armed = RVP_IrSeekerStateTable.getArmedEntity(root, weaponId);
+        if (armed != null && RVP_IrLockHelper.isTargetWithinHoldLimits(geo, armed, data)) {
+            st.phase = RVP_IrSeekerStateTable.Phase.ARMED;
+            st.lastArmedInEnvelopeTick = gameTime;
+            return;
+        }
 
         // 候选粘滞：当前候选仍存活且在包线内 → 不重扫（防伺服跟随导致左右横跳）。
         Entity best;

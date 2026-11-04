@@ -49,6 +49,59 @@ class RVP_TerminalSeekerHandoffTest {
         assertSame(RVP_EnumGuidanceType.SACLOS, f.m.resolveEffectiveGuidanceType());
     }
 
+    @Test void realVehicleIsAcquiredAutonomouslyWithNoRadarLockOrLaunchTarget() {
+        Fixture f = new Fixture("SACLOS", "IR", "",128);
+        var target = f.vehicle(0,100);
+        assertNull(f.m.getTargetEntity());
+        f.guide(39); assertFalse(f.m.hasTerminalSeekerCaptured());
+        f.guide(40);
+        assertSame(target,f.m.getTargetEntity());
+        assertTrue(f.m.hasTerminalSeekerCaptured());
+    }
+
+    @Test void autonomousVehicleSearchHonors128BlockRangeWithoutRadar() {
+        Fixture f = new Fixture("SACLOS", "IR", "",128);
+        f.vehicle(0,150); f.guide(40);
+        assertTrue(f.m.isTerminalSeekerHandoffPending());
+        var near=f.vehicle(0,120); f.guide(42);
+        assertSame(near,f.m.getTargetEntity());
+    }
+
+    @Test void obscuredBestCandidateCannotStarveAVisibleVehicleAtTheEdgeOfTheCone() {
+        Fixture f = new Fixture("SACLOS", "IR", "",128);
+        f.vehicle(0,100);
+        var visible=f.vehicle(8,100);
+        var obstruction=new Obstruction(f.level); obstruction.setPos(0,100,50);
+        obstruction.setBoundingBox(new net.minecraft.world.phys.AABB(-1,98,49,1,102,51));
+        f.level.addObserver(obstruction);
+        assertFalse(org.ywzj.rvp.countermeasure.RVP_CountermeasureState.isOpticalTargetVisible(f.m,f.level.getEntity(900101)));
+        assertTrue(org.ywzj.rvp.countermeasure.RVP_CountermeasureState.isOpticalTargetVisible(f.m,visible));
+        f.guide(40);
+        assertSame(visible,f.m.getTargetEntity(),"自由搜索不能反复选中锥心被挡目标而忽略可见载具");
+        assertFalse(f.m.hasSmokeBreakLock(),"未捕获的被挡候选不能造成永久烟雾脱锁");
+    }
+
+    @Test void destroyedBestCandidateCannotStarveALiveVehicle() {
+        Fixture f = new Fixture("SACLOS", "IR", "",128);
+        f.vehicle(0,100).destroyed=true;
+        var live=f.vehicle(5,100); f.guide(40);
+        assertSame(live,f.m.getTargetEntity());
+    }
+
+    @Test void friendlyDesignatedMissileCannotBeCapturedOrRetainedThroughIrGrace() {
+        Fixture f=new Fixture("GPS","IR","");
+        Marker shooter=f.target(0,-10);
+        f.m.setOwner(shooter);
+        TestMissile ammo=new TestMissile(f.level); ammo.setPos(0,100,100); ammo.setOwner(shooter);
+        f.m.setTargetEntity(ammo); f.guide(40);
+        assertFalse(f.m.hasTerminalSeekerCaptured());
+        assertTrue(f.m.isTerminalSeekerHandoffPending());
+        // 已经接管后的旧错误目标也必须立即停止实体追踪，不能再享受正常脱锁宽限。
+        f.m.markTerminalSeekerCaptured();
+        f.m.setTargetEntity(ammo); f.guide(42);
+        assertNotSame(ammo,f.m.getTargetEntity());
+    }
+
     @Test void inheritedTargetMustPassTheNarrowCaptureConeAndSeparateSearchRange() {
         Fixture f = new Fixture("GPS", "IR", "");
         Marker target = f.target(0, 1000);
@@ -164,6 +217,9 @@ class RVP_TerminalSeekerHandoffTest {
         final RVP_WeaponData data;
         final TestMissile m = new TestMissile(level);
         Fixture(String main, String terminal, String options) {
+            this(main,terminal,options,900);
+        }
+        Fixture(String main, String terminal, String options, int searchRange) {
             data = GsonUtil.GSON.fromJson("""
                 {"type":"rvp:missile","life":1200,
                  "projectile_data":{"velocity":1,"max_speed":5,"has_rocket_engine":true,"mass":100,"fuel_mass":10,
@@ -173,9 +229,9 @@ class RVP_TerminalSeekerHandoffTest {
                     "guidance_target_distance_range":"[[0,4500]]","max_guidance_angle":80,"enable_inertial_guidance":true,
                     "terminal_guidance":{"guidance_type":"%s","guidance_start_tick":40,
                       "max_lock_angle":15,"max_guidance_angle":50,"scan_interval_tick":2,
-                      "seeker_search_distance_range":"[[0,900]]","guidance_target_distance_range":"[[0,1800]]",
+                      "seeker_search_distance_range":"[[0,%d]]","guidance_target_distance_range":"[[0,1800]]",
                       "active_radar_activation_range":100,"enable_inertial_guidance":true%s}}}
-                """.formatted(main, terminal, options), RVP_WeaponData.class);
+                """.formatted(main, terminal, searchRange, options), RVP_WeaponData.class);
             data.setWeaponKind(RVP_EnumWeaponKind.MISSILE);
             data.setWeaponId(ResourceLocation.tryParse("rvp:terminal_handoff_probe"));
             m.initFromWeapon(data, RVP_EnumWeaponKind.MISSILE, null, null,
@@ -187,6 +243,16 @@ class RVP_TerminalSeekerHandoffTest {
         RVP_GuidanceActiveConfig terminal() { return RVP_GuidanceModelResolver.resolveActive(data, RVP_GuidancePhase.TERMINAL); }
         Marker target(double x, double z) { Marker t = new Marker(EntityType.MARKER,level); t.setPos(x,100,z); level.addObserver(t); return t; }
         Flare flare(double x, double z) { Flare t = new Flare(level); t.setPos(x,100,z); level.addObserver(t); return t; }
+        /** 外部世界提供真实载具候选；不提供雷达列表或发射前锁定。 */
+        VehicleTarget vehicle(double x,double z) {
+            var t=RVP_ProjectileSimulationBootstrap.environment(VehicleTarget.class);
+            RVP_ProjectileSimulationBootstrap.write(net.minecraft.world.entity.Entity.class,t,"level",level);
+            RVP_ProjectileSimulationBootstrap.write(net.minecraft.world.entity.Entity.class,t,"position",new Vec3(x,100,z));
+            RVP_ProjectileSimulationBootstrap.write(net.minecraft.world.entity.Entity.class,t,"bb",new net.minecraft.world.phys.AABB(x-2,99,z-4,x+2,101,z+4));
+            RVP_ProjectileSimulationBootstrap.write(net.minecraft.world.entity.Entity.class,t,"dimensions",net.minecraft.world.entity.EntityDimensions.scalable(4,2));
+            RVP_ProjectileSimulationBootstrap.write(net.minecraft.world.entity.Entity.class,t,"deltaMovement",Vec3.ZERO);
+            t.setUUID(java.util.UUID.randomUUID()); t.setId(900001+(int)x+(int)z); level.addObserver(t); return t;
+        }
     }
     private static final class TestMissile extends RVP_MissileEntity {
         WeaponUnit unit;
@@ -214,5 +280,19 @@ class RVP_TerminalSeekerHandoffTest {
     }
     private static final class Flare extends Decoy {
         Flare(RVP_ProjectileSimulationLevel level) { super(level,RVP_EnumCountermeasureType.FLARE); }
+    }
+    /** 真实载具候选的环境边界：没有雷达、乘员、OBB资源或网络连接，仍走生产目标搜索。 */
+    private static final class VehicleTarget extends org.ywzj.vehicle.entity.vehicle.WheeledVehicle {
+        /** 世界中可存在尚未移除的残骸，必须排除。 */ boolean destroyed;
+        private VehicleTarget() { super(null,null); }
+        @Override public boolean isAlive() { return true; }
+        @Override public boolean isDestroyed() { return destroyed; }
+        @Override public ResourceLocation getVehicleId() { return ResourceLocation.tryParse("rvp:terminal_vehicle_probe"); }
+        @Override public java.util.List<org.ywzj.vehicle.vehicle.part.PartUnit<?>> getPartUnits() { return java.util.List.of(); }
+        @Override public java.util.List<org.ywzj.vehicle.vehicle.structure.VehicleCubeOBB> getVehicleCubeOBBs() { return java.util.List.of(); }
+    }
+    /** 光学遮挡环境边界；直接复用本体的遮挡接口和生产射线检测。 */
+    private static final class Obstruction extends Marker implements org.ywzj.vehicle.api.entity.SightObstruction {
+        Obstruction(RVP_ProjectileSimulationLevel level) { super(EntityType.MARKER,level); }
     }
 }

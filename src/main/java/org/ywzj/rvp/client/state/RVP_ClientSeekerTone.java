@@ -93,7 +93,7 @@ public final class RVP_ClientSeekerTone {
         // [RVP] 2026-10-21（方案 D2）：红外锁定音只认 armed 通道（连续 dwell 授权）——
         // EO/RF/站级 cue 锁不再触发红外锁定音；HMD 与非 HMD 路径统一读 tracker armed。
         RVP_ClientHmdState hmdState = RVP_ClientHmdState.getInstance();
-        if (!RVP_IrLockHelper.isIrLaunchWeapon(weapon.getData())) {
+        if (!RVP_IrLockHelper.supportsInfraredLaunchSearch(weapon.getData())) {
             return false;
         }
         Entity locked = hmdState.getIrArmedEntity();

@@ -278,6 +278,11 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
                 }
             }
         }
+        // 调用统一弹药归属门；旧锁或手工目标包也不能授权射向自己的前一发弹。
+        if (lock != null && !org.ywzj.rvp.guidance.RVP_SeekerTargetFilter.allows(shooter, rootUnit.getVehicle(), lock)) {
+            noteLaunchResult("SHOT_REJECTED", "FRIENDLY_AMMO", 0);
+            return null;
+        }
         // 雷达/导引头要求锁定时复查服务端目标，堵住客户端发包后目标失效的窗口；保留现有 EO 直瞄豁免。
         if (requiresServerSeekerLock(data, lock, RVP_WeaponSensorHelper.effectiveOrStatic(rootUnit))) {
             if (shooter instanceof net.minecraft.server.level.ServerPlayer notifyPlayer) {

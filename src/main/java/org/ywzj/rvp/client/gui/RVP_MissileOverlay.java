@@ -43,15 +43,18 @@ public class RVP_MissileOverlay implements IGuiOverlay {
         if (weaponUnit == null) return;
         var weaponOpt = weaponUnit.getCurrentWeapon();
         if (weaponOpt.isEmpty()) return;
-        Object rawData = weaponOpt.get().getData();
+        // 调用已有解包器，改装弹种组/子站代理的HUD必须读取当前叶子武器。
+        var selected = org.ywzj.rvp.util.RVP_WeaponResolveHelper.unwrap(weaponOpt.get());
+        if (selected == null) return;
+        Object rawData = selected.getData();
         if (!(rawData instanceof RVP_WeaponData data)) return;
-        if (!data.isHomingProjectile()) return;
+        if (!data.hasLaunchSeeker()) return;
         // [RVP] ARM 分支：离轴圈 + 预选头瞄圈自渲染（不依赖武器站 sensor 配置，载具间表现统一）
-        if (data.usesGuidanceType(RVP_EnumGuidanceType.ARM)) {
+        if (data.getGuidanceData().getGuidanceType() == RVP_EnumGuidanceType.ARM) {
             renderArmCircles(guiGraphics, weaponUnit, data, partialTick);
             return;
         }
-        if (!data.usesGuidanceType(RVP_EnumGuidanceType.IR)) return;
+        if (!RVP_IrLockHelper.supportsInfraredLaunchSearch(data)) return;
         if (RVP_IrHudProfile.resolve(RVP_IrLockHelper.getLaunchAltitudeRange(data)) == RVP_IrHudProfile.GROUND) return;
 
         float fov = data.resolveLaunchOffAxisLockAngle();
@@ -134,7 +137,7 @@ public class RVP_MissileOverlay implements IGuiOverlay {
 
         // [RVP] 2026-10-22：无头瞄 IR 弹没有 HMD 框（RVP_HmdOverlay 不进入 IR 分支），
         // 截获文案改挂在导引头大圈下方；armed 后 tracker 候选转 null ⇒ 文案自动消失。
-        if (!data.isEnableIrHmd() && weaponUnit.isSeekerOn()
+        if ((!data.isEnableIrHmd() || data.getGuidanceData().getGuidanceType() == RVP_EnumGuidanceType.AIR) && weaponUnit.isSeekerOn()
                 && hmdState.getIrTrackingEntity() != null) {
             Minecraft mc = Minecraft.getInstance();
             int labelHalf = mc.font.width(IR_ACQUIRING) / 2;
@@ -146,7 +149,7 @@ public class RVP_MissileOverlay implements IGuiOverlay {
         if (weaponUnit.isSeekerOn()) {
             // [RVP] 2026-10-21（方案 D2）：IR 弹红圈只认 armed 通道（连续 dwell 授权）——
             // EO/RF/站级 cue 锁在 armed 之前不再触发锁定圈；非 IR 弹保持原读取。
-            if (data != null && RVP_IrLockHelper.isIrLaunchWeapon(data)) {
+            if (data != null && RVP_IrLockHelper.supportsInfraredLaunchSearch(data)) {
                 locked = hmdState.getIrArmedEntity();
             } else {
                 locked = hmdState.isIrHmd() ? hmdState.getLockedEntity() : weaponUnit.getLockedEntity();

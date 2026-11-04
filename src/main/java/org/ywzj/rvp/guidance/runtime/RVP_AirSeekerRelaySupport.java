@@ -16,7 +16,8 @@ public final class RVP_AirSeekerRelaySupport {
 
     /** 调用整车雷达和已连接的外置雷达；旧站级锁引用本身不构成支持。 */
     public static boolean isAvailable(WeaponUnit station, Entity target) {
-        if (station == null || target == null || !target.isAlive()) return false;
+        if (station == null || target == null || !target.isAlive()
+                || !org.ywzj.rvp.guidance.RVP_SeekerTargetFilter.allows(station.getOwner(), station.getVehicle(), target)) return false;
         WeaponUnit root = station.getRootParentWeaponUnit();
         if (root == null || root.getVehicle() == null) return false;
         AbstractVehicle vehicle = root.getVehicle();

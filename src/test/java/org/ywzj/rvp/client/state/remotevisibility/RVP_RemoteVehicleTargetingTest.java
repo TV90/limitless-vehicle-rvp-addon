@@ -368,6 +368,8 @@ class RVP_RemoteVehicleTargetingTest {
         /** 当前火控传感器。 */ private WeaponUnitData.FireControlSensorType sensor;
         private TestStation() { super(0, null, null); }
         @Override public AbstractVehicle getVehicle() { return vehicle; }
+        // 环境中没有操作手；友方弹药门仍执行生产判断，不读取未联网的乘员同步字段。
+        @Override public net.minecraft.world.entity.LivingEntity getOwner() { return null; }
         @Override public Optional<AbstractVehicleWeapon<?>> getCurrentWeapon() { return Optional.of(weapon); }
         @Override public Vec3 worldPivotPosition() { return new Vec3(0, 100, 0); }
         @Override public Vec3 worldVec() { return direction == null ? new Vec3(1, 0, 0) : direction; }

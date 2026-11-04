@@ -618,6 +618,8 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
 
     /** Captures the launch-designated target shared by the new ARH/AIR runtime. */
     public void rvp$setActiveSeekerDesignatedTarget(@Nullable Entity target) {
+        // 调用归属门，指定目标、真实/虚拟交接及旧对象都不能保留己方弹药指定。
+        if (target != null && !org.ywzj.rvp.guidance.RVP_SeekerTargetFilter.allows(this, target)) target = null;
         if (target == null) {
             this.activeSeekerDesignatedTargetId = Integer.MIN_VALUE;
             // DIRCM 等对抗清除：显式清目标（实时中继语义下不再有"每 tick 强制清空"兜底，

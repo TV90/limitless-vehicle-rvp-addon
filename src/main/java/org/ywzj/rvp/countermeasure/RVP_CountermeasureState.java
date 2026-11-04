@@ -455,6 +455,12 @@ public final class RVP_CountermeasureState {
         return closest;
     }
 
+    /** 搜索候选的只读光学门；不写入脱锁/惯导状态，不让不可见的高分目标堵住自主捕获。 */
+    public static boolean isOpticalTargetVisible(Entity seeker, Entity target) {
+        return seeker != null && target != null
+                && !hasSightObstruction(seeker, target) && !isTargetInsideSmoke(target);
+    }
+
     private static boolean hasSightObstruction(Entity seeker, Entity target) {
         // 调用统一射线判定，实体中心与点指定共用相同遮挡语义。
         return isOpticalObstruction(target) || hasSightObstruction(seeker, target.getBoundingBox().getCenter());

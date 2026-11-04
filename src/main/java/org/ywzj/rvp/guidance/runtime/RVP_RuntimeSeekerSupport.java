@@ -62,6 +62,8 @@ final class RVP_RuntimeSeekerSupport {
             RVP_GuidanceActiveConfig config,
             boolean acquire
     ) {
+        // 捕获与持续跟踪共用归属门，指定目标不能绕过自由搜索的友方弹药过滤。
+        if (!org.ywzj.rvp.guidance.RVP_SeekerTargetFilter.allows(projectile, target)) return null;
         // AIR 主动红外不允许把雷达指定的箔条套成自主捕获或继续跟踪。
         if (type == RVP_EnumGuidanceType.AIR && !RVP_AirSeekerPolicy.isInfraredCandidate(target)) return null;
         // 反舰导引头（2026-10-05 用户需求）：仅截获阶段（acquire）过滤——目标 RCS 综合值
@@ -157,7 +159,8 @@ final class RVP_RuntimeSeekerSupport {
         Vec3 pos = projectile.position();
         // O(实体) 遍历已加载实体，替代 Radar.scanTargets 的 ±range 立方体 getEntities（O(箱子截面)）
         for (Entity entity : all) {
-            if (entity == projectile || !entity.isAlive() || entity == projectile.getShooterVehicle()
+            if (!org.ywzj.rvp.guidance.RVP_SeekerTargetFilter.allows(projectile, entity)
+                    || !entity.isAlive() || entity == projectile.getShooterVehicle()
                     || (!(entity instanceof RVP_BaseBullet) && entity.getBoundingBox().getSize() < 1)
                     || !isRadarScannable(entity)) {
                 continue;
@@ -252,7 +255,9 @@ final class RVP_RuntimeSeekerSupport {
         Vec3 pos = projectile.position();
         // O(实体) 遍历已加载实体，替代 getEntities(±range 箱子)（O(箱子截面)）
         for (Entity entity : all) {
-            if (entity == projectile.getShooterVehicle() || !entity.isAlive()) {
+            if (entity == projectile.getShooterVehicle() || !entity.isAlive()
+                    || entity instanceof AbstractVehicle vehicle && vehicle.isDestroyed()
+                    || !org.ywzj.rvp.guidance.RVP_SeekerTargetFilter.allows(projectile, entity)) {
                 continue;
             }
             if (entity == projectile || active && entity instanceof RVP_BaseBullet ammo
@@ -273,6 +278,8 @@ final class RVP_RuntimeSeekerSupport {
             if (!RVP_GuidanceRuntimeGeometry.passesAcquireLimits(projectile, entity, config)) {
                 continue;
             }
+            // 自主搜索先排除不可见目标再评分；否则锥心被遮挡的车会永远挡住旁边可见目标。
+            if (!RVP_CountermeasureState.isOpticalTargetVisible(projectile, entity)) continue;
             // [RVP] §46：IR 评分点与瞄准点同源（最大 OBB 中心；热焰弹等非载具自动回退）
             Vec3 toTarget = org.ywzj.rvp.util.RVP_AimPointResolver
                     .resolveLargestObbCenter(entity).subtract(pos);

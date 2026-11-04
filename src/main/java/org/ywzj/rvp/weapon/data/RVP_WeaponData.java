@@ -513,6 +513,14 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
         return usesGuidanceType(RVP_EnumGuidanceType.IR);
     }
 
+    /** 发射前可手动开关的导引头只看主制导；末段携带寻的器不赋予载具开机能力。 */
+    public boolean hasLaunchSeeker() {
+        return switch (getGuidanceData().getGuidanceType()) {
+            case IR, AIR, SARH, ARM, ARH -> true;
+            default -> false;
+        };
+    }
+
     /** Whether the missile carries a seeker head that can acquire a target autonomously. */
     public boolean hasSeeker() {
         return isActiveRadar()

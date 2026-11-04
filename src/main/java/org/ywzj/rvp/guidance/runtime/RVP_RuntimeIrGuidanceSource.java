@@ -19,6 +19,10 @@ public final class RVP_RuntimeIrGuidanceSource implements RVP_RuntimeGuidanceSou
     public RVP_GuidanceIntent evaluate(RVP_GuidanceRuntimeContext context) {
         RVP_BaseBullet projectile = context.projectile();
         Entity target = projectile.getTargetEntity();
+        // 友方弹药不是正常几何脱锁，不能借红外宽限继续跟踪它。
+        if (target != null && !org.ywzj.rvp.guidance.RVP_SeekerTargetFilter.allows(projectile, target)) {
+            projectile.clearTarget(); target = null;
+        }
         if (target == null
                 && context.active().phase() == RVP_GuidancePhase.TERMINAL
                 && !projectile.hasTerminalIrTargetAcquired()

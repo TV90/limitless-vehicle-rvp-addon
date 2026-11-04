@@ -63,6 +63,16 @@ public final class RVP_ProjectileSimulationLevel extends ServerLevel {
     public void forbidTerrainQueries() { terrainQueriesForbidden = true; }
     /** 测试只登记观察者，不触发世界 Tick、区块票据或网络生成包。 */
     public void addObserver(net.minecraft.world.entity.Entity entity) { entityLookup.add(entity); }
+    /** 观察者不参加区块调度，但光学遮挡等局部查询必须看见同一实体表。 */
+    @Override public java.util.List<net.minecraft.world.entity.Entity> getEntities(
+            net.minecraft.world.entity.Entity excluded, net.minecraft.world.phys.AABB box,
+            java.util.function.Predicate<? super net.minecraft.world.entity.Entity> filter) {
+        java.util.List<net.minecraft.world.entity.Entity> result = new java.util.ArrayList<>();
+        for (net.minecraft.world.entity.Entity entity : entityLookup.getAllEntities()) {
+            if (entity != excluded && entity.getBoundingBox().intersects(box) && filter.test(entity)) result.add(entity);
+        }
+        return result;
+    }
     /** 提供原版已加载实体查询边界，目标选择与交接逻辑仍执行生产实现。 */
     @Override public net.minecraft.world.level.entity.LevelEntityGetter<net.minecraft.world.entity.Entity> getEntities() { return entityGetter; }
     /** 按会话 ID 查询已加载观察者，虚拟记录不在这里。 */

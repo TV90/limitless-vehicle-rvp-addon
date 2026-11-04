@@ -210,7 +210,7 @@ public class RVP_ClientHmdState {
             return null;
         }
         RVP_WeaponBase weapon = RVP_WeaponResolveHelper.currentPrimaryRvp(unit);
-        if (weapon == null || !RVP_IrLockHelper.isIrLaunchWeapon(weapon.getData())) {
+        if (weapon == null || !RVP_IrLockHelper.supportsInfraredLaunchSearch(weapon.getData())) {
             return null;
         }
         return RVP_IrSeekerTracker.getTrackingCandidate(unit, weapon.getData().getWeaponId());
@@ -228,7 +228,7 @@ public class RVP_ClientHmdState {
         // 导致 enable_ir_hmd=false 的 IR 弹即使 armed 也不出红圈/锁定音（看着像"锁不上"）。
         // 改为按"当前武器所属站"解析，与 tracker 的根站键口径一致。
         RVP_WeaponBase weapon = RVP_WeaponResolveHelper.currentPrimaryRvp(unit);
-        if (weapon == null || !RVP_IrLockHelper.isIrLaunchWeapon(weapon.getData())) {
+        if (weapon == null || !RVP_IrLockHelper.supportsInfraredLaunchSearch(weapon.getData())) {
             return null;
         }
         return RVP_IrSeekerStateTable.getArmedEntity(unit, weapon.getData().getWeaponId());
@@ -458,10 +458,8 @@ public class RVP_ClientHmdState {
         AbstractVehicleWeapon<?> currentWeapon = RVP_LaserWeapons.unwrap(weaponOpt.orElse(null));
         if (currentWeapon instanceof RVP_WeaponBase rvpWeapon) {
             RVP_WeaponData data = rvpWeapon.getData();
-            if (data.isHomingProjectile()
-                    && !data.isRadarHoming()
-                    && !data.isAntiRadiationMissile()
-                    && !data.isGpsMissile()
+            // 发射前头瞄只看主IR；末端IR不能让指令弹通过残留的开机状态激活头瞄。
+            if (RVP_IrLockHelper.isIrLaunchWeapon(data)
                     && data.isEnableIrHmd()
                     && weaponUnit.isSeekerOn()) {
                 shouldBeActive = true;

@@ -35,12 +35,8 @@ public final class RVP_IrLockHelper {
     }
 
     public static boolean isIrLaunchWeapon(@Nullable RVP_WeaponData data) {
-        return data != null
-                && data.isHomingProjectile()
-                && data.usesGuidanceType(RVP_EnumGuidanceType.IR)
-                && !data.isRadarHoming()
-                && !data.isAntiRadiationMissile()
-                && !data.isGpsMissile();
+        // 这里只判断发射前主IR，SACLOS/GPS等携带末IR不能走驻留授权或HMD开机通道。
+        return data != null && data.getGuidanceData().getGuidanceType() == RVP_EnumGuidanceType.IR;
     }
 
     /**
@@ -54,6 +50,7 @@ public final class RVP_IrLockHelper {
     }
 
     public static boolean isTargetWithinAcquireLimits(WeaponUnit weaponUnit, Entity target, RVP_WeaponData data, float extraAngleMargin) {
+        if (!allowsLaunchTarget(weaponUnit, target)) return false;
         RVP_GuidanceLaunchConfig launch = RVP_GuidanceModelResolver.resolveLaunch(data);
         return isTargetWithinRangedLimits(
                 weaponUnit, target, null,
@@ -62,6 +59,7 @@ public final class RVP_IrLockHelper {
     }
 
     public static boolean isTargetWithinHoldLimits(WeaponUnit weaponUnit, Entity target, RVP_WeaponData data) {
+        if (!allowsLaunchTarget(weaponUnit, target)) return false;
         RVP_GuidanceLaunchConfig launch = RVP_GuidanceModelResolver.resolveLaunch(data);
         return isTargetWithinRangedLimits(
                 weaponUnit, target, null,
@@ -74,6 +72,7 @@ public final class RVP_IrLockHelper {
      * that grace period extend range, altitude, or line-of-sight validity.
      */
     public static boolean isTargetWithinHoldEnvelope(WeaponUnit weaponUnit, Entity target, RVP_WeaponData data) {
+        if (!allowsLaunchTarget(weaponUnit, target)) return false;
         RVP_GuidanceLaunchConfig launch = RVP_GuidanceModelResolver.resolveLaunch(data);
         return isTargetWithinRangedLimits(
                 weaponUnit, target, null, 180f,
@@ -200,6 +199,11 @@ public final class RVP_IrLockHelper {
             }
         }
         return hasClearLineOfSight(weaponUnit, target, checkStart, checkEnd);
+    }
+
+    /** 调用统一归属过滤，搜索、HMD候选、授权复核与保锁不得套上己方弹药。 */
+    private static boolean allowsLaunchTarget(WeaponUnit unit, Entity target) {
+        return unit != null && RVP_SeekerTargetFilter.allows(unit.getOwner(), unit.getVehicle(), target);
     }
 
     private static boolean containsAltitude(@Nullable RVP_Range<Float> altitudeRange, Entity target) {
