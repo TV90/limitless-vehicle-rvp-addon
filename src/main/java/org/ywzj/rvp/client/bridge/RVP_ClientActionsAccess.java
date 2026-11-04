@@ -15,6 +15,37 @@ public final class RVP_ClientActionsAccess {
 
     private RVP_ClientActionsAccess() {}
 
+    /** 经双端安全桥搜索红外目标，公共注入类不直接加载客户端候选表。 */
+    public static net.minecraft.world.entity.Entity findInfraredTarget(
+            org.ywzj.vehicle.vehicle.part.WeaponUnit station, float halfAngle) {
+        // 调用物理侧搜索实现；服务端不会访问相机或客户端世界。
+        return INSTANCE.findInfraredTarget(station, halfAngle);
+    }
+
+    /** 经既有 R 键注入补齐远距光电实体选择。 */
+    public static boolean tryManualRemoteVehicleLock(org.ywzj.vehicle.vehicle.part.WeaponUnit station) {
+        // 调用独立客户端选取逻辑，不新增本体方法注入点。
+        return INSTANCE.tryManualRemoteVehicleLock(station);
+    }
+
+    /** 经既有火控 Tick 注入刷新近远表示，保留原服务端实体 ID。 */
+    public static void refreshWeaponTarget(org.ywzj.vehicle.vehicle.part.WeaponUnit station) {
+        // 调用物理侧锁定引用维护；服务端锁的对象始终是真实实体。
+        INSTANCE.refreshWeaponTarget(station);
+    }
+
+    /** 区分具有实时几何的 RVP 显示代理与本体的简化雷达广播克隆。 */
+    public static boolean isRemoteVehicleTargetProxy(net.minecraft.world.entity.Entity target) {
+        // 调用物理侧代理身份检查，公共几何代码不直接引用 ClientLevel。
+        return INSTANCE.isRemoteVehicleTargetProxy(target);
+    }
+
+    /** 经安全桥读取服务端快照的离地高度，防止客户端未加载地形产生错误高度。 */
+    public static double remoteVehicleTargetHeight(net.minecraft.world.entity.Entity target) {
+        // 调用物理侧快照查询；专用服务端的 NaN 会让调用方保留权威地形检查。
+        return INSTANCE.remoteVehicleTargetHeight(target);
+    }
+
     /** 经双端安全桥转交载具鼠标输入，Mixin 不直接加载任何纯客户端类型。 */
     public static boolean handleVehiclePlayerTurn(double yawInput, double pitchInput) {
         // 调用按物理端选择的输入实现；专用服务端不消费输入。
@@ -174,6 +205,24 @@ public final class RVP_ClientActionsAccess {
 
     /** 专用服务端空实现。 */
     private static final class NoopClientActions implements RVP_IClientActions {
+        @Override
+        public net.minecraft.world.entity.Entity findInfraredTarget(
+                org.ywzj.vehicle.vehicle.part.WeaponUnit station, float halfAngle) { return null; }
+
+        @Override
+        public boolean tryManualRemoteVehicleLock(org.ywzj.vehicle.vehicle.part.WeaponUnit station) { return false; }
+
+        @Override
+        public void refreshWeaponTarget(org.ywzj.vehicle.vehicle.part.WeaponUnit station) {
+            // 专用服务端不维护客户端显示对象。
+        }
+
+        @Override
+        public boolean isRemoteVehicleTargetProxy(net.minecraft.world.entity.Entity target) { return false; }
+
+        @Override
+        public double remoteVehicleTargetHeight(net.minecraft.world.entity.Entity target) { return Double.NaN; }
+
         @Override
         public void onFocusLockChanged(org.ywzj.vehicle.vehicle.part.WeaponUnit station) {
             // 专用服务端没有本地观瞄选点。

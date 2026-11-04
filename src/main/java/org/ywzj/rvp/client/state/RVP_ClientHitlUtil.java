@@ -117,9 +117,14 @@ public final class RVP_ClientHitlUtil {
         EntityHitResult closest = null;
         double closestDist = Double.MAX_VALUE;
         Entity owner = missile instanceof RVP_BaseBullet bullet ? bullet.getOwner() : null;
-        for (Entity entity : mc.level.getEntities(missile, missile.getBoundingBox().expandTowards(end.subtract(start)).inflate(1.0),
-                e -> (e.isPickable() || org.ywzj.rvp.countermeasure.RVP_CountermeasureState.isOpticalObstruction(e))
-                        && e != missile && (owner == null || !e.is(owner)))) {
+        var searchBox = new net.minecraft.world.phys.AABB(start, end).inflate(1.0);
+        // 调用统一候选入口，让电视导弹也能选择远距显示代理；保留原可选取与所有者排除。
+        for (Entity entity : RVP_ClientWeaponTargets.entities(mc.level)) {
+            if (entity == missile || owner != null && entity.is(owner)
+                    || !entity.getBoundingBox().intersects(searchBox)
+                    || !(entity.isPickable() || org.ywzj.rvp.countermeasure.RVP_CountermeasureState.isOpticalObstruction(entity))) {
+                continue;
+            }
             if (entity instanceof org.ywzj.vehicle.entity.vehicle.AbstractVehicle vehicle) {
                 // 调用真实受击 OBB，AABB 仅作候选粗筛，空洞不会选到载具实体中心。
                 var boxes = org.ywzj.rvp.util.RVP_NamedVehicleObbs.collect(vehicle);

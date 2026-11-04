@@ -18,8 +18,8 @@ import java.util.List;
  * <p>回退规则（保持既有行为）：
  * <ul>
  *   <li>非载具目标（玩家/生物/导弹）：无 OBB 概念 → fallback（调用方传 AABB 中心）；</li>
- *   <li>广播克隆（{@code remote}，超视距）：克隆体不参与 tick，cube 世界坐标是创建时的
- *       陈旧值（{@code RVP_HitIndicatorOverlay.modelExtents} 同款实证）→ fallback；</li>
+ *   <li>本体广播克隆（{@code remote}，超视距）：不参与 tick、结构坐标陈旧 → fallback；
+ *       RVP 远距显示代理由独立状态表更新完整几何，严格确认身份后可以读取实时 OBB；</li>
  *   <li>OBB 列表为空/未初始化 → fallback。</li>
  * </ul></p>
  *
@@ -54,7 +54,9 @@ public final class RVP_AimPointResolver {
      * @param fallback  回退点（通常传 {@code target.getBoundingBox().getCenter()} 保持旧行为）
      */
     public static Vec3 resolveLargestObbCenter(Entity target, Vec3 fallback) {
-        if (!(target instanceof AbstractVehicle vehicle) || vehicle.isRemoved() || vehicle.remote) {
+        if (!(target instanceof AbstractVehicle vehicle) || vehicle.isRemoved()
+                // 调用安全桥，仅为 RVP 已更新完整几何的显示代理解除 remote 回退。
+                || vehicle.remote && !org.ywzj.rvp.client.bridge.RVP_ClientActionsAccess.isRemoteVehicleTargetProxy(vehicle)) {
             return fallback;
         }
         List<VehicleCubeOBB> cubes = new ArrayList<>();

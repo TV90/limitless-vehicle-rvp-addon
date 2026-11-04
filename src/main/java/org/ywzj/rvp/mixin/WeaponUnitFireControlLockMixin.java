@@ -20,7 +20,6 @@ import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
-import org.ywzj.vehicle.vehicle.weapon.seeker.Infrared;
 
 import java.util.Optional;
 
@@ -49,24 +48,32 @@ public abstract class WeaponUnitFireControlLockMixin {
                 return;
             }
             float acquireHalfAngle = RVP_IrLockHelper.halfAngleFromFull(rvpWeapon.getData().resolveLaunchSeekerFullFov());
-            Entity target = Infrared.findTarget(self, acquireHalfAngle);
+            // 调用双端安全桥，让 RVP 远距显示代理也进入红外搜索。
+            Entity target = RVP_ClientActionsAccess.findInfraredTarget(self, acquireHalfAngle);
             if (!RVP_IrLockHelper.isTargetWithinAcquireLimits(self, target, rvpWeapon.getData())) {
                 target = null;
             }
             // [RVP] 2026-11-01 轮廓伺服：与 tracker 同口径，中心点出锥但轮廓在锥内也可手动锁定
             if (target == null) {
-                target = Infrared.findTarget(self,
+                target = RVP_ClientActionsAccess.findInfraredTarget(self,
                         acquireHalfAngle + RVP_IrLockHelper.ACQUIRE_OUTLINE_SEARCH_MARGIN_DEG);
                 if (!RVP_IrLockHelper.isTargetWithinAcquireLimits(self, target, rvpWeapon.getData())) {
                     target = null;
                 }
             }
             if (target != null) {
-                self.setLockedEntity(target);
+                // 调用开机入口会清锁，必须先开机再写入刚找到的目标。
                 if (!self.isSeekerOn()) {
                     self.toggleSeeker(true);
                 }
+                self.setLockedEntity(target);
             }
+            ci.cancel();
+            return;
+        }
+        // 调用安全桥补充普通光电远距选取；复用已有 HEAD，不增加注入点。
+        if (sensorType == WeaponUnitData.FireControlSensorType.EO
+                && RVP_ClientActionsAccess.tryManualRemoteVehicleLock(self)) {
             ci.cancel();
             return;
         }

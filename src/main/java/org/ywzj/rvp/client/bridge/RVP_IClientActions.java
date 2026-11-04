@@ -7,6 +7,22 @@ import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 /** 公共弹体可安全调用的客户端动作接口；服务端实现不引用任何纯客户端类型。 */
 public interface RVP_IClientActions {
 
+    /** 查找含远距显示代理的红外候选；专用服务端返回 null。 */
+    @org.jetbrains.annotations.Nullable
+    net.minecraft.world.entity.Entity findInfraredTarget(org.ywzj.vehicle.vehicle.part.WeaponUnit station, float halfAngle);
+
+    /** 补充 R 键的远距光电实体选取；专用服务端返回 false。 */
+    boolean tryManualRemoteVehicleLock(org.ywzj.vehicle.vehicle.part.WeaponUnit station);
+
+    /** 同一实体 ID 在真实对象与远距代理之间交接；专用服务端为空操作。 */
+    void refreshWeaponTarget(org.ywzj.vehicle.vehicle.part.WeaponUnit station);
+
+    /** 只承认 RVP 当前有效且具有完整几何的远距载具代理；不含本体雷达克隆。 */
+    boolean isRemoteVehicleTargetProxy(net.minecraft.world.entity.Entity target);
+
+    /** 返回当前快照的权威离地高度（格）；无有效快照或专用服务端返回 NaN。 */
+    double remoteVehicleTargetHeight(net.minecraft.world.entity.Entity target);
+
     /** 转交既有载具鼠标入口；电视导弹优先，其次焦点锁定；服务端恒返回 false。 */
     boolean handleVehiclePlayerTurn(double yawInput, double pitchInput);
 

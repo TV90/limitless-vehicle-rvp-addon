@@ -121,7 +121,9 @@ public final class RVP_IrSeekerStateTable {
         if (state == null || state.armedId == -1 || unit.getVehicle() == null) {
             return null;
         }
-        Entity target = unit.getVehicle().level().getEntity(state.armedId);
+        // 调用搜索/保锁共用的 ID 解析器，HUD 和客户端发射门不能漏掉已授权的远距代理。
+        Entity target = RVP_ClientWeaponTargets.resolve(
+                (net.minecraft.client.multiplayer.ClientLevel) unit.getVehicle().level(), state.armedId);
         return target != null && target.isAlive() ? target : null;
     }
 

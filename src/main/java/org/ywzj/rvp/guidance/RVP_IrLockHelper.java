@@ -202,6 +202,13 @@ public final class RVP_IrLockHelper {
         if (altitudeRange == null) {
             return true;
         }
+        if (target.level().isClientSide()) {
+            // 调用双端安全桥读取服务器离地高度，客户端 2 区块外的空高度图不能当成地面。
+            double height = org.ywzj.rvp.client.bridge.RVP_ClientActionsAccess.remoteVehicleTargetHeight(target);
+            if (Double.isFinite(height)) {
+                return altitudeRange.contains((float) height);
+            }
+        }
         int groundY = target.level().getHeight(
                 net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING,
                 Mth.floor(target.getX()), Mth.floor(target.getZ()));

@@ -589,10 +589,12 @@ public final class RVP_RemoteVehicleVisualRenderer {
         private final float yRotO;
         /** 上一帧滚转角。 */
         private final float zRotO;
+        /** 绘制前的完整目标包围盒；本体 remote 的 setPos 会把它重置为一格。 */
+        private final AABB targetBounds;
 
         private ProxyPose(Vec3 position, double xo, double yo, double zo,
                           float xRot, float yRot, float zRot,
-                          float xRotO, float yRotO, float zRotO) {
+                          float xRotO, float yRotO, float zRotO, AABB targetBounds) {
             this.position = position;
             this.xo = xo;
             this.yo = yo;
@@ -603,13 +605,14 @@ public final class RVP_RemoteVehicleVisualRenderer {
             this.xRotO = xRotO;
             this.yRotO = yRotO;
             this.zRotO = zRotO;
+            this.targetBounds = targetBounds;
         }
 
         /** 捕获代理原始状态。 */
         private static ProxyPose capture(AbstractVehicle proxy) {
             return new ProxyPose(proxy.position(), proxy.xo, proxy.yo, proxy.zo,
                     proxy.getXRot(), proxy.getYRot(), proxy.getZRot(),
-                    proxy.xRotO, proxy.yRotO, proxy.zRotO);
+                    proxy.xRotO, proxy.yRotO, proxy.zRotO, proxy.getBoundingBox());
         }
 
         /** 在渲染成功或异常后恢复代理状态，防止污染缓存。 */
@@ -624,6 +627,7 @@ public final class RVP_RemoteVehicleVisualRenderer {
             proxy.xRotO = xRotO;
             proxy.yRotO = yRotO;
             proxy.zRotO = zRotO;
+            proxy.setBoundingBox(targetBounds);
         }
     }
 }

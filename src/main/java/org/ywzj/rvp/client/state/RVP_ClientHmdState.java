@@ -242,7 +242,8 @@ public class RVP_ClientHmdState {
         if (mc.level == null) {
             return null;
         }
-        return mc.level.getEntity(irLockedEntityId);
+        // 调用统一解析器，让红外头瞄锁框跟随当前真实实体或远距代理。
+        return RVP_ClientWeaponTargets.resolve(mc.level, irLockedEntityId);
     }
 
     // [RVP] 2026-10-21：shouldKeepIrLockGrace 删除——超包线保活统一由 tracker 的
@@ -599,7 +600,8 @@ public class RVP_ClientHmdState {
         Entity bestTarget = null;
         double bestScore = Double.MAX_VALUE;
         boolean bestIsVehicle = false;
-        for (Entity entity : mc.level.entitiesForRendering()) {
+        // 调用统一候选入口；光电头瞄也必须能选到仅由远距通道显示的载具。
+        for (Entity entity : RVP_ClientWeaponTargets.entities(mc.level)) {
             if (entity == vehicle || !entity.isAlive() || entity == mc.player
                     || (entity instanceof AbstractVehicle v && v.isDestroyed())
                     // 排除乘员/炮手等坐在载具内的实体：应锁定载具本体而非车内小人（同 IR HMD 口径）。
@@ -668,7 +670,8 @@ public class RVP_ClientHmdState {
             eoLockedEntityId = -1;
             return;
         }
-        Entity target = mc.level == null ? null : mc.level.getEntity(eoLockedEntityId);
+        // 调用统一 ID 解析，让光电锁在跨过客户端视距边界后继续维持。
+        Entity target = mc.level == null ? null : RVP_ClientWeaponTargets.resolve(mc.level, eoLockedEntityId);
         if (target == null || !target.isAlive()) {
             clearEoLock(weaponUnit);
             return;
@@ -906,7 +909,8 @@ public class RVP_ClientHmdState {
         boolean bestIsVehicle = false;
         // O(实体) 遍历已加载实体，替代 ±maxRange（雷达扫描距离可达数千格）立方体 getEntities
         // （客户端 HMD IR 扫描掉帧）；maxRange 距离闸门保留在下方循环内
-        for (Entity entity : mc.level.entitiesForRendering()) {
+        // 调用统一候选入口，真实实体与代理按服务端 ID 去重。
+        for (Entity entity : RVP_ClientWeaponTargets.entities(mc.level)) {
             if (entity == vehicle || !entity.isAlive() || entity == mc.player
                     || (entity instanceof AbstractVehicle v && v.isDestroyed())
                     // 排除乘员/炮手等坐在载具内的实体：导引头应锁定载具本体而非车内小人，
@@ -992,13 +996,18 @@ public class RVP_ClientHmdState {
 
     private Entity resolveTrackedIrTarget(Minecraft mc, WeaponUnit weaponUnit) {
         Entity locked = weaponUnit.getLockedEntity();
-        if (locked != null && locked.isAlive()) {
-            return locked;
+        if (locked != null && mc.level != null) {
+            // 调用统一 ID 解析，旧表示仍存活也不能阻止切回真实实体或接续新代理。
+            Entity current = RVP_ClientWeaponTargets.resolve(mc.level, locked.getId());
+            if (current != null) {
+                return current;
+            }
         }
         if (irCachedLockedEntityId == -1 || mc.level == null) {
             return null;
         }
-        Entity cached = mc.level.getEntity(irCachedLockedEntityId);
+        // 调用同一解析器，不让头瞄缓存绕回仅查询 ClientLevel 的旧路径。
+        Entity cached = RVP_ClientWeaponTargets.resolve(mc.level, irCachedLockedEntityId);
         return cached != null && cached.isAlive() ? cached : null;
     }
 

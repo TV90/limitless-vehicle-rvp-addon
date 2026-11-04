@@ -16,6 +16,13 @@ public final class RVP_GuidanceMath {
         if (entity == null || lockMinHeight == 0) {
             return true;
         }
+        if (entity.level().isClientSide()) {
+            // 调用服务端快照高度，保留正值“至少离地”、负值“至多离地”的原门槛语义。
+            double height = org.ywzj.rvp.client.bridge.RVP_ClientActionsAccess.remoteVehicleTargetHeight(entity);
+            if (Double.isFinite(height)) {
+                return lockMinHeight > 0 ? height >= lockMinHeight : height <= -lockMinHeight;
+            }
+        }
         // 非虚拟目标也可能刚卸载，导引头不能通过兼容高度门重新加载它的区块。
         if (!entity.level().hasChunkAt(entity.blockPosition())) return false;
         int groundY = entity.level().getHeight(

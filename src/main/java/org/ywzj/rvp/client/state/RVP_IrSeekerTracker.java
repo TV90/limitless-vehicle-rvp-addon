@@ -15,7 +15,7 @@ import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
-import org.ywzj.vehicle.vehicle.weapon.seeker.Infrared;
+import net.minecraft.client.multiplayer.ClientLevel;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -95,19 +95,21 @@ public final class RVP_IrSeekerTracker {
         // 候选粘滞：当前候选仍存活且在包线内 → 不重扫（防伺服跟随导致左右横跳）。
         Entity best;
         Entity sticky = st.candidateId == -1 ? null
-                : geo.getVehicle().level().getEntity(st.candidateId);
+                // 调用统一 ID 解析，候选进入远距显示后仍能连续累计驻留时间。
+                : RVP_ClientWeaponTargets.resolve((ClientLevel) geo.getVehicle().level(), st.candidateId);
         if (sticky != null && sticky.isAlive()
                 && RVP_IrLockHelper.isTargetWithinAcquireLimits(geo, sticky, data)) {
             best = sticky;
         } else {
             float acquireHalfAngle = RVP_IrLockHelper.halfAngleFromFull(data.resolveLaunchSeekerFullFov());
-            best = Infrared.findTarget(geo, acquireHalfAngle);
+            // 调用合并真实实体与远距代理的搜索，距离限制以当前武器配置为准。
+            best = RVP_ClientWeaponTargets.findInfraredTarget(geo, acquireHalfAngle);
             if (best != null && !RVP_IrLockHelper.isTargetWithinAcquireLimits(geo, best, data)) {
                 best = null;
             }
             // [RVP] 2026-11-01 轮廓伺服：中心点出锥但机体轮廓仍在锥内的目标，放宽搜索锥后按轮廓口径复核
             if (best == null) {
-                Entity outlineBest = Infrared.findTarget(geo,
+                Entity outlineBest = RVP_ClientWeaponTargets.findInfraredTarget(geo,
                         acquireHalfAngle + RVP_IrLockHelper.ACQUIRE_OUTLINE_SEARCH_MARGIN_DEG);
                 if (outlineBest != null
                         && RVP_IrLockHelper.isTargetWithinAcquireLimits(geo, outlineBest, data)) {
@@ -262,10 +264,16 @@ public final class RVP_IrSeekerTracker {
             if (st.armedId == -1) {
                 continue;
             }
-            Entity target = root.getVehicle().level().getEntity(st.armedId);
+            // 调用统一 ID 解析；不因客户端视距缩小而把有效代理误判成“目标消失”。
+            Entity target = RVP_ClientWeaponTargets.resolve((ClientLevel) root.getVehicle().level(), st.armedId);
             if (target == null || !target.isAlive()) {
                 unarm(root, st, "target-gone");
                 continue;
+            }
+            Entity stationLock = root.getLockedEntity();
+            if (stationLock != null && stationLock.getId() == st.armedId && stationLock != target) {
+                // 调用本体同步入口只替换表示对象，armed ID 与驻留累计保持不变。
+                root.setLockedEntity(target);
             }
             RVP_WeaponBase rvpWeapon = resolveRvpWeapon(root, entry.getKey());
             if (rvpWeapon == null) {
@@ -341,7 +349,8 @@ public final class RVP_IrSeekerTracker {
                 > RVP_GuidanceDataIR.resolveDwellGraceTick(rvpWeapon.getData().getGuidanceData())) {
             return null;
         }
-        Entity candidate = root.getVehicle().level().getEntity(st.candidateId);
+        // 调用候选/保活共用的解析器，HUD 也能显示远距截获进度。
+        Entity candidate = RVP_ClientWeaponTargets.resolve((ClientLevel) root.getVehicle().level(), st.candidateId);
         return candidate != null && candidate.isAlive() ? candidate : null;
     }
 

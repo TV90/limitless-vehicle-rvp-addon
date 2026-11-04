@@ -24,6 +24,37 @@ import net.minecraft.client.particle.Particle;
 public final class RVP_ClientActions implements RVP_IClientActions {
 
     @Override
+    public net.minecraft.world.entity.Entity findInfraredTarget(
+            org.ywzj.vehicle.vehicle.part.WeaponUnit station, float halfAngle) {
+        // 调用含真实实体与远距代理的统一红外搜索。
+        return org.ywzj.rvp.client.state.RVP_ClientWeaponTargets.findInfraredTarget(station, halfAngle);
+    }
+
+    @Override
+    public boolean tryManualRemoteVehicleLock(org.ywzj.vehicle.vehicle.part.WeaponUnit station) {
+        // 调用远距光电补充选取，保留本体已有 R 键解除锁定语义。
+        return org.ywzj.rvp.client.state.RVP_ClientWeaponTargets.tryManualRemoteLock(station);
+    }
+
+    @Override
+    public void refreshWeaponTarget(org.ywzj.vehicle.vehicle.part.WeaponUnit station) {
+        // 调用按实体 ID 的表示交接，不重新开始导引头驻留计时。
+        org.ywzj.rvp.client.state.RVP_ClientWeaponTargets.refreshStationLock(station);
+    }
+
+    @Override
+    public boolean isRemoteVehicleTargetProxy(net.minecraft.world.entity.Entity target) {
+        // 调用远距状态表严格确认代理身份。
+        return org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteVehicleVisualState.isTargetProxy(target);
+    }
+
+    @Override
+    public double remoteVehicleTargetHeight(net.minecraft.world.entity.Entity target) {
+        // 调用已通过维度、有效期与对象身份检查的服务端离地高度。
+        return org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteVehicleVisualState.targetHeightAboveGround(target);
+    }
+
+    @Override
     public void onFocusLockChanged(org.ywzj.vehicle.vehicle.part.WeaponUnit station) {
         // 调用焦点服务，在本体 R 键分流完成后重查带命中语义的视线。
         RVP_ClientFocusLock.onFocusLockChanged(station);

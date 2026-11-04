@@ -27,6 +27,13 @@ public enum RVP_IrHudProfile {
         if (altitudeRange == null || target == null || target.level() == null) {
             return resolve(altitudeRange);
         }
+        if (target.level().isClientSide()) {
+            // 调用与红外高度门同源的服务端快照，避免远处地面载具在 HUD 被误画为空中目标。
+            double height = org.ywzj.rvp.client.bridge.RVP_ClientActionsAccess.remoteVehicleTargetHeight(target);
+            if (Double.isFinite(height)) {
+                return height <= 25.0D ? GROUND : AIR;
+            }
+        }
         int groundY = target.level().getHeight(
                 Heightmap.Types.MOTION_BLOCKING,
                 Mth.floor(target.getX()),

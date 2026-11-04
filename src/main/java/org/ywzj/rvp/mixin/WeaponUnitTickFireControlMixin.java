@@ -50,6 +50,8 @@ public abstract class WeaponUnitTickFireControlMixin {
     @Inject(method = "tickFireControl", at = @At("TAIL"), remap = false)
     private void rvp$onTickFireControl(CallbackInfo ci) {
         WeaponUnit self = (WeaponUnit) (Object) this;
+        // 调用双端安全桥接续同 ID 的近远对象；复用既有 TAIL，不增加注入点。
+        org.ywzj.rvp.client.bridge.RVP_ClientActionsAccess.refreshWeaponTarget(self);
         Optional<AbstractVehicleWeapon<?>> weaponOpt = self.getCurrentWeapon();
         if (self.getFireControlSensorType() == WeaponUnitData.FireControlSensorType.RF) {
             RVP_RadarRoleHelper.tickPendingRadarLock(self);

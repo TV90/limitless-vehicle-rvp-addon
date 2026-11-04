@@ -36,7 +36,9 @@ public final class RVP_NamedVehicleObbs {
     /** 全部受击骨参与最近判定，未配置弱点的车体同样可挡住后面的弱点；不扫描纯物理主包围盒。 */
     public static List<Box> collect(AbstractVehicle vehicle) {
         BedrockModel model = model(vehicle);
-        if (model == null || vehicle.remote) return List.of();
+        // 调用安全桥；RVP 显示代理有完整结构与实时姿态，本体雷达克隆仍禁止解析受击骨。
+        if (model == null || vehicle.remote
+                && !org.ywzj.rvp.client.bridge.RVP_ClientActionsAccess.isRemoteVehicleTargetProxy(vehicle)) return List.of();
         List<Box> result = new ArrayList<>();
         for (String name : new TreeSet<>(model.getBoneMap().keySet())) {
             result.addAll(resolveBone(vehicle, model, name));
@@ -47,7 +49,9 @@ public final class RVP_NamedVehicleObbs {
     /** 已选定的键只解析单个骨，不逐 tick 重扫整车；炮塔/炮管转动后仍追踪同一块。 */
     @Nullable
     public static Box resolve(AbstractVehicle vehicle, @Nullable Key key) {
-        if (key == null || key.index < 0 || key.index > 4096 || vehicle.remote) return null;
+        // 调用与选点相同的代理资格检查，近远交接后仍可按稳定骨键接续电视锁点。
+        if (key == null || key.index < 0 || key.index > 4096 || vehicle.remote
+                && !org.ywzj.rvp.client.bridge.RVP_ClientActionsAccess.isRemoteVehicleTargetProxy(vehicle)) return null;
         BedrockModel model = model(vehicle);
         if (model == null) return null;
         List<Box> boxes = resolveBone(vehicle, model, key.bone);

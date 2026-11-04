@@ -8,6 +8,7 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.client.render.RVP_LodModelManager;
 import org.ywzj.rvp.config.RVP_ClientConfig;
 import org.ywzj.rvp.config.RVP_CommonConfig.RemoteVehicleBillboardSource;
@@ -26,6 +27,7 @@ import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.RotatableUnit;
 import org.ywzj.vehicle.vehicle.part.SwitchableUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponBayUnit;
+import org.ywzj.vehicle.vehicle.structure.OBB;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -153,6 +155,79 @@ public final class RVP_ClientRemoteVehicleVisualState {
                     interpolated.rotatableParts));
         }
         return List.copyOf(result);
+    }
+
+    /** 提供服务端仍授权的锁定候选；代理保持不入世，不运行载具 Tick。 */
+    public static List<AbstractVehicle> targetEntities(ClientLevel level) {
+        if (!level.dimension().location().equals(dimension)) {
+            return List.of();
+        }
+        List<AbstractVehicle> targets = new ArrayList<>();
+        for (ProxyState state : PROXIES.values()) {
+            // 调用同一有效期门与姿态更新，搜索和按 ID 保锁不能使用不同的代理状态。
+            if (isUsableTarget(state, level)) {
+                prepareTargetPose(state, level);
+                targets.add(state.proxy);
+            }
+        }
+        return targets;
+    }
+
+    /** 按原服务端实体 ID 解析远距目标；完整快照撤权、损毁或超时后立即不可锁。 */
+    @Nullable
+    public static AbstractVehicle resolveTarget(ClientLevel level, int entityId) {
+        ProxyState state = PROXIES.get(entityId);
+        // 调用候选共用的有效性判断，禁止旧引用绕过服务端授权与维度隔离。
+        if (!isUsableTarget(state, level)) {
+            return null;
+        }
+        prepareTargetPose(state, level);
+        return state.proxy;
+    }
+
+    /** 判断对象是否为本系统当前有效代理；本体雷达广播克隆没有完整几何，不能混用。 */
+    public static boolean isTargetProxy(Entity entity) {
+        ProxyState state = PROXIES.get(entity.getId());
+        return entity.level() instanceof ClientLevel level && isUsableTarget(state, level)
+                && state.proxy == entity;
+    }
+
+    /** 读取服务器已提供的离地高度；没有对应有效快照时返回 NaN，让调用方使用本地地形。 */
+    public static double targetHeightAboveGround(Entity entity) {
+        ProxyState state = PROXIES.get(entity.getId());
+        if (!(entity.level() instanceof ClientLevel level) || !isUsableTarget(state, level)
+                || state.proxy != entity && level.getEntity(entity.getId()) != entity) {
+            return Double.NaN;
+        }
+        return state.latest.heightAboveGround;
+    }
+
+    /** 目标资格只依赖服务端快照，不能受本帧绘制预算、Billboard 预热或视锥剔除影响。 */
+    private static boolean isUsableTarget(@Nullable ProxyState state, ClientLevel level) {
+        return state != null && level.dimension().location().equals(dimension)
+                && state.proxy.level() == level && !state.latest.destroyed && state.proxy.isAlive()
+                && !isExpired(state.lastUpdateClientTick, level.getGameTime());
+    }
+
+    /** 使用绘制的同一时间线更新只读目标几何；不执行物理、声音或武器逻辑。 */
+    private static void prepareTargetPose(ProxyState state, ClientLevel level) {
+        // 调用已有插值器，避免目标仍停在创建位置或比远距画面提前一份快照。
+        InterpolatedSample pose = state.interpolate(level.getGameTime(),
+                Math.min(5.0D, RVP_ClientConfig.getRemoteVehicleMaxExtrapolationTicks()));
+        applyPartRotations(state.proxy, pose.rotatableParts);
+        for (var part : state.proxy.getPartUnits()) {
+            if (part instanceof RotatableUnit<?> rotatable) {
+                // 调用纯结构旋转更新；只写代理的内存姿态，不运行部件 Tick 或修改模型资产。
+                rotatable.updateRot();
+            }
+        }
+        applyPose(state.proxy, pose.position, pose.xRot, pose.yRot, pose.zRot);
+        // 调用本体公开几何更新；remote 的默认包围盒只有一格，需显式建立整车受击轮廓。
+        state.proxy.updateOBBs();
+        List<OBB> boxes = state.proxy.getOBBs();
+        if (!boxes.isEmpty()) {
+            state.proxy.setBoundingBox(OBB.toAABB(boxes));
+        }
     }
 
     /** 清除世界退出、维度切换或资源重载后遗留的全部代理与序号。 */
