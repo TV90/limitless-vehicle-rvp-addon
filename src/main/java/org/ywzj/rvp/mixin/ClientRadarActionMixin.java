@@ -39,7 +39,9 @@ public class ClientRadarActionMixin {
                 return;
             }
             Level level = player.level();
-            Entity target = message.toEntityId < 0 ? null : level.getEntity(message.toEntityId);
+            // 调用统一目标查询，沿用既有注入点，使 DETECT/LOCK 同时识别虚拟记录。
+            Entity target = message.toEntityId < 0 ? null
+                    : org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.resolve(level, message.toEntityId);
             if (message.action == ClientRadarAction.Action.DETECT) {
                 // 调用本体兼容的探测写入，仅额外拒绝自身，防旧客户端重新污染服务端表。
                 RVP_RadarSelfFilter.detectNonSelf(weaponUnit, target);

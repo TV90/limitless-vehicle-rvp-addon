@@ -165,7 +165,8 @@ public final class GunnerExternalRadarController {
                 || launcher.level().getGameTime() - contact.gameTick() > SEARCH_CONTACT_FRESH_TICKS) {
             return null;
         }
-        Entity entity = launcher.level().getEntity(contact.targetEntityId());
+        // 调用统一目标查询，搜索中继指示也可以指向虚拟中段记录。
+        Entity entity = org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.resolve(launcher.level(), contact.targetEntityId());
         return entity != null && entity.isAlive() ? entity : null;
     }
 

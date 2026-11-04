@@ -29,12 +29,8 @@ public final class RVP_EntityTrajectoryIntegrator {
     /** 推进一个飞行刻；武器热重载替换配置对象时，先用完整快照重建计算对象。 */
     public static RVP_VirtualTrajectoryResult step(Level level, RVP_VirtualMissileState state,
             RVP_WeaponData data, @Nullable AbstractVehicle vehicle, @Nullable LivingEntity owner) {
-        RVP_MissileEntity missile = state.trajectoryEntity;
-        if (missile == null || missile.getRvpData() != data) {
-            // 调用同一个恢复入口，停服重启和配置热重载都不能丢失点火参考点、角速度或风向。
-            missile = createEntity(level, state, data, vehicle, owner);
-            state.trajectoryEntity = missile;
-        }
+        // 调用共用计算对象入口，雷达查询和运动推进始终持有同一枚虚拟目标。
+        RVP_MissileEntity missile = getOrCreateEntity(level, state, data, vehicle, owner);
         Vec3 before = state.trajectory().velocity();
         // 调用无散布目标写入入口，使 GPS 雷达上行更新与实体态一样从下一刻正式制导开始生效。
         missile.setGuidanceTargetPos(state.snapshot.targetPosition());
@@ -50,6 +46,28 @@ public final class RVP_EntityTrajectoryIntegrator {
         return new RVP_VirtualTrajectoryResult(state.trajectory(), turn, !state.isStructurallyValid());
     }
 
+    /** 取得不入世的计算/目标对象；重建时保留会话 ID，并迁移现有接触与锁定。 */
+    public static RVP_MissileEntity getOrCreateEntity(Level level, RVP_VirtualMissileState state,
+            RVP_WeaponData data, @Nullable AbstractVehicle vehicle, @Nullable LivingEntity owner) {
+        RVP_MissileEntity previous = state.trajectoryEntity;
+        if (previous == null || previous.getRvpData() != data || state.trajectoryEntityInvalidated) {
+            // 调用完整恢复入口，配置重载和显式改轨迹均从权威记录重建。
+            RVP_MissileEntity missile = createEntity(level, state, data, vehicle, owner);
+            state.targetEntityId = missile.getId();
+            missile.setVirtualMidcourseTarget(true);
+            state.trajectoryEntity = missile;
+            if (previous != null) {
+                // 调用目标交接入口，已发射拦截弹和雷达不能继续追旧计算对象。
+                RVP_VirtualMissileTargets.replaceReferences(level, previous, missile);
+                previous.setRemoved(net.minecraft.world.entity.Entity.RemovalReason.DISCARDED);
+            }
+            state.trajectoryEntityInvalidated = false;
+        }
+        // 调用来源刷新入口，读档时尚未加载的发射车/射手重新出现后，雷达与拦截恢复正确敌我判断。
+        state.trajectoryEntity.refreshVirtualMidcourseSources(vehicle, owner);
+        return state.trajectoryEntity;
+    }
+
     /**
      * 用完整运动快照重建 RVP 类型化导弹；调用者决定是否加入世界。
      * 虚拟计算与末段真实恢复共用此入口，恢复时绝不能额外按速度改写机头或重新冻结 PRESET。
@@ -63,10 +81,19 @@ public final class RVP_EntityTrajectoryIntegrator {
         missile.initFromWeapon(data, RVP_EnumWeaponKind.MISSILE, vehicle, owner,
                 trajectory.position(), aim, trajectory.velocity());
         missile.setUUID(state.flightUuid);
+        if (state.targetEntityId != null) missile.setId(state.targetEntityId);
         missile.restoreFromVirtualMidcourseSnapshot(state.snapshot, state.launchPosition);
         // 调用实体运动记忆恢复入口，保留当前速率基准、顶点历史、冷发射时序和实际点火参考点。
         missile.restoreVirtualMidcourseKinematics(state.kinematics, state.coldLaunchTimeTick);
         missile.radarUplinkTargeting = state.radarUplinkTargeting;
+        // 初始化原版上一刻坐标，避免不入世对象以世界原点作历史位置，被本体命中修正远移受击盒。
+        missile.setOldPosAndRot();
+        if (state.trajectoryEntity != null && !state.trajectoryEntityInvalidated) {
+            // 本体按 xOld 位移修正直击盒；配置重载和真实恢复都沿用当前计算对象的位移历史。
+            missile.xOld = state.trajectoryEntity.xOld;
+            missile.yOld = state.trajectoryEntity.yOld;
+            missile.zOld = state.trajectoryEntity.zOld;
+        }
         return missile;
     }
 }

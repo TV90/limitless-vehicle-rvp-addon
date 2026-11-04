@@ -66,6 +66,9 @@ public final class RVP_VirtualMissileSavedData extends SavedData {
     public Collection<RVP_VirtualMissileState> states() { return states.values(); }
     /** @return 当前维度是否已占用指定飞行 UUID。 */
     public boolean contains(UUID uuid) { return states.containsKey(uuid); }
+    /** 按稳定 UUID 查询单条权威记录；仅用于目标身份核对，不触发实体恢复。 */
+    @org.jetbrains.annotations.Nullable
+    public RVP_VirtualMissileState get(UUID uuid) { return states.get(uuid); }
     /**
      * 以 UUID 原子注册记录并标脏。
      *
@@ -78,7 +81,14 @@ public final class RVP_VirtualMissileSavedData extends SavedData {
     }
     /** 删除指定 UUID 记录；只有实际删除时才标脏。 */
     public void remove(UUID uuid) {
-        if (states.remove(uuid) != null) setDirty();
+        RVP_VirtualMissileState removed = states.remove(uuid);
+        if (removed == null) return;
+        if (removed.trajectoryEntity != null) {
+            // 直接标记失效，避免普通 remove 回调再次删除记录或释放同 ID 恢复实体的路径票据。
+            removed.trajectoryEntity.setRemoved(net.minecraft.world.entity.Entity.RemovalReason.DISCARDED);
+            removed.trajectoryEntity = null;
+        }
+        setDirty();
     }
     /** @return 当前维度的虚拟导弹数量。 */
     public int size() { return states.size(); }

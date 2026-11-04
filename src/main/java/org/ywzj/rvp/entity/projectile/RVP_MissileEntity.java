@@ -565,7 +565,8 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         if (activeSeekerDesignatedTargetId == Integer.MIN_VALUE) {
             return null;
         }
-        Entity entity = level().getEntity(activeSeekerDesignatedTargetId);
+        // 调用统一查询，转虚拟后保持主动导引头指定目标的同一会话 ID。
+        Entity entity = org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.resolve(level(), activeSeekerDesignatedTargetId);
         if (entity == null || !entity.isAlive()) {
             return null;
         }

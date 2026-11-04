@@ -117,7 +117,10 @@ public final class GunnerWeaponSuitability {
             }
         }
         // GPS 制导只打离地 ≤5m 的贴地/地面目标（远程点打击，不打升高/悬浮目标）
-        if (data.isGpsMissile() && altitudeAgl(target) > GPS_MAX_TARGET_AGL) {
+        // 调用虚拟目标开关，关闭地形查询时不使用占位高度进行武器高度门判定。
+        if (data.isGpsMissile()
+                && !org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.ignoresTerrainHeight(target)
+                && altitudeAgl(target) > GPS_MAX_TARGET_AGL) {
             return false;
         }
         if ((data.isHomingProjectile() || data.usesGuidanceType(RVP_EnumGuidanceType.AIR))
@@ -191,7 +194,9 @@ public final class GunnerWeaponSuitability {
         if (!contains(launch.targetDistanceRange(), distance)) {
             return false;
         }
-        if (!contains(launch.altitudeRange(), altitudeAgl(target))) {
+        // 调用统一开关，虚拟目标暂时忽略发射包络的离地高度约束。
+        if (!org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.ignoresTerrainHeight(target)
+                && !contains(launch.altitudeRange(), altitudeAgl(target))) {
             return false;
         }
         return passesTargetMotionAngleGate(launch.angleGate(), distance, origin, target);
@@ -219,7 +224,9 @@ public final class GunnerWeaponSuitability {
         if (!contains(distanceRange, distance)) {
             return false;
         }
-        if (!contains(altitudeRange, altitude)) {
+        // 调用统一开关，指令/GPS 等武器的可达性检查同样不查询虚拟目标地面高度。
+        if (!org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.ignoresTerrainHeight(target)
+                && !contains(altitudeRange, altitude)) {
             return false;
         }
         return passesTargetMotionAngleGate(angleGate, distance, origin, target);
@@ -515,14 +522,15 @@ public final class GunnerWeaponSuitability {
     }
 
     private static double altitudeAgl(Entity target) {
-        int groundY = target.level().getHeight(
-                Heightmap.Types.MOTION_BLOCKING,
-                Mth.floor(target.getX()),
-                Mth.floor(target.getZ()));
+        // 调用统一地面高度查询，虚拟来袭弹的武器适用性判断不能强制加载远方区块。
+        int groundY = org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.groundHeight(
+                target, Heightmap.Types.MOTION_BLOCKING);
         return target.getY() - groundY;
     }
 
     private static boolean isAirTarget(Entity target) {
+        // 调用虚拟目标开关；虚拟中段弹直接按空中弹药识别，不用占位高度推断空地分类。
+        if (org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.ignoresTerrainHeight(target)) return true;
         // 目的：固定翼/旋翼载具恒为空中目标（2026-09-16 修复）——低空掠飞（AGL≤25）的
         // 飞机/直升机是合法对空目标；原 AGL>25 启发式会把"仅对空弹"（如 9M317MA，
         // 无 lock_altitude_range 默认判仅对空）对低空固定翼全部拒选，导致 gunner 索敌

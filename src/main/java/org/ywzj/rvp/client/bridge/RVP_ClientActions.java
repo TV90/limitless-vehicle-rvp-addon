@@ -21,6 +21,18 @@ import net.minecraft.client.particle.Particle;
 public final class RVP_ClientActions implements RVP_IClientActions {
 
     @Override
+    public void acceptVirtualMissileTargets(org.ywzj.rvp.network.S2CVirtualMissileTargets message) {
+        // 调用客户端目标缓存，建立不加入 ClientLevel 的类型化导弹表示。
+        org.ywzj.rvp.client.state.RVP_ClientVirtualMissileState.accept(message);
+    }
+
+    @Override
+    public net.minecraft.world.entity.Entity resolveRemoteRadarTarget(int entityId) {
+        // 调用现有本地/远程目标查找，使外置雷达锁定与虚拟目标使用同一套客户端身份。
+        return org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper.resolveClientEntity(entityId);
+    }
+
+    @Override
     public void acceptVehicleSound(org.ywzj.rvp.network.S2CVehicleSound message) {
         // 调用本项目兜底声音播放器，未加载载具实体时也能按世界坐标播放。
         org.ywzj.rvp.client.RVP_ClientVehicleSound.accept(message);

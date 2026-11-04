@@ -27,6 +27,7 @@ public final class RVP_GuidanceTargetUtil {
 
     public static boolean isRadarScannableTarget(@Nullable Entity entity) {
         return entity instanceof AbstractVehicle && entity.isAlive()
+                || entity instanceof RVP_BaseBullet bullet && bullet.isAlive() && bullet.isRadarDetectableAmmo()
                 || RVP_RadarContactHelper.isHbmMissile(entity);
     }
 

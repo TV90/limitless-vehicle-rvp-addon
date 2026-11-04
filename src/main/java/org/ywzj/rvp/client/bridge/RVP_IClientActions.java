@@ -7,6 +7,13 @@ import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 /** 公共弹体可安全调用的客户端动作接口；服务端实现不引用任何纯客户端类型。 */
 public interface RVP_IClientActions {
 
+    /** 接收虚拟弹体目标完整集合；专用服务端为空操作。 */
+    void acceptVirtualMissileTargets(org.ywzj.rvp.network.S2CVirtualMissileTargets message);
+
+    /** 解析客户端远程雷达对象；专用服务端返回 null。 */
+    @org.jetbrains.annotations.Nullable
+    net.minecraft.world.entity.Entity resolveRemoteRadarTarget(int entityId);
+
     /** 接收未追踪载具的导弹发射声兜底消息；专用服务端实现为空操作。 */
     void acceptVehicleSound(org.ywzj.rvp.network.S2CVehicleSound message);
 

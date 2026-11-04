@@ -83,7 +83,8 @@ public final class RVP_ClientRadarTickHandler {
     @SubscribeEvent
     public static void onEntityLeaveLevel(EntityLeaveLevelEvent event) {
         if (event.getLevel().isClientSide()
-                && event.getEntity().getRemovalReason() == Entity.RemovalReason.UNLOADED_TO_CHUNK) {
+                && (event.getEntity().getRemovalReason() == Entity.RemovalReason.UNLOADED_TO_CHUNK
+                || org.ywzj.rvp.client.state.RVP_ClientVirtualMissileState.target(event.getEntity().getId()) != null)) {
             // 调用本项目统一交接入口，仅迁移仍有新鲜广播样本的已有接触与硬锁。
             reconcilePlayerRadarTargets();
         }
@@ -262,6 +263,9 @@ public final class RVP_ClientRadarTickHandler {
             int entityId,
             net.minecraft.client.multiplayer.ClientLevel clientLevel
     ) {
+        // 调用虚拟快照查询，转换期间即使旧真实对象尚存活也优先使用权威虚拟表示。
+        Entity virtual = org.ywzj.rvp.client.state.RVP_ClientVirtualMissileState.target(entityId);
+        if (virtual != null) return virtual;
         // 调用原版客户端世界按 ID 取实体，优先使用仍受原生网络跟踪的对象。
         Entity localEntity = clientLevel.getEntity(entityId);
         LocalVehiclePlayer.ServerEntity serverEntity = LocalVehiclePlayer.instance.serverEntities.get(entityId);
@@ -527,7 +531,9 @@ public final class RVP_ClientRadarTickHandler {
         List<Entity> merged = new ArrayList<>();
         java.util.Set<Integer> ids = new java.util.HashSet<>();
         for (Entity entity : clientLevel.entitiesForRendering()) {
-            merged.add(entity);
+            // 调用虚拟目标查询，避免真实对象移除包到达前按同 ID 去重漏掉新表示。
+            Entity virtual = org.ywzj.rvp.client.state.RVP_ClientVirtualMissileState.target(entity.getId());
+            merged.add(virtual == null ? entity : virtual);
             ids.add(entity.getId());
             // 保留广播待命对象；下方按 ID 去重和样本年龄过滤，既不重复扫描，
             // 也不因本帧刚锁定或下一帧卸载而必须等待下一次服务端广播。

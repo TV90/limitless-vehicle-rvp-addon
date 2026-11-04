@@ -665,14 +665,13 @@ public final class GunnerTargeting {
             if (gunner.isCiwsTargetOnCooldown(entity)) {
                 return false;
             }
-            double ammoAgl = observations == null
-                    ? entity.getY() - entity.level().getHeight(
-                            net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING,
-                            net.minecraft.util.Mth.floor(entity.getX()),
-                            net.minecraft.util.Mth.floor(entity.getZ()))
-                    : observations.agl(entity);
-            if (ammoAgl < minAgl) {
-                return false;
+            // 调用虚拟目标地形开关，近程防御索敌关闭查询时不按离地高度剔除虚拟来袭弹。
+            if (!org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.ignoresTerrainHeight(entity)) {
+                double ammoAgl = observations == null
+                        ? entity.getY() - org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.groundHeight(
+                                entity, net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING)
+                        : observations.agl(entity);
+                if (ammoAgl < minAgl) return false;
             }
             // 调用项目组网限位入口，在生成候选时完成硬禁筛选，避免修改阶段 E 返回的只读观察结果。
             return !RVP_GunnerEngagementNet.isHardLockedFor(
@@ -712,7 +711,8 @@ public final class GunnerTargeting {
             return result;
         }
         AABB box = vehicle.getBoundingBox().inflate(radius);
-        for (Entity entity : serverLevel.getEntities().getAll()) {
+        // 调用真实/虚拟目标源，无共享观察对象的兼容入口也能发现虚拟来袭弹。
+        for (Entity entity : org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.allEntities(serverLevel)) {
             if (entity == vehicle || !entity.isAlive() || !entity.getBoundingBox().intersects(box)) {
                 continue;
             }

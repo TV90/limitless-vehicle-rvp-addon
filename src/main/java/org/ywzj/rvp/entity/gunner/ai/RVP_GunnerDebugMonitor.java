@@ -274,16 +274,17 @@ public final class RVP_GunnerDebugMonitor {
                             }
                             // altitude envelope
                             RVP_Range<Float> aRange = launch.altitudeRange();
-                            double tgtAgl = target.getY() - target.level().getHeight(
-                                    net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING,
-                                    Mth.floor(target.getX()), Mth.floor(target.getZ()));
+                            // 调用统一高度入口，调试输出也不得重新触发已关闭的虚拟目标地形查询。
+                            double tgtAgl = target.getY() - org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.groundHeight(
+                                    target, net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING);
                             if (aRange != null && !aRange.intervals().isEmpty()) {
                                 var first = aRange.intervals().get(0);
                                 var last  = aRange.intervals().get(aRange.intervals().size() - 1);
                                 Object aLo = first.lower() != null ? String.format("%.0f", (float)first.lower()) : "0";
                                 Object aHi = last.upper()  != null ? String.format("%.0f", (float)last.upper()) : "inf";
                                 sb.append(" aEnv=").append(aLo).append("-").append(aHi);
-                                sb.append(" aOk=").append(aRange.contains((float)tgtAgl));
+                                sb.append(" aOk=").append(org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.ignoresTerrainHeight(target)
+                                        ? "IGNORED" : Boolean.toString(aRange.contains((float)tgtAgl)));
                             }
                             // lock angle: axis to target vs maxLockHalfAngle
                             Vec3 axis = weaponUnit.worldVec();

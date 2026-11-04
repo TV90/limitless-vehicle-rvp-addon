@@ -218,6 +218,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     private Vec3 virtualMidcourseLaunchPosition = Vec3.ZERO;
     /** 专用转换移除标志，使 remove/debug/HITL 清理可区分普通 discard。 */
     private boolean virtualizingMidcourse;
+    /** 仅目标适配器置位：本对象代表一条虚拟飞行记录，不是世界中的真实弹体。 */
+    private boolean virtualMidcourseTarget;
+    /** 客户端虚拟目标采用服务端同步的地面高度；真实弹和服务端对象不设置此值。 */
+    @Nullable private Integer virtualMidcourseGroundHeight;
     private boolean virtualEligibilityRejectionLogged;
     /** Snapshot of {@code collision_data.damage_decay} at spawn (decoupled from shared weapon index data). */
     private List<RVP_DamageDecayRuleData> damageDecayRules = List.of();
@@ -2345,9 +2349,44 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
 
     @Override
     public void remove(Entity.RemovalReason reason) {
+        if (virtualMidcourseTarget) {
+            // 调用权威记录删除入口；直击、近炸和 APS 的既有引爆链最终都会到达这里。
+            org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileManager.removeTarget(this);
+        }
         RVP_ChunkPathLoadManager.releaseEntity(this);
         RVP_ProjectileLifecycleDebug.noteRemoved(this, reason);
         super.remove(reason);
+    }
+
+    /** 标记不入世的虚拟目标；真实恢复对象使用默认 false。 */
+    public final void setVirtualMidcourseTarget(boolean virtualTarget) {
+        virtualMidcourseTarget = virtualTarget;
+    }
+
+    /** 雷达高度查询与移除链据此识别虚拟记录，禁止按武器名称分支。 */
+    public final boolean isVirtualMidcourseTarget() {
+        return virtualMidcourseTarget;
+    }
+
+    /** 写入服务端采用的地面高度，避免客户端缺失区块时算错雷达高度门。 */
+    public final void setVirtualMidcourseGroundHeight(@Nullable Integer groundHeight) {
+        virtualMidcourseGroundHeight = groundHeight;
+    }
+
+    /** 返回仅供虚拟目标扫描使用的地面高度快照，单位格。 */
+    @Nullable
+    public final Integer getVirtualMidcourseGroundHeight() { return virtualMidcourseGroundHeight; }
+
+    /** 发射来源重新加载后补回引用；暂时查不到时保留旧引用，与真实在途弹的敌我口径一致。 */
+    public final void refreshVirtualMidcourseSources(@Nullable AbstractVehicle sourceVehicle,
+                                                     @Nullable LivingEntity sourceOwner) {
+        if (!virtualMidcourseTarget) return;
+        if (sourceVehicle != null) {
+            shooterVehicle = sourceVehicle;
+            vehicle = sourceVehicle;
+        }
+        // 调用原版弹射物所有者入口，保持所有者 UUID 与缓存引用一起更新。
+        if (sourceOwner != null) setOwner(sourceOwner);
     }
 
     /**
@@ -3074,7 +3113,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 && !isProximityDamageImmune(e)
                 && !isAmmoIgnoredByProximityFuse(e) // 机枪弹丸不触发近炸（精确按弹种过滤）
                 && (!fuse.isProximityFuseRequireRadarLock() || isRadarIlluminatedTarget(e));
-        for (Entity entity : org.ywzj.rvp.util.RVP_ServerVehicleIndex.mergeWithVehicleIndex(level(),
+        for (Entity entity : org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.mergeWithVehicleIndex(level(),
                 detectionBox, level().getEntities(this, detectionBox, proximityFilter), proximityFilter)) {
             // 近炸(探测盒)起爆时的干扰状态诊断（开关：/rvpdebug flags fuse）
             if (RVP_DebugFlags.FUSE.isEnabled()) {
@@ -3103,7 +3142,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             AABB ammoDetectionBox = getBoundingBox().inflate(ammoRadius).move(ammoBackward);
             java.util.function.Predicate<Entity> ammoProximityFilter =
                     proximityFilter.and(this::isProximityInterceptableAmmoTarget);
-            for (Entity entity : org.ywzj.rvp.util.RVP_ServerVehicleIndex.mergeWithVehicleIndex(level(),
+            for (Entity entity : org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.mergeWithVehicleIndex(level(),
                     ammoDetectionBox, level().getEntities(this, ammoDetectionBox, ammoProximityFilter), ammoProximityFilter)) {
                 RVP_ProjectileLifecycleDebug.noteEvent(this,
                         RVP_ProjectileLifecycleDebug.Event.FUSE,
@@ -3185,7 +3224,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         double cosLimit = Math.cos(Math.toRadians(fov));
         Vec3 down = new Vec3(0, -1, 0);
         // [RVP] §48：巨型载具分节盲区补筛（同 findEntityOnPathForSegment）
-        for (Entity entity : org.ywzj.rvp.util.RVP_ServerVehicleIndex.mergeWithVehicleIndex(level(),
+        for (Entity entity : org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.mergeWithVehicleIndex(level(),
                 detectionBox, level().getEntities(this, detectionBox, this::isTopAttackTarget),
                 this::isTopAttackTarget)) {
             // 精筛：目标包围盒中心点须位于导弹正下方的锥形内
@@ -3367,7 +3406,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         // 来源 2：外置雷达锁（外置雷达控制器 / AI 炮手写入）
         int extId = RVP_WeaponLockStateTable.getExternalRadarLockedEntityId(root);
         if (extId != Integer.MIN_VALUE) {
-            Entity ext = level().getEntity(extId);
+            // 调用统一目标查询，使外部雷达照射校验识别虚拟来袭弹。
+            Entity ext = org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.resolve(level(), extId);
             if (ext != null && ext.isAlive()
                     && rootTarget == ywzj_rvp$resolveCollisionRoot(ext)) {
                 return true;
@@ -3583,7 +3623,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             java.util.function.Predicate<Entity> candidateFilter =
                     entity -> entity != null && !entity.isSpectator()
                             && (entity.isPickable() || isInterceptableEnemyAmmo(entity));
-            List<Entity> entities = org.ywzj.rvp.util.RVP_ServerVehicleIndex.mergeWithVehicleIndex(
+            List<Entity> entities = org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.mergeWithVehicleIndex(
                     level(), queryBox,
                     level().getEntities(this, queryBox, candidateFilter),
                     candidateFilter
@@ -3677,7 +3717,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 && !isAmmoIgnoredByProximityFuse(entity) // 机枪弹丸不触发近炸（精确按弹种过滤）
                 && (!rvpData.getFuseData().isProximityFuseRequireRadarLock()
                     || isRadarIlluminatedTarget(entity));
-        List<Entity> nearbyEntities = org.ywzj.rvp.util.RVP_ServerVehicleIndex.mergeWithVehicleIndex(level(),
+        List<Entity> nearbyEntities = org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.mergeWithVehicleIndex(level(),
                 detectionBox, level().getEntities(this, detectionBox, proximityFilter), proximityFilter);
         Entity closest = null;
         double closestDistance = Double.MAX_VALUE;

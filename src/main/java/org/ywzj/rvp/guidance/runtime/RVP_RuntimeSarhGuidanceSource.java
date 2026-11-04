@@ -86,7 +86,8 @@ public final class RVP_RuntimeSarhGuidanceSource implements RVP_RuntimeGuidanceS
         if (root != null) {
             int extId = RVP_WeaponLockStateTable.getExternalRadarLockedEntityId(root);
             if (extId != Integer.MIN_VALUE) {
-                Entity ext = projectile.level().getEntity(extId);
+                // 调用统一目标查询，半主动雷达弹继续跟踪中继照射的虚拟目标。
+                Entity ext = org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.resolve(projectile.level(), extId);
                 if (ext != null && ext.isAlive()) {
                     return ext;
                 }

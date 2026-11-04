@@ -38,7 +38,8 @@ public class C2SRequestExternalRadarLock {
             if (player == null || weaponUnit == null || msg.entityId == Integer.MIN_VALUE) {
                 return;
             }
-            Entity target = player.serverLevel().getEntity(msg.entityId);
+            // 调用统一目标查询，中继雷达可把虚拟来袭弹交给发射车锁定。
+            Entity target = org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.resolve(player.serverLevel(), msg.entityId);
             if (target == null || !target.isAlive()) {
                 return;
             }

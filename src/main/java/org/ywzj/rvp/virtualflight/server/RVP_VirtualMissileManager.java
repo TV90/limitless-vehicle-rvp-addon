@@ -105,6 +105,13 @@ public final class RVP_VirtualMissileManager {
         // 通过维度 DataStorage 取得权威容器；add 成功会立即 mark dirty。
         RVP_VirtualMissileSavedData savedData = RVP_VirtualMissileSavedData.get(level);
         if (!state.isStructurallyValid() || !savedData.add(state)) return false;
+        state.targetEntityId = missile.getId();
+        // 调用计算对象入口并交接已有雷达/拦截弹引用，真实弹移除前目标身份就已连续。
+        RVP_MissileEntity target = RVP_EntityTrajectoryIntegrator.getOrCreateEntity(
+                level, state, data, shooterVehicle, owner instanceof LivingEntity living ? living : null);
+        // 本体按上一刻位移修正直击盒，转换当刻必须沿用原真实弹的位移历史。
+        target.xOld = missile.xOld; target.yOld = missile.yOld; target.zOld = missile.zOld;
+        RVP_VirtualMissileTargets.replaceReferences(level, missile, target);
 
         RVP_VirtualMissileDebug.noteEntered();
         RVP_VirtualMissileDebug.lifecycle(state, RVP_VirtualFlightReason.REAL_TO_VIRTUAL,
@@ -112,6 +119,8 @@ public final class RVP_VirtualMissileManager {
         // 先标记专用移除原因，再调用普通 discard，让生命周期日志能识别转换语义。
         missile.beginVirtualMidcourseRemoval();
         missile.discard();
+        // 调用独立同步服务，客户端先取得虚拟表示，再接收本体的真实实体移除包。
+        RVP_VirtualMissileTargetSync.syncLevel(level);
         return true;
     }
 
@@ -155,6 +164,9 @@ public final class RVP_VirtualMissileManager {
                 terminate(ref, RVP_VirtualFlightReason.INCOMPATIBLE_INTEGRATOR, "loaded state implementation mismatch");
                 continue;
             }
+            // 等待恢复的记录也必须保留可探测、可拦截的目标对象，读档后重新分配会话 ID。
+            RVP_EntityTrajectoryIntegrator.getOrCreateEntity(ref.level, state, data,
+                    resolveVehicle(ref.level, state.shooterVehicleUuid), resolveLivingEntity(ref.level, state.ownerUuid));
             if (state.phase == RVP_VirtualFlightPhase.VIRTUAL_CRUISE) {
                 // 调用本项目目标点解析器和虚拟状态更新入口；目标实体仍加载时滚动刷新位置/速度，
                 // 查询只读取已经加载的实体；固定 GPS 准入本身不因此扩展为动态目标制导。
@@ -168,6 +180,9 @@ public final class RVP_VirtualMissileManager {
                 if (state.trajectory().position().distanceTo(state.snapshot.targetPosition()) <= trigger) {
                     restoreCandidates.add(ref);
                 }
+            } else {
+                // 等待恢复时位置暂停；按静止目标更新命中历史，不能永久保留最后飞行刻的受击盒偏移。
+                state.trajectoryEntity.setOldPosAndRot();
             }
         }
 
@@ -347,6 +362,8 @@ public final class RVP_VirtualMissileManager {
             RVP_VirtualMissileDebug.noteRestored();
             RVP_VirtualMissileDebug.lifecycle(state, RVP_VirtualFlightReason.VIRTUAL_TO_REAL, "");
             ref.data.remove(state.flightUuid);
+            // 调用同步服务，明确交接回真实实体，不能被客户端当成拦截销毁。
+            RVP_VirtualMissileTargetSync.syncLevel(ref.level);
         } else {
             retryOrTerminate(ref, RVP_VirtualFlightReason.RESTORE_ADD_REJECTED, "addFreshEntity or safe position rejected");
         }
@@ -388,6 +405,10 @@ public final class RVP_VirtualMissileManager {
         if (target != null && target.isAlive()) missile.setTargetEntity(target);
         // 只有全部状态和稳定 UUID 写回后才将实体加入世界。
         if (!ref.level.addFreshEntity(missile)) return false;
+        if (state.trajectoryEntity != null) {
+            // 调用现有引用交接，恢复后雷达和已在途拦截弹继续追同一 UUID/会话 ID。
+            RVP_VirtualMissileTargets.replaceReferences(ref.level, state.trajectoryEntity, missile);
+        }
         // 首次路径请求把控制权交回常规 5 Tick 滚动区块保护。
         missile.primeDynamicChunkPath();
         return true;
@@ -467,7 +488,40 @@ public final class RVP_VirtualMissileManager {
     /** 输出终止原因并从所属维度 SavedData 删除记录。 */
     private static void terminate(StateRef ref, RVP_VirtualFlightReason reason, String detail) {
         RVP_VirtualMissileDebug.lifecycle(ref.state, reason, detail);
+        for (long chunk : ref.state.grantedRestoreChunks) {
+            // 终止后立即归还恢复区块票据，拦截成功不能再触发末段重建。
+            ref.level.getChunkSource().removeRegionTicket(
+                    RESTORE_TICKET, new ChunkPos(chunk), RESTORE_TICKET_LEVEL, ref.state.flightUuid);
+        }
+        ref.state.grantedRestoreChunks.clear();
         ref.data.remove(ref.state.flightUuid);
+    }
+
+    /** 当前维度全部存活虚拟目标；巡航和等待恢复均保留，不加载区块或额外推进飞行。 */
+    public static List<RVP_MissileEntity> targets(ServerLevel level) {
+        List<RVP_MissileEntity> targets = new ArrayList<>();
+        // 调用维度容器读取已初始化对象，查询不重新创建或积分任何弹体。
+        for (RVP_VirtualMissileState state : RVP_VirtualMissileSavedData.get(level).states()) {
+            if (state.dimension.equals(level.dimension().location())
+                    && state.trajectoryEntity != null && state.trajectoryEntity.isAlive()) {
+                targets.add(state.trajectoryEntity);
+            }
+        }
+        return targets;
+    }
+
+    /** 仅计算对象本身的移除可删除记录；同 UUID 的旧真实实体或恢复实体不能误删。 */
+    public static void removeTarget(org.ywzj.rvp.entity.projectile.RVP_BaseBullet target) {
+        if (!(target.level() instanceof ServerLevel level)) return;
+        // 调用权威容器的 UUID 查询，并额外校验对象引用，防转换与重建期间串删。
+        RVP_VirtualMissileSavedData data = RVP_VirtualMissileSavedData.get(level);
+        RVP_VirtualMissileState state = data.get(target.getUUID());
+        if (state == null || state.trajectoryEntity != target) return;
+        // 调用引用清理，已被拦截的目标立即退出雷达接触和现有火控锁定。
+        RVP_VirtualMissileTargets.replaceReferences(level, target, null);
+        terminate(new StateRef(level, data, state), RVP_VirtualFlightReason.INTERCEPTED, "virtual target removed");
+        // 调用完整集合同步，客户端及时清理已被拦截的接触与硬锁。
+        RVP_VirtualMissileTargetSync.syncLevel(level);
     }
 
     /** @return 任一维度 SavedData 是否已持有指定稳定 UUID。 */

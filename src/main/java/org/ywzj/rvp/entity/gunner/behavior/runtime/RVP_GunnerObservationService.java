@@ -197,7 +197,10 @@ public final class RVP_GunnerObservationService {
     public double agl(Entity entity) {
         // 调用本体地形高度工具，缓存当前 tick 的离地高度，供飞行与 CIWS 共用。
         return aglCache.computeIfAbsent(entity,
-                ignored -> entity.getY() - EntityUtil.getGroundY(entity.level(), entity.position()));
+                ignored -> entity.getY() - (entity instanceof RVP_BaseBullet bullet && bullet.isVirtualMidcourseTarget()
+                        ? org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.groundHeight(
+                                entity, net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING)
+                        : EntityUtil.getGroundY(entity.level(), entity.position())));
     }
 
     /** 返回当前统计快照，供 DebugSnapshot 与服务端性能记录器读取。 */
@@ -221,6 +224,8 @@ public final class RVP_GunnerObservationService {
                 result.add(entity);
             }
         }
+        // 调用权威记录源追加虚拟目标，不增加世界实体遍历；所有行为共用同一只读快照。
+        result.addAll(org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileManager.targets(serverLevel));
         traversalNanos = System.nanoTime() - started;
         return result;
     }

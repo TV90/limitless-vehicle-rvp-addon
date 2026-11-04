@@ -262,7 +262,7 @@ public final class RVP_ExternalRadarSyncService {
         boolean phaseMode = data instanceof RadarUnitDataExt ext
                 && "phase".equalsIgnoreCase(ext.ywzj_rvp$getScanAnimationMode());
         Iterable<Entity> allEntities = relayVehicle.level() instanceof net.minecraft.server.level.ServerLevel sl
-                ? sl.getEntities().getAll() : List.of();
+                ? org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.allEntities(sl) : List.of();
         // phase 模式改 O(实体) 扫描（避免 ±maxScanDistance 大箱子）；非 phase 保留本体 detectTargets
         List<Entity> targets = phaseMode
                 ? RVP_RadarScanHelper.scanRadarArea(allEntities, relayVehicle, radarUnit.worldRadarPosition(),
@@ -270,7 +270,12 @@ public final class RVP_ExternalRadarSyncService {
                 : Radar.detectTargets(relayVehicle, radarUnit.worldRadarPosition(), radarUnit.getMaxScanDistance(), radarUnit.isAntiGround(),
                 pos -> isWithinRelayRadarVolume(radarUnit, null, pos, false));
         targets.removeIf(entity -> entity instanceof RVP_BaseBullet bullet && !bullet.isRadarDetectableAmmo());
-        appendAmmoTargets(radarUnit, relayVehicle, targets, !phaseMode);
+        if (RVP_RadarScanHelper.isVehicleOnly(radarUnit)) {
+            targets.removeIf(entity -> !(entity instanceof AbstractVehicle));
+            return targets;
+        }
+        // 调用主雷达共用的弹药扫描，真实与虚拟目标均保留相同信号、扫描线和高度限制。
+        RVP_RadarScanHelper.appendRvpAmmoTargets(radarUnit, targets, allEntities, !phaseMode);
         // 干扰物雷达可扫描性：热焰弹不入表、箔条入表
         RVP_RadarScanHelper.filterRadarInvisibleDecoys(targets);
         RVP_RadarScanHelper.appendRadarVisibleChaffDecoys(radarUnit, targets, allEntities);
@@ -318,57 +323,6 @@ public final class RVP_ExternalRadarSyncService {
     /** 委托公共实现（2026-10-03）：scan_sea 海面搜索旁路在 RVP_RadarScanHelper 统一维护，防多副本漂移。 */
     private static boolean isWithinScanHeight(RadarUnit radarUnit, Entity target, Vec3 targetPos) {
         return org.ywzj.rvp.radar.RVP_RadarScanHelper.isWithinScanHeight(radarUnit, target, targetPos);
-    }
-
-    private static void appendAmmoTargets(RadarUnit radarUnit, AbstractVehicle relayVehicle, List<Entity> targets, boolean requireTrackingLine) {
-        Vec3 radarPos = radarUnit.worldRadarPosition();
-        double maxDistance = radarUnit.getMaxScanDistance();
-        java.util.Set<Integer> existingIds = new java.util.HashSet<>();
-        for (Entity target : targets) {
-            existingIds.add(target.getId());
-        }
-        if (!(relayVehicle.level() instanceof net.minecraft.server.level.ServerLevel serverLevel)) {
-            return;
-        }
-        // O(实体) 遍历已加载实体，替代 ±maxDistance（可达数千格）立方体 getEntitiesOfClass（服务端掉 TPS）
-        for (Entity entity : serverLevel.getEntities().getAll()) {
-            if (!(entity instanceof RVP_BaseBullet bullet)) {
-                continue;
-            }
-            if (!bullet.isAlive() || bullet.getVehicle() != null || !bullet.isRadarDetectableAmmo()) {
-                continue;
-            }
-            // 2026-09-17 弹药分角度 RCS：与主链路（RVP_RadarScanHelper）统一按弹体朝向因子
-            // 缩放探测距离——修复旧实现 sig 只当开关不当倍率的不一致。
-            // 2026-09-19 修复单位错误：effectiveMaxSqr 与 distanceToSqr（平方距离）比较，
-            // 原式 maxDistance × sig² 是线性值，实际半径塌缩为 √maxScan × sig（96L6 3500→59 格）；
-            // 正确式 = maxScan² × sig²（有效半径 = maxScan × sig）。
-            double signature = bullet.getRadarSignatureTowards(radarPos);
-            double effectiveMaxSqr = maxDistance * maxDistance * signature * (double) signature;
-            Vec3 pos = bullet.getBoundingBox().getCenter();
-            if (pos.distanceToSqr(radarPos) > effectiveMaxSqr) {
-                continue;
-            }
-            if (!isWithinScanHeight(radarUnit, bullet, pos)) {
-                continue;
-            }
-            Vec2 aimRot = radarUnit.aimRot(pos);
-            float yMin = radarUnit.getYRotMin();
-            float yMax = radarUnit.getYRotMax();
-            float y = normalizeYawForLimits((float) aimRot.y, yMin, yMax);
-            if (!isYawWithin(y, yMin, yMax)) {
-                continue;
-            }
-            if (requireTrackingLine && radarUnit.getYRotSpeed() > 0f && Math.abs(y - radarUnit.getYRot()) > radarUnit.getYRotSpeed() / 2.0f) {
-                continue;
-            }
-            if (Math.abs(aimRot.x - radarUnit.getXRot()) > radarUnit.getScanSectorAngle() / 2.0f) {
-                continue;
-            }
-            if (existingIds.add(bullet.getId())) {
-                targets.add(bullet);
-            }
-        }
     }
 
     private static boolean shouldIncludeTarget(AbstractVehicle launcher, AbstractVehicle relayVehicle, Entity entity) {

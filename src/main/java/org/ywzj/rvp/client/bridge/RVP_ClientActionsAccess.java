@@ -15,6 +15,19 @@ public final class RVP_ClientActionsAccess {
 
     private RVP_ClientActionsAccess() {}
 
+    /** 经双端安全桥接收虚拟目标，公共网络类不加载客户端状态缓存。 */
+    public static void acceptVirtualMissileTargets(org.ywzj.rvp.network.S2CVirtualMissileTargets message) {
+        // 调用物理侧实现；专用服务端保持空操作。
+        INSTANCE.acceptVirtualMissileTargets(message);
+    }
+
+    /** 经安全桥读取客户端远程实体；服务端不会加载 LocalVehiclePlayer。 */
+    @org.jetbrains.annotations.Nullable
+    public static net.minecraft.world.entity.Entity resolveRemoteRadarTarget(int entityId) {
+        // 调用物理侧目标解析器，专用服务端返回 null。
+        return INSTANCE.resolveRemoteRadarTarget(entityId);
+    }
+
     /** 经双端安全桥转交载具声音消息，公共网络类不直接引用客户端声音类型。 */
     public static void acceptVehicleSound(org.ywzj.rvp.network.S2CVehicleSound message) {
         // 调用按物理端选择的实现；专用服务端为空操作。
@@ -149,6 +162,14 @@ public final class RVP_ClientActionsAccess {
 
     /** 专用服务端空实现。 */
     private static final class NoopClientActions implements RVP_IClientActions {
+        @Override
+        public void acceptVirtualMissileTargets(org.ywzj.rvp.network.S2CVirtualMissileTargets message) {
+            // 专用服务端不维护客户端雷达表示。
+        }
+
+        @Override
+        public net.minecraft.world.entity.Entity resolveRemoteRadarTarget(int entityId) { return null; }
+
         @Override
         public void acceptVehicleSound(org.ywzj.rvp.network.S2CVehicleSound message) {
             // 专用服务端不播放客户端声音。

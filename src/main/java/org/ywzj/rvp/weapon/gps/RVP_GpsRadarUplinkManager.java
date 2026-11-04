@@ -91,8 +91,10 @@ public final class RVP_GpsRadarUplinkManager {
             }
             Vec3 targetPos = RVP_AimPointResolver.resolveLargestObbCenter(lockTarget);
             // 25 格离地门：与发射标记同一道门——目标爬高超过门限即停更，各弹保持最后坐标
+            // 调用统一开关，虚拟目标关闭地形查询时与发射标记一致地跳过该门。
             if (!(player.level() instanceof ServerLevel level)
-                    || aboveGround(level, targetPos) > RVP_ProjectileSpawner.RADAR_UPLINK_MAX_HEIGHT_ABOVE_GROUND) {
+                    || !org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.ignoresTerrainHeight(lockTarget)
+                    && aboveGround(level, targetPos) > RVP_ProjectileSpawner.RADAR_UPLINK_MAX_HEIGHT_ABOVE_GROUND) {
                 continue;
             }
             updateEntityMissiles(player, level, targetPos);

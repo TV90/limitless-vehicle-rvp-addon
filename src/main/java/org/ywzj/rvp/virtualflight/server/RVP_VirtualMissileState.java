@@ -45,8 +45,12 @@ public final class RVP_VirtualMissileState {
     public RVP_VirtualMissileSnapshot snapshot;
     /** 位置/姿态之外的实体运动记忆，每刻与完整快照一起更新并持久化。 */
     public RVP_VirtualMissileKinematics kinematics;
-    /** 未加入世界的运动计算对象；只复用制导/运动方法，不参与世界实体调度或网络同步。 */
+    /** 未加入世界的运动计算对象，同时供雷达和拦截读取；不参与世界实体调度。 */
     @Nullable RVP_MissileEntity trajectoryEntity;
+    /** 本次服务器会话的目标 ID；交接时沿用真实弹 ID，读档后重新分配，绝不持久化旧 ID。 */
+    @Nullable Integer targetEntityId;
+    /** 外部替换轨迹后需要重建计算对象；保留旧对象直到目标引用完成交接。 */
+    boolean trajectoryEntityInvalidated;
     /** 转虚拟前的实体 ID，仅用于日志；不可作为恢复主键。 */
     public final int originalEntityId;
     /** 冷发射结束 Tick，用于继续计算发动机点火时间。 */
@@ -159,7 +163,7 @@ public final class RVP_VirtualMissileState {
                 snapshot.topAttackApexReached(), snapshot.topAttackTriggerTick(), snapshot.irSeekerGraceUntilTick(),
                 snapshot.irSeekerLossGraceStarted());
         // 外部显式替换轨迹后丢弃计算缓存，下刻必须从新权威快照重建，不能继续使用旧位置/速度。
-        trajectoryEntity = null;
+        trajectoryEntityInvalidated = true;
     }
 
     /**

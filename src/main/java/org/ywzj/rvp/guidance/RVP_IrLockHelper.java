@@ -197,6 +197,8 @@ public final class RVP_IrLockHelper {
     }
 
     private static boolean containsAltitude(@Nullable RVP_Range<Float> altitudeRange, Entity target) {
+        // 调用虚拟目标地形开关，兼容红外锁定入口也跳过虚拟记录的离地高度门。
+        if (org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.ignoresTerrainHeight(target)) return true;
         if (altitudeRange == null) {
             return true;
         }

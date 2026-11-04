@@ -102,6 +102,8 @@ public final class RVP_RadarScanHelper {
      * 扫描与保活共用本实现，"扫到后不会被保活门踢出"。
      */
     public static boolean isWithinScanHeight(RadarUnit radar, Entity target, Vec3 targetPos) {
+        // 调用虚拟目标地形开关：关闭时跳过离地高度门，扫描/保活/中继均不查询地形。
+        if (org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.ignoresTerrainHeight(target)) return true;
         float minHeight = 25f;
         float maxHeight = 10000f;
         RadarUnitData data = radar.getData();
@@ -114,8 +116,12 @@ public final class RVP_RadarScanHelper {
             minHeight = maxHeight;
             maxHeight = t;
         }
-        double groundY = radar.getVehicle().level().getHeight(Heightmap.Types.MOTION_BLOCKING,
-                (int) Math.floor(targetPos.x), (int) Math.floor(targetPos.z));
+        // 调用虚拟目标高度查询，未加载处只读基础地形，不能为了扫描强制加载沿途区块。
+        double groundY = target instanceof RVP_BaseBullet bullet && bullet.isVirtualMidcourseTarget()
+                ? org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.groundHeight(
+                        target, Heightmap.Types.MOTION_BLOCKING)
+                : radar.getVehicle().level().getHeight(Heightmap.Types.MOTION_BLOCKING,
+                        (int) Math.floor(targetPos.x), (int) Math.floor(targetPos.z));
         double heightAboveGround = targetPos.y - groundY;
         if (heightAboveGround < minHeight && isScanSeaLargeTarget(radar, target)) {
             // scan_sea 旁路：仅豁免最低扫描高度（最高高度仍生效）

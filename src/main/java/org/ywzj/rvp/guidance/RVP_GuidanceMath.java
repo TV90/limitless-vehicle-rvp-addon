@@ -11,6 +11,8 @@ public final class RVP_GuidanceMath {
     private RVP_GuidanceMath() {}
 
     public static boolean isTargetPassAltFilter(Entity entity, float lockMinHeight) {
+        // 调用虚拟目标地形开关，兼容锁定入口也不得绕回原版高度图查询。
+        if (org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.ignoresTerrainHeight(entity)) return true;
         if (entity == null || lockMinHeight == 0) {
             return true;
         }
@@ -25,6 +27,8 @@ public final class RVP_GuidanceMath {
         if (entity == null || !entity.isAlive()) {
             return false;
         }
+        // 调用虚拟目标地形开关，近炸等兼容路径不沿虚拟坐标向下读取方块。
+        if (org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.ignoresTerrainHeight(entity)) return false;
         if (entity.onGround()) {
             return true;
         }

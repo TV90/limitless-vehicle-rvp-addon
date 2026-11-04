@@ -150,9 +150,16 @@ final class RVP_RuntimeSeekerSupport {
         Vec3 pos = projectile.position();
         // O(实体) 遍历已加载实体，替代 Radar.scanTargets 的 ±range 立方体 getEntities（O(箱子截面)）
         for (Entity entity : all) {
-            if (entity == projectile.getShooterVehicle()
-                    || entity.getBoundingBox().getSize() < 1
+            if (entity == projectile || !entity.isAlive() || entity == projectile.getShooterVehicle()
+                    || (!(entity instanceof RVP_BaseBullet) && entity.getBoundingBox().getSize() < 1)
                     || !isRadarScannable(entity)) {
+                continue;
+            }
+            if (entity instanceof RVP_BaseBullet ammo
+                    && (projectile.getOwner() != null && ammo.getOwner() == projectile.getOwner()
+                    || org.ywzj.rvp.ecm.RVP_EcmIff.areVehiclesFriendly(
+                            projectile.getShooterVehicle(), ammo.getShooterVehicle()))) {
+                // 调用既有敌我规则，新增弹药搜索候选不能让导引头捕获同射手或友方载具的弹。
                 continue;
             }
             // 目的：分角度 RCS + 弹舱开启增幅（2026-09-16）——载具目标的导引头截获距离
@@ -169,6 +176,9 @@ final class RVP_RuntimeSeekerSupport {
             double effectiveRange = range;
             if (entity instanceof AbstractVehicle targetVehicle) {
                 effectiveRange = range * RVP_AspectRcs.detectionFactor(targetVehicle, pos);
+            } else if (entity instanceof RVP_BaseBullet bullet) {
+                // 调用实体弹体的分角度信号计算；虚拟对象也按迎头/侧向/尾向缩放截获距离。
+                effectiveRange *= bullet.getRadarSignatureTowards(pos);
             }
             if (entity.distanceToSqr(projectile) > effectiveRange * effectiveRange) {
                 continue;
@@ -257,7 +267,8 @@ final class RVP_RuntimeSeekerSupport {
      * 导引头扫描只在服务端跑（客户端走 super.tickGuidance），非服务端返回空。 */
     private static Iterable<Entity> allServerEntities(Entity owner) {
         if (owner.level() instanceof net.minecraft.server.level.ServerLevel sl) {
-            return sl.getEntities().getAll();
+            // 调用统一目标源，主动导引头重捕获可搜索到真实和虚拟来袭弹体。
+            return org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.allEntities(sl);
         }
         return java.util.List.of();
     }

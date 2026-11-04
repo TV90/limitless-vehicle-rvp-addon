@@ -35,6 +35,14 @@ public final class RVP_GuidanceRuntimeGeometry {
             Vec3 target,
             RVP_GuidanceActiveConfig config
     ) {
+        // 调用共用包络判定；纯坐标目标没有可复用的实体地面高度。
+        return passesTrackEnvelope(projectile, target, config, null);
+    }
+
+    /** 实体与坐标共用距离门；虚拟实体额外提供不强制加载区块的地面高度。 */
+    private static boolean passesTrackEnvelope(RVP_BaseBullet projectile, Vec3 target,
+                                               RVP_GuidanceActiveConfig config,
+                                               @org.jetbrains.annotations.Nullable Entity targetEntity) {
         if (projectile == null || target == null || config == null) {
             return false;
         }
@@ -43,7 +51,10 @@ public final class RVP_GuidanceRuntimeGeometry {
             return false;
         }
         // 未配置高度门时不查询地形，保证普通 GPS 实体计算可在未加载区块上无副作用复用。
-        if (config.altitudeRange() != null && !contains(config.altitudeRange(), altitudeAgl(projectile, target))) {
+        // 调用虚拟目标开关，关闭地形查询时只跳过虚拟记录的离地高度约束。
+        if (config.altitudeRange() != null
+                && !org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.ignoresTerrainHeight(targetEntity)
+                && !contains(config.altitudeRange(), altitudeAgl(projectile, target, targetEntity))) {
             return false;
         }
         return true;
@@ -55,9 +66,10 @@ public final class RVP_GuidanceRuntimeGeometry {
             RVP_GuidanceActiveConfig config
     ) {
         // [RVP] §46：门限判定点与瞄准点同源（最大 OBB 中心）
-        return target != null && target.isAlive()
-                && passesTrackLimits(projectile,
-                        org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(target), config);
+        if (!passesTrackEnvelope(projectile, target, config)) return false;
+        // 调用同一瞄准点与角度规则，目标为虚拟记录时只替换地面高度来源。
+        Vec3 center = org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(target);
+        return withinAngle(resolveTrackAxis(projectile), center.subtract(projectile.position()), config.maxGuidanceAngle());
     }
 
     public static boolean passesTrackEnvelope(
@@ -68,7 +80,7 @@ public final class RVP_GuidanceRuntimeGeometry {
         // [RVP] §46：同上
         return target != null && target.isAlive()
                 && passesTrackEnvelope(projectile,
-                        org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(target), config);
+                        org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(target), config, target);
     }
 
     public static boolean passesAcquireLimits(
@@ -85,7 +97,10 @@ public final class RVP_GuidanceRuntimeGeometry {
         if (!contains(config.targetDistanceRange(), distance)) {
             return false;
         }
-        if (!contains(config.altitudeRange(), altitudeAgl(projectile, center))) {
+        // 调用同一地形开关，使导引头截获与持续跟踪对虚拟目标采用一致规则。
+        if (config.altitudeRange() != null
+                && !org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.ignoresTerrainHeight(target)
+                && !contains(config.altitudeRange(), altitudeAgl(projectile, center, target))) {
             return false;
         }
         return withinAngle(projectile.getLookAngle(), center.subtract(projectile.position()),
@@ -159,7 +174,13 @@ public final class RVP_GuidanceRuntimeGeometry {
         return range == null || range.contains((float) value);
     }
 
-    private static double altitudeAgl(RVP_BaseBullet projectile, Vec3 target) {
+    private static double altitudeAgl(RVP_BaseBullet projectile, Vec3 target,
+                                      @org.jetbrains.annotations.Nullable Entity targetEntity) {
+        if (targetEntity instanceof RVP_BaseBullet bullet && bullet.isVirtualMidcourseTarget()) {
+            // 调用虚拟目标高度来源，导引头截获/跟踪也不得为地形查询申请区块。
+            return target.y - org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.groundHeight(
+                    targetEntity, Heightmap.Types.MOTION_BLOCKING);
+        }
         int x = Mth.floor(target.x);
         int z = Mth.floor(target.z);
         int groundY = projectile.level().getHeight(Heightmap.Types.MOTION_BLOCKING, x, z);

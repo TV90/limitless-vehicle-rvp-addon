@@ -332,7 +332,10 @@ public final class RVP_ApsRuntimeManager {
 
     private static ApsTarget findTarget(AbstractVehicle vehicle, List<ActiveApsModule> activeModules, BoneApsConfig config) {
         AABB box = vehicle.getBoundingBox().inflate(config.detectRadius());
-        List<Entity> candidates = vehicle.level().getEntities(vehicle, box, entity -> isValidTarget(vehicle, config, entity));
+        // 调用虚拟目标补筛，APS（主动防护系统）沿用原速度、所有者和探测盒规则。
+        List<Entity> candidates = org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.merge(
+                vehicle.level(), box, vehicle.level().getEntities(vehicle, box, entity -> isValidTarget(vehicle, config, entity)),
+                entity -> isValidTarget(vehicle, config, entity));
         if (candidates.isEmpty()) {
             return null;
         }
@@ -370,7 +373,8 @@ public final class RVP_ApsRuntimeManager {
         if (state.pendingTargetId < 0) {
             return null;
         }
-        Entity entity = vehicle.level().getEntity(state.pendingTargetId);
+        // 调用统一目标查询，延迟拦截不会因目标切入虚拟中段而丢失。
+        Entity entity = org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.resolve(vehicle.level(), state.pendingTargetId);
         if (!(entity instanceof Projectile projectile)) {
             clearPendingTarget(state);
             return null;
@@ -449,7 +453,10 @@ public final class RVP_ApsRuntimeManager {
                 center.x - radius, center.y - radius, center.z - radius,
                 center.x + radius, center.y + radius, center.z + radius
         );
-        List<Entity> candidates = vehicle.level().getEntities(vehicle, box, entity -> isValidTarget(vehicle, config, entity));
+        // 调用虚拟目标补筛，拦截结算与探测阶段使用同一批来袭弹。
+        List<Entity> candidates = org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.merge(
+                vehicle.level(), box, vehicle.level().getEntities(vehicle, box, entity -> isValidTarget(vehicle, config, entity)),
+                entity -> isValidTarget(vehicle, config, entity));
         if (candidates.isEmpty()) {
             return false;
         }

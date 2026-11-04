@@ -179,7 +179,7 @@ public final class RVP_RadarRoleHelper {
         if (externalLockedId == Integer.MIN_VALUE || root.getVehicle() == null) {
             return null;
         }
-        Entity externalLocked = root.getVehicle().level().getEntity(externalLockedId);
+        Entity externalLocked = org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.resolve(root.getVehicle().level(), externalLockedId);
         return externalLocked != null && externalLocked.isAlive() ? externalLocked : null;
     }
 
@@ -242,7 +242,7 @@ public final class RVP_RadarRoleHelper {
         }
         int externalLockedId = RVP_WeaponLockStateTable.getExternalRadarLockedEntityId(root);
         if (externalLockedId != Integer.MIN_VALUE) {
-            Entity externalLocked = root.getVehicle().level().getEntity(externalLockedId);
+            Entity externalLocked = org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.resolve(root.getVehicle().level(), externalLockedId);
             if (externalLocked != null && externalLocked.isAlive()) {
                 return externalLocked;
             }
@@ -306,7 +306,8 @@ public final class RVP_RadarRoleHelper {
         if (pendingId == Integer.MIN_VALUE || weaponUnit == null) {
             return;
         }
-        Entity target = weaponUnit.getVehicle().level().getEntity(pendingId);
+        // 调用统一目标查询，待定锁可落到真实或虚拟弹体。
+        Entity target = org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.resolve(weaponUnit.getVehicle().level(), pendingId);
         if (target == null || !target.isAlive()) {
             // 2026-10-08 宽限（修复"点击 BVR 目标不转塔不等待"）：目标在客户端原生跟踪范围外
             // （level().getEntity 查不到广播克隆）时不再同 tick 清 pending——宽限期内按 id 从整车

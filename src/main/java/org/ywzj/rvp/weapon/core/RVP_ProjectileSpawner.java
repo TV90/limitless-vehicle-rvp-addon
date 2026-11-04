@@ -314,6 +314,8 @@ public final class RVP_ProjectileSpawner {
             return null;
         }
         Vec3 pos = RVP_AimPointResolver.resolveLargestObbCenter(lockTarget);
+        // 调用统一地形开关，虚拟目标坐标装订不再绕回原版高度图查询。
+        if (org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.ignoresTerrainHeight(lockTarget)) return pos;
         double aboveGround = pos.y - level.getHeight(
                 net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING,
                 (int) Math.floor(pos.x), (int) Math.floor(pos.z));

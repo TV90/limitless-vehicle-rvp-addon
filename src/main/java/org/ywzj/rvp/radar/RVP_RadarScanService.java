@@ -174,7 +174,8 @@ public final class RVP_RadarScanService {
         if (!(vehicle.level() instanceof net.minecraft.server.level.ServerLevel serverLevel)) {
             return;
         }
-        Iterable<Entity> allEntities = serverLevel.getEntities().getAll();
+        // 调用统一目标源，将虚拟中段记录与真实弹体交给同一套扫描过滤。
+        Iterable<Entity> allEntities = org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.allEntities(serverLevel);
         for (PartUnit<?> partUnit : vehicle.getPartUnits()) {
             if (!(partUnit instanceof RadarUnit radar) || !radar.isOn()) {
                 continue;

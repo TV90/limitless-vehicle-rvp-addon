@@ -12,6 +12,8 @@ public enum RVP_VirtualFlightReason {
     RESTORE_CHUNKS_READY,
     /** 虚拟记录成功重建真实实体。 */
     VIRTUAL_TO_REAL,
+    /** 虚拟目标被直击、近炸或主动防护系统引爆，权威记录随弹体移除。 */
+    INTERCEPTED,
     /** 安全点搜索或 addFreshEntity 拒绝恢复。 */
     RESTORE_ADD_REJECTED,
     /** 恢复区块等待超过配置上限。 */
