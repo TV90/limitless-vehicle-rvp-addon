@@ -20,6 +20,9 @@ public final class RVP_FocusLockAim {
     /** 未知距离时供本体位置式火控使用的方向代理长度，单位为方块，不代表真实测距。 */
     private static final double UNKNOWN_RANGE = 4096.0D;
 
+    /** 同一射线未命中后的重查间隔，单位为纳秒；等待 DH 数据就绪时不逐刻扫描。 */
+    private static final long TERRAIN_RETRY_NANOS = 1_000_000_000L;
+
     /** 真实世界锁点或方向代理位置；null 表示尚未建立有效焦点。 */
     @Nullable
     private Vec3 target;
@@ -34,6 +37,12 @@ public final class RVP_FocusLockAim {
 
     /** 锁定或鼠标请求的代次；仅观察位置变化不递增，用于拒绝过期远景结果。 */
     private long revision;
+
+    /** 上次发出远景查询时的输入代次；新输入不受旧射线重试间隔限制。 */
+    private long terrainQueryRevision = Long.MIN_VALUE;
+
+    /** 上次发出远景查询的单调时间，单位为纳秒；观察点移动不重置它。 */
+    private long terrainQueryNanos;
 
     /** 连续方位角，单位为度；跨过正负 180 度或经过正上/正下方时保留转动连续性。 */
     private double yawDeg;
@@ -92,6 +101,17 @@ public final class RVP_FocusLockAim {
     /** 读取选点代次，供后台查询与最新鼠标请求核对。 */
     public long revision() {
         return revision;
+    }
+
+    /** 为未知距离射线申请一次查询；新输入立即查询，同一输入未命中后每秒重试。 */
+    public boolean tryBeginTerrainQuery(long nowNanos) {
+        if (directionLock == null || rayOrigin == null
+                || (terrainQueryRevision == revision && nowNanos - terrainQueryNanos < TERRAIN_RETRY_NANOS)) {
+            return false;
+        }
+        terrainQueryRevision = revision;
+        terrainQueryNanos = nowNanos;
+        return true;
     }
 
     /** 读取未知距离射线的原始观察位置，车辆后续移动不改写它。 */

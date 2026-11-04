@@ -194,6 +194,42 @@ class RVP_FocusLockAimTest {
     }
 
     @Test
+    void missingTerrainRetriesAfterOneSecondAndKeepsOriginalRayWhileMoving() {
+        RVP_FocusLockAim aim = new RVP_FocusLockAim();
+        Vec3 origin = new Vec3(0.5D, 1000.0D, 0.5D);
+        Vec3 terrain = new Vec3(0.5D, 64.0D, 6000.5D);
+        // 调用正式查询门，第一次失败不会逐刻重查，也不会永久停留在方向锁。
+        aim.acceptRay(origin, terrain.subtract(origin).normalize(), null);
+        long revision = aim.revision();
+        assertTrue(aim.tryBeginTerrainQuery(0L));
+        assertFalse(aim.acceptTerrainTarget(revision, null));
+        assertFalse(aim.tryBeginTerrainQuery(999_999_999L));
+        Vec3 moved = origin.add(50.0D, 20.0D, 500.0D);
+        aim.rebase(moved);
+        assertTrue(aim.tryBeginTerrainQuery(1_000_000_000L));
+        assertEquals(origin, aim.rayOrigin());
+        assertEquals(revision, aim.revision());
+        // 调用正式结果接收，稍后才就绪的地形仍锁住最初瞄准的世界点。
+        assertTrue(aim.acceptTerrainTarget(revision, terrain));
+        assertFalse(aim.tryBeginTerrainQuery(2_000_000_000L));
+        assertDirection(aim.direction(moved), terrain.subtract(moved).normalize());
+    }
+
+    @Test
+    void newMouseRayCanQueryImmediatelyWithoutWaitingForOldRetryInterval() {
+        RVP_FocusLockAim aim = new RVP_FocusLockAim();
+        // 调用正式射线接收，鼠标选中新方向后立即查点，不继承旧射线的一秒等待。
+        aim.acceptRay(Vec3.ZERO, new Vec3(0.0D, 0.0D, 1.0D), null);
+        assertTrue(aim.tryBeginTerrainQuery(100L));
+        long oldRevision = aim.revision();
+        aim.turn(Vec3.ZERO, 10.0D, 5.0D);
+        assertTrue(aim.tryBeginTerrainQuery(200L));
+        assertFalse(aim.acceptTerrainTarget(oldRevision, new Vec3(0.0D, 0.0D, 2000.0D)));
+        aim.clear();
+        assertFalse(aim.tryBeginTerrainQuery(2_000_000_000L));
+    }
+
+    @Test
     void terrainColumnHitUsesSightSurfaceInsteadOfColumnBottom() {
         Vec3 origin = new Vec3(0.5D, 200.0D, 0.0D);
         Vec3 expected = new Vec3(0.5D, 100.0D, 2000.5D);

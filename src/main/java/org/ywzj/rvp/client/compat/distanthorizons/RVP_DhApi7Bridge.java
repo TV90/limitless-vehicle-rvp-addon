@@ -5,6 +5,7 @@ import com.seibel.distanthorizons.api.enums.config.EDhApiRenderingApi;
 import com.seibel.distanthorizons.api.interfaces.render.IDhApiRenderProxy;
 import com.seibel.distanthorizons.api.interfaces.world.IDhApiLevelWrapper;
 import com.seibel.distanthorizons.api.interfaces.data.IDhApiTerrainDataCache;
+import com.seibel.distanthorizons.api.interfaces.data.IDhApiTerrainDataRepo;
 import com.seibel.distanthorizons.api.methods.events.DhApiEventRegister;
 import com.seibel.distanthorizons.api.methods.events.abstractEvents.DhApiAfterDhInitEvent;
 import com.seibel.distanthorizons.api.methods.events.abstractEvents.DhApiBeforeApplyShaderRenderEvent;
@@ -14,14 +15,15 @@ import com.seibel.distanthorizons.api.methods.events.sharedParameterObjects.DhAp
 import com.seibel.distanthorizons.api.methods.events.sharedParameterObjects.DhApiRenderParam;
 import com.seibel.distanthorizons.api.objects.DhApiResult;
 import com.seibel.distanthorizons.api.objects.math.DhApiMat4f;
-import com.seibel.distanthorizons.api.objects.data.DhApiRaycastResult;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
+import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.config.RVP_ClientConfig;
 import org.ywzj.rvp.client.light.RVP_ScreenLightPass;
 import org.ywzj.rvp.client.state.RVP_FocusLockAim;
+import org.ywzj.rvp.client.state.RVP_FocusLockRaycast;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -167,27 +169,42 @@ public final class RVP_DhApi7Bridge {
             return CompletableFuture.completedFuture(null);
         }
         IDhApiLevelWrapper queryLevel = selected;
-        return CompletableFuture.supplyAsync(() -> {
-            // 调用官方缓存创建/关闭接口，单次查询结束后释放可能持有的远景区域数据。
-            try (IDhApiTerrainDataCache cache = repository.createSoftCache()) {
-                // 调用官方 raycast，只读已存在的 DH 数据，不请求原版区块加载或远处地形生成。
-                DhApiResult<DhApiRaycastResult> result = repository.raycast(queryLevel,
-                        origin.x, origin.y, origin.z, (float) direction.x, (float) direction.y,
-                        (float) direction.z, maxDistance, cache);
-                if (result == null || !result.success || result.payload == null
-                        || result.payload.dataPoint == null || result.payload.pos == null) {
-                    return null;
-                }
-                var hit = result.payload;
-                var column = hit.dataPoint;
-                // 调用视线与地形柱求交，DH pos.y 是柱底而不是玩家瞄准的表面。
-                return RVP_FocusLockAim.terrainColumnIntersection(origin, direction, maxDistance,
-                        hit.pos.x, hit.pos.z, column.bottomYBlockPos, column.topYBlockPos, column.detailLevel);
-            } catch (RuntimeException | LinkageError unavailable) {
-                // 换世界、数据尚未就绪或可选 API 失败时保留方向锁定，不把失败变成假坐标。
-                return null;
-            }
-        }, FOCUS_TERRAIN_EXECUTOR);
+        return CompletableFuture.supplyAsync(
+                // 调用公开地形柱查询与独立遍历，避免 DH 射线的高空提前结束和缺失数据中止。
+                () -> raycastTerrainColumns(repository, queryLevel, origin, direction, maxDistance),
+                FOCUS_TERRAIN_EXECUTOR);
+    }
+
+    /** 只读 DH 官方地形柱并求真实表面交点；由后台线程执行，测试也使用同一数据适配路径。 */
+    @Nullable
+    static Vec3 raycastTerrainColumns(IDhApiTerrainDataRepo repository, IDhApiLevelWrapper level,
+                                      Vec3 origin, Vec3 direction, int maxDistance) {
+        // 调用官方缓存创建/关闭接口，单次查询结束后释放可能持有的远景区域数据。
+        try (IDhApiTerrainDataCache cache = repository.createSoftCache()) {
+            // 调用从近到远的逐柱遍历，先裁剪高度，且不受普通渲染视距截断。
+            return RVP_FocusLockRaycast.terrainSurface(origin, direction, maxDistance,
+                    level.getMinHeight(), level.getMaxHeight(), (x, z) -> {
+                        // 调用官方只读数据接口，不请求原版区块加载或远处地形生成。
+                        var result = repository.getColumnDataAtBlockPos(level, x, z, cache);
+                        if (result == null || !result.success || result.payload == null) return null;
+                        Vec3 nearest = null;
+                        for (var column : result.payload) {
+                            if (column == null || column.blockStateWrapper == null
+                                    || column.blockStateWrapper.isAir()) continue;
+                            // 调用真实柱体求交，检查全部实心高度段，不使用柱底、取整位置或空气层。
+                            Vec3 hit = RVP_FocusLockAim.terrainColumnIntersection(origin, direction, maxDistance,
+                                    x, z, column.bottomYBlockPos, column.topYBlockPos, column.detailLevel);
+                            if (hit != null && (nearest == null
+                                    || origin.distanceToSqr(hit) < origin.distanceToSqr(nearest))) {
+                                nearest = hit;
+                            }
+                        }
+                        return nearest;
+                    });
+        } catch (RuntimeException | LinkageError unavailable) {
+            // 换世界、数据尚未就绪或可选 API 失败时保留方向锁定，不把失败变成假坐标。
+            return null;
+        }
     }
 
     /** 在 apply 前查询本帧纹理并执行一次深度感知合成；任何失败均不取消 DH 事件。 */

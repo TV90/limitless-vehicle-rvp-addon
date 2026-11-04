@@ -71,11 +71,6 @@ public final class RVP_ClientFocusLock {
     private static RVP_FocusLockAim terrainAim;
     /** 后台查询捕获的输入代次，后续鼠标移动会让该结果过期。 */
     private static long terrainRevision;
-    /** 最近发出过查询的状态，防止未命中时逐刻扫描相同射线。 */
-    @Nullable
-    private static RVP_FocusLockAim lastQueriedAim;
-    /** 最近发出过查询的输入代次；观察点移动不会触发反复重查。 */
-    private static long lastQueriedRevision;
 
     /** 工具类不允许实例化。 */
     private RVP_ClientFocusLock() {}
@@ -318,9 +313,9 @@ public final class RVP_ClientFocusLock {
         }
         // 调用代理平移，只更新原有火控需要的位置，不改变原始选点射线和输入代次。
         currentStation.setFocusLockPos(aim.rebase(origin));
-        // 调用可选能力检查，无 DH 或已有在途查询时不创建额外任务。
+        // 调用可选能力与重试间隔检查；同一射线等待数据就绪时每秒重查，不逐刻堆积任务。
         if (terrainQuery != null || !RVP_DistantHorizonsCompatBootstrap.canRaycastFocusTerrain()
-                || (lastQueriedAim == aim && lastQueriedRevision == aim.revision())) {
+                || !aim.tryBeginTerrainQuery(System.nanoTime())) {
             return;
         }
         Vec3 queryOrigin = aim.rayOrigin();
@@ -329,8 +324,8 @@ public final class RVP_ClientFocusLock {
             return;
         }
         terrainStation = currentStation;
-        terrainAim = lastQueriedAim = aim;
-        terrainRevision = lastQueriedRevision = aim.revision();
+        terrainAim = aim;
+        terrainRevision = aim.revision();
         // 调用异步远景射线，扫描和缓存读取不运行在画面线程，也不产生原版区块加载请求。
         terrainQuery = RVP_DistantHorizonsCompatBootstrap.raycastFocusTerrain(minecraft.level,
                 queryOrigin, queryDirection, RVP_FocusLockRaycast.TERRAIN_DISTANCE);
