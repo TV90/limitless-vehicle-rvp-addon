@@ -11,6 +11,14 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /** 真实结构组关联：独立炮管和座圈不混成整个炮塔，匿名子骨继承最近具名父骨。 */
 class RVP_ScopeCubePartResolverTest {
+    @Test void customStructurePathIsTakenFromConfigRatherThanDeprecatedEntityPath() {
+        var config = com.google.gson.JsonParser.parseString("{\"structure_model\":\"rvp:vehicle/custom_tank\"}");
+        assertEquals(new net.minecraft.resources.ResourceLocation("rvp", "vehicle/custom_tank"),
+                RVP_ScopeCubePartResolver.configuredModel(config));
+        assertNull(RVP_ScopeCubePartResolver.configuredModel(com.google.gson.JsonParser.parseString("{}")));
+        assertNull(RVP_ScopeCubePartResolver.configuredModel(null));
+    }
+
     @Test void bodyModulesWithoutPartUnitsStillResolveFromChildCubeGroups() {
         BedrockBone body = new BedrockBone();
         BedrockBone engine = new BedrockBone();

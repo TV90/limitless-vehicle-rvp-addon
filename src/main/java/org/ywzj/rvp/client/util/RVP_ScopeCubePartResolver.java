@@ -1,6 +1,9 @@
 package org.ywzj.rvp.client.util;
 
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
+import org.ywzj.rvp.config.RVP_VehicleExtendedConfigManager;
+import net.minecraft.resources.ResourceLocation;
+import com.google.gson.JsonElement;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
 import com.github.mcmodderanchor.simplebedrockmodel.v1.common.model.BedrockModel;
 import com.github.mcmodderanchor.simplebedrockmodel.v1.common.model.BedrockBone;
@@ -34,6 +37,10 @@ public final class RVP_ScopeCubePartResolver {
     /** 模型骨名反查，重建时生成一次，供车体与全部部件共用。 */
     private final Map<BedrockBone, String> boneNames = new IdentityHashMap<>();
     private int lastPartCount = -1;
+    /** 已同步的原始载具配置快照；引用变化时重读真实 structure_model。 */
+    private Map<ResourceLocation, JsonElement> lastConfigs;
+    /** 当前车型实际配置的结构模型 ID，不能使用本体已弃用的 entity/<id> 推导。 */
+    private ResourceLocation modelId;
 
     public RVP_ScopeCubePartResolver() {
     }
@@ -44,14 +51,28 @@ public final class RVP_ScopeCubePartResolver {
         if (vehicle == null || cube == null) {
             return null;
         }
-        BedrockModel model = vehicle.getStructureModel() == null ? null : CommonAssetsManager.structureModelManager()
-                .getStructureModel(vehicle.getStructureModel()).orElse(null);
+        // 复用现有同步配置入口；本体 getStructureModel() 已弃用，会固定返回错误的 entity/<车型>。
+        var configs = RVP_VehicleExtendedConfigManager.INSTANCE.getRawVehicleJson();
+        if (vehicle != lastVehicle || configs != lastConfigs) {
+            lastConfigs = configs;
+            modelId = configuredModel(configs.get(vehicle.getVehicleId()));
+        }
+        BedrockModel model = modelId == null ? null : CommonAssetsManager.structureModelManager()
+                .getStructureModel(modelId).orElse(null);
         if (vehicle != lastVehicle || model != lastModel || lastPartCount != vehicle.getPartUnits().size()) {
             lastModel = model;
             lastPartCount = vehicle.getPartUnits().size();
             rebuild(vehicle);
         }
         return cubeToPart.get(cube);
+    }
+
+    /** 读取载具数据的真实结构模型路径；不根据车型 ID 猜测目录。 */
+    @Nullable
+    static ResourceLocation configuredModel(@Nullable JsonElement config) {
+        if (config == null || !config.isJsonObject()) return null;
+        JsonElement id = config.getAsJsonObject().get("structure_model");
+        return id == null || !id.isJsonPrimitive() ? null : ResourceLocation.tryParse(id.getAsString());
     }
 
     /** cube 对应的真实结构骨；匿名子组继承最近的具名父骨。 */
