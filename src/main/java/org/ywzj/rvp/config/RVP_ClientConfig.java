@@ -69,6 +69,8 @@ public class RVP_ClientConfig {
     private final ForgeConfigSpec.BooleanValue acceleratedDenseMesh;
     /** 大块不透明刚性 mesh 复用 SBM 常驻几何，减少多车每帧展开的显存占用。 */
     private final ForgeConfigSpec.BooleanValue sharedOpaqueMesh;
+    /** 热成像帧临时暂停已兼容光影的绘制，保留光影配置与 GPU 资源。 */
+    private final ForgeConfigSpec.BooleanValue thermalPauseShaders;
     /** 启用 dense 的单个 mesh 最小顶点记录数，不是模型总面数。 */
     private final ForgeConfigSpec.IntValue acceleratedDenseMinVertices;
 
@@ -116,6 +118,13 @@ public class RVP_ClientConfig {
     private final ForgeConfigSpec.BooleanValue distantHorizonsDiagnosticLayerColors;
 
     public RVP_ClientConfig(ForgeConfigSpec.Builder builder) {
+        builder.push("thermal");
+        thermalPauseShaders = builder
+                .comment("热成像期间暂停兼容的 Oculus/Embeddium 光影绘制，退出后恢复。",
+                        "保留已编译资源与地形格式；未知接口保持原绘制，不重载或改写光影配置。")
+                .define("pauseShaders", true);
+        builder.pop();
+
         builder.push("mesh");
         acceleratedDenseMesh = builder
                 .comment("让较大的不透明 mesh 使用 AR 的 dense 提交，减少 sparse 路径逐顶点 CPU 写入。",
@@ -293,6 +302,12 @@ public class RVP_ClientConfig {
     /** 未加载配置时不接管绘制；与 dense 总开关分开保留对照能力。 */
     public static boolean isSharedOpaqueMeshEnabled() {
         return isAcceleratedDenseMeshEnabled() && INSTANCE.sharedOpaqueMesh.get();
+    }
+
+    /** 配置加载后才允许热成像临时接管光影，默认开启。 */
+    public static boolean isThermalPauseShadersEnabled() {
+        return INSTANCE != null && CLIENT_SPEC != null && CLIENT_SPEC.isLoaded()
+                && INSTANCE.thermalPauseShaders.get();
     }
 
     /** 返回单个 mesh 的顶点记录阈值；未加载配置时使用默认 32768。 */

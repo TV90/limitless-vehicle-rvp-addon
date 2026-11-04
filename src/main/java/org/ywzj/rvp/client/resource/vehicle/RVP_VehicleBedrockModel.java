@@ -13,6 +13,7 @@ import net.minecraft.client.renderer.RenderType;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import org.ywzj.rvp.client.compat.acceleratedrendering.RVP_AcceleratedMeshCompat;
+import org.ywzj.rvp.client.compat.thermal.RVP_ThermalShaderPause;
 import org.ywzj.rvp.client.light.RVP_SmokeLightPass;
 import org.ywzj.rvp.client.compat.acceleratedrendering.RVP_SharedOpaqueMesh;
 import org.ywzj.rvp.client.render.RVP_HitPanelMesh;
@@ -108,16 +109,19 @@ public class RVP_VehicleBedrockModel extends VehicleBedrockModel {
         RenderType material = thermal == null ? RVP_RenderTypes.polyMeshCutout(texture) : thermal.material();
         int threshold = RVP_ClientConfig.getAcceleratedDenseMinVertices();
         // 调用独立骨树遍历；共享只读局部几何，每台车/回放代理仍用自己的骨骼矩阵与可见性。
-        sharedMeshPass.render(instance, pose, light, (chunk, stack, boneLight) -> {
-            boolean shared = thermal == null
-                    ? RVP_SharedOpaqueMesh.tryDrawPanel(chunk, material, stack, boneLight, OverlayTexture.NO_OVERLAY, threshold)
-                    : RVP_SharedOpaqueMesh.tryDrawWorld(chunk, material, stack, boneLight, OverlayTexture.NO_OVERLAY, threshold);
-            if (!shared) {
-                // 小块、非均匀缩放或不支持材质继续调用 SBM；不强行解包 AR 消费者。
-                BakedGeometryChunkRenderer.INSTANCE.renderVertexChunk(chunk, stack, source.getBuffer(material),
-                        boneLight, OverlayTexture.NO_OVERLAY, 1, 1, 1, 1);
-            }
-        });
+        // 调用热成像暂停帧的小网格作用域；普通帧仍使用传入消费者，大网格共享策略不变。
+        try (var fallback = RVP_ThermalShaderPause.fallback(source)) {
+            sharedMeshPass.render(instance, pose, light, (chunk, stack, boneLight) -> {
+                boolean shared = thermal == null
+                        ? RVP_SharedOpaqueMesh.tryDrawPanel(chunk, material, stack, boneLight, OverlayTexture.NO_OVERLAY, threshold)
+                        : RVP_SharedOpaqueMesh.tryDrawWorld(chunk, material, stack, boneLight, OverlayTexture.NO_OVERLAY, threshold);
+                if (!shared) {
+                    // 小块、非均匀缩放或不支持材质继续调用 SBM；不强行解包 AR 消费者。
+                    BakedGeometryChunkRenderer.INSTANCE.renderVertexChunk(chunk, stack, fallback.source().getBuffer(material),
+                            boneLight, OverlayTexture.NO_OVERLAY, 1, 1, 1, 1);
+                }
+            });
+        }
         // 调用既有 display no_cull_bones 白名单，严格保留指定薄片补画，其余主体仍单面剔除。
         for (String name : RVP_DisplayBackendUtil.getNoCullBones(this)) {
             int index = baked.getIndex(name);
