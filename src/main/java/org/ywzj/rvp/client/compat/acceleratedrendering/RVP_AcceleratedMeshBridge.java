@@ -1,7 +1,9 @@
 package org.ywzj.rvp.client.compat.acceleratedrendering;
 
 import com.github.argon4w.acceleratedrendering.core.backends.buffers.IServerBuffer;
+import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.IAccelerationHolder;
 import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.builders.AcceleratedBufferBuilder;
+import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.builders.IAcceleratedVertexConsumer;
 import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.builders.AcceleratedVertexConsumerWrapper;
 import com.github.argon4w.acceleratedrendering.core.meshes.ServerMesh;
 import com.mojang.blaze3d.vertex.VertexConsumer;
@@ -26,13 +28,27 @@ public final class RVP_AcceleratedMeshBridge implements RVP_AcceleratedMeshCompa
         }
         AcceleratedVertexConsumerWrapper.class.getMethod("addServerMesh", ServerMesh.class,
                 int.class, int.class, int.class);
+        if (IAccelerationHolder.class.getMethod("getAccelerated").getReturnType()
+                != AcceleratedBufferBuilder.class) {
+            throw new NoSuchMethodException("AR acceleration holder changed");
+        }
     }
 
     @Override
     public VertexConsumer wrap(VertexConsumer consumer, int minVertices) {
-        // 原始 AR builder 的几何修饰为恒等；不介入 decal、outline、多路消费等额外包装链。
-        return consumer instanceof AcceleratedBufferBuilder
-                ? new DenseConsumer(consumer, minVertices, denseViews) : consumer;
+        AcceleratedBufferBuilder builder = null;
+        if (consumer instanceof AcceleratedBufferBuilder direct) {
+            builder = direct;
+        } else if (consumer instanceof IAccelerationHolder holder
+                && consumer instanceof IAcceleratedVertexConsumer accelerated
+                && accelerated.isAccelerated()) {
+            // 主世界的 BufferBuilder / SodiumBufferBuilder 持有真正的 AR builder；
+            // SBM 也通过此公开入口提交。只识别 raw builder 会让优化仅在直连预览中生效。
+            // 先检查该批次是否获准加速，避免绕过 AR 过滤器或把原版批次强行改道。
+            builder = holder.getAccelerated();
+        }
+        // 不拆解普通 AR 包装链：decal、outline、UV 修饰和多路消费仍由原通道处理。
+        return builder == null ? consumer : new DenseConsumer(builder, minVertices, denseViews);
     }
 
     /** 为同一 GPU 几何建立独立提交身份；偏移、顶点数和缓冲地址保持一致。 */

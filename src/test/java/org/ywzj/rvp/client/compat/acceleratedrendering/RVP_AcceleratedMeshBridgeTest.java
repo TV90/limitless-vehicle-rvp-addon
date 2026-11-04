@@ -1,5 +1,8 @@
 package org.ywzj.rvp.client.compat.acceleratedrendering;
 
+import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.IAccelerationHolder;
+import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.IAcceleratedBufferSource;
+import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.builders.AcceleratedBufferBuilder;
 import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.builders.IAcceleratedVertexConsumer;
 import com.github.argon4w.acceleratedrendering.core.meshes.ServerMesh;
 import com.github.argon4w.acceleratedrendering.core.programs.dispatchers.meshes.MeshUploads;
@@ -10,6 +13,8 @@ import org.junit.jupiter.api.Test;
 
 import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
 import java.util.Map;
+import java.util.function.Supplier;
+import net.minecraft.client.renderer.RenderType;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -117,13 +122,69 @@ class RVP_AcceleratedMeshBridgeTest {
         assertSame(original, wrapped.decorate(original));
     }
 
+    @Test
+    void worldBufferHolderReachesTheSameDensePathAsDirectPreview() throws Exception {
+        var builder = builderWithoutGpu();
+        var holder = new RecordingHolder(true, builder);
+        var bridge = new RVP_AcceleratedMeshBridge();
+        var direct = assertInstanceOf(RVP_AcceleratedMeshBridge.DenseConsumer.class,
+                bridge.wrap(builder, 32768));
+        var world = assertInstanceOf(RVP_AcceleratedMeshBridge.DenseConsumer.class,
+                bridge.wrap(holder, 32768));
+        assertSame(builder, direct.getDelegate());
+        assertSame(builder, world.getDelegate(), "主世界包装器必须接到同一个底层 AR builder");
+        assertEquals(1, holder.builderReads);
+    }
+
+    @Test
+    void disabledOrUnavailableWorldAccelerationKeepsOriginalConsumer() throws Exception {
+        var bridge = new RVP_AcceleratedMeshBridge();
+        var disabled = new RecordingHolder(false, builderWithoutGpu());
+        assertSame(disabled, bridge.wrap(disabled, 32768));
+        assertEquals(0, disabled.builderReads, "不得为被 AR 过滤的批次强行初始化加速");
+        var unavailable = new RecordingHolder(true, null);
+        assertSame(unavailable, bridge.wrap(unavailable, 32768));
+        assertEquals(1, unavailable.builderReads);
+    }
+
+    /** 只用于确认公开 holder 的转发身份，不创建或访问 OpenGL 缓冲。 */
+    private static AcceleratedBufferBuilder builderWithoutGpu() throws Exception {
+        var field = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
+        field.setAccessible(true);
+        return (AcceleratedBufferBuilder) ((sun.misc.Unsafe) field.get(null))
+                .allocateInstance(AcceleratedBufferBuilder.class);
+    }
+
+    /** 模拟 AR 加到原版 / Sodium 缓冲上的公开 holder，不模拟其内部绘制实现。 */
+    private static final class RecordingHolder extends RecordingConsumer implements IAccelerationHolder {
+        /** 当前批次是否通过 AR 的过滤条件。 */
+        private final boolean enabled;
+        /** 当前批次实际的加速 builder；null 模拟不可用路径。 */
+        private final AcceleratedBufferBuilder builder;
+        /** 检查被过滤批次是否意外触发了加速初始化。 */
+        private int builderReads;
+
+        RecordingHolder(boolean enabled, AcceleratedBufferBuilder builder) {
+            this.enabled = enabled;
+            this.builder = builder;
+        }
+        @Override public boolean isAccelerated() { return enabled; }
+        @Override public AcceleratedBufferBuilder getAccelerated() {
+            builderReads++;
+            return builder;
+        }
+        @Override public VertexConsumer initAcceleration(RenderType type, Supplier<IAcceleratedBufferSource> source) {
+            throw new AssertionError("RVP 不得重新初始化 AR 批次");
+        }
+    }
+
     private static ServerMesh mesh(int size, boolean dense) {
         // 元数据测试不分配 OpenGL 缓冲；生产实现必须原样保留此引用。
         return new ServerMesh(3, ServerMesh.Builder.COUNTER++, size, 4096, dense, null);
     }
 
     /** 记录真实 AR 包装器调用的边界，不启动 OpenGL。 */
-    private static final class RecordingConsumer implements VertexConsumer, IAcceleratedVertexConsumer {
+    private static class RecordingConsumer implements VertexConsumer, IAcceleratedVertexConsumer {
         /** 模拟 AR builder 按材质/布局定义的几何身份；批次对象本身可以不同。 */
         private final Object geometryKey;
 
