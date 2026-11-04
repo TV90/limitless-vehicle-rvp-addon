@@ -427,6 +427,7 @@
   "gui.ywzj_rvp.equipment.cm_smoke": "烟幕弹",
   "gui.ywzj_rvp.equipment.ammo": "余弹 %s/%s",
   "gui.ywzj_rvp.module.barrel": "炮管",
+  "gui.ywzj_rvp.module.turret_traverse": "方向机",
   "ui.rvp.barrel_destroyed": "炮管损坏，请先维修",
   "gui.ywzj_rvp.equipment.cat_barrel": "炮管",
   "gui.ywzj_rvp.hud.label_flare": "热诱",
@@ -575,5 +576,8 @@
   "hud.ywzj_rvp.action.switch_auxiliary": "切换",
   "hud.ywzj_rvp.action.tactical_map": "地图",
   "hud.ywzj_rvp.action.vehicle_status": "状态",
-  "hud.ywzj_rvp.action.deployed_auxiliary": "已部署"
+  "hud.ywzj_rvp.action.deployed_auxiliary": "已部署",
+  "hud.ywzj_rvp.action.seeker": "导引头",
+  "hud.ywzj_rvp.action.fire_control": "火控模式",
+  "hud.ywzj_rvp.action.quick_lock": "快速锁定"
 }

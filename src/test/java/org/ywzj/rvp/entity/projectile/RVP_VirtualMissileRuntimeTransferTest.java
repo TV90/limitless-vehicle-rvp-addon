@@ -15,6 +15,7 @@ import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
 import org.ywzj.rvp.all.RVP_Entities;
 import org.ywzj.rvp.guidance.RVP_GuidancePhase;
+import org.ywzj.rvp.hitl.RVP_HitlLockSnapshot.Status;
 import org.ywzj.rvp.virtualflight.common.RVP_VirtualFlightPhase;
 import org.ywzj.rvp.virtualflight.server.RVP_EntityTrajectoryIntegrator;
 import org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileState;
@@ -100,6 +101,39 @@ class RVP_VirtualMissileRuntimeTransferTest {
         rebuilt.rvp$setHitlSteeringInput(-10, 5, 41);
         assertEquals(-10, rebuilt.rvp$getHitlInputYaw());
         assertEquals(5, rebuilt.rvp$getHitlInputPitch());
+    }
+
+    /** 合并后的电视脱锁状态必须跨越完整存档/重建链，烟内点不能被再次随机改写。 */
+    @Test
+    void hitlFrozenPointAndBreakReasonSurviveVirtualSavedDataRebuild() {
+        for (Status status : List.of(Status.POINT, Status.SMOKE, Status.OCCLUDED, Status.SPEED, Status.NONE)) {
+            var missile = missile("HITL_TV");
+            Vec3 frozen = status == Status.NONE ? null : new Vec3(80, 30, 160);
+            // 调用实际脱锁入口，再走生产存档和重建，验证新增状态能接入本地虚拟弹生命周期。
+            missile.rvp$freezeHitlTarget(frozen, status);
+            var loaded = RVP_VirtualMissileState.load(state(missile).save()).orElseThrow();
+            var rebuilt = RVP_EntityTrajectoryIntegrator.createEntity(missile.level(), loaded, missile.getRvpData(), null, null);
+            assertEquals(status, rebuilt.rvp$getHitlPointStatus());
+            assertEquals(frozen, rebuilt.getTargetPos());
+            assertEquals(missile.rvp$getHitlLockSnapshot(), rebuilt.rvp$getHitlLockSnapshot());
+        }
+    }
+
+    /** 真实弹与虚拟弹必须都能点锁地面表面，同时拒绝锁住地面背后的坐标。 */
+    @Test
+    void realAndVirtualTVDesignationShareSurfaceToleranceAndOcclusion() {
+        for (boolean virtual : List.of(false, true)) {
+            var missile = missile("HITL_TV");
+            missile.setVirtualMidcourseTarget(virtual);
+            Vec3 surface = new Vec3(8, 0, 16);
+            // 调用实际电视指定入口，完整执行反制和只读地形射线，不能绕过服务端接纳门。
+            missile.rvp$setHitlDesignatedTarget(surface);
+            assertEquals(surface, missile.getTargetPos(), "可见地面表面应允许点锁");
+            assertEquals(Status.POINT, missile.rvp$getHitlPointStatus());
+            missile.rvp$setHitlDesignatedTarget(new Vec3(8, -4, 16));
+            assertEquals(surface, missile.getTargetPos(), "遮挡后保留最后有效点");
+            assertEquals(Status.OCCLUDED, missile.rvp$getHitlPointStatus());
+        }
     }
 
     @Test
@@ -247,6 +281,9 @@ class RVP_VirtualMissileRuntimeTransferTest {
         var saved = state(missile).save();
         saved.getCompound("runtimeData").putFloat("hitlInputYaw", Float.NaN);
         assertTrue(RVP_VirtualMissileState.load(saved).isEmpty());
+        var invalidLock = state(missile).save();
+        invalidLock.getCompound("runtimeData").putString("hitlPointStatus", "INVALID");
+        assertTrue(RVP_VirtualMissileState.load(invalidLock).isEmpty(), "坏脱锁状态不能进入弹体重建");
         var gps = state(missile("GPS")).save();
         gps.remove("runtimeData");
         assertTrue(RVP_VirtualMissileState.load(gps).isPresent(), "原有 GPS 存档无需迁移即可继续读取");

@@ -554,10 +554,11 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
 
     @Override
     public void tick() {
-        super.tick();
         // [B2] 替代被删 WeaponUnitSetWeaponMixin / WeaponUnitSwitchWeaponMixin /
         // WeaponUnitFollowParentRotationMixin：武器 tick 在本体 super.tick()（含 updateRot）之后执行
         WeaponUnit unit = getWeaponUnit();
+        org.ywzj.rvp.event.RVP_TurretTraverseHandler.constrain(unit);
+        super.tick();
         // 弹舱映射建立在父武器站（sighting_system）的 weaponBayUnits 上；
         // 若武器挂在子武器部件（如 SU-57 的 kh_38/kh_58），直接传子部件会因
         // weaponBayUnits 为空而跳过弹舱自动开关，故统一传根父武器站。

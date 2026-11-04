@@ -25,6 +25,14 @@ public class RVP_VehicleMultiWeapons extends VehicleMultiWeapons {
     }
 
     @Override
+    public void tick() {
+        // 本体 Multi 在客户端直接返回，不会运行 RVP 叶子武器的限速收尾；必须在包装层补齐。
+        // 此时武器站刚完成稳定器和结构组更新，先约束真实姿态，再允许测距、瞄准和炮口效果读取。
+        org.ywzj.rvp.event.RVP_TurretTraverseHandler.constrain(getWeaponUnit());
+        super.tick();
+    }
+
+    @Override
     public void cycleSubWeapon(boolean next) {
         super.cycleSubWeapon(next);
         for (AbstractVehicleWeapon<?> sub : getSubWeapons()) {

@@ -188,6 +188,10 @@ public class VehicleAimAtOverlaySeekerColorMixin {
     @Redirect(method = "render", remap = false, at = @At(value = "INVOKE", remap = false,
             target = "Lorg/ywzj/vehicle/client/gui/VehicleAimAtOverlay;aimScreenPosition(Lorg/ywzj/vehicle/vehicle/part/WeaponUnit;F)Lnet/minecraft/world/phys/Vec3;"))
     private net.minecraft.world.phys.Vec3 rvp$disguiseAimPosition(WeaponUnit weaponUnit, float partialTick) {
+        // 复用现有重定向：受损观瞄的意图/装填圈与实际弹道准星同源，健康站保留原有提前量。
+        net.minecraft.world.phys.Vec3 actual = org.ywzj.rvp.client.state.RVP_ClientTurretTraverseSight
+                .actualHitScreenPosition(weaponUnit, partialTick);
+        if (actual != null) return actual;
         if (org.ywzj.rvp.client.state.RVP_ScopeViewSyncClient.disguiseAimActive(weaponUnit)) {
             net.minecraft.world.phys.Vec3 cameraAim =
                     org.ywzj.rvp.client.state.RVP_ScopeViewSyncClient.disguiseAimWorldPos(weaponUnit, partialTick);

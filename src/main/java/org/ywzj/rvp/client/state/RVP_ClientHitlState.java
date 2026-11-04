@@ -63,6 +63,10 @@ public class RVP_ClientHitlState {
     @Nullable
     private static Vec3 clientDesignatedPos;
     private static int clientDesignatedEntityId = -1;
+    /** 服务端确认的锁定/脱锁原因。 */
+    private static org.ywzj.rvp.hitl.RVP_HitlLockSnapshot.Status lockStatus = org.ywzj.rvp.hitl.RVP_HitlLockSnapshot.Status.NONE;
+    /** DIRCM 白闪结束后的剩余禁锁期，随服务端快照更新。 */
+    private static int noRedesignateTicks;
     private static boolean hitlLinkBlocked;
     private static boolean hitlLinkSevered;
     /** DIRCM 对 HITL 弹的临时干扰状态（服务端 S2CHitlLinkState 同步，驱动白闪滤镜）。 */
@@ -163,6 +167,29 @@ public class RVP_ClientHitlState {
         dircmJamTotalTick = jam ? Math.max(1, totalTick) : 0;
     }
 
+    /** 只接受当前镜头的服务端结果，拒绝请求也能清除旧实体框。 */
+    public static void onHitlLockState(int missileEntityId, org.ywzj.rvp.hitl.RVP_HitlLockSnapshot lock) {
+        if (missileEntityId != activeMissileId) return;
+        clientDesignatedEntityId = lock.entityId();
+        clientDesignatedObb = lock.obb();
+        clientDesignatedPos = lock.point();
+        lockStatus = lock.status();
+        noRedesignateTicks = lock.noRedesignateTicks();
+    }
+
+    /** 沿用紧凑侧栏缩写，状态不再由客户端本地实体 ID 猜测。 */
+    public static String getLockStatusLabel() {
+        return switch (lockStatus) {
+            case ENTITY -> "ENT";
+            case POINT -> "PNT";
+            case SMOKE -> "SMK";
+            case OCCLUDED -> "LOS";
+            case SPEED -> "SPD";
+            case DIRCM -> "JAM " + (noRedesignateTicks + 19) / 20;
+            default -> "--";
+        };
+    }
+
     /** 是否正被 DIRCM 干扰（HITL 白闪滤镜驱动，与雪花互斥）。 */
     public static boolean isDircmJammed() {
         return dircmJam && !hitlLinkBlocked;
@@ -215,6 +242,8 @@ public class RVP_ClientHitlState {
     }
 
     public static void enter(int missileEntityId, RVP_EnumHitlControlMode mode) {
+        // 服务端入镜重发是可靠性兜底，不能重置已确认的锁点、离轴游标或再次自动指定。
+        if (activeMissileId == missileEntityId && controlMode == mode) return;
         // 新视频优先，不能被上一发导弹的失图计时遮挡。
         signalLoss.clear();
         // 同弹重发不清额外地图，切弹则先通知服务端释放旧会话。
@@ -242,6 +271,8 @@ public class RVP_ClientHitlState {
         clientDesignatedPos = null;
         clientDesignatedEntityId = -1;
         clientDesignatedObb = null;
+        lockStatus = org.ywzj.rvp.hitl.RVP_HitlLockSnapshot.Status.NONE;
+        noRedesignateTicks = 0;
         hitlLinkBlocked = false;
         hitlLinkSevered = false;
         dircmJam = false;
@@ -300,6 +331,8 @@ public class RVP_ClientHitlState {
         clientDesignatedPos = null;
         clientDesignatedEntityId = -1;
         clientDesignatedObb = null;
+        lockStatus = org.ywzj.rvp.hitl.RVP_HitlLockSnapshot.Status.NONE;
+        noRedesignateTicks = 0;
         hitlLinkBlocked = false;
         hitlLinkSevered = false;
         dircmJam = false;
@@ -352,7 +385,7 @@ public class RVP_ClientHitlState {
                 if (!videoModeUserSelected) {
                     videoMode = resolveInitialVideoMode(missile);
                 }
-                if (isDesignateMode()) {
+                if (isDesignateMode() && clientDesignatedPos == null && !dircmJam && noRedesignateTicks <= 0) {
                     redesignateTargetAtCrosshair(mc, missile);
                     initialDesignateSent = true;
                 }
@@ -472,38 +505,37 @@ public class RVP_ClientHitlState {
 
     /** Press R in TV SACLOS: designate / re-designate target at current crosshair (never turns guidance off). */
     public static void redesignateTargetAtCrosshair(Minecraft mc, RVP_MissileEntity missile) {
+        if (hitlLinkBlocked || dircmJam || noRedesignateTicks > 0) return;
         float aimYaw = RVP_ClientHitlCamera.getAimYaw();
         float aimPitch = RVP_ClientHitlCamera.getAimPitch();
         HitResult hit = RVP_ClientHitlUtil.raycastFromBodyAim(
                 mc, missile, aimYaw, aimPitch, DESIGNATE_AIM_RANGE, true);
         if (hit != null && hit.getType() == HitResult.Type.ENTITY && hit instanceof EntityHitResult entityHit
                 && entityHit.getEntity() != null) {
+            // 非 pickable 的烟体也拦住点选，向服务端请求烟中心点，由服务端一次性取偏移点。
+            if (org.ywzj.rvp.countermeasure.RVP_CountermeasureState.isOpticalObstruction(entityHit.getEntity())) {
+                RVP_Network.CHANNEL.sendToServer(C2SHitlDesignate.point(activeMissileId,
+                        entityHit.getEntity().getBoundingBox().getCenter()));
+                return;
+            }
             int entityId = entityHit.getEntity().getId();
             // 具名载具优先锁定离轴射线命中的 OBB；无结构模型的实体沿用原选点。
             Vec3 point = org.ywzj.rvp.util.RVP_AimPointResolver
                     .resolveLargestObbCenter(entityHit.getEntity());
-            clientDesignatedPos = point;
             if (entityHit instanceof RVP_HitlVehicleHitResult precise
                     && entityHit.getEntity() instanceof AbstractVehicle vehicle) {
                 // 同一载具按 R 可直接改选另一 OBB，不沿用旧的“同目标切回中心点”分支。
                 var box = org.ywzj.rvp.util.RVP_NamedVehicleObbs.resolve(vehicle, precise.key());
                 if (box != null) {
-                    clientDesignatedObb = precise.key();
-                    clientDesignatedPos = box.center();
-                    clientDesignatedEntityId = entityId;
                     RVP_Network.CHANNEL.sendToServer(C2SHitlDesignate.entity(
                             activeMissileId, entityId, box.center(), precise.key()));
                     return;
                 }
             }
             if (clientDesignatedEntityId == entityId) {
-                clientDesignatedEntityId = -1;
-                clientDesignatedObb = null;
                 RVP_Network.CHANNEL.sendToServer(C2SHitlDesignate.point(activeMissileId, point));
                 return;
             }
-            clientDesignatedEntityId = entityId;
-            clientDesignatedObb = null;
             RVP_Network.CHANNEL.sendToServer(C2SHitlDesignate.entity(activeMissileId, entityId, point));
             return;
         }
@@ -511,9 +543,6 @@ public class RVP_ClientHitlState {
         if (point == null) {
             return;
         }
-        clientDesignatedPos = point;
-        clientDesignatedEntityId = -1;
-        clientDesignatedObb = null;
         RVP_Network.CHANNEL.sendToServer(C2SHitlDesignate.point(activeMissileId, point));
     }
 
@@ -531,11 +560,9 @@ public class RVP_ClientHitlState {
         if (!isDesignateMode()) {
             return;
         }
-        if (hitlLinkBlocked) {
-            return;
-        }
         while (RVP_Keys.HITL_REDESIGNATE.consumeClick()) {
-            redesignateTargetAtCrosshair(mc, missile);
+            // 即使禁锁也消费按键，不能在倒计时结束后补发干扰期积压的指定请求。
+            if (!hitlLinkBlocked && !dircmJam && noRedesignateTicks <= 0) redesignateTargetAtCrosshair(mc, missile);
         }
     }
 

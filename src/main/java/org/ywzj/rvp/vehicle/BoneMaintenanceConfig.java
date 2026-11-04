@@ -158,7 +158,9 @@ public record BoneMaintenanceConfig(
 
         /** 指定模块类型是否可经快速维修恢复。 */
         public boolean isRepairable(BoneModuleType type) {
-            return type != null && type != BoneModuleType.TRACK && repairableTypesParsed().contains(type);
+            return type != null && type != BoneModuleType.TRACK && (repairableTypesParsed().contains(type)
+                    || (type == BoneModuleType.TURRET_TRAVERSE_DAMAGED
+                    && repairableTypesParsed().contains(BoneModuleType.TURRET_TRAVERSE)));
         }
 
         @Override

@@ -110,27 +110,38 @@ public final class RVP_PhysicsOnlyCollisionHelper {
     }
 
     public static Vec3 closestNonPhysicsOnlyHitPosition(AbstractVehicle vehicle, Vec3 start, Vec3 end) {
+        ObbHit hit = closestNonPhysicsOnlyHit(vehicle, start, end);
+        return hit == null ? null : hit.position();
+    }
+
+    public record ObbHit(OBB obb, Vec3 position) {}
+
+    public static ObbHit closestNonPhysicsOnlyHit(AbstractVehicle vehicle, Vec3 start, Vec3 end) {
         if (vehicle == null) {
             return null;
         }
         List<VehicleCubeOBB> physicsOnlyCubes = getPhysicsOnlyCubes(vehicle);
+        Vector3f from = start.toVector3f();
+        Vector3f to = end.toVector3f();
         double minDistance = Double.MAX_VALUE;
-        Vec3 minDistanceHitPos = null;
+        OBB closestObb = null;
+        Vec3 closestPosition = null;
         for (OBB obb : vehicle.getOBBs()) {
             if (isPhysicsOnlyObb(obb, physicsOnlyCubes)) {
                 continue;
             }
-            Vec3 hitPos = obb.clip(start.toVector3f(), end.toVector3f()).map(Vec3::new).orElse(null);
+            Vec3 hitPos = obb.clip(from, to).map(Vec3::new).orElse(null);
             if (hitPos == null) {
                 continue;
             }
             double distance = hitPos.distanceTo(start);
             if (distance < minDistance) {
                 minDistance = distance;
-                minDistanceHitPos = hitPos;
+                closestObb = obb;
+                closestPosition = hitPos;
             }
         }
-        return minDistanceHitPos;
+        return closestObb == null ? null : new ObbHit(closestObb, closestPosition);
     }
 
     public static Vec3 closestPhysicsOnlyHitPosition(AbstractVehicle vehicle, Vec3 start, Vec3 end) {

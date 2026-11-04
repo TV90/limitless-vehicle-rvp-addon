@@ -1,82 +1,48 @@
 package org.ywzj.rvp.guidance.runtime;
 
-import net.minecraft.network.chat.Component;
-import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
-import org.ywzj.rvp.config.RVP_Config;
 import org.ywzj.rvp.countermeasure.RVP_CountermeasureState;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
-import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
-import org.ywzj.rvp.guidance.RVP_EnumHitlControlMode;
-import org.ywzj.rvp.guidance.RVP_GuidanceIntent;
-import org.ywzj.rvp.guidance.RVP_GuidanceRuntimeContext;
-import org.ywzj.rvp.guidance.RVP_RuntimeGuidanceSource;
-import org.ywzj.rvp.guidance.saclos.RVP_SaclosDesignation;
+import org.ywzj.rvp.guidance.*;
+import org.ywzj.rvp.hitl.RVP_HitlLockSnapshot.Status;
 
-/** TV designation guidance with the existing HITL target re-designation flow. */
+/** TV 实体锁、指定点与反制后的固定点；退出镜头后仍执行相同检查。 */
 public final class RVP_RuntimeHitlTvGuidanceSource implements RVP_RuntimeGuidanceSource {
-
     @Override
-    public RVP_EnumGuidanceType type() {
-        return RVP_EnumGuidanceType.HITL_TV;
-    }
+    public RVP_EnumGuidanceType type() { return RVP_EnumGuidanceType.HITL_TV; }
 
     @Override
     public RVP_GuidanceIntent evaluate(RVP_GuidanceRuntimeContext context) {
         if (!(context.projectile() instanceof RVP_MissileEntity missile)
                 || missile.rvp$getHitlControlMode() != RVP_EnumHitlControlMode.DESIGNATE) {
-            return RVP_GuidanceIntent.failed(RVP_EnumGuidanceType.HITL_TV);
+            return RVP_GuidanceIntent.failed(type());
         }
-        // HITL 失活（玩家右键退出视角/链路切断）后：导弹继续跟踪最后锁定的目标实体或目标点，
-        // 而非退回无制导直飞。若存在存活目标实体，优先实体跟踪；否则沿用最后的指定目标点。
-        boolean hitlActive = missile.rvp$isHitlActive();
-        Entity target = context.projectile().getTargetEntity();
+        // 固定烟内点也要经过 APS 拦截门，但不能每 tick 重新生成偏移点。
+        if (RVP_CountermeasureState.queryPoint(missile, null, type(), context.active()).intercepted()) {
+            missile.rvp$freezeHitlTarget(null, Status.NONE);
+            missile.discard();
+            return RVP_GuidanceIntent.failed(type());
+        }
+        Entity target = missile.getTargetEntity();
         if (target != null && target.isAlive()) {
-            // 反制链：validateEntity 内含 isTargetInsideSmoke / 视线遮挡检测，目标进入烟雾
-            // AABB 碰撞箱会判定锁定阻断（denied），该路径已进入干扰保持期并脱锁，符合烟雾弹预期。
-            Entity valid = RVP_RuntimeSeekerSupport.validateEntity(
-                    context.projectile(), target, RVP_EnumGuidanceType.HITL_TV, context.active());
-            if (valid != null) {
-                // 速度脱锁反制（2026-09-21）：被锁实体速度超阈值（格/tick × 72 = km/h）立即脱锁，
-                // 锁定位置改为最后一次持续跟踪的坐标（弹体转飞该点）。操作手吊舱实时指定点
-                //（指方块/地面/新目标）与实体重锁均立即可用；重锁入口 rvp$setHitlDesignatedEntity
-                // 只把实体放回，本闸门每 tick 复查，再锁超速目标会立刻再脱锁，无需额外挂钩。
-                float breakKph = RVP_Config.getHitlTvBreakLockTargetSpeedKph();
-                if (breakKph > 0 && valid.getDeltaMovement().length() * 72.0 > breakKph) {
-                    // [RVP] §46：脱锁跟踪点与瞄准点同源（已选 OBB，无弱点选择时沿用原中心）
-                    Vec3 lastTracked = missile.rvp$resolveHitlAimPoint(valid);
-                    missile.rvp$markHitlSpeedBreak(lastTracked);
-                    if (missile.getOwner() instanceof ServerPlayer operator) {
-                        operator.displayClientMessage(
-                                Component.translatable("ui.hitl_target_speed_break"), true);
-                    }
-                    // 本 tick 起由实体跟踪转为点制导飞向最后跟踪坐标；下一 tick 起吊舱实时
-                    // 指定点（指方块/地面/新目标）即恢复正常接管，重锁超速实体则再次进本闸门
-                    return RVP_GuidanceIntent.point(lastTracked, false, 1.0, RVP_EnumGuidanceType.HITL_TV);
-                }
-                // 意图方向和最终转向都使用相同的弱点位置，保留实体跟踪与速度反制。
-                return new RVP_GuidanceIntent(true, missile.rvp$resolveHitlAimPoint(valid), valid,
-                        false, 1.0, RVP_EnumGuidanceType.HITL_TV);
+            Vec3 point = missile.rvp$resolveHitlAimPoint(target);
+            // 调用与 C2S 指定一致的门；只有通过后才更新惯性记忆，避免“失败但仍跟踪”。
+            if (RVP_HitlTvTargeting.validate(missile, target, point, context.active())) {
+                missile.setTargetPos(point);
+                return new RVP_GuidanceIntent(true, point, target, false, 1.0, type());
             }
+        } else if (target != null) {
+            missile.rvp$freezeHitlTarget(missile.getTargetPos(), Status.OCCLUDED);
+        } else if (missile.getTargetPos() != null && missile.rvp$getHitlPointStatus() != Status.SMOKE
+                && missile.rvp$getHitlPointStatus() != Status.OCCLUDED) {
+            RVP_HitlTvTargeting.validate(missile, null, missile.getTargetPos(), context.active());
         }
-        // 无存活实体目标时：HITL 仍激活则继续解析实时指定点（吊舱瞄准/操作手指定），
-        // HITL 已退出则锁定最后的指定目标点，避免退出后随吊舱实时瞄准漂移（鼠标操控 bug 根因
-        // 由 RVP_SaclosDesignation.tickUpdateLiveTarget 的 isSaclosTvGuided 门控一并堵住）。
-        Vec3 point = hitlActive
-                ? RVP_SaclosDesignation.resolveDesignationPoint(context.projectile())
-                : context.projectile().getTargetPos();
-        if (point == null) {
-            return RVP_GuidanceIntent.failed(RVP_EnumGuidanceType.HITL_TV);
+        Vec3 point = missile.getTargetPos();
+        // 其它遮挡遵从原 enable_inertial_guidance；烟雾按既有设计偏向一次性烟内点。
+        if (point == null || missile.rvp$getHitlPointStatus() == Status.OCCLUDED) {
+            return RVP_GuidanceIntent.failed(type());
         }
-        // 点制导反制链：queryPoint 对 HITL_TV 走 isPointInsideSmoke / 视线遮挡检测，与实体路径
-        // 一致，目标进入烟雾 AABB 时判定 denied（脱锁），维持烟雾弹对退出后追踪导弹的威慑。
-        RVP_CountermeasureState.Result result = RVP_CountermeasureState.queryPoint(
-                context.projectile(), point, RVP_EnumGuidanceType.HITL_TV, context.active());
-        if (result.isDenied()) {
-            return RVP_GuidanceIntent.failed(RVP_EnumGuidanceType.HITL_TV);
-        }
-        context.projectile().setTargetPos(point);
-        return RVP_GuidanceIntent.point(point, false, 1.0, RVP_EnumGuidanceType.HITL_TV);
+        return RVP_GuidanceIntent.point(point, false, 1.0, type());
     }
 }

@@ -98,12 +98,12 @@ public final class RVP_HitVehicleListener {
         // 非 RVP 伤害源没有 weaponId（客户端回退曳光渲染）；弹药名留空
         RVP_Network.CHANNEL.send(
                 PacketDistributor.PLAYER.with(() -> shooter),
-                S2CRvpHitIndicator.create(
+                org.ywzj.rvp.replay.RVP_HitReplayRecorder.attach(S2CRvpHitIndicator.create(
                         vehicle.getId(), hitPos, dir, event.damage, boneDisp, "", null,
                         vehicle.position(),
                         vehicle.getDisplayId().toString(),
                         // 非 RVP 伤害源（本体武器/原版弓箭等）无爆炸语义：不扩散爆炸圈
                         0f,
-                        hitboxBoneName));
+                        hitboxBoneName), shooter, vehicle, null));
     }
 }

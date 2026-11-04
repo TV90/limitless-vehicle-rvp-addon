@@ -9,6 +9,7 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.resources.ResourceLocation;
+import org.ywzj.rvp.client.compat.acceleratedrendering.RVP_AcceleratedMeshCompat;
 import org.ywzj.rvp.client.light.RVP_SmokeLightPass;
 import org.ywzj.vehicle.client.render.ModRenderTypes;
 import org.ywzj.vehicle.client.resource.vehicle.SpecialBoneEffect;
@@ -23,6 +24,8 @@ public class RVP_VehicleBedrockModel extends VehicleBedrockModel {
 
     /** 资源加载时冻结的特殊骨条目；只读取类型和贴图，不根据武器或骨骼名称猜测炮口。 */
     private final List<SpecialBoneEffect> effects;
+    /** 资源加载时统计的最大 mesh 顶点数，避免小模型逐帧创建加速包装。 */
+    private final int largestMeshVertexCount;
 
     public RVP_VehicleBedrockModel(BedrockModelPOJO pojo, List<SpecialBoneEffect> specialBoneEffects) {
         this(pojo, specialBoneEffects, null);
@@ -33,6 +36,23 @@ public class RVP_VehicleBedrockModel extends VehicleBedrockModel {
                                    BakerOptions bakerOptions) {
         super(pojo, specialBoneEffects, bakerOptions);
         this.effects = specialBoneEffects == null ? List.of() : List.copyOf(specialBoneEffects);
+        int largest = 0;
+        // 调用本体的 baked 模型入口，只读取静态几何规模，不改骨架、可见性或缓存。
+        if (hasBakedModel()) {
+            for (var chunk : getBakedModel().meshChunks()) {
+                largest = Math.max(largest, chunk.vertices().vertexCount());
+            }
+        }
+        this.largestMeshVertexCount = largest;
+    }
+
+    @Override
+    public void renderToBuffer(BakedModelInstance instance, PoseStack poseStack,
+                               MultiBufferSource source, ResourceLocation texture, int packedLight) {
+        // 调用可选 AR 桥，仅包装主体的不透明三角形提交；骨骼遍历和动画继续由本体/SBM 执行。
+        MultiBufferSource meshSource = RVP_AcceleratedMeshCompat.wrapOpaqueMeshSource(
+                source, texture, largestMeshVertexCount);
+        super.renderToBuffer(instance, poseStack, meshSource, texture, packedLight);
     }
 
     @Override

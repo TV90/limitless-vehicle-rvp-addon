@@ -47,7 +47,7 @@ class RVP_VehicleActionHudModelTest {
         for (int[] window : new int[][]{{1920,1080},{1280,720},{2560,1440},{3440,1440}}) {
             float physicalWidth = -1;
             for (int guiScale : new int[]{1,2,4}) {
-                for (int count : new int[]{2,3,4}) {
+                for (int count = 2; count <= 7; count++) {
                     var layout = layout(window[0] / guiScale, window[1] / guiScale, count);
                     assertEquals(window[0] / 2F, (layout.left() + layout.totalWidth() / 2) * guiScale, .01);
                     assertTrue(layout.left() >= 0); assertTrue(layout.top() >= 0);
@@ -56,5 +56,14 @@ class RVP_VehicleActionHudModelTest {
                 }
             }
         }
+    }
+
+    @Test void weaponHintsDoNotInheritAuxiliaryCooldownOrLeaveEmptySlots() {
+        var s = state(PARENT, 40, false);
+        var list = cards(s, true, false, true);
+        assertEquals(List.of(Action.DEPLOY, Action.SWITCH, Action.MAP, Action.STATUS, Action.SEEKER, Action.QUICK_LOCK),
+                list.stream().map(Card::action).toList());
+        assertEquals(Phase.COOLING, list.get(0).phase());
+        assertTrue(list.subList(4, 6).stream().allMatch(Card::enabled));
     }
 }

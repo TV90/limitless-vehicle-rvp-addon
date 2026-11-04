@@ -39,9 +39,11 @@ public class RVP_Network {
     /** 协议 34：殉燃弹药爆响改为客户端本地跟随播放（移除 AMMO_POPS 与截止时刻）；发射声改为客户端本地优先，只向未追踪载具的玩家补发；双端必须一同更新。 */
     /** 协议 35：新增母车辅助载具候选选择请求和权威状态同步。 */
     /** 协议 36：显式配置的 HITL 远程观察窗口、区块、心跳及导弹 spawn 标志。 */
-    /** 协议 42：新增虚拟中段雷达目标完整集合与实体恢复交接；客户端、服务端须一同更新。 */
+    /** 协议 42：两侧分支分别新增虚拟中段雷达目标/实体交接，以及方向机两档回转限制。 */
+    /** 协议 44：HITL 链路包增加权威锁点、OBB 身份及 DIRCM 禁锁剩余时间。 */
     /** 协议 45：新增每玩家客户端视距上报，导弹与载具近远交接随各自客户端设置动态变化。 */
-    private static final String PROTOCOL = "45";
+    /** 协议 46：合并虚拟弹/动态视距消息与权威电视锁定状态，双端须一同更新。 */
+    private static final String PROTOCOL = "46";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "main"))

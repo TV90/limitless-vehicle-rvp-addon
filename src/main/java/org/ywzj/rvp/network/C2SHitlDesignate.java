@@ -98,29 +98,34 @@ public class C2SHitlDesignate {
             if (missile.getOwner() != player) {
                 return;
             }
-            if (msg.clearDesignation) {
-                missile.rvp$clearHitlDesignation();
-                return;
-            }
-            if (msg.targetEntityId >= 0) {
-                Entity target = player.level().getEntity(msg.targetEntityId);
-                if (target != null && target.isAlive()) {
-                    if (target instanceof org.ywzj.vehicle.entity.vehicle.AbstractVehicle && msg.targetObb != null) {
-                        // 调用服务端模型校验和同一权限门，不能把客户端任意坐标当作车体弱点。
-                        missile.rvp$setHitlDesignatedEntity(target, msg.targetObb);
-                        return;
-                    }
-                    Entity current = missile.getTargetEntity();
-                    if (current != null && current.isAlive() && current.getId() == target.getId()) {
-                        missile.rvp$setHitlDesignatedTarget(target.getBoundingBox().getCenter());
-                        return;
-                    }
-                    missile.rvp$setHitlDesignatedEntity(target);
+            try {
+                if (msg.clearDesignation) {
+                    missile.rvp$clearHitlDesignation();
                     return;
                 }
-            }
-            if (msg.targetPos != null) {
-                missile.rvp$setHitlDesignatedTarget(msg.targetPos);
+                if (msg.targetEntityId >= 0) {
+                    Entity target = player.level().getEntity(msg.targetEntityId);
+                    if (target != null && target.isAlive()) {
+                        if (target instanceof org.ywzj.vehicle.entity.vehicle.AbstractVehicle && msg.targetObb != null) {
+                            // 调用服务端模型校验和同一权限门，不能把客户端任意坐标当作车体弱点。
+                            missile.rvp$setHitlDesignatedEntity(target, msg.targetObb);
+                            return;
+                        }
+                        Entity current = missile.getTargetEntity();
+                        if (current != null && current.isAlive() && current.getId() == target.getId()) {
+                            missile.rvp$setHitlDesignatedTarget(target.getBoundingBox().getCenter());
+                            return;
+                        }
+                        missile.rvp$setHitlDesignatedEntity(target);
+                        return;
+                    }
+                }
+                if (msg.targetPos != null) {
+                    missile.rvp$setHitlDesignatedTarget(msg.targetPos);
+                }
+            } finally {
+                // 成功、拒绝、同实体改选与显式清除都必须向操作手确认当前结果。
+                missile.rvp$syncHitlState();
             }
         });
     }

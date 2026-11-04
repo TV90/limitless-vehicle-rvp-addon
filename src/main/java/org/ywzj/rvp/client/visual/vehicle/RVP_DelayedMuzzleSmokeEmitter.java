@@ -423,6 +423,8 @@ public final class RVP_DelayedMuzzleSmokeEmitter {
 
         /** 调用本体武器站接口取得当前炮塔/载具变换下的实时炮口上下文。 */
         private AimContext resolveCurrentAimContext() {
+            // 延迟出烟可能跨过一次稳定器更新；采样时校正父炮塔，不能沿用一刻内的未受限姿态。
+            org.ywzj.rvp.event.RVP_TurretTraverseHandler.constrain(weaponUnit);
             return weaponUnit.aimContext(bolt);
         }
 

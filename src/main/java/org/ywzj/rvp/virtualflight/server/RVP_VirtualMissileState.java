@@ -457,6 +457,9 @@ public final class RVP_VirtualMissileState {
                         .valueOf(compound.getString("hitlControlMode"));
                 if (compound.contains("hitlSignalSource") && !java.util.Set.of("RADIO", "FIBER")
                         .contains(compound.getString("hitlSignalSource"))) return false;
+                // 调用锁定状态枚举校验，坏存档须在重建弹体前拒绝，不能留到飞行循环抛异常。
+                if (compound.contains("hitlPointStatus")) org.ywzj.rvp.hitl.RVP_HitlLockSnapshot.Status
+                        .valueOf(compound.getString("hitlPointStatus"));
                 for (String key : compound.getCompound("stageEnteredTicks").getAllKeys()) Integer.parseInt(key);
             } catch (IllegalArgumentException exception) { return false; }
         } else if (tag instanceof net.minecraft.nbt.ListTag list) {

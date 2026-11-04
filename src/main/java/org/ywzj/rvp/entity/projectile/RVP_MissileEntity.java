@@ -88,6 +88,12 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     private boolean hitlLinkLastSentSevered;
     private boolean hitlLinkLastSentDircm;
     private int hitlLinkLastSentDircmRemain;
+    /** 已下发的锁点，用于立即同步脱锁和节流移动坐标。 */
+    private org.ywzj.rvp.hitl.RVP_HitlLockSnapshot hitlLastSentLock;
+    /** 上次锁点同步的弹体 tick，普通位置更新至多每 5 tick 一次。 */
+    private int hitlLastSentLockTick;
+    /** 无实体时的固定点来源；不复用 IR 的永久烟雾禁锁状态。 */
+    private org.ywzj.rvp.hitl.RVP_HitlLockSnapshot.Status hitlPointStatus = org.ywzj.rvp.hitl.RVP_HitlLockSnapshot.Status.POINT;
     private int hitlEnterViewResendTicks;
     /** 武器配置 {@code hitl_right_click_detonate}：HITL 视角下右键 = 提前引爆（客户端通过 spawn 数据读取）。 */
     private boolean hitlRightClickDetonate;
@@ -254,6 +260,8 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         }
         RVP_Network.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player),
                 S2CEnterHitlView.of(getId(), hitlControlMode));
+        // 重发入镜后也补发快照，避免入镜前到达的结果被客户端忽略。
+        rvp$syncHitlState();
         hitlEnterViewResendTicks--;
     }
 
@@ -282,8 +290,8 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
      * （含指方块/地面）立即恢复可用，重锁超速实体会被制导源闸门再次脱锁。
      */
     public void rvp$markHitlSpeedBreak(Vec3 lastTrackedPos) {
-        setTargetEntity(null);
-        setTargetPos(lastTrackedPos);
+        // 统一清除实体、骨和旧惯性记忆，再记录唯一的冻结点。
+        rvp$freezeHitlTarget(lastTrackedPos, org.ywzj.rvp.hitl.RVP_HitlLockSnapshot.Status.SPEED);
     }
 
     private void tickActiveSeekerTargetManagement(RVP_EnumGuidanceType type) {
@@ -814,24 +822,68 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     }
 
     private void maybeSyncHitlLinkState() {
+        syncHitlState(false);
+    }
+
+    /** C2S 接纳或拒绝后都回传真实结果，不能让客户端停留在乐观锁定状态。 */
+    public void rvp$syncHitlState() {
+        syncHitlState(true);
+    }
+
+    private void syncHitlState(boolean force) {
+        // 普通导弹不发送 TV 状态，沿用显式 HITL 能力门。
+        if (level().isClientSide() || rvpData == null || !rvpData.hasHumanInTheLoop()) return;
         boolean dircm = dircmJammed && dircmHitlTemporary;
-        if (hitlLinkBlocked == hitlLinkLastSentBlocked
-                && hitlLinkSevered == hitlLinkLastSentSevered
-                && dircm == hitlLinkLastSentDircm
-                && (!dircm || dircmJamRemainTick == hitlLinkLastSentDircmRemain)) {
-            return;
-        }
+        var lock = rvp$getHitlLockSnapshot();
+        boolean lockChanged = !lock.sameIdentity(hitlLastSentLock)
+                || !lock.equals(hitlLastSentLock) && tickCount - hitlLastSentLockTick >= 5;
+        if (!force && !lockChanged && hitlLinkBlocked == hitlLinkLastSentBlocked
+                && hitlLinkSevered == hitlLinkLastSentSevered && dircm == hitlLinkLastSentDircm
+                && (!dircm || dircmJamRemainTick == hitlLinkLastSentDircmRemain)) return;
         hitlLinkLastSentBlocked = hitlLinkBlocked;
         hitlLinkLastSentSevered = hitlLinkSevered;
         hitlLinkLastSentDircm = dircm;
         hitlLinkLastSentDircmRemain = dircm ? dircmJamRemainTick : 0;
+        hitlLastSentLock = lock;
+        hitlLastSentLockTick = tickCount;
         if (getOwner() instanceof net.minecraft.server.level.ServerPlayer player) {
             RVP_Network.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player),
                     S2CHitlLinkState.of(getId(), hitlLinkBlocked, hitlLinkSevered,
                             dircm, dircmJamRemainTick, dircmHitlTemporary
                                     ? org.ywzj.rvp.dircm.RVP_DircmRuntimeManager.resolveHitlJamTotal(this)
-                                    : 0));
+                                    : 0, lock));
         }
+    }
+
+    /** 双端安全的只读快照；禁锁期间不泄露后台残留目标坐标。 */
+    public org.ywzj.rvp.hitl.RVP_HitlLockSnapshot rvp$getHitlLockSnapshot() {
+        var status = org.ywzj.rvp.hitl.RVP_HitlLockSnapshot.Status.NONE;
+        if (dircmJammed || dircmNoRedesignateTick > 0) {
+            return new org.ywzj.rvp.hitl.RVP_HitlLockSnapshot(
+                    org.ywzj.rvp.hitl.RVP_HitlLockSnapshot.Status.DIRCM, -1, null, null, dircmNoRedesignateTick);
+        }
+        if (hitlControlMode != RVP_EnumHitlControlMode.DESIGNATE || hitlLinkBlocked || hitlLinkSevered)
+            return org.ywzj.rvp.hitl.RVP_HitlLockSnapshot.EMPTY;
+        Entity target = getTargetEntity();
+        boolean tracked = target != null && target.isAlive();
+        if (tracked) status = org.ywzj.rvp.hitl.RVP_HitlLockSnapshot.Status.ENTITY;
+        else if (getTargetPos() != null) status = hitlPointStatus;
+        return new org.ywzj.rvp.hitl.RVP_HitlLockSnapshot(status, tracked ? target.getId() : -1,
+                getTargetPos(), tracked && target.getUUID().equals(hitlObbTargetUuid) ? hitlTargetObb : null, 0);
+    }
+
+    public org.ywzj.rvp.hitl.RVP_HitlLockSnapshot.Status rvp$getHitlPointStatus() {
+        return hitlPointStatus;
+    }
+
+    /** 脱锁时彻底断开实时实体/OBB/运动采样；保留的坐标只写一次。 */
+    public void rvp$freezeHitlTarget(Vec3 point, org.ywzj.rvp.hitl.RVP_HitlLockSnapshot.Status status) {
+        hitlTargetObb = null;
+        hitlObbTargetUuid = null;
+        clearTarget();
+        clearGuidanceMemory();
+        hitlPointStatus = status;
+        if (point != null) setTargetPos(point);
     }
 
     private void tickHitlMouseInertia() {
@@ -945,74 +997,47 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     }
 
     public void rvp$setHitlDesignatedEntity(Entity target, org.ywzj.rvp.util.RVP_NamedVehicleObbs.Key key) {
-        if (!(target instanceof AbstractVehicle vehicle)) return;
-        // 同一实体改选骨也必须通过权限门，不能因旧实体锁仍存在而绕过 DIRCM 或无线电阻断。
-        if (hitlRemoteConfigured && !org.ywzj.rvp.server.hitl.RVP_HitlRemoteViewService.isControlling(this)) return;
-        if (hitlSignalSource == HitlSignalSource.RADIO && (hitlLinkBlocked || hitlLinkSevered)) return;
-        if (dircmJammed || dircmNoRedesignateTick > 0 || hitlControlMode != RVP_EnumHitlControlMode.DESIGNATE) return;
+        if (!canAcceptHitlDesignation() || !(target instanceof AbstractVehicle vehicle) || !target.isAlive()) return;
+        // 先解析真实骨位置，再检查视线；不能先用实体中心拒绝可见的顶部 OBB。
         var box = org.ywzj.rvp.util.RVP_NamedVehicleObbs.resolve(vehicle, key);
         if (box == null) return;
-        // 调用原有范围/链路/DIRCM/模式门，再核实实体实际被接纳后才写入骨身份。
-        rvp$setHitlDesignatedEntity(target);
-        if (getTargetEntity() == target) {
-            hitlTargetObb = key; hitlObbTargetUuid = target.getUUID();
-            setTargetPos(box.center());
-        }
+        acceptHitlEntity(target, key, box.center());
+    }
+
+    private boolean canAcceptHitlDesignation() {
+        // 复用既有控制会话、无线电与 DIRCM 权限门；不允许客户端坐标绕过禁锁。
+        return (!hitlRemoteConfigured || org.ywzj.rvp.server.hitl.RVP_HitlRemoteViewService.isControlling(this))
+                && (hitlSignalSource != HitlSignalSource.RADIO || !hitlLinkBlocked && !hitlLinkSevered)
+                && !dircmJammed && dircmNoRedesignateTick <= 0 && hitlControlMode == RVP_EnumHitlControlMode.DESIGNATE;
+    }
+
+    private void acceptHitlEntity(Entity target, org.ywzj.rvp.util.RVP_NamedVehicleObbs.Key key, Vec3 point) {
+        // 使用与飞行期间相同的反制门，只有通过后才能写入实时跟踪目标。
+        if (!org.ywzj.rvp.guidance.RVP_HitlTvTargeting.validate(this, target, point, resolveNewActiveConfig())) return;
+        hitlTargetObb = key;
+        hitlObbTargetUuid = key == null ? null : target.getUUID();
+        hitlPointStatus = org.ywzj.rvp.hitl.RVP_HitlLockSnapshot.Status.POINT;
+        setTargetEntity(target);
+        setTargetPos(point);
+        ywzj_rvp$refreshHitlLife();
     }
 
     public void rvp$setHitlDesignatedTarget(Vec3 target) {
-        // 远程能力只接受仍有效的观察会话输入；未配置武器沿用原有流程。
-        if (hitlRemoteConfigured && !org.ywzj.rvp.server.hitl.RVP_HitlRemoteViewService.isControlling(this)) return;
-        if (hitlSignalSource == HitlSignalSource.RADIO && (hitlLinkBlocked || hitlLinkSevered)) {
-            return;
-        }
-        // 被 DIRCM 干扰期间/干扰后禁止重新指定期内：忽略操作员持续指定（保持断锁/对地直飞）
-        if (dircmJammed || dircmNoRedesignateTick > 0) {
-            return;
-        }
-        if (hitlControlMode != RVP_EnumHitlControlMode.DESIGNATE || target == null) {
-            return;
-        }
-        if (hitlRemoteConfigured && (!Double.isFinite(target.x) || !Double.isFinite(target.y)
-                || !Double.isFinite(target.z))) return;
-        hitlTargetObb = null; hitlObbTargetUuid = null;
-        setTargetPos(target);
-        setTargetEntity(null);
-        // 指定目标同样是有效操作：重置指令生命期（与转向输入同语义）
+        if (!canAcceptHitlDesignation() || target == null) return;
+        if (!org.ywzj.rvp.guidance.RVP_HitlTvTargeting.validate(this, null, target, resolveNewActiveConfig())) return;
+        rvp$freezeHitlTarget(target, org.ywzj.rvp.hitl.RVP_HitlLockSnapshot.Status.POINT);
         ywzj_rvp$refreshHitlLife();
     }
 
     public void rvp$clearHitlDesignation() {
-        // 远程能力只接受仍有效的观察会话输入；未配置武器沿用原有流程。
-        if (hitlRemoteConfigured && !org.ywzj.rvp.server.hitl.RVP_HitlRemoteViewService.isControlling(this)) return;
-        if (hitlSignalSource == HitlSignalSource.RADIO && (hitlLinkBlocked || hitlLinkSevered)) {
-            return;
-        }
-        if (hitlControlMode != RVP_EnumHitlControlMode.DESIGNATE) {
-            return;
-        }
-        hitlTargetObb = null; hitlObbTargetUuid = null;
-        clearTarget();
+        if (!canAcceptHitlDesignation()) return;
+        // 显式清除也清惯性记忆，否则画面无框而导弹继续追旧点。
+        rvp$freezeHitlTarget(null, org.ywzj.rvp.hitl.RVP_HitlLockSnapshot.Status.NONE);
     }
 
-    public void rvp$setHitlDesignatedEntity(net.minecraft.world.entity.Entity target) {
-        // 远程能力只接受仍有效的观察会话输入；未配置武器沿用原有流程。
-        if (hitlRemoteConfigured && !org.ywzj.rvp.server.hitl.RVP_HitlRemoteViewService.isControlling(this)) return;
-        if (hitlSignalSource == HitlSignalSource.RADIO && (hitlLinkBlocked || hitlLinkSevered)) {
-            return;
-        }
-        // 被 DIRCM 干扰期间/干扰后禁止重新指定期内：忽略操作员持续指定目标实体（保持断锁）
-        if (dircmJammed || dircmNoRedesignateTick > 0) {
-            return;
-        }
-        if (hitlControlMode != RVP_EnumHitlControlMode.DESIGNATE || target == null || !target.isAlive()) {
-            return;
-        }
-        hitlTargetObb = null; hitlObbTargetUuid = null;
-        setTargetEntity(target);
-        setTargetPos(target.getBoundingBox().getCenter());
-        // 指定目标实体同样是有效操作：重置指令生命期（与转向输入同语义）
-        ywzj_rvp$refreshHitlLife();
+    public void rvp$setHitlDesignatedEntity(Entity target) {
+        if (!canAcceptHitlDesignation() || target == null || !target.isAlive()) return;
+        acceptHitlEntity(target, null, org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(target));
     }
 
     /**
@@ -1116,6 +1141,8 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         tag.putBoolean("countermeasurePhaseActive", countermeasurePhaseActive);
         tag.putString("hitlControlMode", hitlControlMode.name());
         tag.putString("hitlSignalSource", hitlSignalSource.name());
+        // 保存远端新增的脱锁原因，防止虚拟态读档后把烟内冻结点重新当成普通点锁。
+        tag.putString("hitlPointStatus", hitlPointStatus.name());
         // 调用真实/虚拟统一指定目标出口，虚拟拦截目标也必须保存稳定 UUID。
         Entity designated = rvp$getActiveSeekerDesignatedTargetEntity();
         if (designated != null) tag.putUUID("activeSeekerDesignatedUuid", designated.getUUID());
@@ -1153,6 +1180,10 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         countermeasurePhaseActive = tag.getBoolean("countermeasurePhaseActive");
         hitlControlMode = RVP_EnumHitlControlMode.valueOf(tag.getString("hitlControlMode"));
         hitlSignalSource = HitlSignalSource.valueOf(tag.getString("hitlSignalSource"));
+        // 未记录脱锁原因的运行态使用字段默认值；已记录状态必须原样接续。
+        hitlPointStatus = tag.contains("hitlPointStatus")
+                ? org.ywzj.rvp.hitl.RVP_HitlLockSnapshot.Status.valueOf(tag.getString("hitlPointStatus"))
+                : org.ywzj.rvp.hitl.RVP_HitlLockSnapshot.Status.POINT;
         Entity designated = resolveVirtualRuntimeEntity(tag, "activeSeekerDesignatedUuid");
         activeSeekerDesignatedTargetId = designated == null ? Integer.MIN_VALUE : designated.getId();
         hitlObbTargetUuid = tag.hasUUID("hitlObbTargetUuid") ? tag.getUUID("hitlObbTargetUuid") : null;

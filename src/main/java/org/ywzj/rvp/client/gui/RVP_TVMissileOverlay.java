@@ -88,7 +88,7 @@ public class RVP_TVMissileOverlay {
                 : RVP_ClientHitlState.getClientAimPoint();
         double range = point == null ? Double.NaN : point.distanceTo(missile.position());
         if (!designated && range >= RVP_ClientHitlState.DESIGNATE_AIM_RANGE - 1) range = Double.NaN;
-        String track = RVP_ClientHitlState.getClientDesignatedEntityId() >= 0 ? "ENT" : designated ? "PNT" : "--";
+        String track = RVP_ClientHitlState.getLockStatusLabel();
         // 调用统一缩放的紧凑侧栏；飞行时间复用生成包飞行刻与客户端后续刻的既有视觉时钟。
         RVP_HitlInstrumentRenderer.draw(gg, font, speedKmh, missile.getY(), range,
                 missile.getDisplayFlightTickCount() / 20.0, lastRateDegPerSec, video, control, track,

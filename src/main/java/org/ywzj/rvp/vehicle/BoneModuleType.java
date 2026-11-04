@@ -86,7 +86,15 @@ public enum BoneModuleType {
      * 失效后整个炮管所在武器站禁止射击（含 RVP 自定义弹种切换绕过与 gunner AI 选弹），
      * 提示"炮管损坏，请先维修"；快修恢复（清炮管累计）。
      */
-    BARREL;
+    BARREL,
+    /** 方向机损坏档，绑定的炮塔仅以 0.01 度/刻回转。 */
+    TURRET_TRAVERSE,
+    /** 方向机一级受损标记，绑定的炮塔保留 30% 回转速度。 */
+    TURRET_TRAVERSE_DAMAGED;
+
+    public boolean isTurretTraverse() {
+        return this == TURRET_TRAVERSE || this == TURRET_TRAVERSE_DAMAGED;
+    }
 
     private static final BoneModuleType[] VALUES = values();
 

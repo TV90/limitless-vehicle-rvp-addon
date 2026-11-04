@@ -139,7 +139,8 @@ public final class RVP_WrenchRepairHandler {
                 if (type == BoneModuleType.RADAR) {
                     org.ywzj.rvp.radar.RVP_RadarModuleEnforcer.restoreRadar(vehicle, boneName);
                 } else if (type == BoneModuleType.ENGINE || type == BoneModuleType.ENGINE_DAMAGED
-                        || type == BoneModuleType.BARREL || type == BoneModuleType.BARREL_DAMAGED) {
+                        || type == BoneModuleType.BARREL || type == BoneModuleType.BARREL_DAMAGED
+                        || type.isTurretTraverse()) {
                     RVP_BoneCumulativeDamageTable.clear(vehicle.getUUID(), boneName);
                 }
             }

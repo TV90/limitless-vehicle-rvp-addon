@@ -117,6 +117,14 @@ public class RVP_MchrSmokeParticle extends SingleQuadParticle {
                 lifetime, Double.NaN);
     }
 
+    /** 方向机黑烟沿水平面扩散，去掉普通黑烟的上浮加速度。 */
+    public static RVP_MchrSmokeParticle ofDarkHorizontal(ClientLevel level, double x, double y, double z,
+                                                        double vx, double vz, float size, int lifetime) {
+        var smoke = ofDark(level, x, y, z, vx, 0.0, vz, size, lifetime);
+        smoke.gravity = 0f;
+        return smoke;
+    }
+
     /**
      * 炮口烟入口：复用 {@code boom/smoke.png} 的 8 帧烟雾动画，使用中性深灰色，
      * 并切换到深度只测不写的渲染类型，避免透明烟团写入深度后遮挡载具模型。

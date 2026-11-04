@@ -11,7 +11,6 @@ import org.ywzj.rvp.client.RVP_Keys;
 import org.ywzj.rvp.client.firecontrol.RVP_RadarMissileTrackHelper;
 import org.ywzj.rvp.client.laser.RVP_LaserWeapons;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
-import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.saclos.RVP_SaclosPodAim;
 import org.ywzj.rvp.network.C2SSaclosDesignation;
@@ -84,18 +83,8 @@ public final class RVP_ClientSaclosState {
                 return;
             }
         }
-        Vec3 clientPoint = RVP_ClientHitlState.getClientDesignatedPos();
-        if (clientPoint != null) {
-            laserHudPos = clientPoint;
-            return;
-        }
-        // 调用既有会话的统一显示入口，导弹虚拟化期间保留镜头/操控显示，不新增目标权限。
-        Entity entity = RVP_ClientHitlState.resolveActiveMissile(mc);
-        if (entity instanceof RVP_MissileEntity missile && missile.isAlive()) {
-            laserHudPos = missile.getTargetPos();
-        } else {
-            laserHudPos = null;
-        }
+        // 调用服务端确认的锁点缓存，真实/虚拟导弹共用；脱锁后不读取弹体出生时的陈旧目标。
+        laserHudPos = RVP_ClientHitlState.getClientDesignatedPos();
     }
 
     public static void toggleVehicleLaser(LocalPlayer player) {

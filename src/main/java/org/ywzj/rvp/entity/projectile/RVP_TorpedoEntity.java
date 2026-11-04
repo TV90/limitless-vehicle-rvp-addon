@@ -197,9 +197,8 @@ public class RVP_TorpedoEntity extends RVP_BaseBullet {
         Vec3 direction = speed > 1.0E-6 ? velocity.scale(1.0 / speed) : getLookAngle();
         velocity = direction.scale(targetSpeed);
         setDeltaMovement(velocity);
-        setPos(position().add(velocity));
+        advanceProjectile(velocity);
         updateFlightSpeedState(velocity);
-        flightDistance += velocity.length();
         RVP_ProjectileMotion.applyRotationFromVelocity(this, velocity);
     }
 

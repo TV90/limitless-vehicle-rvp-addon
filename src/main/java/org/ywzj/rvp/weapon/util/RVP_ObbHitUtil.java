@@ -1,5 +1,6 @@
 package org.ywzj.rvp.weapon.util;
 
+import net.minecraft.core.Direction;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Vector3f;
@@ -58,31 +59,42 @@ public final class RVP_ObbHitUtil {
     }
 
     /** Outward face normal on the struck OBB (faces incoming velocity). */
-    private static Vec3 faceNormalAtHit(OBB obb, Vec3 hitWorld, Vec3 incomingVelocity) {
+    public static Vec3 faceNormalAtHit(OBB obb, Vec3 hitWorld, Vec3 incomingVelocity) {
         Vector3f[] axes = obb.getAxes();
         Vector3f local = obb.worldToLocal(hitWorld.toVector3f(), axes);
-        Vector3f ext = obb.extents();
-
-        float dx = Math.abs(Math.abs(local.x) - ext.x);
-        float dy = Math.abs(Math.abs(local.y) - ext.y);
-        float dz = Math.abs(Math.abs(local.z) - ext.z);
-
-        Vector3f axis;
-        float sign;
-        if (dx <= dy && dx <= dz) {
-            axis = axes[0];
-            sign = local.x >= 0f ? 1f : -1f;
-        } else if (dy <= dz) {
-            axis = axes[1];
-            sign = local.y >= 0f ? 1f : -1f;
-        } else {
-            axis = axes[2];
-            sign = local.z >= 0f ? 1f : -1f;
-        }
-        Vec3 normal = new Vec3(axis.x * sign, axis.y * sign, axis.z * sign);
+        Direction face = localFace(local, obb.extents());
+        Vector3f axis = axes[switch (face.getAxis()) {
+            case X -> 0;
+            case Y -> 1;
+            case Z -> 2;
+        }];
+        Vec3 normal = new Vec3(axis).scale(face.getAxisDirection().getStep());
         if (incomingVelocity.lengthSqr() > 1.0E-12 && incomingVelocity.dot(normal) > 0) {
             normal = normal.scale(-1);
         }
         return normal;
+    }
+
+    /** The struck box's local +Y face, regardless of the box's world orientation. */
+    public static boolean isTopFace(OBB obb, Vec3 hitWorld) {
+        Vector3f local = obb.worldToLocal(hitWorld.toVector3f(), obb.getAxes());
+        // 本体的 clip 在弹体已位于盒内时会返回起点，此时没有实际的入射面。
+        float tolerance = Math.max(1.0e-4f, 2f * Math.max(
+                Math.ulp((float) hitWorld.x), Math.max(Math.ulp((float) hitWorld.y), Math.ulp((float) hitWorld.z))));
+        return Math.abs(local.y - obb.extents().y) <= tolerance && localFace(local, obb.extents()) == Direction.UP;
+    }
+
+    private static Direction localFace(Vector3f local, Vector3f ext) {
+        float dx = Math.abs(Math.abs(local.x) - ext.x);
+        float dy = Math.abs(Math.abs(local.y) - ext.y);
+        float dz = Math.abs(Math.abs(local.z) - ext.z);
+
+        if (dx <= dy && dx <= dz) {
+            return local.x >= 0f ? Direction.EAST : Direction.WEST;
+        }
+        if (dy <= dz) {
+            return local.y >= 0f ? Direction.UP : Direction.DOWN;
+        }
+        return local.z >= 0f ? Direction.SOUTH : Direction.NORTH;
     }
 }

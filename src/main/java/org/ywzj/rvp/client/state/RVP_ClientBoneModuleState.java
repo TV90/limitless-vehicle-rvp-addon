@@ -1,6 +1,16 @@
 package org.ywzj.rvp.client.state;
 
 import com.mojang.logging.LogUtils;
+import net.minecraft.client.Minecraft;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.event.entity.EntityLeaveLevelEvent;
+import net.minecraftforge.event.level.LevelEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.common.Mod;
+import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.event.RVP_TurretTraverseHandler;
+import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.slf4j.Logger;
 import org.ywzj.rvp.network.S2CBoneModuleState;
 import org.ywzj.rvp.vehicle.BoneModuleType;
@@ -18,6 +28,7 @@ import java.util.Set;
  * <p>数据经 {@link S2CBoneModuleState} 推送后在此按 entityId 存表，供动画脚本经
  * {@code context.rvp_isModuleActive(bone, type)} 查询并隐藏失效骨块。</p>
  */
+@Mod.EventBusSubscriber(value = Dist.CLIENT, modid = RVP_MOD.MOD_ID)
 public final class RVP_ClientBoneModuleState {
 
     private static final Map<Integer, Map<String, Set<BoneModuleType>>> INACTIVE_MODULES = new HashMap<>();
@@ -33,6 +44,9 @@ public final class RVP_ClientBoneModuleState {
      * 使刚被摧毁的爆反骨块在展板里晚 0.5 秒消失；世界渲染不受影响（立即消失）。
      */
     private static long renderDelayMs = 0L;
+    /** 历史展板绘制作用域；不写入真实实体侧表。 */
+    private static int replayEntityId = Integer.MIN_VALUE;
+    private static Map<String, Set<BoneModuleType>> replayInactive = Map.of();
     private static final Logger LOGGER = LogUtils.getLogger();
 
     private RVP_ClientBoneModuleState() {
@@ -57,10 +71,44 @@ public final class RVP_ClientBoneModuleState {
             }
             INACTIVE_MODULES.put(msg.entityId, msg.inactiveModules);
         }
+        // 收到维修后的空快照也要立即解除该炮塔的转速限制。
+        applyTurretTraverse(msg.entityId, msg.inactiveModules);
+    }
+
+    @SubscribeEvent(priority = net.minecraftforge.eventbus.api.EventPriority.HIGHEST)
+    public static void onClientTick(TickEvent.ClientTickEvent event) {
+        if (event.phase == TickEvent.Phase.START) {
+            // 只遍历已同步过失效状态的载具，兼顾武器站重建或配置晚到。
+            INACTIVE_MODULES.forEach(RVP_ClientBoneModuleState::applyTurretTraverse);
+        } else {
+            // 先于 NORMAL 的弹道准星、延迟炮口烟和其它姿态消费者，不能等它们缓存完旧坐标再补正。
+            RVP_TurretTraverseHandler.constrainLevel(Minecraft.getInstance().level);
+        }
+    }
+
+    private static void applyTurretTraverse(int entityId, Map<String, Set<BoneModuleType>> inactive) {
+        var level = Minecraft.getInstance().level;
+        if (level != null && level.getEntity(entityId) instanceof AbstractVehicle vehicle) {
+            RVP_TurretTraverseHandler.apply(vehicle, inactive);
+        }
+    }
+
+    @SubscribeEvent
+    public static void onVehicleLeave(EntityLeaveLevelEvent event) {
+        if (event.getLevel().isClientSide() && event.getEntity() instanceof AbstractVehicle vehicle) {
+            INACTIVE_MODULES.remove(vehicle.getId());
+            ERA_DESTROY_TIMES.remove(vehicle.getId());
+        }
+    }
+
+    @SubscribeEvent
+    public static void onLevelUnload(LevelEvent.Unload event) {
+        if (event.getLevel().isClientSide()) clear();
     }
 
     /** 骨块的某模块是否仍处于激活（未被消耗）。 */
     public static boolean isModuleActive(int entityId, String boneName, BoneModuleType type) {
+        if (entityId == replayEntityId) return !replayInactive.getOrDefault(boneName, Set.of()).contains(type);
         Map<String, Set<BoneModuleType>> boneMap = INACTIVE_MODULES.get(entityId);
         if (boneMap == null) {
             return true;
@@ -86,7 +134,14 @@ public final class RVP_ClientBoneModuleState {
     }
 
     /** 清除展板渲染期间的状态回放延迟，恢复正常实时状态查询。 */
+    public static void setReplayState(int entityId, Map<String, Set<BoneModuleType>> inactive) {
+        replayEntityId = entityId;
+        replayInactive = inactive;
+    }
+
     public static void clearRenderDelay() {
+        replayEntityId = Integer.MIN_VALUE;
+        replayInactive = Map.of();
         renderDelayMs = 0L;
     }
 

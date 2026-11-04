@@ -14,6 +14,8 @@ import java.util.function.Supplier;
  */
 public class S2CRvpHitIndicator {
 
+    /** 命中前一秒的服务端历史增量；普通生物命中可空。 */
+    public org.ywzj.rvp.replay.RVP_HitReplay.Clip replay;
     public int entityId;
     public Vec3 hitPosition;
     public Vec3 hitVector;
@@ -81,6 +83,7 @@ public class S2CRvpHitIndicator {
         buf.writeVector3f(msg.entityPosAtHit.toVector3f());
         buf.writeUtf(msg.vehicleDisplayId, 128);
         buf.writeFloat(msg.explosionRadius);
+        org.ywzj.rvp.replay.RVP_HitReplay.write(buf, msg.replay);
     }
 
     public static S2CRvpHitIndicator decode(FriendlyByteBuf buf) {
@@ -96,6 +99,7 @@ public class S2CRvpHitIndicator {
         msg.entityPosAtHit = new Vec3(buf.readVector3f());
         msg.vehicleDisplayId = buf.readUtf(128);
         msg.explosionRadius = buf.readFloat();
+        msg.replay = org.ywzj.rvp.replay.RVP_HitReplay.read(buf);
         return msg;
     }
 

@@ -9,17 +9,33 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.client.gui.overlay.ForgeGui;
 import net.minecraftforge.client.gui.overlay.IGuiOverlay;
 import org.ywzj.rvp.client.RVP_Keys;
+import org.ywzj.rvp.client.lead.RVP_MachinegunLeadSolver;
 import org.ywzj.rvp.client.state.RVP_ClientHitlState;
 import org.ywzj.rvp.client.state.RVP_ClientAuxiliaryHudState;
+import org.ywzj.rvp.client.state.RVP_ClientGPSUtil;
+import org.ywzj.rvp.client.state.RVP_ClientHmdState;
+import org.ywzj.rvp.client.state.RVP_FireControlStabilizerState;
+import org.ywzj.rvp.util.RVP_WeaponResolveHelper;
+import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
+import org.ywzj.vehicle.all.AllKeys;
+import org.ywzj.vehicle.custom.weapon.data.VehicleMissileWeaponData;
+import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
+import org.ywzj.vehicle.vehicle.part.WeaponUnit;
+import org.ywzj.vehicle.vehicle.weapon.VehicleMissile;
 import java.util.List;
 import static org.ywzj.rvp.client.gui.RVP_VehicleActionHudModel.*;
 
-/** 随分辨率适配的动作条；服务端实例身份决定两卡/三卡/四卡，全部按真实宽度居中。 */
+/** 随分辨率适配的载具动作条，按辅助载具状态和当前武器能力显示。 */
 public final class RVP_VehicleActionHudOverlay implements IGuiOverlay {
     private static final ResourceLocation[] TEXTURES = {
-            texture("deploy_auxiliary"), texture("switch_auxiliary"), texture("tactical_map"), texture("vehicle_status")};
+            texture("deploy_auxiliary"), texture("switch_auxiliary"), texture("tactical_map"), texture("vehicle_status"),
+            texture("seeker"), texture("fire_control"), texture("quick_lock")};
     private static final ResourceLocation DEPLOYED_TEXTURE = texture("deployed_auxiliary");
-    private static final String[] LABELS = {"deploy_auxiliary", "switch_auxiliary", "tactical_map", "vehicle_status"};
+    private static final String[] LABELS = {"deploy_auxiliary", "switch_auxiliary", "tactical_map", "vehicle_status",
+            "seeker", "fire_control", "quick_lock"};
+    private static final KeyMapping[] BINDINGS = {RVP_Keys.DEPLOY_DEPLOYABLE_UAV, RVP_Keys.SWITCH_DEPLOYABLE_UAV,
+            RVP_Keys.OPEN_GPS_PANEL, RVP_Keys.OPEN_EQUIP_PANEL, AllKeys.TOGGLE_SEEKER,
+            RVP_Keys.FIRE_CONTROL_STABILIZER, RVP_Keys.HMD_TOGGLE};
     private static ResourceLocation texture(String name) {
         return new ResourceLocation("ywzj_rvp", "textures/gui/actions/" + name + ".png");
     }
@@ -30,10 +46,36 @@ public final class RVP_VehicleActionHudOverlay implements IGuiOverlay {
                 || !(mc.player.getVehicle() instanceof org.ywzj.vehicle.entity.vehicle.AbstractVehicle vehicle)
                 || RVP_ClientHitlState.isActive() || RVP_ClientHitlState.isNoImage(mc.level)) return;
         var state = RVP_ClientAuxiliaryHudState.get(vehicle.getUUID(), mc.level.getGameTime());
-        KeyMapping[] bindings = {RVP_Keys.DEPLOY_DEPLOYABLE_UAV, RVP_Keys.SWITCH_DEPLOYABLE_UAV,
-                RVP_Keys.OPEN_GPS_PANEL, RVP_Keys.OPEN_EQUIP_PANEL};
-        drawRow(graphics, cards(state), java.util.Arrays.stream(bindings).map(RVP_VehicleActionHudOverlay::keyHint).toArray(String[]::new),
-                new boolean[]{bindings[0].isDown(), bindings[1].isDown(), bindings[2].isDown(), bindings[3].isDown()});
+        var operator = LocalVehiclePlayer.instance;
+        WeaponUnit unit = operator.onVehicle() && operator.vehicle == vehicle ? operator.getWeaponUnit() : null;
+        boolean seeker = unit != null && supportsSeeker(unit);
+        boolean fireControl = unit != null && RVP_MachinegunLeadSolver.isCurrentRvpMachinegun(unit)
+                && RVP_FireControlStabilizerState.canToggleMode(unit) && !RVP_ClientGPSUtil.isGPSBombSelected();
+        boolean quickLock = unit != null && RVP_ClientHmdState.supportsQuickLock(unit);
+        List<Card> cards = cards(state, seeker, fireControl, quickLock);
+        String[] keys = new String[BINDINGS.length];
+        boolean[] pressed = new boolean[BINDINGS.length];
+        for (Card card : cards) {
+            int index = card.action().ordinal();
+            keys[index] = keyHint(BINDINGS[index]);
+            pressed[index] = BINDINGS[index].isDown();
+        }
+        drawRow(graphics, cards, keys, pressed);
+    }
+
+    private static boolean supportsSeeker(WeaponUnit unit) {
+        var weapon = RVP_WeaponResolveHelper.currentPrimary(unit);
+        if (weapon instanceof RVP_WeaponBase rvp) {
+            return rvp.withSeeker();
+        }
+        if (!(weapon instanceof VehicleMissile missile)
+                || missile.getData().getGuidance() != VehicleMissileWeaponData.Guidance.HOMING) {
+            return false;
+        }
+        return switch (missile.getData().getHomingMode()) {
+            case INFRARED, SEMI_ACTIVE_RADAR, ACTIVE_RADAR -> true;
+            default -> false;
+        };
     }
 
     /** 组合键保留实际修饰键；鼠标绑定用 M1/M2 等短写，未绑定用 --。 */
@@ -84,11 +126,12 @@ public final class RVP_VehicleActionHudOverlay implements IGuiOverlay {
                 deployed ? 0xFFA2D5AF : bright ? 0xFFE4E8E8 : 0xFF727A80, CARD_WIDTH - 4);
     }
 
-    /** 所有文字与图标共用参考尺度，长组合键裁剪后仍居中，不挤动其它卡片。 */
+    /** 长按键名和标签在卡内缩放，保留完整文字。 */
     private static void text(GuiGraphics graphics, String value, float center, float y, float scale, int color, int maxWidth) {
         var font = Minecraft.getInstance().font;
-        String shown = font.plainSubstrByWidth(value, (int) (maxWidth / scale));
-        var pose = graphics.pose(); pose.pushPose(); pose.translate(center, y, 0); pose.scale(scale, scale, 1F);
-        graphics.drawString(font, shown, -font.width(shown) / 2, 0, color, true); pose.popPose();
+        int textWidth = font.width(value);
+        float fittedScale = Math.min(scale, (float) maxWidth / Math.max(1, textWidth));
+        var pose = graphics.pose(); pose.pushPose(); pose.translate(center, y, 0); pose.scale(fittedScale, fittedScale, 1F);
+        graphics.drawString(font, value, -textWidth / 2, 0, color, true); pose.popPose();
     }
 }

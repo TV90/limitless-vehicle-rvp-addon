@@ -142,14 +142,14 @@ public class RVP_VehicleExplosion {
         }
         try {
             hurt(excludedEntities);
-            // [RVP] 视觉抑制窗口内直接不发本体爆炸视觉包：本次爆炸的表现已由 RVP 自定义视觉
-            // （RVP_DefaultExplosionVisualService / 武器配置特效）负责。原实现发负半径包再在客户端
-            // 丢弃（VehicleExplosionVisualPacketMixin + ClientVisualMixin），改为源头不发。
-            if (!level.isClientSide() && !RVP_ExplosionVisualSuppression.active()) {
-                ServerVehicleExplosion serverVehicleExplosion = new ServerVehicleExplosion(source == null ? -1 : source.getId(), x, y, z, radius);
+            if (!level.isClientSide()) {
                 ServerLevel serverLevel = (ServerLevel) level;
-                for (ServerPlayer player : serverLevel.getPlayers(player -> player.distanceToSqr(x, y, z) < 1024 * 1024)) {
-                    Channel.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), serverVehicleExplosion);
+                // RVP 特效只替换本体视觉包，地形破坏仍按服务端配置结算。
+                if (!RVP_ExplosionVisualSuppression.active()) {
+                    ServerVehicleExplosion packet = new ServerVehicleExplosion(source == null ? -1 : source.getId(), x, y, z, radius);
+                    for (ServerPlayer player : serverLevel.getPlayers(player -> player.distanceToSqr(x, y, z) < 1024 * 1024)) {
+                        Channel.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), packet);
+                    }
                 }
                 if (destroyBlocks) {
                     if (radius > batchedDestructionRadiusThreshold()) {

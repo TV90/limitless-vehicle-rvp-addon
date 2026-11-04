@@ -159,6 +159,19 @@ public final class RVP_EquipPanelData {
             out.add(new Category(I18n.get("gui.ywzj_rvp.equipment.cat_barrel"), summary(barrelRows), barrelRows));
         }
 
+        // 方向机沿用设备维修队列，两档都能选择维修。
+        List<Row> traverseRows = new ArrayList<>();
+        for (String bone : orderedBones) {
+            if (RVP_VehicleHitboxFactorManager.INSTANCE.resolveTurretTraverseConfig(vehicle, bone) == null) continue;
+            boolean broken = !RVP_ClientBoneModuleState.isModuleActive(entityId, bone, BoneModuleType.TURRET_TRAVERSE);
+            boolean hurt = !broken && !RVP_ClientBoneModuleState.isModuleActive(entityId, bone, BoneModuleType.TURRET_TRAVERSE_DAMAGED);
+            traverseRows.add(new Row(traverseRows.size() + 1, alias(vehicle, bone), !broken && !hurt, hurt,
+                    bone, QUEUE_DEV, virtualHpText(vehicle, entityId, bone)));
+        }
+        if (!traverseRows.isEmpty()) {
+            out.add(new Category(I18n.get("gui.ywzj_rvp.module.turret_traverse"), summary(traverseRows), traverseRows));
+        }
+
         // [RVP] 引擎部件（2026-09-26；2026-09-28 重创进失效表）：三档显示——正常 /
         // 受损（功率降低：ENGINE_DAMAGED 进失效表=可修失效设备，可入维修顺序队列指定
         // 优先级；无衰减永久，唯一恢复=快修）/ 瘫痪（ENGINE 模块失效，动力清零，红框入队）。
@@ -323,7 +336,9 @@ public final class RVP_EquipPanelData {
                 && !RVP_ClientBoneModuleState.isModuleActive(entityId, bone, BoneModuleType.ENGINE_DAMAGED)) {
             return true;
         }
-        return false;
+        return types.contains(BoneModuleType.TURRET_TRAVERSE)
+                && moduleRepair.isRepairable(BoneModuleType.TURRET_TRAVERSE_DAMAGED)
+                && !RVP_ClientBoneModuleState.isModuleActive(entityId, bone, BoneModuleType.TURRET_TRAVERSE_DAMAGED);
     }
 
     /**

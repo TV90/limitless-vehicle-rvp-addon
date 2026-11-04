@@ -15,6 +15,7 @@ import net.minecraftforge.fml.common.Mod;
 import org.joml.Vector3f;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.client.particle.RVP_MchrSmokeParticle;
+import org.ywzj.rvp.client.particle.RVP_MchrFlareParticle;
 import org.ywzj.rvp.client.particle.RVP_MchrSmokeRenderType;
 import org.ywzj.rvp.client.particle.RVP_NearSmokeParticle;
 import org.ywzj.rvp.client.state.RVP_ClientBoneModuleState;
@@ -116,6 +117,14 @@ public final class RVP_DamagedPartSmokeEmitter {
             if (types == null || types.isEmpty()) {
                 continue;
             }
+            if (types.contains(BoneModuleType.TURRET_TRAVERSE)
+                    && RVP_VehicleHitboxFactorManager.INSTANCE.resolveTurretTraverseConfig(vehicle, bone) != null) {
+                boolean broken = !RVP_ClientBoneModuleState.isModuleActive(entityId, bone, BoneModuleType.TURRET_TRAVERSE);
+                if (broken || !RVP_ClientBoneModuleState.isModuleActive(entityId, bone, BoneModuleType.TURRET_TRAVERSE_DAMAGED)) {
+                    emitTurretTraverseDamage(vehicle, bone, random, broken);
+                    continue;
+                }
+            }
             // [RVP] 炮管受损档（2026-09-28 两档炮管）：第一档受损**无条件冒黑烟**
             //（不受 smoke 参数钳制——受损三选一需要视觉反馈）；第二档彻底损坏才受钳制
             if (types.contains(BoneModuleType.BARREL)
@@ -155,6 +164,29 @@ public final class RVP_DamagedPartSmokeEmitter {
             }
             if (destroyed) {
                 emitBlackSmoke(vehicle, bone, random);
+            }
+        }
+    }
+
+    /** 从受损骨的实时 OBB 沿水平方向等分排烟，损坏后另外飞溅火星。 */
+    private static void emitTurretTraverseDamage(AbstractVehicle vehicle, String bone, RandomSource random, boolean broken) {
+        var engine = Minecraft.getInstance().particleEngine;
+        ClientLevel level = (ClientLevel) vehicle.level();
+        List<OBB> obbs = resolveObbs(vehicle, bone);
+        if (obbs.isEmpty()) return;
+        double phase = random.nextDouble() * 2.0 * Math.PI;
+        for (int i = 0; i < 4; i++) {
+            Vec3 point = randomPointIn(obbs.get(random.nextInt(obbs.size())), random);
+            if (point == null) continue;
+            double angle = phase + i * Math.PI / 2.0;
+            double x = Math.cos(angle);
+            double z = Math.sin(angle);
+            engine.add(RVP_MchrSmokeParticle.ofDarkHorizontal(level, point.x, point.y, point.z,
+                    x * 0.15, z * 0.15, 2.5f, 45 + random.nextInt(20))
+                    .withRenderType(RVP_MchrSmokeRenderType.DAMAGED_SMOKE_RENDER_TYPE));
+            if (broken && (i & 1) == 0) {
+                RVP_MchrFlareParticle.spawnSpark(engine, level, point.x, point.y, point.z,
+                        x * 0.25, 0.0, z * 0.25, 0.12f, 12);
             }
         }
     }

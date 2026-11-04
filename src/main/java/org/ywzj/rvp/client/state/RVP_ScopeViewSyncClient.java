@@ -130,7 +130,10 @@ public final class RVP_ScopeViewSyncClient {
             }
             return;
         }
-        Vec3 dir = VectorUtil.rotToVec(station.aimContext().direction.x, station.aimContext().direction.y).normalize();
+        // 采样之前校正受损炮塔，避免依赖同优先级事件注册顺序而缓存稳定器补偿后的旧方向。
+        org.ywzj.rvp.event.RVP_TurretTraverseHandler.constrain(station);
+        var aim = station.aimContext();
+        Vec3 dir = VectorUtil.rotToVec(aim.direction.x, aim.direction.y).normalize();
         Vec3 origin = resolveDisguiseOrigin(station, vehicle);
         Vec3 hit = RVP_CcipUtil.computeBulletImpact(level, origin, dir, weaponData, vehicle);
         if (hit == null) {

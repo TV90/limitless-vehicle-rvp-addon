@@ -30,6 +30,8 @@ public final class RVP_FiringMuzzleResolver {
     public static List<MuzzleContext> resolveFiringMuzzleContexts(WeaponUnit unit) {
         // 调用本体武器站接口，空站和未初始化模式不生成任何视觉。
         if (unit == null || unit.getFiringMode() == null) { return List.of(); }
+        // 烟、闪光和照明统一读取已经受限的真实炮口；同时覆盖附着在受损父炮塔上的子武器。
+        org.ywzj.rvp.event.RVP_TurretTraverseHandler.constrain(unit);
         return switch (unit.getFiringMode()) {
             case RIPPLE -> {
                 // 调用本体当前炮闩与炮口接口，保持既有炮口烟轮射语义。
