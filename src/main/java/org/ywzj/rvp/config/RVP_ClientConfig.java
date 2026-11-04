@@ -67,6 +67,8 @@ public class RVP_ClientConfig {
 
     /** 是否让大块不透明 mesh 使用 AR 已有的 dense 提交；只影响已安装 AR 的客户端。 */
     private final ForgeConfigSpec.BooleanValue acceleratedDenseMesh;
+    /** 大块不透明刚性 mesh 复用 SBM 常驻几何，减少多车每帧展开的显存占用。 */
+    private final ForgeConfigSpec.BooleanValue sharedOpaqueMesh;
     /** 启用 dense 的单个 mesh 最小顶点记录数，不是模型总面数。 */
     private final ForgeConfigSpec.IntValue acceleratedDenseMinVertices;
 
@@ -119,6 +121,11 @@ public class RVP_ClientConfig {
                 .comment("让较大的不透明 mesh 使用 AR 的 dense 提交，减少 sparse 路径逐顶点 CPU 写入。",
                         "仅安装并启用 AcceleratedRendering 时生效；false 恢复原提交路径。")
                 .define("acceleratedDenseMesh", true);
+        sharedOpaqueMesh = builder
+                .comment("大块不透明刚性 mesh 共享 SBM 常驻顶点缓冲，降低多车同屏的 AR 临时缓冲占用。",
+                        "需要 acceleratedDenseMesh；仅世界实体、无活动光影且姿势受支持时使用。",
+                        "false 保留 dense 优化并恢复 AR 展开，用于对照或兼容回退。")
+                .define("sharedOpaqueMesh", true);
         acceleratedDenseMinVertices = builder
                 .comment("单个 mesh 的最小顶点记录数（不是面数）；默认 32768。",
                         "小 mesh 继续遵从 AR 自身的 sparse/dense 策略，不改全局阈值。")
@@ -281,6 +288,11 @@ public class RVP_ClientConfig {
     public static boolean isAcceleratedDenseMeshEnabled() {
         return INSTANCE != null && CLIENT_SPEC != null && CLIENT_SPEC.isLoaded()
                 && INSTANCE.acceleratedDenseMesh.get();
+    }
+
+    /** 未加载配置时不接管绘制；与 dense 总开关分开保留对照能力。 */
+    public static boolean isSharedOpaqueMeshEnabled() {
+        return isAcceleratedDenseMeshEnabled() && INSTANCE.sharedOpaqueMesh.get();
     }
 
     /** 返回单个 mesh 的顶点记录阈值；未加载配置时使用默认 32768。 */

@@ -116,7 +116,7 @@ class RVP_AcceleratedMeshBridgeTest {
     @Test
     void ordinaryConsumerIsNeverForcedIntoAcceleratedPipeline() throws Exception {
         var original = new RecordingConsumer();
-        assertSame(original, new RVP_AcceleratedMeshBridge().wrap(original, 32768));
+        assertSame(original, new RVP_AcceleratedMeshBridge(() -> true).wrap(original, 32768));
         var wrapped = new RVP_AcceleratedMeshBridge.DenseConsumer(
                 original, 32768, new RVP_AcceleratedMeshBridge.DenseViews());
         assertSame(original, wrapped.decorate(original));
@@ -126,7 +126,7 @@ class RVP_AcceleratedMeshBridgeTest {
     void worldBufferHolderReachesTheSameDensePathAsDirectPreview() throws Exception {
         var builder = builderWithoutGpu();
         var holder = new RecordingHolder(true, builder);
-        var bridge = new RVP_AcceleratedMeshBridge();
+        var bridge = new RVP_AcceleratedMeshBridge(() -> true);
         var direct = assertInstanceOf(RVP_AcceleratedMeshBridge.DenseConsumer.class,
                 bridge.wrap(builder, 32768));
         var world = assertInstanceOf(RVP_AcceleratedMeshBridge.DenseConsumer.class,
@@ -138,13 +138,29 @@ class RVP_AcceleratedMeshBridgeTest {
 
     @Test
     void disabledOrUnavailableWorldAccelerationKeepsOriginalConsumer() throws Exception {
-        var bridge = new RVP_AcceleratedMeshBridge();
+        var bridge = new RVP_AcceleratedMeshBridge(() -> true);
         var disabled = new RecordingHolder(false, builderWithoutGpu());
         assertSame(disabled, bridge.wrap(disabled, 32768));
         assertEquals(0, disabled.builderReads, "不得为被 AR 过滤的批次强行初始化加速");
         var unavailable = new RecordingHolder(true, null);
         assertSame(unavailable, bridge.wrap(unavailable, 32768));
         assertEquals(1, unavailable.builderReads);
+    }
+
+    @Test
+    void sbmFallbackPhaseMustNotUnwrapOrInitializeAcceleration() throws Exception {
+        var allowed = new java.util.concurrent.atomic.AtomicBoolean(false);
+        var bridge = new RVP_AcceleratedMeshBridge(allowed::get);
+        var builder = builderWithoutGpu();
+        var holder = new RecordingHolder(true, builder);
+        assertSame(holder, bridge.wrap(holder, 32768));
+        assertSame(builder, bridge.wrap(builder, 32768));
+        assertEquals(0, holder.builderReads, "展板 CPU 回退不能提前创建 AR 批次");
+        allowed.set(true);
+        assertInstanceOf(RVP_AcceleratedMeshBridge.DenseConsumer.class, bridge.wrap(holder, 32768));
+        allowed.set(false);
+        assertSame(holder, bridge.wrap(holder, 32768), "世界绘制结束后必须恢复原通道");
+        assertEquals(1, holder.builderReads);
     }
 
     /** 只用于确认公开 holder 的转发身份，不创建或访问 OpenGL 缓冲。 */
