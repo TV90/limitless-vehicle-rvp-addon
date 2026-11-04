@@ -34,20 +34,6 @@ class RVP_AcceleratedMeshBridgeTest {
     }
 
     @Test
-    void thermalMaterialNeverBypassesAnUnknownSourceOrDifferentBuffer() throws Exception {
-        var bridge = new RVP_AcceleratedMeshBridge(() -> false);
-        net.minecraft.client.renderer.MultiBufferSource expected = type -> { throw new AssertionError("不能访问未验证的消费者"); };
-        net.minecraft.client.renderer.MultiBufferSource other = type -> { throw new AssertionError("不能解包未知修改器"); };
-        org.ywzj.rvp.entity.projectile.RVP_ProjectileSimulationBootstrap.initialize();
-        RenderType material = RenderType.solid();
-        assertSame(material, bridge.entityMaterial(new com.github.argon4w.acceleratedrendering.compat.iris.buffers
-                .IrisEntityAcceleratableBufferSource(expected, expected), expected, material));
-        assertNull(bridge.entityMaterial(other, expected, material));
-        assertNull(bridge.entityMaterial(new com.github.argon4w.acceleratedrendering.compat.iris.buffers
-                .IrisEntityAcceleratableBufferSource(expected, other), expected, material));
-    }
-
-    @Test
     void largeMeshChangesOnlySubmissionPolicyAndReusesView() {
         var views = new RVP_AcceleratedMeshBridge.DenseViews();
         ServerMesh original = mesh(156957, false);

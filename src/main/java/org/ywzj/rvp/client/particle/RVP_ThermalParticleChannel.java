@@ -115,7 +115,11 @@ public final class RVP_ThermalParticleChannel {
         if (mc.level == null || mc.player == null || reflectionBroken) {
             return;
         }
-        RenderTarget thermalBuffer = activeThermalTarget();
+        PostChain chain = resolveThermalChain();
+        if (chain == null) {
+            return;
+        }
+        RenderTarget thermalBuffer = chain.getTempTarget("thermal_buffer");
         if (thermalBuffer == null) {
             return;
         }
@@ -124,15 +128,10 @@ public final class RVP_ThermalParticleChannel {
         renderIntoThermalBuffer(mc, thermalBuffer, event, visible);
     }
 
-    /** 复用本体当前热源目标；不缓存目标对象，跟随热成像关闭、重载和尺寸变化。 */
-    public static RenderTarget activeThermalTarget() {
-        // 调用本体热成像状态与既有链查询，让模型和粒子复用同一个热源缓冲。
-        if (!ThermalHandler.isActive() || reflectionBroken) return null;
-        PostChain chain = resolveThermalChain();
-        return chain == null ? null : chain.getTempTarget("thermal_buffer");
-    }
-
-    /** 沿用本体 mod 字段反射；失败只告警一次，不缓存会被重建的 PostChain。 */
+    /**
+     * 反射读取本体 {@code ThermalHandler.thermalChain} 私有静态字段（每帧读取，自动跟随
+     * 本体重建/resize 换新实例；mod 类字段不混淆，名字稳定）。失败只告警一次并停用本通道。
+     */
     private static PostChain resolveThermalChain() {
         try {
             return ObfuscationReflectionHelper.getPrivateValue(ThermalHandler.class, null, "thermalChain");

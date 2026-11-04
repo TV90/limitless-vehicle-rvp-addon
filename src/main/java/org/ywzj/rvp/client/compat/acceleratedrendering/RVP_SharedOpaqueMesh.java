@@ -14,7 +14,9 @@ import org.joml.Matrix3f;
 import org.joml.Matrix3fc;
 import org.joml.Matrix4f;
 import org.joml.Matrix4fc;
+import org.ywzj.rvp.client.light.RVP_LightingCompatibility;
 import org.ywzj.rvp.config.RVP_ClientConfig;
+import org.ywzj.vehicle.client.shader.ThermalHandler;
 
 /** 将大块刚性 mesh 交给 SBM 已有静态几何缓存；每实例只更新骨骼矩阵、光照和覆盖层。 */
 public final class RVP_SharedOpaqueMesh {
@@ -23,15 +25,15 @@ public final class RVP_SharedOpaqueMesh {
     /** 浮点矩阵的相对容差；拒绝剪切、非均匀缩放及不匹配的法线。 */
     private static final float TRANSFORM_EPSILON = 1.0E-4F;
 
-    /** 几何按 baked chunk、材质与光影分类共享；车辆身份、位置、动画、光照不进入键。 */
-    private record GeometryKey(BakedGeometryChunk chunk, RenderType material, RVP_MeshShaderContext.Classification classification) { }
+    /** 几何身份仅含 baked chunk 和实际材质；车辆、位置、动画、光照均不能产生新缓存键。 */
+    private record GeometryKey(BakedGeometryChunk chunk, RenderType material) { }
 
     private RVP_SharedOpaqueMesh() { }
 
     /** 返回 true 表示 SBM 已接管本次提交，包括正在按预算上传的 PENDING 状态。 */
     static boolean tryDraw(BakedGeometryChunk chunk, RenderType material, Matrix4fc transform,
                            Matrix3fc normal, int light, int overlay, int color, int minVertices) {
-        // 调用现有客户端开关；光影保留扩展格式，热源入口另按目标缓冲身份校验。
+        // 调用现有客户端开关和光影查询；光影包及热成像继续沿用 AR/Oculus 原管线。
         if (!isEnabled() || color != -1 || chunk.hasQuads() || !chunk.hasVertices()
                 || chunk.vertices().vertexCount() < minVertices || !supportsTransform(transform, normal)) {
             return false;
@@ -41,26 +43,17 @@ public final class RVP_SharedOpaqueMesh {
         pose.last().normal().set(normal);
         // 调用 SBM 的公开缓存入口；不创建平行 GPU 池、不改 AR 或 SBM 内部资源寿命。
         // 相同 chunk 的所有车共享局部顶点，车辆运动时仅改变本次提交的矩阵。
-        // 调用现有 SBM 捕获：由当前 BufferBuilder/Iris 填充扩展格式，材质仍使用当前光影 shader。
-        try (RVP_MeshShaderContext context = RVP_MeshShaderContext.open()) {
-            if (context == null) return false;
-            return StaticMeshRenderer.tryDraw(OWNER, new GeometryKey(chunk, material, context.classification()), collector -> {
-                VertexConsumer consumer = collector.buffer(material, VertexFormat.Mode.TRIANGLES);
-                writeGeometry(chunk.vertices(), consumer);
-                return true;
-            }, pose, light, overlay).owned();
-        }
+        return StaticMeshRenderer.tryDraw(OWNER, new GeometryKey(chunk, material), collector -> {
+            VertexConsumer consumer = collector.buffer(material, VertexFormat.Mode.TRIANGLES);
+            writeGeometry(chunk.vertices(), consumer);
+            return true;
+        }, pose, light, overlay).owned();
     }
 
-    /** 热源复绘沿用世界的矩阵计算，避免 CPU/GPU 两条深度计算之间的舍入差。 */
-    public static boolean tryDrawWorld(BakedGeometryChunk chunk, RenderType material, PoseStack pose,
-                                       int light, int overlay, int minVertices) {
-        return tryDraw(chunk, material, pose.last().pose(), pose.last().normal(), light, overlay, -1, minVertices);
-    }
-
-    /** 世界、热源和展板共用开关；特殊缓冲由调用入口分别校验。 */
+    /** 世界与展板共用开关；光影和热成像仍沿用原渲染路径。 */
     public static boolean isEnabled() {
-        return RVP_ClientConfig.isSharedOpaqueMeshEnabled();
+        return RVP_ClientConfig.isSharedOpaqueMeshEnabled()
+                && !RVP_LightingCompatibility.shadersActive() && !ThermalHandler.isActive();
     }
 
     /** 展板镜像只作用于顶点，不能让 SBM 根据它重新推导法线，否则左右受光会翻转。 */

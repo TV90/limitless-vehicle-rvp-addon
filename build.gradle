@@ -99,10 +99,7 @@ repositories {
         forRepository {
             maven { name = 'AcceleratedRenderingApi'; url = 'https://cursemaven.com' }
         }
-        filter {
-            includeVersion('curse.maven', 'accelerated-rendering-1314021', '8448250')
-            includeVersion('curse.maven', 'oculus-581495', '6020952')
-        }
+        filter { includeVersion('curse.maven', 'accelerated-rendering-1314021', '8448250') }
     }
     maven { name = 'AliyunPublic'; url = 'https://maven.aliyun.com/repository/public' }
     maven { name = 'AliyunCentral'; url = 'https://maven.aliyun.com/repository/central' }
@@ -173,8 +170,6 @@ dependencies {
     compileOnly fg.deobf("maven.modrinth:Xs0XTOVv:GgrzKRsK")
     // AR 1.0.14 的公开 mesh 提交接口；不嵌入、不自动安装，入口只在客户端检测到 AR 后加载。
     compileOnly fg.deobf('curse.maven:accelerated-rendering-1314021:8448250')
-    // Oculus 1.8 管线组合桥；仅编译，不嵌入、不自动安装，缺少模组时不加载该类。
-    compileOnly fg.deobf('curse.maven:oculus-581495:6020952')
     testImplementation fg.deobf('curse.maven:accelerated-rendering-1314021:8448250')
     // SBM
     jarJar(implementation(fg.deobf("com.github.mcmodderanchor:simplebedrockmodel:2.6.0-forge-mc1.20.1"))) {
