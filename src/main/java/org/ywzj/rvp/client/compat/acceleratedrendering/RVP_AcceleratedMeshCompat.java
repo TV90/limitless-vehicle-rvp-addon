@@ -26,6 +26,8 @@ public final class RVP_AcceleratedMeshCompat {
     public interface ConsumerWrapper {
         /** 保留原消费者的绘制语义，只调整达到阈值的 mesh 提交策略。 */
         VertexConsumer wrap(VertexConsumer consumer, int minVertices);
+        /** 只认可不增加材质/顶点语义的 AR GUI 包装，未知包装一律不旁路。 */
+        default boolean isPanelSource(MultiBufferSource source, MultiBufferSource expected) { return false; }
     }
 
     private RVP_AcceleratedMeshCompat() {}
@@ -52,6 +54,12 @@ public final class RVP_AcceleratedMeshCompat {
             VertexConsumer original = source.getBuffer(type);
             return type == cutoutMesh ? active.wrap(original, minVertices) : original;
         };
+    }
+
+    /** 识别 AR 的透明转发 source，仍保留其正常消费者，不解包 raw builder。 */
+    public static boolean isPanelSource(MultiBufferSource source, MultiBufferSource expected) {
+        ConsumerWrapper bridge = getWrapper();
+        return bridge != null && bridge.isPanelSource(source, expected);
     }
 
     /** 延迟加载公开 AR API；卸载 AR 时既不解析其类型，也不改变原始消费者。 */

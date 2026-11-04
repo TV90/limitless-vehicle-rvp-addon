@@ -1,6 +1,8 @@
 package org.ywzj.rvp.client.compat.acceleratedrendering;
 
 import com.github.argon4w.acceleratedrendering.core.CoreFeature;
+import com.github.argon4w.acceleratedrendering.compat.iris.buffers.IrisEntityAcceleratableBufferSource;
+import net.minecraft.client.renderer.MultiBufferSource;
 import com.github.argon4w.acceleratedrendering.features.entities.AcceleratedEntityRenderingFeature;
 import com.github.argon4w.acceleratedrendering.core.backends.buffers.IServerBuffer;
 import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.IAccelerationHolder;
@@ -48,6 +50,13 @@ public final class RVP_AcceleratedMeshBridge implements RVP_AcceleratedMeshCompa
                 != AcceleratedBufferBuilder.class) {
             throw new NoSuchMethodException("AR acceleration holder changed");
         }
+    }
+
+    @Override
+    public boolean isPanelSource(MultiBufferSource source, MultiBufferSource expected) {
+        // AR 在 EntityRenderDispatcher 无条件加这一层；无光影且内部没有额外包装时仅透明转发。
+        return source instanceof IrisEntityAcceleratableBufferSource iris
+                && iris.original() == expected && iris.wrapped() == expected;
     }
 
     @Override

@@ -123,8 +123,8 @@ public class RVP_ClientConfig {
                 .define("acceleratedDenseMesh", true);
         sharedOpaqueMesh = builder
                 .comment("大块不透明刚性 mesh 共享 SBM 常驻顶点缓冲，降低多车同屏的 AR 临时缓冲占用。",
-                        "需要 acceleratedDenseMesh；仅世界实体、无活动光影且姿势受支持时使用。",
-                        "false 保留 dense 优化并恢复 AR 展开，用于对照或兼容回退。")
+                        "需要 acceleratedDenseMesh；世界实体与 RVP 命中展板共用几何，无活动光影且姿势受支持时使用。",
+                        "false 保留世界 dense 优化并恢复 AR 展开，展板恢复原 SBM 提交，用于对照或兼容回退。")
                 .define("sharedOpaqueMesh", true);
         acceleratedDenseMinVertices = builder
                 .comment("单个 mesh 的最小顶点记录数（不是面数）；默认 32768。",

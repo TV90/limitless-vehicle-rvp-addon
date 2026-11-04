@@ -36,6 +36,7 @@ import org.joml.Quaternionf;
 import org.joml.Vector3f;
 import org.joml.Vector4f;
 import org.slf4j.Logger;
+import org.ywzj.rvp.client.render.RVP_HitPanelMesh;
 import org.ywzj.rvp.client.state.RVP_ClientBoneModuleState;
 import org.ywzj.rvp.client.state.RVP_ClientHitIndicatorState;
 import org.ywzj.rvp.client.state.RVP_ClientHitReplay;
@@ -418,7 +419,8 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
             dispatcher.setRenderShadow(false);
             Entity finalEntity = entity;
             RenderSystem.runAsFancy(() -> {
-                try {
+                // 调用展板共享几何窗口；退出时先提交剩余透明骨/弹体，再恢复普通 GUI 绘制。
+                try (var ignored = RVP_HitPanelMesh.open(gg.bufferSource())) {
                     // 展板"状态回放延迟"：渲染期间动画脚本的爆反状态查询回到 0.5 秒前，
                     // 刚被摧毁的爆反骨块在展板里晚 0.5 秒消失；渲染结束立即清除，世界渲染不受影响。
                     RVP_ClientBoneModuleState.setRenderDelay(RENDER_DELAY_MS);
