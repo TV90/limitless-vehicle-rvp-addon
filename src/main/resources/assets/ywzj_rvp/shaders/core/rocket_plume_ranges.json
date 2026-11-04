@@ -231,6 +231,7 @@
         12
       ]
     },
+    {"name": "PlumeTransition", "type": "float", "count": 1, "values": [1]},
     {
       "name": "PlumeHaloRadius",
       "type": "float",

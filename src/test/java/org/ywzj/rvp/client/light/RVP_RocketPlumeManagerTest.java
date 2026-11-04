@@ -60,6 +60,95 @@ class RVP_RocketPlumeManagerTest {
         assertFalse(manager.hasActive());
     }
 
+    /** 同刻多次渲染和逐刻续期不能反复点火；位置继续随导弹更新，部分 tick 负责平滑显现。 */
+    @Test
+    void engineIgnitionGrowsSmoothlyAndHeartbeatDoesNotRestartIt() {
+        Object world = new Object();
+        RVP_RocketPlumeManager manager = new RVP_RocketPlumeManager();
+        UUID key = UUID.randomUUID();
+        manager.beginWorld(world, 100);
+        manager.upsertEngine(key, Vec3.ZERO, new Vec3(0, 0, -1), 0.3F, 300, 1, 7, 100);
+        assertTrue(manager.collect(Vec3.ZERO, 0, plume -> true).isEmpty());
+        var firstFrame = manager.collect(Vec3.ZERO, 0.5F, plume -> true).get(0);
+        manager.beginWorld(world, 101);
+        for (int frame = 0; frame < 3; frame++) {
+            manager.upsertEngine(key, new Vec3(2, 0, 0), new Vec3(0, 0, -1), 0.3F, 300, 1, 7, 99);
+        }
+        var halfway = manager.collect(Vec3.ZERO, 0.5F, plume -> true).get(0);
+        assertEquals(0.5F, halfway.transition(), 0.00001F);
+        assertTrue(halfway.transition() > firstFrame.transition());
+        assertEquals(1.5F, halfway.length(), 0.00001F);
+        assertEquals(0.45F * Math.sqrt(0.5), halfway.radius(), 0.00001);
+        assertEquals(new Vec3(2, 0, 0), halfway.position());
+        assertEquals(halfway, manager.collect(Vec3.ZERO, 0.5F, plume -> true).get(0), "暂停/重复采样不得推进过渡");
+        manager.beginWorld(world, 102);
+        manager.upsertEngine(key, Vec3.ZERO, new Vec3(0, 0, -1), 0.3F, 300, 1, 7, 98);
+        var steady = manager.collect(Vec3.ZERO, 1, plume -> true).get(0);
+        assertEquals(1, steady.transition());
+        assertEquals(3, steady.length(), 0.00001F);
+        assertEquals(0.45F, steady.radius(), 0.00001F);
+        assertEquals(firstFrame.haloRadius(), steady.haloRadius(), "过渡只改变亮度，不扩大光晕范围");
+    }
+
+    /** 燃尽前逐帧收束，到权威结束刻无残焰；下一次点火重新从零展开。 */
+    @Test
+    void engineBurnoutShrinksAndFadesBeforeDeadlineThenNextPulseStartsFresh() {
+        Object world = new Object();
+        RVP_RocketPlumeManager manager = new RVP_RocketPlumeManager();
+        UUID key = UUID.randomUUID();
+        for (int tick = 100; tick <= 110; tick++) {
+            manager.beginWorld(world, tick);
+            manager.upsertEngine(key, Vec3.ZERO, new Vec3(1, 0, 0), 0.3F, 0, 0.7F, 7, 110 - tick);
+            if (tick == 107) {
+                var middle = manager.collect(Vec3.ZERO, 0, plume -> true).get(0);
+                var later = manager.collect(Vec3.ZERO, 0.5F, plume -> true).get(0);
+                assertEquals(0.5F, middle.transition());
+                assertTrue(later.transition() < middle.transition());
+                assertTrue(later.length() < middle.length());
+                assertTrue(later.radius() < middle.radius());
+                assertEquals(0.7F, middle.strength(), "阶段强度与显示过渡各自保留，交给实际绘制统一合成");
+                assertEquals(middle.transition(), middle.withStrength(0.2F).transition());
+            }
+            if (tick == 110) assertTrue(manager.collect(Vec3.ZERO, 0, plume -> true).isEmpty());
+        }
+        manager.remove(key);
+        manager.beginWorld(world, 120);
+        manager.upsertEngine(key, Vec3.ZERO, new Vec3(1, 0, 0), null, 0, 0.7F, 7, 30);
+        assertTrue(manager.collect(Vec3.ZERO, 0, plume -> true).isEmpty());
+        assertTrue(manager.collect(Vec3.ZERO, 0.5F, plume -> true).get(0).transition() < 0.1F);
+    }
+
+    /** 短脉冲的渐入与渐出允许重叠，无限窗口仅渐入；非法时间不产生 NaN 画面。 */
+    @Test
+    void transitionHandlesShortPulsesAndUnknownDeadlineWithoutDiscontinuity() {
+        assertEquals(0, RVP_RocketPlumeParameters.transition(0, 2));
+        assertTrue(RVP_RocketPlumeParameters.transition(1, 1) > 0);
+        assertTrue(RVP_RocketPlumeParameters.transition(1, 1) < 1);
+        assertEquals(0, RVP_RocketPlumeParameters.transition(2, 0));
+        assertEquals(0.5F, RVP_RocketPlumeParameters.transition(1.5, Double.POSITIVE_INFINITY));
+        assertEquals(1, RVP_RocketPlumeParameters.transition(3, Double.POSITIVE_INFINITY));
+        assertEquals(0, RVP_RocketPlumeParameters.transition(Double.NaN, 100));
+    }
+
+    /** 新正式入口仍遵守心跳超时和立即清理，不能为了渐出在原地留下脱离弹体的火焰。 */
+    @Test
+    void timedEngineStillClearsOnHeartbeatLossWorldChangeAndRemoval() {
+        Object world = new Object();
+        RVP_RocketPlumeManager manager = new RVP_RocketPlumeManager();
+        UUID key = UUID.randomUUID();
+        manager.beginWorld(world, 100);
+        manager.upsertEngine(key, Vec3.ZERO, new Vec3(1, 0, 0), null, 0, 1, 7, -1);
+        assertFalse(manager.collect(Vec3.ZERO, 0.5F, plume -> true).isEmpty());
+        manager.beginWorld(world, 102);
+        assertFalse(manager.hasActive());
+        manager.upsertEngine(key, Vec3.ZERO, new Vec3(1, 0, 0), null, 0, 1, 7, 100);
+        manager.beginWorld(new Object(), 103);
+        assertFalse(manager.hasActive());
+        manager.upsertEngine(key, Vec3.ZERO, new Vec3(1, 0, 0), null, 0, 1, 7, 100);
+        manager.remove(key);
+        assertFalse(manager.hasActive());
+    }
+
     @Test
     void previewFadesWithoutShrinkingAndPausesWithGameClock() {
         Object world = new Object();

@@ -21,6 +21,8 @@ uniform vec4 PlumeOriginLength;
 uniform vec4 PlumeAxisRadius;
 // HDR 核心上限、橙焰强度、逐弹稳定相位、仅光晕输入的软压缩峰值。
 uniform vec4 PlumeEmission;
+// 启停显示包络，在高亮映射之后应用，防止白热核心直到最后一帧仍保持全白。
+uniform float PlumeTransition;
 // 由既有毫米口径计算的世界光晕半径，与发动机环境照明共同限制在 20～500 格。
 uniform float PlumeHaloRadius;
 // 喷口附近的原版环境亮度；只用于外围光晕，负值表示当地数据不可用。
@@ -144,7 +146,7 @@ vec3 plumeRadiance(vec3 ray, float sceneDistance, vec2 rayUV, vec2 intensities) 
         vec3 relative = ray * (interval.x + (float(step) + 0.5) * stepLength) - origin;
         float axial = dot(relative, axis);
         float u = clamp(axial / extent, 0.0, 1.0);
-        // 喷口细、稍后膨胀、末端收尖；几何长宽只受 flame_scale 的统一缩放。
+        // 喷口细、稍后膨胀、末端收尖；稳态几何由 flame_scale 决定，启停长宽已在 Java 端平滑收束。
         float width = radius * max(0.01, (0.22 + 0.78 * sin(3.141593 * sqrt(u))) * pow(1.0 - u, 0.45));
         float wave = 0.94 + 0.06 * sin(u * 31.0 - phase);
         width *= wave;
@@ -212,7 +214,7 @@ vec3 worldHalo(vec3 ray) {
     float falloff = exp(-6.0 * radialSq) * pow(1.0 - radialSq, 2.0);
     float ambientMultiplier = rvpAmbientMultiplier(PlumeAmbient, rvpAmbientSceneBrightness(screenUV));
     float response = 1.0 - exp(-PlumeHaloIntensity * visible * falloff * ambientMultiplier);
-    return vec3(1.0, 0.38, 0.07) * response;
+    return vec3(1.0, 0.38, 0.07) * response * clamp(PlumeTransition, 0.0, 1.0);
 }
 
 void main() {
@@ -229,6 +231,7 @@ void main() {
     vec3 emission = clamp(plumeRadiance(ray, sceneDistance, screenUV, PlumeEmission.xy), vec3(0.0), vec3(60000.0));
     if (OutputMode == 0) {
         // 原始辐射量供显卡诊断回读，生产显示使用模式 2，光晕输入使用模式 1。
+        emission *= clamp(PlumeTransition, 0.0, 1.0);
         fragColor = vec4(emission, dot(emission, vec3(0.2126, 0.7152, 0.0722)));
     } else if (OutputMode == 1) {
         // 白热核心与光晕输入分开：60000 直接模糊会让有限核的边界也饱和成方框。
@@ -237,8 +240,10 @@ void main() {
         vec3 bloomInput = emission * (limit * (1.0 - exp(-peak / limit)) / max(peak, 0.0001));
         // 只在柔化输入乘一次环境倍率；显示模式2的喷焰主体与可见度模式3保持原值。
         bloomInput *= rvpAmbientMultiplier(PlumeAmbient, rvpAmbientSceneBrightness(screenUV));
+        // 局部光晕也在软压缩之后过渡，不能只降低映射前的高亮数值。
+        bloomInput *= clamp(PlumeTransition, 0.0, 1.0);
         fragColor = vec4(bloomInput, dot(bloomInput, vec3(0.2126, 0.7152, 0.0722)));
     } else {
-        fragColor = vec4(1.0 - exp(-emission), 0.0);
+        fragColor = vec4((1.0 - exp(-emission)) * clamp(PlumeTransition, 0.0, 1.0), 0.0);
     }
 }

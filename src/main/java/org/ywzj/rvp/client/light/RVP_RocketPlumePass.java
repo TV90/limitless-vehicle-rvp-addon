@@ -145,6 +145,8 @@ final class RVP_RocketPlumePass {
         shader.safeGetUniform("PlumeOriginLength").set(position.x, position.y, position.z, plume.length());
         shader.safeGetUniform("PlumeAxisRadius").set(axis.x, axis.y, axis.z, plume.radius());
         shader.safeGetUniform("PlumeHaloRadius").set(plume.haloRadius());
+        // 调用同一启停包络，映射后的核心、局部光晕和广域光晕均平滑显隐，避免 HDR 饱和吞掉淡出。
+        shader.safeGetUniform("PlumeTransition").set(plume.transition());
         // 模糊来源使用独立光晕亮度，直接显示和可见度采样仍使用喷焰本体亮度。
         float emissionStrength = glowSource ? plume.haloStrength() : plume.strength();
         // 调用会话亮度入口，只替换已有程序输入；阶段包络、二十步采样、遮挡和显示映射保持原算法。

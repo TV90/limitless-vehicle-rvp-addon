@@ -116,6 +116,15 @@ public final class RVP_ClientRemoteAmmoVisualState {
         return motorBurnRemainingTicksByEntityId.getOrDefault(entityId, 0);
     }
 
+    /** 喷焰按收包后的游戏刻递减倒计时，防止每帧复用快照原值而在燃尽时突然消失。 */
+    public static int getMotorBurnRemainingTicks(ResourceLocation currentDimension, int entityId, long now) {
+        // 调用严格燃烧授权：明确熄火、换维度、过期和时钟回退均不能继续播放。
+        if (!isMotorBurningFresh(currentDimension, entityId, now)) { return 0; }
+        // 调用原始快照出口后扣除本地已过去时间，保留尾烟调用所需的原有出口语义。
+        return (int) Math.max(0, getMotorBurnRemainingTicks(currentDimension, entityId)
+                - (now - lastSeenMotorBurnGameTimeById.get(entityId)));
+    }
+
     /** 清除退出世界或切换维度后遗留的弹药视觉集合。 */
     public static void clear() {
         dimension = null;

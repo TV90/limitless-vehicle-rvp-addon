@@ -61,6 +61,8 @@ public final class ScreenLightGpuRegression {
             // 调用 RVP 新喷流程序专项回读，旧圆形喷口测试继续保留用于防止误删旧实现。
             plume = program(shaders, "rocket_plume_ranges");
             testRocketPlume(Path.of(args[0]), plume, bloom);
+            // 调用启停显示专项回读，验证高亮核心、局部和广域光晕在映射后确实平滑变暗。
+            testRocketPlumeTransition(Path.of(args[0]), plume);
             testWorldEngineHalo(Path.of(args[0]), plume);
             // 调用新版多尺度和独立广域亮度专项回读，验证实际输出而非仅检查参数数值。
             testMultiscaleBloom(Path.of(args[0]), bloom, plume);
@@ -769,6 +771,8 @@ public final class ScreenLightGpuRegression {
         GL20.glUniform1f(GL20.glGetUniformLocation(program, "HandDepthLimit"), 0);
         // 原生 GLSL 编译不读取描述 JSON，显式还原喷焰资源的默认光晕范围。
         GL20.glUniform1f(GL20.glGetUniformLocation(program, "PlumeHaloRadius"), 20);
+        // 原生编译不会读取资源 JSON 的默认值；诊断中的稳态喷焰必须显式设置为完整显示。
+        GL20.glUniform1f(GL20.glGetUniformLocation(program, "PlumeTransition"), 1);
         for (int index = 0; index < 8; index++) {
             GL20.glUniform4f(GL20.glGetUniformLocation(program, "LightEmission" + index), 0, 0, 0, 0);
         }
@@ -1027,6 +1031,75 @@ public final class ScreenLightGpuRegression {
         Path directory = root.resolve("build/rocket-plume-gpu-regression"); Files.createDirectories(directory);
         javax.imageio.ImageIO.write(preview, "png", directory.resolve("preview.png").toFile());
         System.out.println("PASS RVP side/rear/angled/scaled plume core and orange Bloom; Alpha preserved; preview=" + directory.resolve("preview.png"));
+    }
+
+    /** 以真实生产 GLSL 验证映射后淡出，不能用仅降低 HDR 数值的假渐变蒙混通过。 */
+    private static void testRocketPlumeTransition(Path root, int plume) throws Exception {
+        int size = 256;
+        int sky = depth(size, size, 0, false);
+        int visible = color(1, 1, new float[]{1, 0, 0, 1});
+        int[] output = target(size, size);
+        GL20.glUseProgram(plume); uniforms(plume);
+        GL20.glUniform2f(GL20.glGetUniformLocation(plume, "ScreenSize"), size, size);
+        sampler(plume, "SceneDepth", 1, sky); sampler(plume, "DistantDepth", 2, sky);
+        sampler(plume, "PlumeVisibility", 0, visible);
+        GL20.glUniform4f(GL20.glGetUniformLocation(plume, "PlumeEmission"), 60000, 16, 0.2F, 12);
+        GL20.glUniform1f(GL20.glGetUniformLocation(plume, "PlumeHaloIntensity"), 1.6F);
+        GL20.glUniform1f(GL20.glGetUniformLocation(plume, "Time"), 0.7F);
+        plumeGeometry(plume, -1.5F, 0, -6, 1, 0, 0, 3, 0.45F);
+        for (int mode : new int[]{1, 2, 4}) {
+            GL20.glUniform1i(GL20.glGetUniformLocation(plume, "OutputMode"), mode);
+            GL20.glUniform1f(GL20.glGetUniformLocation(plume, "PlumeTransition"), 1);
+            render(output, size, size);
+            float[] full = pixel(output[0], 128, 128);
+            require(full[0] > 0.1F, "transition reference is dark, mode=" + mode);
+            for (float transition : new float[]{0.75F, 0.5F, 0.25F, 0}) {
+                GL20.glUniform1f(GL20.glGetUniformLocation(plume, "PlumeTransition"), transition);
+                render(output, size, size);
+                float[] faded = pixel(output[0], 128, 128);
+                for (int channel = 0; channel < 3; channel++) {
+                    require(Math.abs(full[channel] * transition - faded[channel]) < 0.01F,
+                            "HDR mapping swallowed plume fade, mode=" + mode + " transition=" + transition);
+                }
+                if (mode != 1) near(0, faded[3], "plume display fade must preserve scene alpha");
+            }
+        }
+        // 远距一像素覆盖也要在映射之后衰减，否则几何收小后仍会留下突然熄灭的亮点。
+        GL20.glUniform1i(GL20.glGetUniformLocation(plume, "OutputMode"), 2);
+        plumeGeometry(plume, 0, 0, -4096, 0, 0, -1, 3, 0.45F);
+        GL20.glUniform1f(GL20.glGetUniformLocation(plume, "PlumeTransition"), 0.5F);
+        render(output, size, size);
+        near(0.5F, pixel(output[0], 128, 128)[0], "distant white core did not fade after mapping");
+
+        // 导出同一喷口的展开/收束序列，供人工核对方向、长宽和显隐，没有读取或改写任何模型资产。
+        var preview = new java.awt.image.BufferedImage(size * 5, size * 2, java.awt.image.BufferedImage.TYPE_INT_RGB);
+        float[] stages = {0, 0.15625F, 0.5F, 0.84375F, 1};
+        for (int row = 0; row < 2; row++) {
+            for (int column = 0; column < stages.length; column++) {
+                float transition = stages[row == 0 ? column : stages.length - 1 - column];
+                plumeGeometry(plume, -1.5F, 0, -6, 1, 0, 0, 3 * transition, 0.45F * (float) Math.sqrt(transition));
+                GL20.glUniform1f(GL20.glGetUniformLocation(plume, "PlumeTransition"), transition);
+                render(output, size, size);
+                float[] frame = pixels(output[0], size, size);
+                for (int y = 0; y < size; y++) { for (int x = 0; x < size; x++) {
+                    int index = (y * size + x) * 4;
+                    int red = Math.round(Math.min(1, Math.max(0, frame[index])) * 255);
+                    int green = Math.round(Math.min(1, Math.max(0, frame[index + 1])) * 255);
+                    int blue = Math.round(Math.min(1, Math.max(0, frame[index + 2])) * 255);
+                    preview.setRGB(column * size + x, row * size + size - 1 - y, red << 16 | green << 8 | blue);
+                } }
+                var graphics = preview.createGraphics();
+                graphics.setColor(java.awt.Color.WHITE);
+                graphics.drawString((row == 0 ? "IGNITION " : "BURNOUT ") + transition, column * size + 12, row * size + 22);
+                graphics.dispose();
+            }
+        }
+        Path directory = root.resolve("build/rocket-plume-gpu-regression");
+        Files.createDirectories(directory);
+        javax.imageio.ImageIO.write(preview, "png", directory.resolve("transitions.png").toFile());
+        GL20.glUniform1f(GL20.glGetUniformLocation(plume, "PlumeTransition"), 1);
+        System.out.println("PASS plume ignition/burnout fade after HDR mapping: core, local/world halo, subpixel and Alpha; preview="
+                + directory.resolve("transitions.png"));
     }
 
     /** 上传和生产一致的观察空间喷口/方向/缩放尺寸。 */

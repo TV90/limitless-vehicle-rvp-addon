@@ -35,4 +35,20 @@ class RVP_RemoteEngineLightStateTest {
                 Set.of(7), Map.of(7, 100), 102);
         assertFalse(RVP_ClientRemoteAmmoVisualState.isMotorBurningFresh(DIMENSION, 7, 102));
     }
+
+    /** 渲染倒计时必须在两份快照之间递减；重复查询不耗时，不改变尾烟使用的原始值。 */
+    @Test
+    void plumeCountdownAdvancesBetweenSnapshotsAndRejectsExpiredFacts() {
+        RVP_ClientRemoteAmmoVisualState.replace(DIMENSION, Set.of(7), Map.of(7, 6), 100);
+        assertEquals(6, RVP_ClientRemoteAmmoVisualState.getMotorBurnRemainingTicks(DIMENSION, 7, 100));
+        assertEquals(3, RVP_ClientRemoteAmmoVisualState.getMotorBurnRemainingTicks(DIMENSION, 7, 103));
+        assertEquals(3, RVP_ClientRemoteAmmoVisualState.getMotorBurnRemainingTicks(DIMENSION, 7, 103));
+        assertEquals(6, RVP_ClientRemoteAmmoVisualState.getMotorBurnRemainingTicks(DIMENSION, 7));
+        assertEquals(0, RVP_ClientRemoteAmmoVisualState.getMotorBurnRemainingTicks(DIMENSION, 7, 106));
+        assertEquals(0, RVP_ClientRemoteAmmoVisualState.getMotorBurnRemainingTicks(DIMENSION, 7, 99));
+        RVP_ClientRemoteAmmoVisualState.replace(DIMENSION, Set.of(7), Map.of(7, 100), 110);
+        assertEquals(0, RVP_ClientRemoteAmmoVisualState.getMotorBurnRemainingTicks(DIMENSION, 7, 121));
+        RVP_ClientRemoteAmmoVisualState.replace(DIMENSION, Set.of(7), Map.of(), 122);
+        assertEquals(0, RVP_ClientRemoteAmmoVisualState.getMotorBurnRemainingTicks(DIMENSION, 7, 122));
+    }
 }

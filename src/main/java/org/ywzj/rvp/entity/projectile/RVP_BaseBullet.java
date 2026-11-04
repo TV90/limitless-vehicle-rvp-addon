@@ -6001,6 +6001,25 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     /**
+     * 当前燃烧窗口距燃尽的剩余 tick，仅供已确认燃烧的本地喷焰平滑收束。
+     * 与尾烟保持期不同，不把未来二脉冲算进一级窗口；-1 表示没有有限窗口。
+     */
+    public final int ticksUntilCurrentMotorStopsBurning() {
+        // 调用现有阶段查询与飞行时钟，复用生成包偏移和已同步的二脉冲窗口，不改变推进状态。
+        int flight = rvpData == null ? clientVisualFlightTickCount() : getFlightTickCount();
+        double end = motorBurnEndTick;
+        if (isSecondMotorPulseBurningNow()) {
+            int start = rvpData == null ? entityData.get(DATA_SECOND_PULSE_START_TICK) : secondPulseStartTick;
+            float duration = rvpData == null ? entityData.get(DATA_SECOND_PULSE_BURN_TIME_TICK)
+                    : rvpData.getProjectileData().getResolvedSecondPulseBurnTime();
+            end = (double) start + duration;
+        } else if (motorBurnEndTick == Integer.MAX_VALUE) {
+            return -1;
+        }
+        return (int) Math.max(0, Math.min(1200, Math.ceil(end - flight)));
+    }
+
+    /**
      * 距发动机最后一次燃烧结束还剩多少 tick（固体款凝结云保持期输入，2026-09-20）：
      * 取一级燃尽与二脉冲燃尽的最晚者减当前飞行 tick，钳 [0, 1200]——上限防
      * {@code motorBurnEndTick} 默认 {@code Integer.MAX_VALUE}（生成包未到达/未设置）把粒子

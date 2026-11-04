@@ -79,7 +79,8 @@ public final class RVP_RocketEngineLightQuery {
         var virtualVisual = org.ywzj.rvp.client.state.remotevisibility.RVP_ClientVirtualMissileVisualState.owned(bullet);
         long animationTick = org.ywzj.rvp.client.state.remotevisibility.RVP_ClientVirtualMissileVisualState.animationTick();
         int remaining = virtualVisual != null ? virtualVisual.timeline().motorRemaining(animationTick) : bullet.isRemoteVisualClone()
-                ? RVP_ClientRemoteAmmoVisualState.getMotorBurnRemainingTicks(bullet.level().dimension().location(), bullet.getId())
+                ? RVP_ClientRemoteAmmoVisualState.getMotorBurnRemainingTicks(bullet.level().dimension().location(),
+                        bullet.getId(), bullet.level().getGameTime())
                 : bullet.ticksUntilMotorStopsBurning();
         // 调用共用阶段包络，二脉冲改变颜色/强度，口径决定的共同半径保持不变。
         boolean secondPulse = virtualVisual != null ? virtualVisual.timeline().motorPhase(animationTick)
@@ -96,11 +97,14 @@ public final class RVP_RocketEngineLightQuery {
         } else {
             RVP_ScreenLightManager.INSTANCE.removePersistent(bullet.getUUID());
         }
-        // 调用独立喷流登记，只复用旧 flame_scale，亮度使用统一发动机阶段，数量/距离不套用八灯预算。
+        // 调用独立喷流登记，稳态复用 flame_scale；点火/燃尽平滑调整喷流尺寸和最终显示亮度。
         if (RVP_LightingConfig.plumeEnabled()) {
-            RVP_RocketPlumeManager.INSTANCE.upsert(bullet.getUUID(), position, exhaustDirection(bullet, partialTick),
+            // 调用当前燃烧窗口出口，一级收束不能被未来二脉冲的尾烟保持期拖后；虚拟/远端继续服从权威快照。
+            int plumeRemaining = virtualVisual != null || bullet.isRemoteVisualClone()
+                    ? remaining : bullet.ticksUntilCurrentMotorStopsBurning();
+            RVP_RocketPlumeManager.INSTANCE.upsertEngine(bullet.getUUID(), position, exhaustDirection(bullet, partialTick),
                     bullet.getResolvedWeaponConfig().getProjectileData().getFlameScale(),
-                    caliber, phased.intensity() / RVP_LightParameters.ENGINE_SURFACE_INTENSITY, false, bullet.getId());
+                    caliber, phased.intensity() / RVP_LightParameters.ENGINE_SURFACE_INTENSITY, bullet.getId(), plumeRemaining);
         } else {
             RVP_RocketPlumeManager.INSTANCE.remove(bullet.getUUID());
         }

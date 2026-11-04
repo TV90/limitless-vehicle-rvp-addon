@@ -14,6 +14,10 @@ public final class RVP_RocketPlumeParameters {
     public static final float BASE_LENGTH = 10F;
     /** 缩放为 1 时的喷流最大半径，单位格；直径保持接近原模型的 3.09 格。 */
     public static final float BASE_RADIUS = 1.5F;
+    /** 点火后喷流展开并显现的时间，单位 tick；3 tick 为 0.15 秒，按游戏时钟推进。 */
+    public static final float IGNITION_TRANSITION_TICKS = 3F;
+    /** 当前燃烧窗口结束前收束并淡出的时间，单位 tick；6 tick 为 0.3 秒，不延长实际燃烧期。 */
+    public static final float BURNOUT_TRANSITION_TICKS = 6F;
     /** 仅供光晕提取的软压缩峰值；核心显示仍使用 60000，防止有限模糊核被高亮烧成方形硬边。 */
     public static final float BLOOM_INPUT_PEAK = 12F;
     /** 喷焰使用连续的标准模糊采样步长，避免细长高亮边缘被稀疏采样分成条纹。 */
@@ -29,5 +33,18 @@ public final class RVP_RocketPlumeParameters {
     public static float scale(Float configured) {
         return configured != null && Float.isFinite(configured) && configured > 0
                 && Float.isFinite(configured * BASE_LENGTH) ? configured : DEFAULT_SCALE;
+    }
+
+    /** 点火与燃尽两端均平滑到零；短燃烧期允许两段重叠，首尾不会突然跳亮。 */
+    public static float transition(double elapsedTicks, double remainingTicks) {
+        // 调用两端斜率为零的平滑曲线，让逐帧插值的展开和收束没有折点。
+        return smooth(elapsedTicks / IGNITION_TRANSITION_TICKS)
+                * smooth(remainingTicks / BURNOUT_TRANSITION_TICKS);
+    }
+
+    /** 将时间比例压到 0～1 后做平滑插值；未知燃尽时间的正无穷按持续燃烧处理。 */
+    private static float smooth(double progress) {
+        double value = Double.isNaN(progress) ? 0 : Math.max(0, Math.min(1, progress));
+        return (float) (value * value * (3 - 2 * value));
     }
 }
