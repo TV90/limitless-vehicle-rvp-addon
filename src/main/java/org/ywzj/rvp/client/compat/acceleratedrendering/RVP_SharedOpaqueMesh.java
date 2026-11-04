@@ -3,20 +3,23 @@ package org.ywzj.rvp.client.compat.acceleratedrendering;
 import com.github.mcmodderanchor.simplebedrockmodel.v2.client.mesh.StaticMeshRenderer;
 import com.github.mcmodderanchor.simplebedrockmodel.v2.common.model.baked.BakedGeometryChunk;
 import com.github.mcmodderanchor.simplebedrockmodel.v2.common.model.baked.BakedVertexData;
+import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.resources.ResourceLocation;
+import org.joml.Matrix3f;
 import org.joml.Matrix3fc;
+import org.joml.Matrix4f;
 import org.joml.Matrix4fc;
 import org.ywzj.rvp.client.light.RVP_LightingCompatibility;
 import org.ywzj.rvp.config.RVP_ClientConfig;
 import org.ywzj.vehicle.client.shader.ThermalHandler;
 
 /** 将大块刚性 mesh 交给 SBM 已有静态几何缓存；每实例只更新骨骼矩阵、光照和覆盖层。 */
-final class RVP_SharedOpaqueMesh {
+public final class RVP_SharedOpaqueMesh {
     /** 独立缓存所有者；世界退出、资源重载和闲置预算沿用 SBM 的生命周期。 */
     private static final ResourceLocation OWNER = new ResourceLocation("ywzj_rvp", "opaque_vehicle_mesh");
     /** 浮点矩阵的相对容差；拒绝剪切、非均匀缩放及不匹配的法线。 */
@@ -31,8 +34,7 @@ final class RVP_SharedOpaqueMesh {
     static boolean tryDraw(BakedGeometryChunk chunk, RenderType material, Matrix4fc transform,
                            Matrix3fc normal, int light, int overlay, int color, int minVertices) {
         // 调用现有客户端开关和光影查询；光影包及热成像继续沿用 AR/Oculus 原管线。
-        if (!RVP_ClientConfig.isSharedOpaqueMeshEnabled() || RVP_LightingCompatibility.shadersActive()
-                || ThermalHandler.isActive() || color != -1 || chunk.hasQuads() || !chunk.hasVertices()
+        if (!isEnabled() || color != -1 || chunk.hasQuads() || !chunk.hasVertices()
                 || chunk.vertices().vertexCount() < minVertices || !supportsTransform(transform, normal)) {
             return false;
         }
@@ -46,6 +48,45 @@ final class RVP_SharedOpaqueMesh {
             writeGeometry(chunk.vertices(), consumer);
             return true;
         }, pose, light, overlay).owned();
+    }
+
+    /** 世界与展板共用开关；光影和热成像仍沿用原渲染路径。 */
+    public static boolean isEnabled() {
+        return RVP_ClientConfig.isSharedOpaqueMeshEnabled()
+                && !RVP_LightingCompatibility.shadersActive() && !ThermalHandler.isActive();
+    }
+
+    /** 展板镜像只作用于顶点，不能让 SBM 根据它重新推导法线，否则左右受光会翻转。 */
+    public static boolean tryDrawPanel(BakedGeometryChunk chunk, RenderType material, PoseStack pose,
+                                       int light, int overlay, int minVertices) {
+        if (!isEnabled() || chunk.hasQuads() || !chunk.hasVertices()
+                || chunk.vertices().vertexCount() < minVertices) return false;
+        PanelTransform split = panelTransform(pose.last().pose(), pose.last().normal());
+        if (split == null) return false;
+        // 调用 Minecraft 公开矩阵栈：分离屏幕镜像与骨骼法线，不伪造 AR 的世界/GUI 渲染阶段。
+        PoseStack view = RenderSystem.getModelViewStack();
+        view.pushPose();
+        try {
+            view.last().pose().mul(split.viewSuffix());
+            RenderSystem.applyModelViewMatrix();
+            // 调用相同 OWNER、chunk、材质缓存，展板和世界不再各复制一份高面数顶点。
+            return tryDraw(chunk, material, split.meshPose(), pose.last().normal(), light, overlay, -1, minVertices);
+        } finally {
+            view.popPose();
+            RenderSystem.applyModelViewMatrix();
+        }
+    }
+
+    /** 两矩阵的乘积仍为原顶点变换；SBM 的逆线性光照变换等于原法线矩阵的转置。 */
+    record PanelTransform(Matrix4f viewSuffix, Matrix4f meshPose) { }
+
+    static PanelTransform panelTransform(Matrix4fc pose, Matrix3fc normal) {
+        if (!supportsTransform(pose, new Matrix3f(pose))
+                || !supportsTransform(new Matrix4f().set(normal), normal)) return null;
+        // P = (P * N^T) * N^-T；局部光源 N^T * L 与原来的 L dot (N * vertexNormal) 等价。
+        Matrix4f meshPose = new Matrix4f().set(new Matrix3f(normal).invert().transpose());
+        Matrix4f suffix = new Matrix4f(pose).mul(new Matrix4f().set(new Matrix3f(normal).transpose()));
+        return new PanelTransform(suffix, meshPose);
     }
 
     /** 仅首次缓存捕获写入未变换顶点；UV2=0 指示 SBM 使用每实例光照。 */

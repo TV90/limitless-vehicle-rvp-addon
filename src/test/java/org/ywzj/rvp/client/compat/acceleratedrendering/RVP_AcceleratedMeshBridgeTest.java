@@ -20,6 +20,20 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class RVP_AcceleratedMeshBridgeTest {
     @Test
+    void panelOnlyAcceptsTransparentSourceWithoutNestedMaterialOrVertexModifiers() throws Exception {
+        var bridge = new RVP_AcceleratedMeshBridge(() -> false);
+        net.minecraft.client.renderer.MultiBufferSource original = type -> null;
+        net.minecraft.client.renderer.MultiBufferSource modified = type -> { throw new AssertionError(); };
+        assertTrue(bridge.isPanelSource(new com.github.argon4w.acceleratedrendering.compat.iris.buffers
+                .IrisEntityAcceleratableBufferSource(original, original), original));
+        assertFalse(bridge.isPanelSource(new com.github.argon4w.acceleratedrendering.compat.iris.buffers
+                .IrisEntityAcceleratableBufferSource(modified, original), original));
+        assertFalse(bridge.isPanelSource(new com.github.argon4w.acceleratedrendering.compat.iris.buffers
+                .IrisEntityAcceleratableBufferSource(original, modified), original));
+        assertFalse(bridge.isPanelSource(modified, original));
+    }
+
+    @Test
     void largeMeshChangesOnlySubmissionPolicyAndReusesView() {
         var views = new RVP_AcceleratedMeshBridge.DenseViews();
         ServerMesh original = mesh(156957, false);

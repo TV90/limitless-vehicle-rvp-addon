@@ -5,6 +5,7 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import org.joml.Matrix3f;
 import org.joml.Matrix4f;
+import org.joml.Vector3f;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Proxy;
@@ -39,6 +40,34 @@ class RVP_SharedOpaqueMeshTest {
         Matrix4f pose = new Matrix4f().rotateY(0.8F);
         assertFalse(RVP_SharedOpaqueMesh.supportsTransform(pose, new Matrix3f()));
         assertFalse(RVP_SharedOpaqueMesh.supportsTransform(pose, pose.normal(new Matrix3f()).scale(-1)));
+    }
+
+    @Test
+    void panelMirrorPreservesBothProjectedPositionAndOriginalLighting() {
+        for (float yaw : new float[]{-2.8F, 0, 1.1F}) {
+            Matrix3f normal = new Matrix3f().rotateXYZ(3.05F, yaw, 0.15F);
+            Matrix4f pose = new Matrix4f().translation(510, 95, 100).rotateXYZ(3.05F, yaw, 0.15F)
+                    .scale(37, 37, -37).translate(-1, -0.5F, 2);
+            var split = RVP_SharedOpaqueMesh.panelTransform(pose, normal);
+            assertNotNull(split);
+            Matrix4f combined = new Matrix4f(split.viewSuffix()).mul(split.meshPose());
+            Vector3f point = new Vector3f(2, -3, 4);
+            assertTrue(combined.transformPosition(new Vector3f(point))
+                    .equals(pose.transformPosition(new Vector3f(point)), 0.001F));
+            Vector3f light = new Vector3f(0.2F, 1, -0.7F).normalize();
+            Vector3f vertexNormal = new Vector3f(0.3F, 0.8F, -0.2F).normalize();
+            float original = light.dot(normal.transform(new Vector3f(vertexNormal)).normalize());
+            Vector3f localLight = new Matrix3f(split.meshPose()).invert().transform(new Vector3f(light)).normalize();
+            assertEquals(original, localLight.dot(vertexNormal), 0.00001F);
+            assertTrue(RVP_SharedOpaqueMesh.supportsTransform(split.meshPose(), normal));
+        }
+    }
+
+    @Test
+    void panelRejectsNonuniformOrDegenerateNormalsInsteadOfChangingLighting() {
+        assertNull(RVP_SharedOpaqueMesh.panelTransform(new Matrix4f().scale(1, 2, -1), new Matrix3f()));
+        assertNull(RVP_SharedOpaqueMesh.panelTransform(new Matrix4f(), new Matrix3f().scale(1, 0.5F, 1)));
+        assertNull(RVP_SharedOpaqueMesh.panelTransform(new Matrix4f(), new Matrix3f().zero()));
     }
 
     @Test
