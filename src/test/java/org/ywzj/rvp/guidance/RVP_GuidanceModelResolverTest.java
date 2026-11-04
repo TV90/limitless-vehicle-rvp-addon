@@ -10,6 +10,7 @@ import org.ywzj.rvp.weapon.data.RVP_GuidanceDataARM;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -102,6 +103,62 @@ class RVP_GuidanceModelResolverTest {
         assertEquals(160, terminal.armMemoryTick());
         assertEquals(0.75f, terminal.armLockedEmitterBonus());
         assertEquals(0f, terminal.gpsSpreadRadius());
+    }
+
+    @Test
+    void terminalAirRoutesToInfraredSourceAndCapabilityQueries() {
+        RVP_GuidanceData guidance = parse("""
+                {
+                  "guidance_type":"GPS",
+                  "terminal_guidance":{
+                    "guidance_type":"AIR",
+                    "guidance_start_dist":80,
+                    "max_lock_angle":40,
+                    "scan_interval_tick":3,
+                    "enable_inertial_guidance":true
+                  }
+                }
+                """);
+
+        // 调用能力查询和阶段解析，确保发射前识别与飞行中分派采用同一种红外末制导。
+        assertTrue(guidance.usesGuidanceType(RVP_EnumGuidanceType.IR));
+        assertFalse(guidance.usesGuidanceType(RVP_EnumGuidanceType.AIR));
+        assertEquals(RVP_EnumGuidanceType.GPS,
+                RVP_GuidanceModelResolver.resolveActive(guidance, RVP_GuidancePhase.MAIN).guidanceType());
+        RVP_GuidancePhaseState state = new RVP_GuidancePhaseState();
+        assertFalse(state.update(guidance.getTerminalGuidance(), new RVP_GuidanceTransitionContext(20, 81, 50)));
+        assertTrue(state.update(guidance.getTerminalGuidance(), new RVP_GuidanceTransitionContext(20, 80, 50)));
+        RVP_GuidanceActiveConfig active = RVP_GuidanceModelResolver.resolveActive(guidance, state.phase());
+        assertEquals(RVP_EnumGuidanceType.IR, active.guidanceType());
+        assertEquals(20f, active.maxLockHalfAngle());
+        assertEquals(3, active.scanIntervalTick());
+        assertTrue(active.enableInertialGuidance());
+        // 调用实际注册表验证落入通用 IR 源，炸弹末段不会再被 AIR 的导弹实体限定挡住。
+        assertInstanceOf(org.ywzj.rvp.guidance.runtime.RVP_RuntimeIrGuidanceSource.class,
+                RVP_RuntimeGuidanceSourceRegistry.get(active.guidanceType()));
+    }
+
+    @Test
+    void mainAirKeepsItsOwnSeekerWhenTerminalAirUsesInfrared() {
+        RVP_GuidanceData guidance = parse("""
+                {
+                  "guidance_type":"AIR",
+                  "active_radar_activation_range":180,
+                  "terminal_guidance":{"guidance_type":"AIR","guidance_start_dist":80}
+                }
+                """);
+
+        // 调用发射配置与主段配置，防止末段归一化意外改变普通 AIR 的锁定和开机机制。
+        assertEquals(RVP_EnumGuidanceType.AIR, RVP_GuidanceModelResolver.resolveLaunch(guidance).guidanceType());
+        RVP_GuidanceActiveConfig main = RVP_GuidanceModelResolver.resolveActive(guidance, RVP_GuidancePhase.MAIN);
+        assertEquals(RVP_EnumGuidanceType.AIR, main.guidanceType());
+        assertEquals(180, main.activeRadarActivationRange());
+        assertInstanceOf(org.ywzj.rvp.guidance.runtime.RVP_RuntimeAirGuidanceSource.class,
+                RVP_RuntimeGuidanceSourceRegistry.get(main.guidanceType()));
+        assertEquals(RVP_EnumGuidanceType.IR,
+                RVP_GuidanceModelResolver.resolveActive(guidance, RVP_GuidancePhase.TERMINAL).guidanceType());
+        assertTrue(guidance.usesGuidanceType(RVP_EnumGuidanceType.AIR));
+        assertTrue(guidance.usesGuidanceType(RVP_EnumGuidanceType.IR));
     }
 
     @Test

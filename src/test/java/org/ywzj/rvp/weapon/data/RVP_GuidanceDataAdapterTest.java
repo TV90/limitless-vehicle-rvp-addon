@@ -92,7 +92,7 @@ class RVP_GuidanceDataAdapterTest {
     }
 
     @Test
-    void loadsTerminalGuidanceWithIndependentRanges() {
+    void loadsTerminalAirAsInfraredWithIndependentRanges() {
         RVP_GuidanceData guidance = parseGuidance("""
                 {
                   "guidance_type": "GPS",
@@ -111,7 +111,8 @@ class RVP_GuidanceDataAdapterTest {
                 """);
 
         RVP_TerminalGuidanceData terminal = guidance.getTerminalGuidance();
-        assertEquals(RVP_EnumGuidanceType.AIR, terminal.getGuidanceType());
+        // 调用末段类型出口：配置 AIR 与 IR 共用红外链，其余接管和搜索参数保持独立。
+        assertEquals(RVP_EnumGuidanceType.IR, terminal.getGuidanceType());
         assertEquals(40, terminal.getGuidanceStartTick());
         assertEquals(80f, terminal.getGuidanceStartDist());
         assertEquals(60f, terminal.getGuidanceStartHorizontalDist());

@@ -52,7 +52,16 @@ public class RVP_TerminalGuidanceData {
     @SerializedName("enable_inertial_guidance")
     private boolean enableInertialGuidance = false;
 
+    /**
+     * 返回末段实际使用的制导类型；AIR 与 IR 统一执行红外末制导。
+     *
+     * <p>能力查询、导引头管理和制导分派共用此出口，避免末段 AIR 继续进入主动雷达共用链。
+     * 主制导 AIR 由 RVP_GuidanceData 单独解析，不受本类路由影响。</p>
+     */
     public RVP_EnumGuidanceType getGuidanceType() {
+        if (guidanceType == RVP_EnumGuidanceType.AIR) {
+            return RVP_EnumGuidanceType.IR;
+        }
         return guidanceType == null ? RVP_EnumGuidanceType.NONE : guidanceType;
     }
 
