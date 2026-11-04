@@ -229,6 +229,8 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         tickMissileTrackAlert(activeType);
 
         super.tickGuidance();
+        // AIR 本刻完成红外捕获或雷达更新后再计时，避免边界 tick 先自毁再捕获。
+        if (activeType == RVP_EnumGuidanceType.AIR) tickAirTargetLoss();
 
         // 服务端：DIRCM 对 HITL 弹的临时干扰状态变化 → 同步客户端（白闪滤镜驱动）
         if (!level().isClientSide()) {
@@ -282,6 +284,8 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
 
     /** 干扰判定段标志：已进入原定开机距离（箔条判定 + MSL 告警生效），但导引头尚未真开机。 */
     private boolean countermeasurePhaseActive;
+    /** AIR 已到配置开机距离的锁存；默认false，提前搜索不提前累计无目标自毁，真实/虚拟态均保存。 */
+    private boolean airLossTimerArmed;
 
     // ==================== HITL 电视制导速度脱锁反制（2026-09-21） ====================
 
@@ -297,6 +301,10 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     private void tickActiveSeekerTargetManagement(RVP_EnumGuidanceType type) {
         RVP_GuidanceActiveConfig config = resolveNewActiveConfig();
         if (config == null || config.guidanceType() != type) {
+            return;
+        }
+        if (type == RVP_EnumGuidanceType.AIR) {
+            tickAirSeekerTargetManagement(config);
             return;
         }
         activeRadarActivationRange = config.activeRadarActivationRange();
@@ -398,6 +406,64 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
                 }
             }
         }
+    }
+
+    /** AIR 中继、提前搜索和计时距离分别管理；ARH 仍执行原有双阈值逻辑。 */
+    private void tickAirSeekerTargetManagement(RVP_GuidanceActiveConfig config) {
+        activeRadarActivationRange = config.activeRadarActivationRange();
+        relayLostSelfDestructTicks = config.relayLostSelfDestructTick();
+        Entity designated = rvp$getActiveSeekerDesignatedTargetEntity();
+        // 调用当前捕获状态；历史上捕获过不代表现在仍有有效红外跟踪。
+        if (activeRadarCatch && (targetEntity == null || !targetEntity.isAlive()
+                || !org.ywzj.rvp.guidance.runtime.RVP_AirSeekerPolicy.isInfraredCandidate(targetEntity))) {
+            clearAutonomousSeekerCatch();
+        }
+        boolean support = designated != null && !dircmJammed && !isSeekerShutOff()
+                && !isJamGracePeriodActive() && !hasSmokeBreakLock()
+                && rvp$hasActiveSeekerSupportForDesignatedTarget();
+        activeSeekerRelayLost = rvp$hasActiveSeekerDesignation() && !support;
+        if (!activeRadarCatch) {
+            if (support) {
+                // 雷达有效时才能读取实时点；指定箔条也只由这条数据链更新，不能标为红外捕获。
+                setTargetEntity(designated);
+                setTargetPos(org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(designated));
+            } else {
+                // 只清实体引用，不读取未观测目标的新位置，保留最后有效坐标与原指定身份。
+                setTargetEntity(null);
+            }
+        }
+        Vec3 reference = targetPos != null ? targetPos : lastGuidancePos;
+        double distance = reference == null ? -1.0 : reference.distanceTo(position());
+        // 调用独立策略：无雷达立即搜索，计时始终等到配置距离且不乘 RCS。
+        var decision = org.ywzj.rvp.guidance.runtime.RVP_AirSeekerPolicy.decide(
+                activeRadarOn, airLossTimerArmed, support, distance, config.activeRadarActivationRange());
+        airLossTimerArmed = decision.lossTimerArmed();
+        if (decision.searchOn() && !activeRadarOn) {
+            setAutonomousSeekerOn(true);
+            notifyActiveSeekerOnline(RVP_EnumGuidanceType.AIR);
+        }
+    }
+
+    /** AIR 无目标与中继滑行计时只在配置开机距离到达后累计，捕获或中继恢复即清零。 */
+    private void tickAirTargetLoss() {
+        boolean hasTarget = targetEntity != null && targetEntity.isAlive();
+        activeRadarLostTargetTick = org.ywzj.rvp.guidance.runtime.RVP_AirSeekerPolicy.nextLostTicks(
+                activeRadarLostTargetTick, airLossTimerArmed, hasTarget, dircmJammed);
+        activeSeekerRelayLostTicks = org.ywzj.rvp.guidance.runtime.RVP_AirSeekerPolicy.nextLostTicks(
+                activeSeekerRelayLostTicks, airLossTimerArmed, hasTarget || !activeSeekerRelayLost, dircmJammed);
+        if (activeRadarLostTargetTick >= 60 || RVP_ActiveSeekerRelayPolicy.shouldSelfDestruct(
+                activeSeekerRelayLostTicks, relayLostSelfDestructTicks)) {
+            org.ywzj.rvp.debug.RVP_ProjectileLifecycleDebug.noteEvent(this,
+                    org.ywzj.rvp.debug.RVP_ProjectileLifecycleDebug.Event.GUIDANCE,
+                    () -> "reason=AIR_TARGET_TIMEOUT lostTicks=" + activeRadarLostTargetTick
+                            + " relayLostTicks=" + activeSeekerRelayLostTicks);
+            life = 0;
+        }
+    }
+
+    /** 本刻雷达中继是否可用；仅供 AIR 执行器使用，由管理阶段每刻重新核验。 */
+    public boolean rvp$hasAirRadarRelaySupport() {
+        return rvp$hasActiveSeekerDesignation() && !activeSeekerRelayLost;
     }
 
     /**
@@ -621,6 +687,11 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
             return false;
         }
 
+        boolean infrared = resolveNewActiveSeekerType() == RVP_EnumGuidanceType.AIR;
+        if (infrared) {
+            // 调用与发射前同一雷达支持入口，箔条丢硬锁和载具隐身失援均即时生效。
+            return org.ywzj.rvp.guidance.runtime.RVP_AirSeekerRelaySupport.isAvailable(root, designatedTarget);
+        }
         boolean anyRadarOn = false;
         // 2026-10-06 扩展：支持源从"发射站子雷达"扩为整车全部雷达——任意武器站的雷达
         // 以 TWS 探测、硬锁或照射包络跟踪 designated 即构成照射（用户定版"照射即中继"）。
@@ -632,9 +703,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
                     continue;
                 }
                 anyRadarOn = true;
-                if (RVP_RadarRoleHelper.radarCurrentlyDetects(radarUnit, designatedTarget)
-                        || radarUnit.getLockedEntity() == designatedTarget
-                        || RVP_RadarScanHelper.isWithinIlluminationEnvelope(radarUnit, designatedTarget)) {
+                if (radarSupportsDesignation(radarUnit, designatedTarget, infrared, false)) {
                     return true;
                 }
             }
@@ -645,9 +714,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
                     continue;
                 }
                 anyRadarOn = true;
-                if (RVP_RadarRoleHelper.radarCurrentlyDetects(radarUnit, designatedTarget)
-                        || radarUnit.getLockedEntity() == designatedTarget
-                        || RVP_RadarScanHelper.isWithinIlluminationEnvelope(radarUnit, designatedTarget)) {
+                if (radarSupportsDesignation(radarUnit, designatedTarget, infrared, false)) {
                     return true;
                 }
             }
@@ -658,16 +725,23 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
             RadarUnit relayRadar = RVP_ExternalRadarLinkHelper.getPreferredRelayLockRadar(relayVehicle);
             if (relayRadar != null && relayRadar.isOn()) {
                 anyRadarOn = true;
-                if (RVP_RadarRoleHelper.radarCurrentlyDetects(relayRadar, designatedTarget)
-                        || relayRadar.getLockedEntity() == designatedTarget
-                        || RVP_WeaponLockStateTable.getExternalRadarLockedEntityId(root) == designatedTarget.getId()
-                        || RVP_RadarScanHelper.isWithinIlluminationEnvelope(relayRadar, designatedTarget)) {
+                if (radarSupportsDesignation(relayRadar, designatedTarget, infrared,
+                        RVP_WeaponLockStateTable.getExternalRadarLockedEntityId(root) == designatedTarget.getId())) {
                     return true;
                 }
             }
         }
 
-        return anyRadarOn && targetEntity == designatedTarget && targetEntity.isAlive() && activeRadarCatch;
+        // AIR 不能用旧锁或历史截获旁路实时 RCS 包络；ARH 保留原有后备行为。
+        return !infrared && anyRadarOn && targetEntity == designatedTarget && targetEntity.isAlive() && activeRadarCatch;
+    }
+
+    /** AIR 实时复核 RCS 包络；ARH 保留已观测/硬锁先返回的既有查询顺序。 */
+    private static boolean radarSupportsDesignation(RadarUnit radar, Entity target, boolean infrared, boolean externalLock) {
+        boolean tracked = RVP_RadarRoleHelper.radarCurrentlyDetects(radar, target)
+                || radar.getLockedEntity() == target || externalLock;
+        boolean envelope = (infrared || !tracked) && RVP_RadarScanHelper.isWithinIlluminationEnvelope(radar, target);
+        return org.ywzj.rvp.guidance.runtime.RVP_AirSeekerPolicy.radarSupports(infrared, envelope, tracked);
     }
 
     public boolean rvp$hasArhSupportForDesignatedTarget() {
@@ -959,6 +1033,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     protected void addAdditionalSaveData(net.minecraft.nbt.CompoundTag tag) {
         // 调用弹体存档，再保存 TV 骨身份，重载后不退回车体中心。
         super.addAdditionalSaveData(tag);
+        tag.putBoolean("rvp_air_loss_timer_armed", airLossTimerArmed);
         if (hitlTargetObb != null && hitlObbTargetUuid != null) {
             tag.putString("rvp_hitl_target_bone", hitlTargetObb.bone());
             tag.putInt("rvp_hitl_target_cube", hitlTargetObb.index());
@@ -969,6 +1044,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     @Override
     protected void readAdditionalSaveData(net.minecraft.nbt.CompoundTag tag) {
         super.readAdditionalSaveData(tag);
+        airLossTimerArmed = tag.getBoolean("rvp_air_loss_timer_armed");
         hitlTargetObb = null; hitlObbTargetUuid = null;
         if (tag.hasUUID("rvp_hitl_target_uuid")) {
             String bone = tag.getString("rvp_hitl_target_bone");
@@ -1139,6 +1215,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         tag.putBoolean("hitlRemoteRadioBlocked", hitlRemoteRadioBlocked);
         tag.putBoolean("activeSeekerRelayLost", activeSeekerRelayLost);
         tag.putBoolean("countermeasurePhaseActive", countermeasurePhaseActive);
+        tag.putBoolean("airLossTimerArmed", airLossTimerArmed);
         tag.putString("hitlControlMode", hitlControlMode.name());
         tag.putString("hitlSignalSource", hitlSignalSource.name());
         // 保存远端新增的脱锁原因，防止虚拟态读档后把烟内冻结点重新当成普通点锁。
@@ -1178,6 +1255,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         hitlRemoteRadioBlocked = tag.getBoolean("hitlRemoteRadioBlocked");
         activeSeekerRelayLost = tag.getBoolean("activeSeekerRelayLost");
         countermeasurePhaseActive = tag.getBoolean("countermeasurePhaseActive");
+        airLossTimerArmed = tag.getBoolean("airLossTimerArmed");
         hitlControlMode = RVP_EnumHitlControlMode.valueOf(tag.getString("hitlControlMode"));
         hitlSignalSource = HitlSignalSource.valueOf(tag.getString("hitlSignalSource"));
         // 未记录脱锁原因的运行态使用字段默认值；已记录状态必须原样接续。

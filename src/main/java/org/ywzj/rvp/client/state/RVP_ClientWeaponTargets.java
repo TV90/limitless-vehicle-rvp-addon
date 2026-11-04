@@ -70,6 +70,9 @@ public final class RVP_ClientWeaponTargets {
         double bestAngle = Double.POSITIVE_INFINITY;
         // 调用合并候选入口；逐个校验后再排序，避免最近的无效目标挡住有效目标。
         for (Entity entity : entities(level)) {
+            if (weapon.getData().getGuidanceData().getGuidanceType()
+                    == org.ywzj.rvp.guidance.RVP_EnumGuidanceType.AIR
+                    && !org.ywzj.rvp.guidance.runtime.RVP_AirSeekerPolicy.isInfraredCandidate(entity)) continue;
             // 调用弹体信号尺寸，保留原 InfraredSignatureMixin 对小型可探测弹药的放行规则。
             double infraredSize = entity instanceof RVP_BaseBullet bullet && bullet.getSignatureSize() > 0f
                     ? bullet.getSignatureSize() : entity.getBoundingBox().getSize();

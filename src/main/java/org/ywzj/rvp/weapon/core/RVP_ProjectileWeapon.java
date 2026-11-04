@@ -268,6 +268,14 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
                 lock = RVP_WeaponSensorHelper.effectiveOrStatic(rootUnit) == WeaponUnitData.FireControlSensorType.RF
                         ? RVP_RadarRoleHelper.getEffectiveRfLockedEntity(rootUnit)
                         : rootUnit.getLockedEntity();
+                // AIR 雷达未给出目标时接受既有通道验证过的红外锁，保留雷达硬锁箔条的发射路径。
+                if (data.getGuidanceData().getGuidanceType() == RVP_EnumGuidanceType.AIR
+                        && !org.ywzj.rvp.guidance.runtime.RVP_AirSeekerRelaySupport.isAvailable(rootUnit, lock)) {
+                    // 雷达未有效观测时只能使用独立红外授权，不能从旧 RF 锁读取新的发射坐标。
+                    Entity infraredLock = RVP_ServerIrSeekerArmedTable.getArmedEntity(rootUnit, data.getWeaponId());
+                    lock = infraredLock != null && org.ywzj.rvp.guidance.RVP_IrLockHelper.isTargetWithinHoldLimits(
+                            launchUnit != null ? launchUnit : rootUnit, infraredLock, data) ? infraredLock : null;
+                }
             }
         }
         // 雷达/导引头要求锁定时复查服务端目标，堵住客户端发包后目标失效的窗口；保留现有 EO 直瞄豁免。

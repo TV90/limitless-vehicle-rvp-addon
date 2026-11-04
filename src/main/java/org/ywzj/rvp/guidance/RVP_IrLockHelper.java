@@ -28,6 +28,12 @@ public final class RVP_IrLockHelper {
         return Math.max(0.5f, Math.max(0f, fullAngleDeg) * 0.5f);
     }
 
+    /** 发射前可使用红外候选/驻留通道的武器；AIR 仍另有雷达硬锁授权，不改变纯 IR 的严格发射门。 */
+    public static boolean supportsInfraredLaunchSearch(@Nullable RVP_WeaponData data) {
+        return isIrLaunchWeapon(data) || data != null
+                && data.getGuidanceData().getGuidanceType() == RVP_EnumGuidanceType.AIR;
+    }
+
     public static boolean isIrLaunchWeapon(@Nullable RVP_WeaponData data) {
         return data != null
                 && data.isHomingProjectile()

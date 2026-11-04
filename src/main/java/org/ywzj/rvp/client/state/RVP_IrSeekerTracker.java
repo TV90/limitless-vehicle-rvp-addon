@@ -73,7 +73,8 @@ public final class RVP_IrSeekerTracker {
      */
     public static void tickFor(WeaponUnit unit, RVP_WeaponBase rvpWeapon) {
         RVP_WeaponData data = rvpWeapon.getData();
-        if (data.isEnableIrHmd()) {
+        if (data.isEnableIrHmd() && data.getGuidanceData().getGuidanceType()
+                != org.ywzj.rvp.guidance.RVP_EnumGuidanceType.AIR) {
             return; // HMD 弹由头瞄通道 feedHmdCandidate 喂入，避免双通道抢目标
         }
         // 几何判定用"武器自己的站"（世界枢轴/瞄准轴正确），状态键用根站（与发射门/HUD 一致）。

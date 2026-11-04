@@ -59,13 +59,15 @@ final class RVP_RuntimeSeekerSupport {
             RVP_GuidanceActiveConfig config,
             boolean acquire
     ) {
+        // AIR 主动红外不允许把雷达指定的箔条套成自主捕获或继续跟踪。
+        if (type == RVP_EnumGuidanceType.AIR && !RVP_AirSeekerPolicy.isInfraredCandidate(target)) return null;
         // 反舰导引头（2026-10-05 用户需求）：仅截获阶段（acquire）过滤——目标 RCS 综合值
         // 不足 SCAN_SEA_RCS_THRESHOLD（500，与 scan_sea 海面搜索同门限）时拒绝截获：
         // 雷达/RF 硬锁指定的目标不满足 RCS 也不会被导引头自动套上（含自由扫描候选）。
         // 跟踪阶段（acquire=false）不过滤——已截获目标的结算不在此处。
         // SARH 无自主导引头，其"导引头"即照射追击链（validateEntity 亦为其唯一过滤点）：
         // 照射目标不达标 → intent failed → 惯性直飞。
-        boolean antiShipGate = config.antiShipSeeker()
+        boolean antiShipGate = type != RVP_EnumGuidanceType.AIR && config.antiShipSeeker()
                 && (acquire || type == RVP_EnumGuidanceType.SARH);
         if (antiShipGate
                 && !(target instanceof AbstractVehicle antiShipCandidate
@@ -196,7 +198,7 @@ final class RVP_RuntimeSeekerSupport {
                 best = entity;
             }
         }
-        // ARH/AIR 开启导引头后可锁箔条：扫描候选含 CHAFF 实体，按 chaffResistance 施加优先级罚分
+        // ARH 开启导引头后可锁箔条：扫描候选含 CHAFF 实体，按 chaffResistance 施加优先级罚分
         // （越大越难被选为锁定目标，但非完全不可锁）
         for (Entity entity : all) {
             if (!(entity instanceof RVP_Decoy decoy)
@@ -225,7 +227,19 @@ final class RVP_RuntimeSeekerSupport {
 
     @Nullable
     static Entity scanInfraredTarget(RVP_BaseBullet projectile, RVP_GuidanceActiveConfig config) {
-        double range = acquireScanRadius(config);
+        return scanInfraredTarget(projectile, config, false);
+    }
+
+    /** AIR 自主红外按自身配置搜索，并保留对具有红外信号的来袭弹药的拦截能力。 */
+    @Nullable
+    static Entity scanActiveInfraredTarget(RVP_BaseBullet projectile, RVP_GuidanceActiveConfig config) {
+        return scanInfraredTarget(projectile, config, true);
+    }
+
+    private static Entity scanInfraredTarget(RVP_BaseBullet projectile, RVP_GuidanceActiveConfig config, boolean active) {
+        // 已加载实体遍历不申请区块；AIR 的配置范围不再被雷达重捕获用的256格上限截断。
+        double range = active ? RVP_GuidanceRuntimeGeometry.resolveScanRadius(config.targetDistanceRange())
+                : acquireScanRadius(config);
         Iterable<Entity> all = allServerEntities(projectile);
         Entity best = null;
         double bestScore = Double.MAX_VALUE;
@@ -236,7 +250,12 @@ final class RVP_RuntimeSeekerSupport {
             if (entity == projectile.getShooterVehicle() || !entity.isAlive()) {
                 continue;
             }
+            if (entity == projectile || active && entity instanceof RVP_BaseBullet ammo
+                    && (ammo.getSignatureSize() <= 0f
+                    || projectile.getOwner() != null && ammo.getOwner() == projectile.getOwner()
+                    || org.ywzj.rvp.ecm.RVP_EcmIff.areVehiclesFriendly(projectile.getShooterVehicle(), ammo.getShooterVehicle()))) continue;
             boolean isTarget = entity instanceof AbstractVehicle
+                    || active && entity instanceof RVP_BaseBullet
                     // IR 开启导引头阶段把热焰弹也当作锁定目标（无抗性）
                     || entity instanceof RVP_Decoy decoy
                     && decoy.rvp$decoyType() == RVP_EnumCountermeasureType.FLARE;

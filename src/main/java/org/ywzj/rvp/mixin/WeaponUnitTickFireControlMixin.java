@@ -118,7 +118,15 @@ public abstract class WeaponUnitTickFireControlMixin {
                     }
                 }
             }
+            // AIR 雷达没有给出目标时，复用既有红外驻留通道搜索隐身目标；已有雷达硬锁优先保留。
+            if (rvpWeapon.getData().getGuidanceData().getGuidanceType() == RVP_EnumGuidanceType.AIR
+                    && self.getLockedEntity() == null) {
+                org.ywzj.rvp.client.state.RVP_IrSeekerTracker.tickFor(self, rvpWeapon);
+            }
             return;
+        }
+        if (rvpWeapon.getData().getGuidanceData().getGuidanceType() == RVP_EnumGuidanceType.AIR) {
+            org.ywzj.rvp.client.state.RVP_IrSeekerTracker.tickFor(self, rvpWeapon);
         }
 
         // 非 IR 发射武器（SACLOS/激光/GPS 等）无需导引头搜索，交给各自链路。

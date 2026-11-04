@@ -1798,6 +1798,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         this.activeRadarLostTargetTick = 0;
     }
 
+    /** 清除当前自主捕获状态，保留指定身份与记忆点，允许 AIR 重新获取或恢复雷达中继。 */
+    public void clearAutonomousSeekerCatch() {
+        this.activeRadarCatch = false;
+        this.entityData.set(DATA_ACTIVE_RADAR_CATCH, false);
+    }
+
     public void incrementAutonomousSeekerLostTargetTick() {
         this.activeRadarLostTargetTick++;
     }
