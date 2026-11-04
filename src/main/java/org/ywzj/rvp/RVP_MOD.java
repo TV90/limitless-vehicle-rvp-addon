@@ -13,6 +13,7 @@ import org.ywzj.rvp.all.RVP_DisplayTypes;
 import org.ywzj.rvp.all.RVP_Enchantments;
 import org.ywzj.rvp.all.RVP_Items;
 import org.ywzj.rvp.all.RVP_Particles;
+import org.ywzj.rvp.all.RVP_PartUnitTypes;
 import org.ywzj.rvp.all.RVP_Sounds;
 import org.ywzj.rvp.all.RVP_WeaponTypes;
 import org.ywzj.rvp.compat.RVP_SuperbWarfareCompat;
@@ -55,6 +56,8 @@ public class RVP_MOD {
         RVP_Particles.register(modBus);
         RVP_Sounds.register(modBus);
         RVP_WeaponTypes.register(modBus);
+        // 调用连续观瞄站注册，允许吊舱通过继承修正过竖直方向的角度计算。
+        RVP_PartUnitTypes.register(modBus);
         modBus.addListener(this::onCommonSetup);
         DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () ->
                 {

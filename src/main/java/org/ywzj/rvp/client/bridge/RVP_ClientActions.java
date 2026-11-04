@@ -60,13 +60,30 @@ public final class RVP_ClientActions implements RVP_IClientActions {
         RVP_ClientFocusLock.onFocusLockChanged(station);
     }
 
+    @Override
+    public void beforeVehicleViewChange(boolean toScope, boolean toOperator) {
+        // 调用飞机观瞄退出复位，恢复当前座位默认前方，而不是继续沿旧吊舱瞄准点。
+        org.ywzj.rvp.client.state.RVP_ClientAircraftViewReset.beforeViewChange(toScope, toOperator);
+    }
+
     /** 保留已有电视导弹输入语义，再把普通焦点拖动交给独立客户端状态。 */
     @Override
     public boolean handleVehiclePlayerTurn(double yawInput, double pitchInput) {
+        // 调用默认关闭的只读诊断入口，记录本体收到的鼠标输入；不消费或修改输入。
+        long diagnosticInput = org.ywzj.rvp.client.debug.RVP_OpticalSightDebug.beforeInput(yawInput, pitchInput);
         // 调用 HITL 会话判断，电视导弹操控优先于母车观瞄焦点。
         if (!RVP_ClientHitlState.isActive()) {
             // 调用焦点输入服务；未建立焦点时继续本体及已有半自动火控输入。
-            return RVP_ClientFocusLock.tryHandleTurn(yawInput, pitchInput);
+            boolean handled = RVP_ClientFocusLock.tryHandleTurn(yawInput, pitchInput);
+            String route = handled ? "focus_handled" : "base_pending";
+            if (!handled && org.ywzj.rvp.client.state.RVP_ClientOpticalSight.tryHandleTurn(yawInput, pitchInput)) {
+                // 调用普通吊舱屏幕轴输入，过竖直方向后不再直接把鼠标横移加到机械偏航。
+                handled = true;
+                route = "optical_view_handled";
+            }
+            // 调用诊断分流记录；未处理时标为等待本体，实际结果由后续相机帧/逻辑刻留证。
+            org.ywzj.rvp.client.debug.RVP_OpticalSightDebug.afterInput(diagnosticInput, route);
+            return handled;
         }
         // 调用焦点会话清理，避免离开电视导弹时复用母车旧渲染原点。
         RVP_ClientFocusLock.clear();

@@ -3,6 +3,9 @@ package org.ywzj.rvp.client.state;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
+import org.joml.Quaterniond;
+import org.joml.Quaterniondc;
+import org.ywzj.rvp.vehicle.RVP_OpticalSightMath;
 
 /**
  * 焦点锁定的世界坐标瞄准状态，不依赖炮塔实际角度或渲染帧率。
@@ -35,11 +38,16 @@ public final class RVP_FocusLockAim {
     /** 连续方位角，单位为度；跨过正负 180 度或经过正上/正下方时保留转动连续性。 */
     private double yawDeg;
 
+    /** 可过竖直方向的观瞄使用完整画面姿态；null 表示仍使用普通站原有角度输入。 */
+    @Nullable
+    private Quaterniond viewRotation;
+
     /** 清除上一武器站或上一世界的瞄准记忆。 */
     public void clear() {
         target = null;
         directionLock = rayOrigin = null;
         yawDeg = 0.0D;
+        viewRotation = null;
         revision++;
     }
 
@@ -172,6 +180,39 @@ public final class RVP_FocusLockAim {
         }
         revision++;
         return target;
+    }
+
+    /** 连续吊舱的屏幕轴输入，不把世界俯仰钳在九十度；保持原有命中距离与方向锁语义。 */
+    @Nullable
+    public Vec3 turnInView(Vec3 origin, Quaterniondc fallback, double yawDeltaDeg, double pitchDeltaDeg) {
+        if (!Double.isFinite(yawDeltaDeg) || !Double.isFinite(pitchDeltaDeg)) return target;
+        // 调用现有真实点/方向锁解析，观察位置移动时先补偿同一目标的视差。
+        Vec3 current = direction(origin);
+        if (current == null) return target;
+        // 调用画面姿态对齐，使同一刻的多次输入真正累加，而不是重复读取旧炮口。
+        viewRotation = RVP_OpticalSightMath.turnInView(viewRotation == null ? fallback : viewRotation,
+                current, yawDeltaDeg, pitchDeltaDeg);
+        if (yawDeltaDeg == 0.0D && pitchDeltaDeg == 0.0D) return target;
+        double range = directionLock != null ? UNKNOWN_RANGE : target.distanceTo(origin);
+        Vec3 requested = RVP_OpticalSightMath.direction(viewRotation);
+        target = origin.add(requested.scale(range));
+        if (directionLock != null) {
+            directionLock = requested;
+            rayOrigin = origin;
+        }
+        revision++;
+        // 调用已有方向解析更新方位记忆；镜头本身不再由这个有极点的单独方位角重建。
+        direction(origin);
+        return target;
+    }
+
+    /** 每帧沿同一个世界点补偿移动视差，保留完整画面横轴并向调用方返回副本。 */
+    public Quaterniond viewRotation(Vec3 origin, Quaterniondc fallback) {
+        Vec3 current = direction(origin);
+        if (current == null) return new Quaterniond(fallback);
+        // 调用最短方向对齐，过正下方时不把左右与横滚各翻半圈。
+        viewRotation = RVP_OpticalSightMath.followDirection(viewRotation == null ? fallback : viewRotation, current);
+        return new Quaterniond(viewRotation);
     }
 
     /**

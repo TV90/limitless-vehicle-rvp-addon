@@ -58,6 +58,12 @@ public final class RVP_ClientActionsAccess {
         INSTANCE.onFocusLockChanged(station);
     }
 
+    /** 既有客户端视角注入仅转交基础值，不向共享桥引入客户端视角枚举或相机类型。 */
+    public static void beforeVehicleViewChange(boolean toScope, boolean toOperator) {
+        // 调用物理侧实现，服务端不加载玩家相机或视角复位逻辑。
+        INSTANCE.beforeVehicleViewChange(toScope, toOperator);
+    }
+
     /** 经双端安全桥接收虚拟目标，公共网络类不加载客户端状态缓存。 */
     public static void acceptVirtualMissileTargets(org.ywzj.rvp.network.S2CVirtualMissileTargets message) {
         // 调用物理侧实现；专用服务端保持空操作。
@@ -226,6 +232,11 @@ public final class RVP_ClientActionsAccess {
         @Override
         public void onFocusLockChanged(org.ywzj.vehicle.vehicle.part.WeaponUnit station) {
             // 专用服务端没有本地观瞄选点。
+        }
+
+        @Override
+        public void beforeVehicleViewChange(boolean toScope, boolean toOperator) {
+            // 专用服务端没有本地玩家相机。
         }
 
         @Override

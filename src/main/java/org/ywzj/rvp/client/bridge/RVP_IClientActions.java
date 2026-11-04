@@ -29,6 +29,9 @@ public interface RVP_IClientActions {
     /** 焦点切换完成后保留真实命中语义；专用服务端为空操作。 */
     void onFocusLockChanged(org.ywzj.vehicle.vehicle.part.WeaponUnit station);
 
+    /** 既有视角切换写入前通知；参数只描述最终视角，专用服务端为空操作。 */
+    void beforeVehicleViewChange(boolean toScope, boolean toOperator);
+
     /** 接收虚拟弹体目标完整集合；专用服务端为空操作。 */
     void acceptVirtualMissileTargets(org.ywzj.rvp.network.S2CVirtualMissileTargets message);
 

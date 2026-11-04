@@ -77,6 +77,8 @@ public final class RVP_ClientTurretTraverseSight {
     public static void onCamera(ViewportEvent.ComputeCameraAngles event) {
         WeaponUnit unit = constrainedSight();
         if (unit == null) return;
+        // 连续吊舱由独立相机事件读取同一实际姿态，不能再用极点不稳定的拆角覆盖它。
+        if (unit instanceof org.ywzj.rvp.vehicle.RVP_OpticalWeaponUnit) return;
         float partial = (float) event.getPartialTick();
         Quaternionf rotation = RVP_TurretTraverseHandler.sightRotation(unit, partial);
         Vector3f euler = rotation.getEulerAnglesYXZ(new Vector3f());

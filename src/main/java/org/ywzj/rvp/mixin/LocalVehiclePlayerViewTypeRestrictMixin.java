@@ -6,6 +6,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.ywzj.rvp.client.state.RVP_ViewRestriction;
+import org.ywzj.rvp.client.bridge.RVP_ClientActionsAccess;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 
 /**
@@ -42,8 +43,14 @@ public class LocalVehiclePlayerViewTypeRestrictMixin {
         // （thirdPersonCameraAimAt 等 THIRD/OPERATOR 共用分支）已执行完毕，仅替换最终写入值。
         if (toViewType == LocalVehiclePlayer.ViewType.OPERATOR
                 && RVP_ViewRestriction.isCockpitViewBlocked()) {
+            // 调用双端安全桥，按最终第三人称落点复位；复用本方法现有注入点，不增加注入。
+            RVP_ClientActionsAccess.beforeVehicleViewChange(false, false);
             ((LocalVehiclePlayer) (Object) this).viewType = LocalVehiclePlayer.ViewType.THIRD_PERSON;
             ci.cancel();
+        } else {
+            // 调用同一桥，覆盖 V 键循环和观瞄直切退出，业务逻辑由独立客户端类完成。
+            RVP_ClientActionsAccess.beforeVehicleViewChange(toViewType == LocalVehiclePlayer.ViewType.SCOPE,
+                    toViewType == LocalVehiclePlayer.ViewType.OPERATOR);
         }
     }
 }

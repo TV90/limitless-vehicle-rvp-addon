@@ -9,6 +9,9 @@ import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.jetbrains.annotations.Nullable;
+import org.joml.Quaternionf;
+import org.ywzj.rvp.vehicle.RVP_OpticalSightMath;
+import org.ywzj.vehicle.client.handler.FirstPersonHandler;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.client.compat.distanthorizons.RVP_DistantHorizonsCompatBootstrap;
 import org.ywzj.vehicle.util.VectorUtil;
@@ -45,12 +48,16 @@ public final class RVP_ClientFocusLock {
     private static float renderedYaw;
     /** 上一帧独立观瞄的俯仰角，单位为度。 */
     private static float renderedPitch;
+    /** 连续吊舱上一帧横滚，单位为度；焦点解锁时与左右/俯仰一同回交。 */
+    private static float renderedRoll;
     /** 是否已经显示过当前焦点镜头；仅输入过但尚未渲染时不进行解锁过渡。 */
     private static boolean renderedFocus;
     /** 解锁回交时相对于本体镜头的剩余方位偏移，单位为度。 */
     private static double handoffYaw;
     /** 解锁回交时相对于本体镜头的剩余俯仰偏移，单位为度。 */
     private static double handoffPitch;
+    /** 连续吊舱解锁时剩余横滚偏移，单位为度。 */
+    private static double handoffRoll;
     /** 上次相机计算的单调时间，单位为纳秒；暂停/换上下文时清零。 */
     private static long lastCameraNanos;
     /** 唯一未完成的远景查询，连续拖动不会向后台堆积过期任务。 */
@@ -93,6 +100,10 @@ public final class RVP_ClientFocusLock {
         RVP_FocusLockAim newAim = new RVP_FocusLockAim();
         // 调用统一射线，首次按 R 与后续拖动使用相同距离与真实命中判定。
         newAim.acceptRay(origin, direction, RVP_FocusLockRaycast.loadedSurface(changedStation, origin, direction));
+        if (RVP_ClientOpticalSight.usesContinuousInput(changedStation)) {
+            // 调用完整画面姿态初始化，按 R 前后保持同一横轴，不从世界方位重新猜测横滚。
+            newAim.viewRotation(origin, RVP_ClientOpticalSight.currentRotation(changedStation));
+        }
         LOCKS.put(changedStation, newAim);
         // 调用本体写入接口保留焦点开关；未知距离的位置仅供原有火控对准方向。
         changedStation.setFocusLockPos(newAim.target());
@@ -138,8 +149,12 @@ public final class RVP_ClientFocusLock {
         double scale = RVP_FocusLockAim.sensitivityScale(VectorUtil.fov,
                 minecraft.options.fov().get(), currentStation.getZoom());
         // 调用独立瞄准状态累加输入；同一游戏刻内多次调用不会被炮口旧角度覆盖。
-        Vec3 requestedTarget = aim.turn(origin, yawInput * INPUT_DEGREES * scale,
-                pitchInput * INPUT_DEGREES * scale);
+        Vec3 requestedTarget = RVP_ClientOpticalSight.usesContinuousInput(currentStation)
+                ? aim.turnInView(origin, RVP_ClientOpticalSight.currentRotation(currentStation),
+                    yawInput * INPUT_DEGREES * scale, pitchInput * INPUT_DEGREES * scale)
+                : aim.turn(origin, yawInput * INPUT_DEGREES * scale, pitchInput * INPUT_DEGREES * scale);
+        // 调用默认关闭的只读诊断，记录本次焦点输入实际使用的原点、比例和射线前请求点。
+        org.ywzj.rvp.client.debug.RVP_OpticalSightDebug.focusRequest(currentStation, origin, scale, requestedTarget);
         if (requestedTarget == null || (yawInput == 0.0D && pitchInput == 0.0D)) {
             return true;
         }
@@ -180,12 +195,29 @@ public final class RVP_ClientFocusLock {
         if (direction == null) {
             return;
         }
+        var previousView = renderedFocus
+                ? new RVP_OpticalSightMath.Angles(renderedPitch, renderedYaw, renderedRoll)
+                : new RVP_OpticalSightMath.Angles(event.getPitch(), event.getYaw(), event.getRoll());
         renderedOrigin = origin;
         renderedYaw = aim.yaw();
         renderedPitch = (float) -Math.toDegrees(Math.atan2(direction.y,
                 Math.hypot(direction.x, direction.z)));
+        renderedRoll = event.getRoll();
+        if (RVP_ClientOpticalSight.usesContinuousInput(currentStation)) {
+            // 调用与鼠标完全相同的画面姿态，焦点经过正下方时不再用钳到九十度的世界角重建。
+            var rotation = aim.viewRotation(origin,
+                    RVP_OpticalSightMath.rotation(event.getPitch(), event.getYaw(), event.getRoll()));
+            var angles = RVP_OpticalSightMath.cameraAngles(new Quaternionf(rotation), previousView);
+            renderedYaw = angles.yaw();
+            renderedPitch = angles.pitch();
+            renderedRoll = angles.roll();
+            event.setRoll(renderedRoll);
+            FirstPersonHandler.zRot = renderedRoll;
+            // 调用普通镜头姿态交接，解锁后从刚刚显示过的横轴继续，不跟随机械偏航突然翻滚。
+            RVP_ClientOpticalSight.acceptFocusRotation(currentStation, rotation, angles);
+        }
         renderedFocus = true;
-        handoffYaw = handoffPitch = 0.0D;
+        handoffYaw = handoffPitch = handoffRoll = 0.0D;
         lastCameraNanos = System.nanoTime();
         event.setYaw(renderedYaw);
         event.setPitch(renderedPitch);
@@ -222,8 +254,8 @@ public final class RVP_ClientFocusLock {
         station = null;
         renderedOrigin = null;
         renderedFocus = false;
-        renderedYaw = renderedPitch = 0.0F;
-        handoffYaw = handoffPitch = 0.0D;
+        renderedYaw = renderedPitch = renderedRoll = 0.0F;
+        handoffYaw = handoffPitch = handoffRoll = 0.0D;
         lastCameraNanos = 0L;
     }
 
@@ -343,6 +375,8 @@ public final class RVP_ClientFocusLock {
             // 调用角度环绕，跨正负 180 度解锁时选择最短回交方向。
             handoffYaw = RVP_FocusLockAim.wrapDegrees(renderedYaw - event.getYaw());
             handoffPitch = renderedPitch - event.getPitch();
+            handoffRoll = RVP_ClientOpticalSight.usesContinuousInput(currentStation)
+                    ? RVP_FocusLockAim.wrapDegrees(renderedRoll - event.getRoll()) : 0.0D;
             renderedFocus = false;
             renderedOrigin = null;
             aim = null;
@@ -353,11 +387,16 @@ public final class RVP_ClientFocusLock {
         double retention = RVP_FocusLockAim.handoffRetention(elapsedSeconds);
         handoffYaw *= retention;
         handoffPitch *= retention;
-        if (Math.abs(handoffYaw) + Math.abs(handoffPitch) < 1.0E-4D) {
+        handoffRoll *= retention;
+        if (Math.abs(handoffYaw) + Math.abs(handoffPitch) + Math.abs(handoffRoll) < 1.0E-4D) {
             clear();
             return;
         }
         event.setYaw((float) (event.getYaw() + handoffYaw));
         event.setPitch((float) (event.getPitch() + handoffPitch));
+        if (RVP_ClientOpticalSight.usesContinuousInput(currentStation)) {
+            event.setRoll((float) (event.getRoll() + handoffRoll));
+            FirstPersonHandler.zRot = event.getRoll();
+        }
     }
 }
