@@ -277,6 +277,8 @@ public final class RVP_ProjectileMotion {
      */
     private static boolean isDualPulseSupportedMissile(RVP_WeaponData data) {
         return data.usesGuidanceType(RVP_EnumGuidanceType.IR)
+                // AIR 主动红外同样使用显式 second_pulse 配置，不能漏掉其第二动力段。
+                || data.usesGuidanceType(RVP_EnumGuidanceType.AIR)
                 || data.usesGuidanceType(RVP_EnumGuidanceType.ARH)
                 || data.usesGuidanceType(RVP_EnumGuidanceType.SARH)
                 || data.usesGuidanceType(RVP_EnumGuidanceType.ARM)

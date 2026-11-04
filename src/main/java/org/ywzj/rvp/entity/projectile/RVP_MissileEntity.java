@@ -271,10 +271,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         if (rvpData == null) {
             return RVP_EnumGuidanceType.NONE;
         }
-        return RVP_GuidanceModelResolver.resolveActive(
-                rvpData.getGuidanceData(),
-                getGuidancePhaseState().phase()
-        ).guidanceType();
+        return resolveNewActiveConfig().guidanceType();
     }
 
     /** 当前生效的主动导引头/制导类型（供 gunner 等外部判断威胁类型，如 IR/AIR 红外族）。 */
@@ -571,6 +568,8 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     }
 
     private void notifyActiveSeekerOnline(RVP_EnumGuidanceType type) {
+        // 捕获接管模式禁止开机提示；只由真实捕获边沿发送捕获提示。
+        if (usesTerminalSeekerHandoff()) return;
         if (!(getOwner() instanceof ServerPlayer player)) {
             return;
         }
@@ -755,7 +754,9 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         }
         return RVP_GuidanceModelResolver.resolveActive(
                 rvpData.getGuidanceData(),
-                getGuidancePhaseState().phase()
+                // 未捕获时仍管理主段导引头，不能因末段搜索而中断原雷达中继或提前开启末段计时。
+                isTerminalSeekerHandoffPending() ? org.ywzj.rvp.guidance.RVP_GuidancePhase.MAIN
+                        : getGuidancePhaseState().phase()
         );
     }
 

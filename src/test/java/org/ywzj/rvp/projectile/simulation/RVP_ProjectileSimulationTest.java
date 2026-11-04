@@ -167,7 +167,9 @@ class RVP_ProjectileSimulationTest {
         assertEquals("MAIN", flight.step().phase());
         var state = flight.step();
         assertEquals("TERMINAL", state.phase());
-        assertEquals(org.ywzj.rvp.guidance.RVP_EnumGuidanceType.ARH, flight.entity().getActiveSourceType());
+        // 默认先搜索再交接；阶段已到末段，但未捕获时操纵源仍为原NONE，不凭空制造ARH制导。
+        assertEquals(org.ywzj.rvp.guidance.RVP_EnumGuidanceType.NONE, flight.entity().getActiveSourceType());
+        assertTrue(flight.entity().isTerminalSeekerHandoffPending());
         assertEquals(0, state.velocity().x, 1.0E-12);
     }
 

@@ -26,8 +26,11 @@ final class RVP_RuntimeSeekerSupport {
     private RVP_RuntimeSeekerSupport() {}
 
     /** 重锁/搜索扫描半径：取配置距离范围与封顶的较小值。 */
-    private static double acquireScanRadius(RVP_GuidanceActiveConfig config) {
-        double range = RVP_GuidanceRuntimeGeometry.resolveScanRadius(config.targetDistanceRange());
+    private static double acquireScanRadius(RVP_BaseBullet projectile, RVP_GuidanceActiveConfig config) {
+        var searchRange = RVP_GuidanceRuntimeGeometry.resolveAcquireDistanceRange(projectile, config);
+        double range = RVP_GuidanceRuntimeGeometry.resolveScanRadius(searchRange);
+        // 显式末段搜索区间是独立包络；只遍历已加载实体，不放大区块查询或持续跟踪距离。
+        if (searchRange != config.targetDistanceRange()) return range;
         return Math.min(range, ACQUIRE_SCAN_RADIUS);
     }
 
@@ -130,6 +133,8 @@ final class RVP_RuntimeSeekerSupport {
             return decoy;
         }
         if (result.isDenied()) {
+            // 未捕获时只是本次搜索被挡，不能提前写成“已跟踪后永久烟雾脱锁”。
+            if (acquire && projectile.isTerminalSeekerHandoffPending()) return null;
             // 光学被挡/入烟等锁定阻断：捕获具体烟雾实体，记录脱锁瞬间算定的固定惯导落点，
             // 并标记烟雾脱锁（永久阻止复锁，与诱饵转锁分隔），进入干扰保持期
             RVP_SmokeEntity smoke = RVP_CountermeasureState.findSmokeContaining(target);
@@ -144,7 +149,7 @@ final class RVP_RuntimeSeekerSupport {
 
     @Nullable
     static Entity scanRadarTarget(RVP_BaseBullet projectile, RVP_GuidanceActiveConfig config) {
-        double range = acquireScanRadius(config);
+        double range = acquireScanRadius(projectile, config);
         Iterable<Entity> all = allServerEntities(projectile);
         Entity best = null;
         double bestScore = Double.MAX_VALUE;
@@ -239,7 +244,7 @@ final class RVP_RuntimeSeekerSupport {
     private static Entity scanInfraredTarget(RVP_BaseBullet projectile, RVP_GuidanceActiveConfig config, boolean active) {
         // 已加载实体遍历不申请区块；AIR 的配置范围不再被雷达重捕获用的256格上限截断。
         double range = active ? RVP_GuidanceRuntimeGeometry.resolveScanRadius(config.targetDistanceRange())
-                : acquireScanRadius(config);
+                : acquireScanRadius(projectile, config);
         Iterable<Entity> all = allServerEntities(projectile);
         Entity best = null;
         double bestScore = Double.MAX_VALUE;

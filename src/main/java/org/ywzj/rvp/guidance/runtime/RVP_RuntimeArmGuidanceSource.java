@@ -53,10 +53,12 @@ public final class RVP_RuntimeArmGuidanceSource implements RVP_RuntimeGuidanceSo
             // [RVP] 目的（2026-09-14 定版）：捕获门控 = 离轴圈（max_off_axis_lock_angle，
             // 弹轴为中心）——仅弹轴周围离轴圈内的辐射源可被捕获，离轴圈外（含侧后方）一律不抓；
             // 与武器站轴无关（飞行中转武器站不影响导弹捕获）。
-            float fov = Math.max(projectile.getRvpData() == null ? 0f
+            float fov = context.active().phase() == org.ywzj.rvp.guidance.RVP_GuidancePhase.TERMINAL
+                    ? context.active().maxLockHalfAngle()
+                    : Math.max(projectile.getRvpData() == null ? 0f
                     : projectile.getRvpData().resolveLaunchOffAxisLockAngle(), 0.5f);
             float range = (float) RVP_GuidanceRuntimeGeometry.resolveScanRadius(
-                    context.active().targetDistanceRange());
+                    RVP_GuidanceRuntimeGeometry.resolveAcquireDistanceRange(projectile, context.active()));
             List<AntiRadiationSeekerHelper.AntiRadiationEmitter> emitters =
                     AntiRadiationSeekerHelper.scanVisibleEmitters(
                             projectile.level(),
@@ -91,6 +93,9 @@ public final class RVP_RuntimeArmGuidanceSource implements RVP_RuntimeGuidanceSo
             }
             return RVP_GuidanceIntent.point(aimPoint, false, 1.0, RVP_EnumGuidanceType.ARM);
         }
+
+        // 等待末段接管时，预选快照/信号记忆不能冒充本刻辐射源捕获，失败交回主制导。
+        if (projectile.isTerminalSeekerHandoffPending()) return RVP_GuidanceIntent.failed(RVP_EnumGuidanceType.ARM);
 
         // [RVP] 预选追踪分支（改造）：独占窗口内预选不可见 → 朝预选最后已知位置飞，
         // 不改选其它辐射源（窗口内本就不选）；非窗口期保留现有行为

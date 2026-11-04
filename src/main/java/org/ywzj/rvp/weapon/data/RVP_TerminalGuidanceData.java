@@ -10,6 +10,30 @@ public class RVP_TerminalGuidanceData {
     @SerializedName("guidance_type")
     private RVP_EnumGuidanceType guidanceType = RVP_EnumGuidanceType.NONE;
 
+    /**
+     * 末段导引头未捕获时保留主制导，默认 true，无单位；仅 IR（含 AIR）、ARH、ARM 末段生效。
+     * <p>搜索时继续执行主段完整参数及其干扰规则；真实捕获后单向交接，后续脱锁不退回主段。
+     * 设为 false 时保留进入末段即接管的行为及原有开机提示。</p>
+     */
+    @SerializedName("retain_main_guidance_until_capture")
+    private boolean retainMainGuidanceUntilCapture = true;
+
+    /**
+     * 末段首次截获的搜索距离区间，单位格，默认 null，沿用 guidance_target_distance_range。
+     * <p>只约束捕获/重捕获与候选扫描，不改变持续跟踪距离或 max_guidance_angle；
+     * 显式配置时在已加载目标中按本区间搜索，不再受旧重锁扫描256格封顶限制。</p>
+     */
+    @SerializedName("seeker_search_distance_range")
+    private RVP_Range<Float> seekerSearchDistanceRange;
+
+    public boolean isRetainMainGuidanceUntilCapture() {
+        return retainMainGuidanceUntilCapture;
+    }
+
+    public RVP_Range<Float> getSeekerSearchDistanceRange() {
+        return seekerSearchDistanceRange;
+    }
+
     @SerializedName("active_radar_activation_range")
     private int activeRadarActivationRange = 256;
 

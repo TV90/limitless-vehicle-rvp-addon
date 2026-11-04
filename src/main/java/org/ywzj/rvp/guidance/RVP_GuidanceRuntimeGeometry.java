@@ -94,7 +94,7 @@ public final class RVP_GuidanceRuntimeGeometry {
         // [RVP] §46：截获门限与瞄准点同源（最大 OBB 中心）
         Vec3 center = org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(target);
         double distance = projectile.position().distanceTo(center);
-        if (!contains(config.targetDistanceRange(), distance)) {
+        if (!contains(resolveAcquireDistanceRange(projectile, config), distance)) {
             return false;
         }
         // 调用同一地形开关，使导引头截获与持续跟踪对虚拟目标采用一致规则。
@@ -105,6 +105,18 @@ public final class RVP_GuidanceRuntimeGeometry {
         }
         return withinAngle(projectile.getLookAngle(), center.subtract(projectile.position()),
                 config.maxLockHalfAngle());
+    }
+
+    /** 截获距离单独配置；持续跟踪仍直接读取 active.targetDistanceRange，不受搜索缩窄影响。 */
+    public static RVP_Range<Float> resolveAcquireDistanceRange(
+            RVP_BaseBullet projectile, RVP_GuidanceActiveConfig config) {
+        if (config.phase() == RVP_GuidancePhase.TERMINAL && projectile.getRvpData() != null) {
+            var terminal = projectile.getRvpData().getGuidanceData().getTerminalGuidance();
+            if (terminal != null && terminal.getSeekerSearchDistanceRange() != null) {
+                return terminal.getSeekerSearchDistanceRange();
+            }
+        }
+        return config.targetDistanceRange();
     }
 
     public static double resolveScanRadius(RVP_Range<Float> range) {

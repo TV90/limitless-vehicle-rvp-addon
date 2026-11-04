@@ -46,7 +46,24 @@ public final class RVP_GuidanceRuntimeController {
                 guidance,
                 projectile.getGuidancePhaseState().phase()
         );
-        projectile.setActiveStageName(active.phase().name());
+        // 末段搜索只做捕获验证；未捕获继续使用主段完整制导快照，不把末段惯导点当作捕获。
+        RVP_GuidanceIntent captured = null;
+        if (projectile.isTerminalSeekerHandoffPending()) {
+            var previousEntity = projectile.getTargetEntity();
+            Vec3 previousPoint = projectile.getTargetPos();
+            captured = org.ywzj.rvp.guidance.runtime.RVP_RuntimeTerminalSeekerHandoff.acquire(
+                    new RVP_GuidanceRuntimeContext(projectile, data, active));
+            if (projectile.isRemoved()) return false;
+            if (captured.success()) {
+                projectile.markTerminalSeekerCaptured();
+            } else {
+                // 失败的末段试探不能清掉主段目标；反制计时本身仍保留在导引头状态里。
+                projectile.setTargetEntity(previousEntity);
+                projectile.setGuidanceTargetPos(previousPoint);
+                active = RVP_GuidanceModelResolver.resolveActive(guidance, RVP_GuidancePhase.MAIN);
+            }
+        }
+        projectile.setActiveStageName(projectile.getGuidancePhaseState().phase().name());
         projectile.setActiveSourceType(active.guidanceType());
 
         RVP_Range<Integer> tickRange = active.tickRange();
@@ -61,7 +78,8 @@ public final class RVP_GuidanceRuntimeController {
 
         RVP_GuidanceRuntimeContext context = new RVP_GuidanceRuntimeContext(projectile, data, active);
         // 外部环境只提供观测，不能替换下面的惯性回退或实体转向执行器。
-        RVP_GuidanceIntent intent = observation == null ? source.evaluate(context) : observation.apply(context);
+        RVP_GuidanceIntent intent = captured != null && captured.success() ? captured
+                : observation == null ? source.evaluate(context) : observation.apply(context);
         if (!intent.success() && active.enableInertialGuidance()) {
             Vec3 memory = projectile.getLastGuidancePos();
             if (memory != null) {

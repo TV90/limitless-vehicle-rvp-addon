@@ -9,6 +9,7 @@ import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.chat.Component;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
@@ -373,6 +374,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     protected int irSeekerGraceUntilTick = Integer.MIN_VALUE;
     private boolean irSeekerLossGraceStarted;
     private boolean terminalIrTargetAcquired;
+    /** 末段曾真实捕获并接管的单向锁存；默认 false，脱锁后仍不交还主制导。 */
+    private boolean terminalSeekerCaptured;
     /** 导引头关闭期截止 tick（被干扰失锁后 seekerShutOffTime 内不重新搜索）；MIN_VALUE = 未关闭。 */
     protected int seekerShutOffUntilTick = Integer.MIN_VALUE;
     protected final Map<Long, Integer> radiationPulseTickMap = new HashMap<>();
@@ -665,6 +668,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         data.putBoolean("launchTargetSnapshot", launchTargetSnapshot);
         data.putInt("irSeekerGraceUntilTick", irSeekerGraceUntilTick);
         data.putBoolean("terminalIrTargetAcquired", terminalIrTargetAcquired);
+        data.putBoolean("terminalSeekerCaptured", terminalSeekerCaptured);
         data.putBoolean("remoteChunkPathEnabled", remoteChunkPathEnabled);
     }
 
@@ -708,6 +712,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         launchTargetSnapshot = data.getBoolean("launchTargetSnapshot");
         irSeekerGraceUntilTick = data.contains("irSeekerGraceUntilTick") ? data.getInt("irSeekerGraceUntilTick") : Integer.MIN_VALUE;
         terminalIrTargetAcquired = data.getBoolean("terminalIrTargetAcquired");
+        terminalSeekerCaptured = data.getBoolean("terminalSeekerCaptured");
         remoteChunkPathEnabled = data.getBoolean("remoteChunkPathEnabled");
         // 广播克隆继承分角度雷达因子（2026-09-19）：克隆 radarRcs* 字段默认恒 1，会使隐身弹
         // （如 [0.08,0.35,0.18]）的超视距广播克隆以标称 RCS 出现在雷达上（隐身失效）；
@@ -1041,7 +1046,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             return false;
         }
         RVP_GuidanceActiveConfig config = RVP_GuidanceModelResolver.resolveActive(
-                data, guidancePhaseState.phase());
+                data, isTerminalSeekerHandoffPending() ? org.ywzj.rvp.guidance.RVP_GuidancePhase.MAIN : guidancePhaseState.phase());
         if (config.tickRange() != null && !config.tickRange().contains(getFlightTickCount())) {
             return false;
         }
@@ -1195,7 +1200,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     private RVP_GuidanceActiveConfig resolveActiveGuidanceConfig() {
-        return RVP_GuidanceModelResolver.resolveActive(rvpData, guidancePhaseState.phase());
+        // 搜索与操纵分开：末段未捕获时，重力/巡航/线缆等仍读取主制导的完整快照。
+        return RVP_GuidanceModelResolver.resolveActive(rvpData, isTerminalSeekerHandoffPending()
+                ? org.ywzj.rvp.guidance.RVP_GuidancePhase.MAIN : guidancePhaseState.phase());
     }
 
     public double horizontalDistanceTo(Vec3 pos) {
@@ -1563,6 +1570,40 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
 
     public void markTerminalIrTargetAcquired() {
         terminalIrTargetAcquired = true;
+    }
+
+    /** 当前末段是否使用捕获后接管；只有自主导引头类型参与，其他末段保留原行为。 */
+    public boolean usesTerminalSeekerHandoff() {
+        if (rvpData == null || !guidancePhaseState.isTerminal()) return false;
+        var terminal = rvpData.getGuidanceData().getTerminalGuidance();
+        if (terminal == null || !terminal.isRetainMainGuidanceUntilCapture()) return false;
+        // 调用末段规范化出口，使 AIR 仍沿统一 IR 通道工作。
+        return switch (terminal.getGuidanceType()) {
+            case IR, ARH, ARM -> true;
+            default -> false;
+        };
+    }
+
+    /** 开机搜索但未捕获时，原主制导仍拥有本刻操纵权。 */
+    public boolean isTerminalSeekerHandoffPending() {
+        return usesTerminalSeekerHandoff() && !terminalSeekerCaptured;
+    }
+
+    public boolean hasTerminalSeekerCaptured() {
+        return terminalSeekerCaptured;
+    }
+
+    /** 仅在真实实体/辐射源通过末段捕获验证后调用，禁止用惯导记忆点置位。 */
+    public void markTerminalSeekerCaptured() {
+        if (terminalSeekerCaptured) return;
+        terminalSeekerCaptured = true;
+        // 调用公共本地化键出口；导弹与制导炸弹共用捕获提示，服务端不依赖客户端类。
+        var terminal = rvpData == null ? null : rvpData.getGuidanceData().getTerminalGuidance();
+        String key = terminal == null ? null
+                : org.ywzj.rvp.guidance.runtime.RVP_RuntimeTerminalSeekerHandoff.captureMessageKey(terminal.getGuidanceType());
+        if (key != null && !level().isClientSide() && getOwner() instanceof ServerPlayer player) {
+            player.displayClientMessage(Component.translatable(key), true);
+        }
     }
 
     public boolean consumeGpsCruiseVerticalResetPending() {
@@ -1949,6 +1990,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     protected void addAdditionalSaveData(CompoundTag tag) {
         // 调用本体/原版存档入口保留所有父类字段。
         super.addAdditionalSaveData(tag);
+        tag.putBoolean("rvpTerminalSeekerCaptured", terminalSeekerCaptured);
+        tag.putString("rvpGuidancePhase", guidancePhaseState.phase().name());
         tag.putDouble("rvpAttackPitchRateDeg", attackPitchRateDeg);
         tag.putDouble("rvpAttackYawRateDeg", attackYawRateDeg);
         // 调用本项目向量存档工具：保存冷发射期间仍需使用的发射瞬间载机速度快照。
@@ -1960,6 +2003,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     protected void readAdditionalSaveData(CompoundTag tag) {
         // 调用本体/原版恢复入口后，再校验并恢复本项目双轴状态。
         super.readAdditionalSaveData(tag);
+        terminalSeekerCaptured = tag.getBoolean("rvpTerminalSeekerCaptured");
+        guidancePhaseState.restore("TERMINAL".equals(tag.getString("rvpGuidancePhase"))
+                ? org.ywzj.rvp.guidance.RVP_GuidancePhase.TERMINAL : org.ywzj.rvp.guidance.RVP_GuidancePhase.MAIN);
         restoreAttackAngleRates(tag.getDouble("rvpAttackPitchRateDeg"), tag.getDouble("rvpAttackYawRateDeg"));
         // 调用本项目向量读取工具：兼容没有该运行态字段的旧存档，缺失时回退为零速度。
         captureLaunchVehicleVelocity(readRemoteVec3(tag, "rvpLaunchVehicleVelocity"));
@@ -2007,8 +2053,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         if (rvpData == null) {
             return RVP_EnumGuidanceType.NONE;
         }
-        RVP_GuidanceActiveConfig active = RVP_GuidanceModelResolver.resolveActive(
-                rvpData.getGuidanceData(), getGuidancePhaseState().phase());
+        RVP_GuidanceActiveConfig active = resolveActiveGuidanceConfig();
         return active == null ? RVP_EnumGuidanceType.NONE : active.guidanceType();
     }
 
@@ -2512,6 +2557,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         tag.putBoolean("selfDestructTriggered", selfDestructTriggered);
         tag.putBoolean("launchTargetSnapshot", launchTargetSnapshot);
         tag.putBoolean("terminalIrTargetAcquired", terminalIrTargetAcquired);
+        tag.putBoolean("terminalSeekerCaptured", terminalSeekerCaptured);
         tag.putBoolean("antiRadiationLostPermanent", antiRadiationLostPermanent);
         tag.putBoolean("antiRadiationSignalAcquired", antiRadiationSignalAcquired);
         tag.putBoolean("dircmJammed", dircmJammed);
@@ -2616,6 +2662,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         selfDestructTriggered = tag.getBoolean("selfDestructTriggered");
         launchTargetSnapshot = tag.getBoolean("launchTargetSnapshot");
         terminalIrTargetAcquired = tag.getBoolean("terminalIrTargetAcquired");
+        terminalSeekerCaptured = tag.getBoolean("terminalSeekerCaptured");
         antiRadiationLostPermanent = tag.getBoolean("antiRadiationLostPermanent");
         antiRadiationSignalAcquired = tag.getBoolean("antiRadiationSignalAcquired");
         dircmJammed = tag.getBoolean("dircmJammed");
@@ -3004,7 +3051,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             // 惯性分支追发射锁定目标）；LH/SALH 锁定追踪与 HITL_TV 实时跟随保持原逻辑。
             boolean allowEntityTracking = rvpData == null
                     || (!rvpData.isVehicleLaserGuided() && !rvpData.isLineOfSightGuided())
-                    || rvpData.isSaclosTvGuided();
+                    || rvpData.isSaclosTvGuided()
+                    // 主段 SACLOS 的禁实体追踪规则不能延续到已接管的末段红外，否则每刻清锁。
+                    || (guidancePhaseState.isTerminal() && !isTerminalSeekerHandoffPending());
             if (!allowEntityTracking && targetEntity != null) {
                 targetEntity = null;
                 resetGuidanceTargetMotion();
