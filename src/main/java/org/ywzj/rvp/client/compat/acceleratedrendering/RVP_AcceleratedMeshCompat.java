@@ -28,6 +28,10 @@ public final class RVP_AcceleratedMeshCompat {
         VertexConsumer wrap(VertexConsumer consumer, int minVertices);
         /** 只认可不增加材质/顶点语义的 AR GUI 包装，未知包装一律不旁路。 */
         default boolean isPanelSource(MultiBufferSource source, MultiBufferSource expected) { return false; }
+        /** 检查 AR 的实体默认配置；热源事件的临时 VANILLA 状态不能改变此能力判定。 */
+        default boolean worldSharingConfigured() { return false; }
+        /** 光影的实体分类材质；未知的顶点加工包装必须回退。 */
+        default RenderType entityMaterial(MultiBufferSource source, MultiBufferSource expected, RenderType material) { return null; }
     }
 
     private RVP_AcceleratedMeshCompat() {}
@@ -48,7 +52,7 @@ public final class RVP_AcceleratedMeshCompat {
         if (active == null) {
             return source;
         }
-        // 调用现有 RenderType 获取同一材质实例，不包装透明、双面、热成像或特殊骨通道。
+        // 调用现有 RenderType 获取同一材质实例，不包装透明、双面或特殊骨通道；热源另有显式入口。
         RenderType cutoutMesh = RVP_RenderTypes.polyMeshCutout(texture);
         return type -> {
             VertexConsumer original = source.getBuffer(type);
@@ -60,6 +64,18 @@ public final class RVP_AcceleratedMeshCompat {
     public static boolean isPanelSource(MultiBufferSource source, MultiBufferSource expected) {
         ConsumerWrapper bridge = getWrapper();
         return bridge != null && bridge.isPanelSource(source, expected);
+    }
+
+    public static RenderType entityMaterial(MultiBufferSource source, MultiBufferSource expected, RenderType material) {
+        if (source == expected) return material;
+        ConsumerWrapper bridge = getWrapper();
+        return bridge == null ? null : bridge.entityMaterial(source, expected, material);
+    }
+
+    /** 查询配置允许的共享能力；光影与热成像叠加时由世界入口单独保留原提交时序。 */
+    public static boolean worldSharingConfigured() {
+        ConsumerWrapper bridge = getWrapper();
+        return bridge != null && bridge.worldSharingConfigured();
     }
 
     /** 延迟加载公开 AR API；卸载 AR 时既不解析其类型，也不改变原始消费者。 */

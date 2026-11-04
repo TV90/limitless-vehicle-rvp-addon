@@ -3,6 +3,10 @@ package org.ywzj.rvp.client.compat.acceleratedrendering;
 import com.github.argon4w.acceleratedrendering.core.CoreFeature;
 import com.github.argon4w.acceleratedrendering.compat.iris.buffers.IrisEntityAcceleratableBufferSource;
 import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.RenderType;
+import com.github.argon4w.acceleratedrendering.configs.PipelineSetting;
+import org.ywzj.vehicle.client.shader.ThermalHandler;
+import org.ywzj.rvp.client.light.RVP_LightingCompatibility;
 import com.github.argon4w.acceleratedrendering.features.entities.AcceleratedEntityRenderingFeature;
 import com.github.argon4w.acceleratedrendering.core.backends.buffers.IServerBuffer;
 import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.IAccelerationHolder;
@@ -37,6 +41,10 @@ public final class RVP_AcceleratedMeshBridge implements RVP_AcceleratedMeshCompa
     /** 可注入阶段判定，供不创建 OpenGL 上下文的消费者契约测试使用。 */
     RVP_AcceleratedMeshBridge(BooleanSupplier accelerationAllowed) throws ReflectiveOperationException {
         this.accelerationAllowed = accelerationAllowed;
+        if (AcceleratedEntityRenderingFeature.class.getMethod("getDefaultPipelineSetting").getReturnType()
+                != PipelineSetting.class) {
+            throw new NoSuchMethodException("AR default pipeline query changed");
+        }
         ServerMesh.class.getConstructor(int.class, int.class, int.class, int.class,
                 boolean.class, IServerBuffer.class);
         var counter = ServerMesh.Builder.class.getField("COUNTER");
@@ -57,6 +65,21 @@ public final class RVP_AcceleratedMeshBridge implements RVP_AcceleratedMeshCompa
         // AR 在 EntityRenderDispatcher 无条件加这一层；无光影且内部没有额外包装时仅透明转发。
         return source instanceof IrisEntityAcceleratableBufferSource iris
                 && iris.original() == expected && iris.wrapped() == expected;
+    }
+
+    @Override
+    public RenderType entityMaterial(MultiBufferSource source, MultiBufferSource expected,
+                                     RenderType material) {
+        if (!(source instanceof IrisEntityAcceleratableBufferSource iris) || iris.original() != expected) return null;
+        return iris.wrapped() == expected ? material : RVP_MeshShaderContext.entityMaterial(iris.wrapped(), expected, material);
+    }
+
+    @Override
+    public boolean worldSharingConfigured() {
+        // AR 的 Forge 事件过滤器临时强制 VANILLA；只读默认配置，不改其控制栈。
+        return AcceleratedEntityRenderingFeature.isEnabled()
+                && AcceleratedEntityRenderingFeature.getDefaultPipelineSetting()
+                == PipelineSetting.ACCELERATED;
     }
 
     @Override
@@ -137,7 +160,11 @@ public final class RVP_AcceleratedMeshBridge implements RVP_AcceleratedMeshCompa
         public <T> void doRender(IAcceleratedRenderer<T> renderer, T context, Matrix4f transform,
                                  Matrix3f normal, int light, int overlay, int color) {
             // 只在世界实体阶段使用刚性 mesh；GUI、手持物与特殊材质保持原有提交边界。
+            // 光影叠加热成像时保留主画面的 AR 批次时序，避免即时实体深度进入热源的深度副本。
+            // 热源复绘和展板仍各自使用共享入口，不使用深度偏移或关闭遮挡来掩盖自遮挡。
             if (context instanceof BakedGeometryChunk chunk && CoreFeature.isRenderingLevel()
+                    && !(ThermalHandler.isActive()
+                    && RVP_LightingCompatibility.shadersActive())
                     && RVP_SharedOpaqueMesh.tryDraw(chunk, getRenderType(), transform, normal,
                     light, overlay, color, minVertices)) {
                 return;
