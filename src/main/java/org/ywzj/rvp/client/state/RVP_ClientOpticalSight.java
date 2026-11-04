@@ -1,7 +1,6 @@
 package org.ywzj.rvp.client.state;
 
 import net.minecraft.client.Minecraft;
-import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.ViewportEvent;
@@ -20,9 +19,6 @@ import org.ywzj.vehicle.client.handler.FirstPersonHandler;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
-import java.util.Collections;
-import java.util.Set;
-import java.util.WeakHashMap;
 
 /** 在 Forge 相机事件中用吊舱实际完整姿态更新画面，避开本体相机在竖直方向的拆角跳变。 */
 @Mod.EventBusSubscriber(value = Dist.CLIENT, modid = RVP_MOD.MOD_ID)
@@ -35,8 +31,6 @@ public final class RVP_ClientOpticalSight {
     @Nullable private static Quaterniond viewRotation;
     /** 同一渲染帧内累加的鼠标请求姿态，不能被尚未跟上的实际炮口覆盖。 */
     @Nullable private static Quaterniond inputRotation;
-    /** 原类型观瞄站每个对象只提示一次；弱键不阻止已卸载载具回收。 */
-    private static final Set<WeaponUnit> WARNED = Collections.newSetFromMap(new WeakHashMap<>());
 
     /** 工具类不允许实例化。 */
     private RVP_ClientOpticalSight() {}
@@ -123,11 +117,6 @@ public final class RVP_ClientOpticalSight {
         WeaponUnit selected = local.getWeaponUnit();
         if (!(selected instanceof RVP_OpticalWeaponUnit current)
                 || current.getOwner() != minecraft.player || current.getVehicle() != local.vehicle) {
-            if (minecraft.screen == null && !(selected instanceof RVP_OpticalWeaponUnit)
-                    && usesContinuousInput(selected) && WARNED.add(selected)) {
-                minecraft.player.displayClientMessage(Component.literal(
-                        "[RVP观瞄] 当前仍为原版观瞄站，过竖直方向修复未启用。请在客户端和服务器同步权威载具配置，并重进世界。"), false);
-            }
             // 调用统一会话清理，隔离不再属于本地玩家的站。
             clearView();
             return;
