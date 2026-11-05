@@ -126,6 +126,12 @@ public final class RVP_ClientWeaponTargets {
             return false;
         }
         Vec3 start = station.worldOpticalSightPosition(1f);
+        var opticalRay = RVP_ClientOpticalSight.sampleRay(station, net.minecraft.client.Minecraft.getInstance().getFrameTime());
+        if (opticalRay != null) {
+            // 新版吊舱沿本帧画面搜索；普通站继续使用原 lookAt 和挂点。
+            start = opticalRay.origin();
+            lookAt = start.add(opticalRay.direction().scale(RVP_ClientHmdState.EO_HMD_MAX_RANGE));
+        }
         // 光电沿用现有 512 格最大范围；画面视距调为 2 区块不能截断实体选择射线。
         Vec3 end = start.add(lookAt.subtract(start).normalize().scale(RVP_ClientHmdState.EO_HMD_MAX_RANGE));
         EntityHitResult closest = VectorUtil.hitEntity(station.getVehicle(), start, end);

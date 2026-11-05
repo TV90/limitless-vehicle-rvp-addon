@@ -192,7 +192,13 @@ public class RVP_ClientGPSUtil {
             start = mc.gameRenderer.getMainCamera().getPosition();
         }
         Vec3 direction;
-        if (LocalVehiclePlayer.instance.viewType == LocalVehiclePlayer.ViewType.SCOPE
+        RVP_ClientOpticalSight.SightRay opticalRay = operatorUnit instanceof WeaponUnit unit
+                ? RVP_ClientOpticalSight.sampleRay(unit, mc.getFrameTime()) : null;
+        if (opticalRay != null) {
+            // 新版吊舱的屏幕选点读取本帧真实视线；普通载具保留下面的原有分支。
+            start = opticalRay.origin();
+            direction = opticalRay.direction();
+        } else if (LocalVehiclePlayer.instance.viewType == LocalVehiclePlayer.ViewType.SCOPE
                 && !RVP_ClientHitlState.isActive()
                 && operatorUnit instanceof WeaponUnit station && station.withFocusLocker()
                 && station.getFocusLockPos() != null) {

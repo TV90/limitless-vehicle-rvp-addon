@@ -201,6 +201,8 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
 
     public void renderCrosshair(GuiGraphics guiGraphics, float partialTick, AbstractVehicle vehicle) {
         if (vehicle.getOwnOperatorUnit(LocalVehiclePlayer.instance.getPlayer()) instanceof WeaponUnit weaponUnit) {
+            // 调用屏幕固定位置的吊舱状态提示，不随枪炮弹着点移出画面。
+            renderOpticalStatus(weaponUnit, guiGraphics, color);
             // 调用统一准星投影：先在世界坐标补出本帧落点，再由本帧相机投影，避免透视深度变化抖动。
             Vec3 screenPosition = crosshairScreenPosition(weaponUnit, partialTick);
             PoseStack poseStack = guiGraphics.pose();
@@ -282,6 +284,8 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
                                               float partialTick, AbstractVehicle vehicle) {
         // 调用本体当前武器站解析，修正只作用于本地观瞄焦点。
         WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
+        // 调用同一状态提示，无 UI 预设的本体 CRT 也能说明真实吊舱限制。
+        renderOpticalStatus(weaponUnit, graphics, 0x55ff55);
         if (weaponUnit == null || weaponUnit.getFocusLockPos() == null
                 || weaponUnit.getOpticalSightType() != WeaponUnitData.OpticalSightType.CRT) {
             // 调用本体原绘制；光学瞄具遮罩始终留在屏幕中心，不受 CRT 落点修正影响。
@@ -305,6 +309,22 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
         } finally {
             poseStack.popPose();
         }
+    }
+
+    /** 吊舱提示固定在屏幕中心旁；只改新版吊舱，普通站不显示新文字。 */
+    private static void renderOpticalStatus(WeaponUnit unit, GuiGraphics graphics, int color) {
+        if (!(unit instanceof org.ywzj.rvp.vehicle.RVP_OpticalWeaponUnit optical)) return;
+        // 调用实际执行阶段，焦点存在不等于机械已经到位。
+        String text = switch (optical.motionPhase()) {
+            case LIMITED -> "已到限位";
+            case FROZEN -> "吊舱无法转动";
+            case REORIENTING -> "吊舱调整转轴";
+            case TRACKING -> "吊舱转动中";
+            default -> "";
+        };
+        var mc = Minecraft.getInstance();
+        if (!text.isEmpty()) graphics.drawString(mc.font, text,
+                mc.getWindow().getGuiScaledWidth() / 2 + 25, mc.getWindow().getGuiScaledHeight() / 2 + 52, color);
     }
 
     public void renderWeaponEngagementEnvelope(GuiGraphics guiGraphics, float partialTick, int screenWidth, int screenHeight, AbstractVehicle vehicle) {

@@ -115,6 +115,15 @@ public final class RVP_TurretTraverseHandler {
 
     /** 受损观瞄的实际姿态，复用本体基座/炮口偏置，并与渲染相同地插值。 */
     public static org.joml.Quaternionf sightRotation(WeaponUnit unit, float partial) {
+        // 调用共用基座采样，吊舱规划与模型渲染沿同一父级姿态取样。
+        var rotation = sightBaseRotation(unit, partial);
+        rotation.rotateY((float) Math.toRadians(-unit.getViewYRot(partial) - unit.yBarrelSelfRot));
+        rotation.rotateX((float) Math.toRadians(unit.getViewXRot(partial) + unit.xBarrelSelfRot));
+        return rotation;
+    }
+
+    /** 只读取观瞄基座，不包含本站可动两轴；供双端吊舱运动规划使用。 */
+    public static org.joml.Quaternionf sightBaseRotation(WeaponUnit unit, float partial) {
         // 基座沿用本体公开变换，再将车体旋转替换为当前渲染插值；父站的转角也逐级插值。
         var vehicle = unit.getVehicle();
         org.joml.Quaternionf rotation = vehicle.rotYXZ(partial);
@@ -126,8 +135,6 @@ public final class RVP_TurretTraverseHandler {
                     g -> g.rotationO == null ? new org.joml.Quaternionf(g.rotation)
                             : new org.joml.Quaternionf(g.rotationO).slerp(g.rotation, partial), g -> g.offset).rotation());
         }
-        rotation.rotateY((float) Math.toRadians(-unit.getViewYRot(partial) - unit.yBarrelSelfRot));
-        rotation.rotateX((float) Math.toRadians(unit.getViewXRot(partial) + unit.xBarrelSelfRot));
         return rotation;
     }
 

@@ -372,6 +372,43 @@ class RVP_OpticalSightTest {
                 .rotateX(Math.toRadians(pitch)).rotateZ(Math.toRadians(roll)));
     }
 
+    @Test
+    void disabledStabilizerKeepsLocalAimWhileAircraftTurnsAcrossTicks() throws Exception {
+        OpticalStation unit = allocate(OpticalStation.class);
+        prepare(unit, 35, 12);
+        Field stabilizer = WeaponUnit.class.getDeclaredField("withStabilizer");
+        stabilizer.setAccessible(true); stabilizer.setBoolean(unit, false);
+        for (int tick = 0; tick < 60; tick++) {
+            unit.base = rotation(0, tick * 0.5F, tick * 0.2F);
+            // 调用真实子类逻辑刻，关闭稳定器后机械目标应相对机体保持不变。
+            unit.runTick();
+            assertEquals(35, unit.getXRot(), 0.002);
+            assertEquals(12, unit.getYRot(), 0.002);
+        }
+    }
+
+    @Test
+    void ordinaryWeaponUnitsNeverEnterTheNewOpticalRayEvenWithOverVerticalRange() throws Exception {
+        OriginalStation ordinary = allocate(OriginalStation.class);
+        prepare(ordinary, 100, 20);
+        // 调用正式资格门，旧站即使俯仰超过九十度也不进入新相机/选点通道。
+        assertNull(org.ywzj.rvp.client.state.RVP_ClientOpticalSight.sampleRay(ordinary, 0.5F));
+        assertNull(org.ywzj.rvp.client.state.RVP_ClientOpticalSight.sampleRay(null, 1));
+    }
+
+    @Test
+    void targetAngleMirrorKeepsTheRequestedWorldDirectionWhileAircraftTurns() throws Exception {
+        OpticalStation unit = allocate(OpticalStation.class);
+        prepare(unit, 70, 0);
+        Vec3 requested = unit.worldVec();
+        for (int tick = 0; tick < 40; tick++) {
+            unit.base = rotation((float) Math.sin(tick * 0.1) * 6, tick * 0.3F, (float) Math.sin(tick * 0.15) * 15);
+            // 调用真实转动与目标字段镜像，目标圈读取也应保持同一世界方向。
+            unit.runTick();
+            assertTrue(unit.worldVec(unit.getXAimRot(), unit.getYAimRot()).distanceTo(requested) < 1.0E-5);
+        }
+    }
+
     /** 同时核对前、右、上三个方向，不能只验视线而漏掉画面翻滚。 */
     private static void assertPose(Quaternionf expected, Quaternionf actual) {
         for (Vector3f axis : new Vector3f[]{new Vector3f(1, 0, 0), new Vector3f(0, 1, 0), new Vector3f(0, 0, 1)}) {

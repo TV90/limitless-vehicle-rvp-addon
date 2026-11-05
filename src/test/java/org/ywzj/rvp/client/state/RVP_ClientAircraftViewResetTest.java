@@ -115,10 +115,10 @@ class RVP_ClientAircraftViewResetTest {
             f.local.cameraAimRotX = 110;
             f.local.cameraAimRotY = -270;
             // 仅注入显示缓存环境，实际退出清理必须由生产复位入口完成。
-            write(RVP_ClientOpticalSight.class, null, "viewRotation", new Quaterniond());
+            write(RVP_ClientOpticalSight.class, null, "previous", new RVP_OpticalSightMath.Angles(110, -270, 85));
             write(RVP_ClientOpticalSight.class, null, "inputRotation", new Quaterniond());
             assertTrue(RVP_ClientAircraftViewReset.reset(f.local, f.player, false, false));
-            assertNull(read(RVP_ClientOpticalSight.class, null, "viewRotation"));
+            assertNull(read(RVP_ClientOpticalSight.class, null, "previous"));
             assertNull(read(RVP_ClientOpticalSight.class, null, "inputRotation"));
             assertResetEndpoints(f);
             // 模拟既有注入点之后本体写入最终模式；退出后的正常鼠标环视不应再被强制归正。

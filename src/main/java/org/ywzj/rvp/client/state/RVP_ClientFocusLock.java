@@ -11,6 +11,7 @@ import net.minecraftforge.fml.common.Mod;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Quaternionf;
 import org.ywzj.rvp.vehicle.RVP_OpticalSightMath;
+import org.ywzj.rvp.vehicle.RVP_OpticalWeaponUnit;
 import org.ywzj.vehicle.client.handler.FirstPersonHandler;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.client.compat.distanthorizons.RVP_DistantHorizonsCompatBootstrap;
@@ -79,6 +80,11 @@ public final class RVP_ClientFocusLock {
     public static void onFocusLockChanged(WeaponUnit changedStation) {
         if (changedStation.getFocusLockPos() == null) {
             LOCKS.remove(changedStation);
+            if (changedStation instanceof RVP_OpticalWeaponUnit optical) {
+                // 调用真实姿态作为解锁请求，连续制动，不再交回另一台相机。
+                optical.request(RVP_OpticalSightMath.direction(optical.viewRotation(1)), null);
+                RVP_ClientOpticalSight.resetInput(optical);
+            }
             return;
         }
         Minecraft minecraft = Minecraft.getInstance();
@@ -102,6 +108,11 @@ public final class RVP_ClientFocusLock {
         LOCKS.put(changedStation, newAim);
         // 调用本体写入接口保留焦点开关；未知距离的位置仅供原有火控对准方向。
         changedStation.setFocusLockPos(newAim.target());
+        if (changedStation instanceof RVP_OpticalWeaponUnit optical) {
+            // 调用统一请求，真实点和未知距离方向仍保留各自语义。
+            optical.request(newAim.direction(origin), newAim.isDirectionLocked() ? null : newAim.target());
+            RVP_ClientOpticalSight.resetInput(optical);
+        }
         // 调用会话同步，后台远景选点由后续客户端 Tick 发起，不阻塞 R 键响应。
         synchronize(changedStation, origin);
     }
@@ -120,6 +131,15 @@ public final class RVP_ClientFocusLock {
                 ? target.subtract(origin).normalize() : null;
     }
 
+    /** 只读方向锁查询，防止本体位置式 aim 将方向代理重新当作真实点。 */
+    @Nullable
+    public static Vec3 directionOnlyFocus(WeaponUnit station, Vec3 origin) {
+        RVP_FocusLockAim stored = LOCKS.get(station);
+        // 调用类型及对象一致性检查，外部真实坐标不能被误判为方向代理。
+        return stored != null && stored.isDirectionLocked() && Objects.equals(stored.target(), station.getFocusLockPos())
+                ? stored.direction(origin) : null;
+    }
+
     /** 复用已有鼠标入口，只有观瞄中已经建立焦点时才消费输入。 */
     public static boolean tryHandleTurn(double yawInput, double pitchInput) {
         Minecraft minecraft = Minecraft.getInstance();
@@ -128,6 +148,8 @@ public final class RVP_ClientFocusLock {
         if (currentStation == null || currentStation.getFocusLockPos() == null) {
             return false;
         }
+        if (currentStation instanceof RVP_OpticalWeaponUnit && RVP_ClientOpticalSight.inputSuppressed(currentStation)) return true;
+        if (currentStation instanceof RVP_OpticalWeaponUnit && yawInput == 0 && pitchInput == 0) return true;
         // 调用本体观瞄位置入口作首帧回退，已渲染后始终使用真实画面原点。
         Vec3 origin = station == currentStation && renderedOrigin != null ? renderedOrigin
                 : LocalVehiclePlayer.instance.cameraPosition(currentStation, minecraft.getFrameTime());
@@ -144,10 +166,28 @@ public final class RVP_ClientFocusLock {
         double scale = RVP_FocusLockAim.sensitivityScale(VectorUtil.fov,
                 minecraft.options.fov().get(), currentStation.getZoom());
         // 调用独立瞄准状态累加输入；同一游戏刻内多次调用不会被炮口旧角度覆盖。
-        Vec3 requestedTarget = RVP_ClientOpticalSight.usesContinuousInput(currentStation)
-                ? aim.turnInView(origin, RVP_ClientOpticalSight.currentRotation(currentStation),
-                    yawInput * INPUT_DEGREES * scale, pitchInput * INPUT_DEGREES * scale)
-                : aim.turn(origin, yawInput * INPUT_DEGREES * scale, pitchInput * INPUT_DEGREES * scale);
+        Vec3 requestedTarget;
+        if (currentStation instanceof RVP_OpticalWeaponUnit optical) {
+            if (optical.motionPhase() == org.ywzj.rvp.vehicle.RVP_OpticalSightMotion.Phase.LIMITED
+                    || optical.motionPhase() == org.ywzj.rvp.vehicle.RVP_OpticalSightMotion.Phase.FROZEN) {
+                // 到止挡后再次手动微调，以当前可达画面起步，不先消耗不可见的越界锁点。
+                Vec3 visible = RVP_OpticalSightMath.direction(RVP_ClientOpticalSight.currentRotation(optical));
+                aim.acceptRay(origin, visible, RVP_FocusLockRaycast.loadedSurface(optical, origin, visible));
+            }
+            optical.request(aim.direction(origin), aim.isDirectionLocked() ? null : aim.target());
+            double gain = RVP_ClientOpticalSight.inputScale(optical);
+            // 调用普通/焦点共用的手动规则和灵敏度；目标限位后再射线取点。
+            var turned = RVP_ClientOpticalSight.turn(optical, RVP_ClientOpticalSight.inputRotation(optical),
+                    yawInput * gain, pitchInput * gain);
+            Vec3 direction = RVP_OpticalSightMath.direction(turned);
+            aim.acceptRay(origin, direction, RVP_FocusLockRaycast.loadedSurface(optical, origin, direction));
+            requestedTarget = aim.target();
+        } else {
+            requestedTarget = RVP_ClientOpticalSight.usesContinuousInput(currentStation)
+                    ? aim.turnInView(origin, RVP_ClientOpticalSight.currentRotation(currentStation),
+                        yawInput * INPUT_DEGREES * scale, pitchInput * INPUT_DEGREES * scale)
+                    : aim.turn(origin, yawInput * INPUT_DEGREES * scale, pitchInput * INPUT_DEGREES * scale);
+        }
         // 调用默认关闭的只读诊断，记录本次焦点输入实际使用的原点、比例和射线前请求点。
         org.ywzj.rvp.client.debug.RVP_OpticalSightDebug.focusRequest(currentStation, origin, scale, requestedTarget);
         if (requestedTarget == null || (yawInput == 0.0D && pitchInput == 0.0D)) {
@@ -155,9 +195,16 @@ public final class RVP_ClientFocusLock {
         }
         Vec3 direction = aim.direction(origin);
         // 调用统一射线与类型化状态，拖出地形后改锁方向，不继承旧墙面/视距末端的假距离。
-        aim.acceptRay(origin, direction, RVP_FocusLockRaycast.loadedSurface(currentStation, origin, direction));
+        if (!(currentStation instanceof RVP_OpticalWeaponUnit)) {
+            // 原站保留原射线处理；新版已在统一手动请求之后完成一次取点。
+            aim.acceptRay(origin, direction, RVP_FocusLockRaycast.loadedSurface(currentStation, origin, direction));
+        }
         // 调用本体公开写入接口，下一游戏刻仍按原有方向机限速追踪并同步服务端。
         currentStation.setFocusLockPos(aim.target());
+        if (currentStation instanceof RVP_OpticalWeaponUnit optical) {
+            // 真实点沿相机原点补偿视差，未知距离只提交方向。
+            optical.request(aim.direction(origin), aim.isDirectionLocked() ? null : aim.target());
+        }
         LocalVehiclePlayer.instance.mouseTurnedAfterScope = true;
         LocalVehiclePlayer.instance.playerLerpSteps = 0.0F;
         return true;
@@ -171,6 +218,11 @@ public final class RVP_ClientFocusLock {
         WeaponUnit currentStation = scopeStation(minecraft);
         if (currentStation == null || event.getCamera().getEntity() != minecraft.player) {
             clear();
+            return;
+        }
+        if (currentStation instanceof RVP_OpticalWeaponUnit) {
+            // 新版相机完全由实际轨迹提供；此服务只记住本帧原点供焦点取点，不再覆盖角度。
+            renderedOrigin = event.getCamera().getPosition();
             return;
         }
         if (currentStation.getFocusLockPos() == null) {
@@ -308,6 +360,10 @@ public final class RVP_ClientFocusLock {
         // 调用本体当前观瞄位置，代理刷新不使用过时渲染原点。
         Vec3 origin = LocalVehiclePlayer.instance.cameraPosition(currentStation, 1.0F);
         synchronize(currentStation, origin);
+        if (currentStation instanceof RVP_OpticalWeaponUnit optical) {
+            // 在实体 Tick 前更新两类焦点请求，渲染阶段只读实际轨迹。
+            optical.request(aim.direction(origin), aim.isDirectionLocked() ? null : aim.target());
+        }
         if (!aim.isDirectionLocked()) {
             return;
         }
