@@ -7,7 +7,6 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
-import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.server.ServerStoppedEvent;
@@ -35,6 +34,7 @@ import org.ywzj.rvp.server.remotevisibility.RVP_RemoteVehicleVisibilityPolicy.Ve
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.uav.RVP_DeployableUavLinkRegistry;
 import org.ywzj.rvp.uav.RVP_LinkedUavStateTable;
+import org.ywzj.rvp.util.RVP_RemoteVehicleViewPolicy;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.part.DoorUnit;
 import org.ywzj.vehicle.vehicle.part.LandingGearUnit;
@@ -46,6 +46,7 @@ import org.ywzj.vehicle.vehicle.part.WeaponBayUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -145,9 +146,11 @@ public final class RVP_RemoteVehicleVisualSyncService {
                 vehiclesById.put(vehicle.getId(), vehicle);
             }
             Map<UUID, MutableAuthorization> authorizationUnion = new LinkedHashMap<>();
+            // 同一轮同步中按载具复用高度图读数，避免随观察玩家数量重复查询。
+            Map<Integer, Double> vehicleHeights = new HashMap<>();
             for (ServerPlayer player : level.players()) {
                 List<S2CRemoteVehicleVisualSnapshot.Entry> entries = buildPlayerEntries(
-                        level, player, loadedVehicles, vehiclesById, authorizationUnion);
+                        level, player, loadedVehicles, vehiclesById, vehicleHeights, authorizationUnion);
                 sendSnapshot(player, level.dimension().location(), level.getGameTime(), nextSequence(state, player), entries);
             }
             List<AuthorizedTarget> dimensionTargets = authorizationUnion.values().stream()
@@ -182,6 +185,7 @@ public final class RVP_RemoteVehicleVisualSyncService {
             ServerPlayer player,
             List<AbstractVehicle> loadedVehicles,
             Map<Integer, AbstractVehicle> vehiclesById,
+            Map<Integer, Double> vehicleHeights,
             Map<UUID, MutableAuthorization> authorizationUnion) {
         VisibilityMode mode = RVP_CommonConfig.getRemoteVehicleVisibilityMode();
         AbstractVehicle observerVehicle = resolveObserverVehicle(player);
@@ -195,6 +199,10 @@ public final class RVP_RemoteVehicleVisualSyncService {
                 : RVP_CommonConfig.getRemoteVehicleVisibleTargetTypes(observerCategory);
         int observerVehicleId = observerVehicle == null ? -1 : observerVehicle.getId();
 
+        var viewPolicy = RVP_EntityTrackingRange.visualPolicy(player);
+        boolean clientRequestsBeyond = RVP_EntityTrackingRange.clientRequestsBeyond(player);
+        double maxDistance = RVP_CommonConfig.getRemoteVehicleMaxDistance();
+        double maxDistanceSquared = maxDistance * maxDistance;
         List<Candidate> candidates = new ArrayList<>(loadedVehicles.size());
         for (AbstractVehicle target : loadedVehicles) {
             VehicleCategory category = RVP_RemoteVehicleVisibilityPolicy.classify(target).orElse(null);
@@ -202,15 +210,19 @@ public final class RVP_RemoteVehicleVisualSyncService {
                 continue;
             }
             double horizontalDistanceSq = horizontalDistanceSq(player, target);
+            // 低空视距裁剪先于雷达查询、数量预算和租约授权。
+            if (horizontalDistanceSq > maxDistanceSquared
+                    || !viewPolicy.allowsDistance(horizontalDistanceSq, viewPolicy.viewDistanceChunks(),
+                    clientRequestsBeyond, () -> vehicleHeights.computeIfAbsent(target.getId(),
+                            ignored -> RVP_RemoteVehicleViewPolicy.heightAboveGround(target)))) {
+                continue;
+            }
             boolean radarDetected = mode == VisibilityMode.RADAR_DETECTED
                     && observerVehicle != null
                     && horizontalDistanceSq
                     > RVP_RemoteVehicleVisibilityPolicy.RADAR_DIRECT_VISIBILITY_DISTANCE
                     * RVP_RemoteVehicleVisibilityPolicy.RADAR_DIRECT_VISIBILITY_DISTANCE
                     && isDetectedByObserverOrLinkedRadar(level, observerVehicle, target);
-            if (!Double.isFinite(horizontalDistanceSq)) {
-                continue;
-            }
             // 调用每玩家交接范围解析，让备用快照与远距优先预算同时跟随服务端范围和客户端视距。
             double handoverDistance = RVP_EntityTrackingRange.resolve(player, target);
             candidates.add(new Candidate(target.getId(), category, horizontalDistanceSq, radarDetected,
@@ -222,15 +234,19 @@ public final class RVP_RemoteVehicleVisualSyncService {
                 observerCategory,
                 observerVehicleId,
                 allowedTypes,
-                RVP_EntityTrackingRange.visualPolicy(player)
-                        .maximumDistance(RVP_CommonConfig.getRemoteVehicleMaxDistance()),
+                maxDistance,
                 RVP_CommonConfig.getRemoteVehicleMaxTargetsPerPlayer(),
                 candidates);
 
         List<S2CRemoteVehicleVisualSnapshot.Entry> entries = new ArrayList<>(selected.size());
         for (Candidate candidate : selected) {
             AbstractVehicle target = vehiclesById.get(candidate.entityId());
-            S2CRemoteVehicleVisualSnapshot.Entry entry = createSnapshotEntry(level, target);
+            if (target == null) {
+                continue;
+            }
+            double height = vehicleHeights.computeIfAbsent(target.getId(),
+                    ignored -> RVP_RemoteVehicleViewPolicy.heightAboveGround(target));
+            S2CRemoteVehicleVisualSnapshot.Entry entry = createSnapshotEntry(level, target, height);
             if (entry == null) {
                 continue;
             }
@@ -305,8 +321,9 @@ public final class RVP_RemoteVehicleVisualSyncService {
     @Nullable
     private static S2CRemoteVehicleVisualSnapshot.Entry createSnapshotEntry(
             ServerLevel level,
-            @Nullable AbstractVehicle vehicle) {
-        if (vehicle == null || !level.hasChunkAt(vehicle.blockPosition())) {
+            AbstractVehicle vehicle,
+            double heightAboveGround) {
+        if (!Double.isFinite(heightAboveGround) || !level.hasChunkAt(vehicle.blockPosition())) {
             return null;
         }
         ResourceLocation entityType = EntityType.getKey(vehicle.getType());
@@ -316,11 +333,6 @@ public final class RVP_RemoteVehicleVisualSyncService {
             LOGGER.warn("远距载具缺少实体类型、车型或 display ID，已跳过：entityId={}", vehicle.getId());
             return null;
         }
-        int groundY = level.getHeight(
-                Heightmap.Types.MOTION_BLOCKING,
-                vehicle.blockPosition().getX(),
-                vehicle.blockPosition().getZ());
-        double heightAboveGround = Math.max(0.0D, vehicle.getY() - groundY);
         try {
             // 调用本服务的部件采集辅助，只提取超远距静态高模需要的最小视觉字段。
             List<RotatablePartState> rotatableParts = collectRotatableParts(vehicle);

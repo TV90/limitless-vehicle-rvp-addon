@@ -64,6 +64,12 @@ public final class RVP_EntityTrackingRange {
         }
     }
 
+    /** 读取此玩家的显示偏好，区分客户端全关闭与服务端仅限制低空。 */
+    static boolean clientRequestsBeyond(ServerPlayer player) {
+        ClientViewDistances distances = CLIENT_VIEW_DISTANCES.get(player.serverLevel().getServer());
+        return distances != null && distances.requestsBeyond(player.getUUID());
+    }
+
     /** 计算本连接的实际视距与多人许可，发送和客户端绘制使用同一份策略。 */
     public static RVP_RemoteVehicleViewPolicy visualPolicy(ServerPlayer player) {
         MinecraftServer server = player.serverLevel().getServer();

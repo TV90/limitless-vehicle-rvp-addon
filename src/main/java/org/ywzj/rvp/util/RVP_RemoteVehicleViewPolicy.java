@@ -1,5 +1,10 @@
 package org.ywzj.rvp.util;
 
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.levelgen.Heightmap;
+
+import java.util.function.DoubleSupplier;
+
 /**
  * 服务端下发的每玩家载具显示边界；DH、远距代理与真实载具共用。
  *
@@ -7,8 +12,11 @@ package org.ywzj.rvp.util;
  * @param viewDistanceChunks 两端实际视距的较小值，单位区块，合法范围 2..32
  */
 public record RVP_RemoteVehicleViewPolicy(boolean allowBeyondViewDistance, int viewDistanceChunks) {
-    /** 首包前只允许客户端视距内显示，不授予远距扩展能力。 */
+    /** 首包前使用保守的低空显示策略。 */
     public static final RVP_RemoteVehicleViewPolicy DEFAULT = new RVP_RemoteVehicleViewPolicy(false, 32);
+
+    /** 默认多人限制隐藏的最大离地高度，单位格，包含边界。 */
+    private static final double LOW_VEHICLE_HEIGHT = 25.0D;
 
     /** 拒绝非法协议范围，避免损坏快照变成无上限显示。 */
     public RVP_RemoteVehicleViewPolicy {
@@ -27,20 +35,35 @@ public record RVP_RemoteVehicleViewPolicy(boolean allowBeyondViewDistance, int v
                 clientRequestsBeyond && (singleplayer || serverAllowsBeyond), chunks);
     }
 
-    /** 服务端在授权和数量预算前收紧发送范围；被排除目标不会进入视觉租约并集。 */
-    public double maximumDistance(double configuredDistance) {
-        return allowBeyondViewDistance ? configuredDistance
-                : Math.min(configuredDistance, viewDistanceChunks * 16.0D);
-    }
-
-    /** 客户端调低视距或关闭扩展时立即收紧，无需等待下一份服务端快照。 */
-    public boolean allowsDistance(double horizontalDistanceSquared, int clientChunks, boolean clientRequestsBeyond) {
+    /** 两端共用边界；仅在视距外且需要判断低空限制时才读取离地高度。 */
+    public boolean allowsDistance(double horizontalDistanceSquared, int clientChunks,
+                                  boolean clientRequestsBeyond, DoubleSupplier heightAboveGround) {
         if (!Double.isFinite(horizontalDistanceSquared) || horizontalDistanceSquared < 0.0D) {
             return false;
         }
         double range = Math.min(viewDistanceChunks, clampChunks(clientChunks)) * 16.0D;
-        return allowBeyondViewDistance && clientRequestsBeyond
-                || horizontalDistanceSquared <= range * range;
+        if (horizontalDistanceSquared <= range * range) {
+            return true;
+        }
+        if (!clientRequestsBeyond) {
+            return false;
+        }
+        if (allowBeyondViewDistance) {
+            return true;
+        }
+        double height = heightAboveGround.getAsDouble();
+        return Double.isFinite(height) && height > LOW_VEHICLE_HEIGHT;
+    }
+
+    /** 从已加载的地表高度图测量载具离地高度；缺地形时返回未知，不加载区块。 */
+    public static double heightAboveGround(Entity vehicle) {
+        var level = vehicle.level();
+        var pos = vehicle.blockPosition();
+        if (!level.hasChunkAt(pos)) {
+            return Double.NaN;
+        }
+        return Math.max(0.0D, vehicle.getY()
+                - level.getHeight(Heightmap.Types.MOTION_BLOCKING, pos.getX(), pos.getZ()));
     }
 
     /** 与原版区块管理和已有视距上报保持同一上下限。 */

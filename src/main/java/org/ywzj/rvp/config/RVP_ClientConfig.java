@@ -218,7 +218,7 @@ public class RVP_ClientConfig {
         builder.push("remoteVehicleRendering");
 
         remoteVehicleAllowBeyondViewDistance = builder
-                .comment("是否显示玩家实际视距外的载具。默认 true；多人服必须同时允许。",
+                .comment("是否显示玩家实际视距外的载具。默认 true；多人服的低空目标还受服务端许可约束。",
                         "关闭后立即停止扩展显示，并通知服务端收紧本玩家的授权范围。")
                 .define("allowBeyondViewDistance", true);
 

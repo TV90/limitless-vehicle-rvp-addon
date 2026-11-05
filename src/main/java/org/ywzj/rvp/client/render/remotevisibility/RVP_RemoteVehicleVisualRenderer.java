@@ -153,7 +153,7 @@ public final class RVP_RemoteVehicleVisualRenderer {
         for (RVP_ClientRemoteVehicleVisualState.RenderEntry entry
                 : RVP_ClientRemoteVehicleVisualState.renderEntries(level, event.getPartialTick())) {
             // 调用服务端策略，在投影、预算及 Billboard 预热之前排除无 DH 时过低的远距代理。
-            if (!RVP_ClientRemoteViewDistance.allowsVehiclePosition(entry.position())
+            if (!RVP_ClientRemoteViewDistance.allowsVehiclePosition(entry.position(), entry::heightAboveGround)
                     || !renderPolicy.allowsHeightAboveGround(entry.heightAboveGround(), dhRenderingEnabled)) {
                 continue;
             }
@@ -197,8 +197,9 @@ public final class RVP_RemoteVehicleVisualRenderer {
                     preferModelRendering);
             Entity local = level.getEntity(entry.entityId());
             // 调用玩家自身的客户端范围判断；真实实体仍加载也可以交接，本机载具始终保留原生显示。
-            if (local != null && (!RVP_ClientRemoteViewDistance.isBeyondClientRange(local.position())
-                    || RVP_ClientRemoteViewDistance.isLocalVehicle(local))) {
+            if (local != null && (RVP_ClientRemoteViewDistance.isLocalVehicle(local)
+                    || (!RVP_ClientRemoteViewDistance.isBeyondClientRange(local.position())
+                    && RVP_ClientRemoteViewDistance.allowsNativeVehicle(local)))) {
                 standbyPlans.add(billboardPlan);
                 continue;
             }

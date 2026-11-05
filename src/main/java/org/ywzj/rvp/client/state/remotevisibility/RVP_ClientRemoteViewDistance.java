@@ -18,6 +18,9 @@ import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteAmmoVisualRenderer;
 import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteVehicleVisualRenderer;
 import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.network.remotevisibility.C2SRemoteViewDistance;
+import org.ywzj.rvp.util.RVP_RemoteVehicleViewPolicy;
+
+import java.util.function.DoubleSupplier;
 
 /** 上报本连接的客户端视距，并为已加载实体的近远绘制交接提供统一水平距离判断。 */
 @Mod.EventBusSubscriber(modid = RVP_MOD.MOD_ID, value = Dist.CLIENT, bus = Mod.EventBusSubscriber.Bus.FORGE)
@@ -74,7 +77,7 @@ public final class RVP_ClientRemoteViewDistance {
     }
 
     /** 代理与 DH 绘制前统一检查范围，缩小视距无需等待服务端下一份快照。 */
-    public static boolean allowsVehiclePosition(Vec3 targetPosition) {
+    public static boolean allowsVehiclePosition(Vec3 targetPosition, DoubleSupplier heightAboveGround) {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.player == null) {
             return true;
@@ -90,7 +93,7 @@ public final class RVP_ClientRemoteViewDistance {
         // 调用公共策略，同时约束服务端下发范围和当前客户端偏好，不因 DH 开启而放宽。
         return RVP_ClientRemoteVehicleVisualState.renderPolicy().viewPolicy().allowsDistance(
                 dx * dx + dz * dz, minecraft.options.renderDistance().get(),
-                RVP_ClientConfig.allowsRemoteVehiclesBeyondViewDistance());
+                RVP_ClientConfig.allowsRemoteVehiclesBeyondViewDistance(), heightAboveGround);
     }
 
     /** 真实世界载具也遵守同一范围；本机、界面模型和非世界代理由各自通道处理。 */
@@ -101,7 +104,8 @@ public final class RVP_ClientRemoteViewDistance {
             return true;
         }
         // 调用代理共用的显示门，防止客户端保留的远处真实实体绕过新规则。
-        return allowsVehiclePosition(entity.position());
+        return allowsVehiclePosition(entity.position(),
+                () -> RVP_RemoteVehicleViewPolicy.heightAboveGround(entity));
     }
 
     /** 本机所乘完整载具不能随远距策略隐藏。 */
