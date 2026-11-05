@@ -64,6 +64,33 @@ class RVP_RocketTrailManagerTest {
     }
 
     @Test
+    void longBurningTrailPreservesItsFadeAndExpiresAtFifteenSeconds() {
+        var duration = RVP_RocketTrailParameters.resolveLifetime(1200, -1, 179);
+        assertEquals(121, duration.holdTicks());
+        assertEquals(179, duration.fadeTicks());
+        var capped = new RVP_RocketTrailManager.Profile(1, 1, duration.holdTicks(),
+                duration.fadeTicks(), 1, 0.65F, 8, 4, false);
+
+        manager.beginWorld(world, 1);
+        manager.append(1, new Vec3(0, 0, -20), Vec3.ZERO, capped, false);
+        manager.stop(1);
+        manager.beginWorld(world, 151);
+        assertTrue(all().get(0).startDensity() < 1, "到达总寿命上限前必须已经开始淡出");
+        manager.beginWorld(world, 301);
+        assertFalse(manager.hasActive());
+    }
+
+    @Test
+    void shortTrailKeepsItsHoldAndFadeWhileExtremeSettingsRespectTheCap() {
+        assertEquals(new RVP_RocketTrailParameters.Lifetime(108, 179),
+                RVP_RocketTrailParameters.resolveLifetime(80, -1, 179));
+        assertEquals(new RVP_RocketTrailParameters.Lifetime(100, 44),
+                RVP_RocketTrailParameters.resolveLifetime(0, 100, 44));
+        assertEquals(new RVP_RocketTrailParameters.Lifetime(0, 300),
+                RVP_RocketTrailParameters.resolveLifetime(Integer.MAX_VALUE, Integer.MAX_VALUE, 2L * Integer.MAX_VALUE));
+    }
+
+    @Test
     void turningProjectileDoesNotPullOldSmokeToItsNewPosition() {
         manager.beginWorld(world, 1);
         manager.append(1, new Vec3(0, 0, -20), Vec3.ZERO, PROFILE, false);

@@ -45,5 +45,24 @@ public final class RVP_RocketTrailParameters {
     /** 贴地冲刷烟的出生密度；原为 0.65，提高到 1.5，实际透明度仍由穿烟厚度和淡出决定。 */
     public static final float WASH_DENSITY = 1.5F;
 
+    /** 单颗凝结云粒子或单个体积烟段的总寿命上限，含保持和淡出。 */
+    private static final int MAX_LIFETIME_TICKS = 300;
+
+    public record Lifetime(int holdTicks, int fadeTicks) {
+        public int totalTicks() {
+            return holdTicks + fadeTicks;
+        }
+    }
+
+    /** 为淡出留出时间，再用剩余预算限制发动机带来的保持期。 */
+    public static Lifetime resolveLifetime(int remainingBurnTicks, int configuredHoldMinTicks, long requestedFadeTicks) {
+        long requestedHold = Math.max(
+                Math.max(0, remainingBurnTicks) + (long) RVP_RocketFlameRuntimeTuning.resolveHoldBufferTicks(),
+                RVP_RocketFlameRuntimeTuning.resolveHoldMinTicks(configuredHoldMinTicks));
+        int fade = (int) Math.min(MAX_LIFETIME_TICKS, requestedFadeTicks);
+        int hold = (int) Math.min(requestedHold, MAX_LIFETIME_TICKS - fade);
+        return new Lifetime(hold, fade);
+    }
+
     private RVP_RocketTrailParameters() { }
 }

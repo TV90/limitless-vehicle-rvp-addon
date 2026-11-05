@@ -5974,8 +5974,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 float particleScale = rocketFlameStyle
                         ? RVP_RocketFlameRuntimeTuning.resolveParticleScale(configuredParticleScale)
                         : configuredParticleScale;
-                // 目的：凝结云保持期绑定发动机燃烧期（2026-09-20 用户需求）——距燃尽还有多少
-                // tick 传给粒子（固体款专用），发动机开启时飞过的距离全程留云、燃尽后缓缓散开
+                // 将剩余燃烧时长传给凝结云，粒子侧在总寿命上限内分配保持和淡出。
                 int holdTicks = rocketFlameStyle ? ticksUntilMotorStopsBurning() : 0;
                 // 目的：凝结云时长三项按武器 JSON 配置（2026-10-30 M142 需求）——保持期保底 /
                 // 淡出基础 / 淡出随机会直接影响单个烟粒子的总寿命（此前只有代码默认

@@ -39,20 +39,19 @@ public final class RVP_RocketTrailEmitter {
         if (!Float.isFinite(density) || density <= 0) {
             manager.stop(bullet.getId()); return;
         }
-        // 调用既有运行时覆盖，保持/淡出语义不因从粒子换成体积烟而变化。
-        int hold = Math.max(Math.max(0, remainingBurnTicks) + RVP_RocketFlameRuntimeTuning.resolveHoldBufferTicks(),
-                RVP_RocketFlameRuntimeTuning.resolveHoldMinTicks(effects.getMissileNativeTrailHoldMinTicks()));
         int fade = RVP_RocketFlameRuntimeTuning.resolveFadeTicks(effects.getMissileNativeTrailFadeTicks());
         int randomFade = RVP_RocketFlameRuntimeTuning.resolveFadeRandomTicks(effects.getMissileNativeTrailFadeRandomTicks());
         float phase = random(bullet.getId(), mc.level.getGameTime());
-        fade += randomFade <= 0 ? 0 : (int) (phase * randomFade);
+        long requestedFade = (long) fade + (randomFade <= 0 ? 0 : (int) (phase * randomFade));
+        var duration = RVP_RocketTrailParameters.resolveLifetime(
+                remainingBurnTicks, effects.getMissileNativeTrailHoldMinTicks(), requestedFade);
         float alphaRatio = RVP_RocketFlameRuntimeTuning.resolveAlphaHoldRatio(effects.getMissileNativeTrailAlphaHoldRatio());
         float grey = Math.max(0, Math.min(1, RVP_RocketFlameRuntimeTuning.resolveSmokeGreyMin()
                 + RVP_RocketFlameRuntimeTuning.resolveSmokeGreySpread() * random(bullet.getId(), 0)));
         float step = RVP_RocketFlameRuntimeTuning.resolveStep((float) effects.getMissileNativeTrailStep());
         // 旧的采样间距改为烟段细分精度；不再按 0.5 格逐颗创建粒子，浓度由 density 独立控制。
         var profile = new RVP_RocketTrailManager.Profile(Math.min(scale, 64), Math.min(density, 16),
-                Math.min(Math.max(0, hold), 12000), Math.min(Math.max(0, fade), 12000), alphaRatio, grey,
+                duration.holdTicks(), duration.fadeTicks(), alphaRatio, grey,
                 Math.max(4, Math.min(32, step * 8 / Math.max(0.05, density))), Math.max(4, interval * 3), false);
         // 调用统一世界烟段缓存，远距克隆和本地实体不分别制造两份尾烟。
         manager.append(bullet.getId(), position, exhaust, profile, remote);

@@ -20,6 +20,7 @@ import org.joml.Quaternionf;
 import org.joml.Vector3f;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.weapon.visual.RVP_RocketFlameRuntimeTuning;
+import org.ywzj.rvp.weapon.visual.RVP_RocketTrailParameters;
 
 import com.mojang.blaze3d.vertex.VertexConsumer;
 
@@ -31,9 +32,8 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
  *   <li><b>TRAIL</b>（飞行尾迹，两个配置款共享渲染骨架）：
  *       <b>固体发动机凝结云款</b>（{@code rvp_rocket_flame}，09-19 起默认）：橙焰相位定长
  *       24~36t（火焰只在喷口附近存在，不随寿命延长拉长），随后烟相位中灰起步、随寿命
- *       smoothstep 渐白到凝结云灰白；<b>alpha 保持期绑定发动机燃尽时刻</b>（生成点按
- *       "距燃尽 tick"传入 holdTicks，保持至 燃尽+20t，保底 108t）——发动机开启时飞过的
- *       距离全程留云，燃尽后 120~180t smoothstep 缓缓散开；
+ *       smoothstep 渐白到凝结云灰白。保持期参考剩余燃烧时长，总寿命受尾烟预算限制，
+ *       超限时优先保留淡出；
  *       <b>液氧煤油黑烟款</b>（{@code rvp_kerosene_black_smoke}，技术储备）：寿命 45~65t、
  *       前 25% 橙焰、深灰黑烟、α 平方根淡出（09-19 前原始观感）。
  *       共同：尺寸 {@code (0.5 + rand*0.3 + 1.3×ageRatio) × scale} 持续膨胀（出生 0.5~0.8、
@@ -184,21 +184,12 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
         }
         if (mode == Mode.TRAIL) {
             if (smokeWhiten) {
-                // 调用本项目运行时调参入口：按命令覆盖凝结云保持期、淡出期和橙焰相位时长。
-                // 固体发动机款（2026-09-19 用户需求 → 2026-09-20 绑定燃尽）：凝结云保持期
-                // = 距发动机燃尽 tick（holdTicks，由生成点按弹体燃烧数据传入）+ 20t 缓冲
-                // （防燃尽瞬间即淡），保底 108t 不低于旧定值观感——发动机开启时飞过的距离
-                // 全程留云；燃尽后 120~180t smoothstep 缓缓散开；LOD 见 render/tick
-                // 保持期保底 / 淡出时长：武器 JSON（missile_native_trail_hold_min_ticks 等）
-                // 优先，未配置时回落代码默认（108 / 120 / 60）；会话覆盖在 resolve 内最高优先。
-                int resolvedHoldMin = RVP_RocketFlameRuntimeTuning.resolveHoldMinTicks(holdMinTicks);
-                int resolvedFadeTicks = RVP_RocketFlameRuntimeTuning.resolveFadeTicks(fadeTicks);
-                int resolvedFadeRandom = RVP_RocketFlameRuntimeTuning.resolveFadeRandomTicks(fadeRandomTicks);
-                this.holdEndTick = Math.max(
-                        holdTicks + RVP_RocketFlameRuntimeTuning.resolveHoldBufferTicks(),
-                        resolvedHoldMin);
-                this.lifetime = this.holdEndTick + resolvedFadeTicks
-                        + (resolvedFadeRandom <= 0 ? 0 : this.random.nextInt(resolvedFadeRandom));
+                int fade = RVP_RocketFlameRuntimeTuning.resolveFadeTicks(fadeTicks);
+                int fadeRandom = RVP_RocketFlameRuntimeTuning.resolveFadeRandomTicks(fadeRandomTicks);
+                long requestedFade = (long) fade + (fadeRandom <= 0 ? 0 : this.random.nextInt(fadeRandom));
+                var duration = RVP_RocketTrailParameters.resolveLifetime(holdTicks, holdMinTicks, requestedFade);
+                this.holdEndTick = duration.holdTicks();
+                this.lifetime = duration.totalTicks();
                 // alpha 保持期：默认等于保持期（原始行为）；配了比例则按寿命比例提前开始淡出，
                 // 解决"总寿命已缩短、但浓烟仍挂满整个保持期，看着还是很久"的问题。
                 float resolvedAlphaRatio =

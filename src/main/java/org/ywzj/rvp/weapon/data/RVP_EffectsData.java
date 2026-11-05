@@ -104,10 +104,8 @@ public class RVP_EffectsData {
     /**
      * 尾迹凝结云保持期保底时长，单位 Tick，默认 {@code null}（沿用代码默认 108）。
      *
-     * <p>仅 {@code rvp_rocket_flame} 风格生效：凝结云的 alpha 保持期 =
-     * {@code max(距发动机燃尽 tick + 燃尽缓冲, 本值)}，保持期结束才开始淡出。
-     * 因此<b>调小本值是缩短尾迹存留时间最直接的手段</b>：默认 108t = 5.4 秒，
-     * 配合默认淡出 120~180t，单个烟粒子的总寿命约 11~14 秒。</p>
+     * <p>仅 {@code rvp_rocket_flame} 风格生效。保持期取剩余燃烧时间加缓冲与本值中的较大者，
+     * 再按总寿命预算为淡出预留时间。默认保底 108t，总寿命上限 300t。</p>
      */
     @SerializedName("missile_native_trail_hold_min_ticks")
     private Integer missileNativeTrailHoldMinTicks;
