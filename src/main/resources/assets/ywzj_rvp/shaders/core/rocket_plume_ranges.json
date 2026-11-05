@@ -17,6 +17,14 @@
     }
   ],
   "uniforms": [
+    {"name": "PlumeShape", "type": "float", "count": 4, "values": [0.22, 0.5, 0.45, 0.65]},
+    {"name": "PlumeLayers", "type": "float", "count": 4, "values": [0.025, 1, 4, 2]},
+    {"name": "PlumeMotion", "type": "float", "count": 4, "values": [13, 0.06, 31, 43]},
+    {"name": "PlumeShocks", "type": "float", "count": 4, "values": [1, 6, 0.22, 3]},
+    {"name": "PlumeCoreColor", "type": "float", "count": 3, "values": [1, 0.38, 0.07]},
+    {"name": "PlumeOuterColor", "type": "float", "count": 3, "values": [1, 0.38, 0.07]},
+    {"name": "PlumeHaloColor", "type": "float", "count": 3, "values": [1, 0.38, 0.07]},
+    {"name": "PlumeHaloShape", "type": "float", "count": 2, "values": [6, 2]},
     {"name": "AmbientSettings", "type": "float", "count": 4, "values": [1, 0.7, 0.1, 1]},
     {"name": "PlumeAmbient", "type": "float", "count": 1, "values": [-1]},
     {

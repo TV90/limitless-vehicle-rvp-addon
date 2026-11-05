@@ -13,6 +13,7 @@ import org.ywzj.rvp.light.RVP_RocketPlumeParameters;
 import org.ywzj.rvp.light.RVP_LightRuntimeTuning;
 import org.ywzj.rvp.light.RVP_LightRuntimeTuning.Group;
 import org.ywzj.rvp.light.RVP_LightRuntimeTuning.Parameter;
+import static org.ywzj.rvp.light.RVP_RocketPlumeRuntimeTuning.Parameter.*;
 import org.ywzj.rvp.weapon.visual.RVP_PressureWaveGeometry;
 import java.io.IOException;
 import java.util.List;
@@ -137,6 +138,15 @@ final class RVP_RocketPlumePass {
 
     /** 上传真实几何、世界光晕半径与代码亮度；不把照明半径用作喷焰模型缩放。 */
     private static void uploadPlume(RVP_RocketPlume plume, Matrix4f view, Vec3 camera, boolean glowSource) {
+        // 调用同一份F8业务参数上传轮廓、分层、波纹及光晕；所有模式共用，避免可见度与画面不一致。
+        shader.safeGetUniform("PlumeShape").set(NOZZLE_WIDTH.value(), EXPANSION_POWER.value(), TIP_POWER.value(), AXIAL_FADE.value());
+        shader.safeGetUniform("PlumeLayers").set(ROOT_FADE.value(), CORE_WIDTH_SCALE.value(), CORE_EDGE_POWER.value(), OUTER_EDGE_POWER.value());
+        shader.safeGetUniform("PlumeMotion").set(ANIMATION_SPEED.value(), WAVE_STRENGTH.value(), WAVE_DENSITY.value(), SHOCK_DENSITY.value());
+        shader.safeGetUniform("PlumeShocks").set(SHOCK_CONTRAST.value(), SHOCK_SHARPNESS.value(), SHOCK_DRIFT.value(), CORE_FILL.value());
+        shader.safeGetUniform("PlumeCoreColor").set(CORE_RED.value(), CORE_GREEN.value(), CORE_BLUE.value());
+        shader.safeGetUniform("PlumeOuterColor").set(OUTER_RED.value(), OUTER_GREEN.value(), OUTER_BLUE.value());
+        shader.safeGetUniform("PlumeHaloColor").set(HALO_RED.value(), HALO_GREEN.value(), HALO_BLUE.value());
+        shader.safeGetUniform("PlumeHaloShape").set(HALO_FALLOFF.value(), HALO_EDGE_POWER.value());
         // 调用喷口附近的同帧环境亮度；显卡只对外围光晕使用，喷焰主体和可见度保持原值。
         shader.safeGetUniform("PlumeAmbient").set(RVP_ScreenLightPass.ambientBrightness(plume.position()));
         Vector3f position = viewPosition(plume.position(), view, camera);

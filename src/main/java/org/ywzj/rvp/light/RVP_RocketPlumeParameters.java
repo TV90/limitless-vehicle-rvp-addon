@@ -1,6 +1,6 @@
 package org.ywzj.rvp.light;
 
-/** RVP 程序喷焰代码参数；几何沿用 flame_scale，广域范围沿用既有口径，不新增亮度/光晕 JSON。 */
+/** RVP 程序喷焰基础参数；几何以flame_scale为基础，F8可临时调节，不新增武器JSON字段。 */
 public final class RVP_RocketPlumeParameters {
     /** 新的三维程序喷焰总开关。 */
     public static final boolean ENABLED = true;
@@ -37,9 +37,16 @@ public final class RVP_RocketPlumeParameters {
 
     /** 点火与燃尽两端均平滑到零；短燃烧期允许两段重叠，首尾不会突然跳亮。 */
     public static float transition(double elapsedTicks, double remainingTicks) {
+        if (remainingTicks <= 0) { return 0; }
         // 调用两端斜率为零的平滑曲线，让逐帧插值的展开和收束没有折点。
-        return smooth(elapsedTicks / IGNITION_TRANSITION_TICKS)
-                * smooth(remainingTicks / BURNOUT_TRANSITION_TICKS);
+        return transitionGate(elapsedTicks, RVP_RocketPlumeRuntimeTuning.Parameter.IGNITION_TICKS.value())
+                * transitionGate(remainingTicks, RVP_RocketPlumeRuntimeTuning.Parameter.BURNOUT_TICKS.value());
+    }
+
+    /** 零时长表示立即切换，显式处理零除；燃尽边界仍由真实时间线决定。 */
+    private static float transitionGate(double ticks, float duration) {
+        // 调用原平滑函数；非零时长保持原算法，零时长不产生NaN。
+        return duration == 0 ? (ticks >= 0 ? 1 : 0) : smooth(ticks / duration);
     }
 
     /** 将时间比例压到 0～1 后做平滑插值；未知燃尽时间的正无穷按持续燃烧处理。 */

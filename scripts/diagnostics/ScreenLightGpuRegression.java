@@ -67,6 +67,8 @@ public final class ScreenLightGpuRegression {
             // 调用新版多尺度和独立广域亮度专项回读，验证实际输出而非仅检查参数数值。
             testMultiscaleBloom(Path.of(args[0]), bloom, plume);
             testIndependentPlumeGlow(plume);
+            // 调用F8新增美术输入的真实像素回归，确认配色、轮廓、分层和冻结动画均实际生效。
+            testRocketPlumeTuning(plume);
             testSeparatedLightHalo(light);
             testTransientLightTimeline(light, bloom);
             testHaloDecayCurves(light);
@@ -773,6 +775,15 @@ public final class ScreenLightGpuRegression {
         GL20.glUniform1f(GL20.glGetUniformLocation(program, "PlumeHaloRadius"), 20);
         // 原生编译不会读取资源 JSON 的默认值；诊断中的稳态喷焰必须显式设置为完整显示。
         GL20.glUniform1f(GL20.glGetUniformLocation(program, "PlumeTransition"), 1);
+        // 原生OpenGL不读取Shader JSON，显式还原F8参数的现有表现起点。
+        GL20.glUniform4f(GL20.glGetUniformLocation(program, "PlumeShape"), .22F, .5F, .45F, .65F);
+        GL20.glUniform4f(GL20.glGetUniformLocation(program, "PlumeLayers"), .025F, 1, 4, 2);
+        GL20.glUniform4f(GL20.glGetUniformLocation(program, "PlumeMotion"), 13, .06F, 31, 43);
+        GL20.glUniform4f(GL20.glGetUniformLocation(program, "PlumeShocks"), 1, 6, .22F, 3);
+        GL20.glUniform3f(GL20.glGetUniformLocation(program, "PlumeCoreColor"), 1, .38F, .07F);
+        GL20.glUniform3f(GL20.glGetUniformLocation(program, "PlumeOuterColor"), 1, .38F, .07F);
+        GL20.glUniform3f(GL20.glGetUniformLocation(program, "PlumeHaloColor"), 1, .38F, .07F);
+        GL20.glUniform2f(GL20.glGetUniformLocation(program, "PlumeHaloShape"), 6, 2);
         for (int index = 0; index < 8; index++) {
             GL20.glUniform4f(GL20.glGetUniformLocation(program, "LightEmission" + index), 0, 0, 0, 0);
         }
@@ -1100,6 +1111,105 @@ public final class ScreenLightGpuRegression {
         GL20.glUniform1f(GL20.glGetUniformLocation(plume, "PlumeTransition"), 1);
         System.out.println("PASS plume ignition/burnout fade after HDR mapping: core, local/world halo, subpixel and Alpha; preview="
                 + directory.resolve("transitions.png"));
+    }
+
+    /** 隐藏显卡上下文中验证新增美术输入，读取真实程序输出，不用Java重写喷焰公式。 */
+    private static void testRocketPlumeTuning(int shader) {
+        int size = 128;
+        int sky = depth(size, size, 0, false);
+        int[] output = target(size, size);
+        GL20.glUseProgram(shader); uniforms(shader);
+        GL20.glUniform2f(GL20.glGetUniformLocation(shader, "ScreenSize"), size, size);
+        sampler(shader, "SceneDepth", 1, sky); sampler(shader, "DistantDepth", 2, sky);
+        plumeGeometry(shader, -1.5F, 0, -6, 1, 0, 0, 3, .45F);
+        GL20.glUniform4f(GL20.glGetUniformLocation(shader, "PlumeEmission"), 8, 4, .2F, 12);
+        GL20.glUniform1f(GL20.glGetUniformLocation(shader, "Time"), .7F);
+        render(output, size, size);
+        float[] baseline = pixels(output[0], size, size);
+        require(plumeChannelSum(baseline, 0) > .1, "F8 reference plume is missing");
+
+        GL20.glUniform4f(GL20.glGetUniformLocation(shader, "PlumeShape"), .7F, 2, 2, 1.7F);
+        render(output, size, size);
+        require(plumePixelDifference(baseline, pixels(output[0], size, size)) > .1,
+                "F8 silhouette settings did not change the actual plume");
+        GL20.glUniform4f(GL20.glGetUniformLocation(shader, "PlumeShape"), .22F, .5F, .45F, .65F);
+        GL20.glUniform4f(GL20.glGetUniformLocation(shader, "PlumeLayers"), .025F, .5F, 8, 4);
+        GL20.glUniform4f(GL20.glGetUniformLocation(shader, "PlumeShocks"), 1, 6, .22F, 1);
+        render(output, size, size);
+        require(plumePixelDifference(baseline, pixels(output[0], size, size)) > .1,
+                "F8 core width/edge/fill settings did not change the actual plume");
+
+        // 调用同一辐射入口，核心为零时外焰仍须可见，且三层颜色不能串写。
+        // 颜色专项使用足够粗的核心，避免128像素诊断画面恰好采不到极细亮芯。
+        GL20.glUniform4f(GL20.glGetUniformLocation(shader, "PlumeLayers"), .025F, 2.5F, 1, 2);
+        GL20.glUniform4f(GL20.glGetUniformLocation(shader, "PlumeEmission"), 0, 8, .2F, 12);
+        GL20.glUniform3f(GL20.glGetUniformLocation(shader, "PlumeOuterColor"), 0, 1, 0);
+        render(output, size, size);
+        float[] outer = pixels(output[0], size, size);
+        require(plumeChannelSum(outer, 1) > .1 && plumeChannelSum(outer, 0) == 0 && plumeChannelSum(outer, 2) == 0,
+                "F8 outer-only green flame disappeared or inherited core color");
+        GL20.glUniform4f(GL20.glGetUniformLocation(shader, "PlumeEmission"), 8, 0, .2F, 12);
+        GL20.glUniform3f(GL20.glGetUniformLocation(shader, "PlumeCoreColor"), 0, 0, 1);
+        render(output, size, size);
+        float[] core = pixels(output[0], size, size);
+        require(plumeChannelSum(core, 2) > .1 && plumeChannelSum(core, 0) == 0 && plumeChannelSum(core, 1) == 0,
+                "F8 core-only blue flame inherited outer color");
+
+        // 总速度为零应冻结全部动画；无波纹、无亮节时也不能暗中闪动。
+        GL20.glUniform4f(GL20.glGetUniformLocation(shader, "PlumeMotion"), 0, .06F, 31, 43);
+        render(output, size, size);
+        float[] frozen = pixels(output[0], size, size);
+        GL20.glUniform1f(GL20.glGetUniformLocation(shader, "Time"), 4.7F);
+        render(output, size, size);
+        require(plumePixelDifference(frozen, pixels(output[0], size, size)) == 0, "F8 zero speed did not freeze animation");
+        GL20.glUniform4f(GL20.glGetUniformLocation(shader, "PlumeMotion"), 60, 0, 31, 43);
+        GL20.glUniform4f(GL20.glGetUniformLocation(shader, "PlumeShocks"), 0, 6, .22F, 3);
+        render(output, size, size);
+        float[] smooth = pixels(output[0], size, size);
+        GL20.glUniform1f(GL20.glGetUniformLocation(shader, "Time"), 8.7F);
+        render(output, size, size);
+        require(plumePixelDifference(smooth, pixels(output[0], size, size)) == 0, "F8 disabled waves/shocks still animate");
+
+        GL20.glUniform4f(GL20.glGetUniformLocation(shader, "PlumeMotion"), 60, .5F, 100, 120);
+        GL20.glUniform4f(GL20.glGetUniformLocation(shader, "PlumeShocks"), 1, 16, 2, 8);
+        GL20.glUniform4f(GL20.glGetUniformLocation(shader, "PlumeLayers"), .001F, .1F, 12, 8);
+        GL20.glUniform4f(GL20.glGetUniformLocation(shader, "PlumeShape"), .01F, 3, 4, 4);
+        render(output, size, size);
+        for (float value : pixels(output[0], size, size)) {
+            require(Float.isFinite(value), "F8 extreme legal inputs produced NaN/infinity");
+        }
+
+        // 广域光晕独立配色与柔和程度要在实际世界半径内生效。
+        sampler(shader, "PlumeVisibility", 3, color(1, 1, new float[] {1, 0, 0, 1}));
+        plumeGeometry(shader, 0, 0, -6, 1, 0, 0, 3, .45F);
+        GL20.glUniform1i(GL20.glGetUniformLocation(shader, "OutputMode"), 4);
+        GL20.glUniform1f(GL20.glGetUniformLocation(shader, "PlumeHaloRadius"), 2);
+        GL20.glUniform1f(GL20.glGetUniformLocation(shader, "PlumeHaloIntensity"), .5F);
+        GL20.glUniform3f(GL20.glGetUniformLocation(shader, "PlumeHaloColor"), 0, 1, 0);
+        GL20.glUniform2f(GL20.glGetUniformLocation(shader, "PlumeHaloShape"), .1F, .25F);
+        render(output, size, size);
+        float[] diffuseHalo = pixels(output[0], size, size);
+        require(plumeChannelSum(diffuseHalo, 1) > .1 && plumeChannelSum(diffuseHalo, 0) == 0
+                && plumeChannelSum(diffuseHalo, 2) == 0, "F8 halo color was not independent");
+        GL20.glUniform2f(GL20.glGetUniformLocation(shader, "PlumeHaloShape"), 20, 8);
+        render(output, size, size);
+        require(plumeChannelSum(diffuseHalo, 1) > plumeChannelSum(pixels(output[0], size, size), 1) * 2,
+                "F8 halo falloff/edge settings did not change diffusion");
+        System.out.println("PASS F8 plume tuning: silhouette, core/outer layers, three colors, frozen motion, finite extremes and halo softness");
+    }
+
+    /** 对单个颜色通道求和，用于判断整幅实际喷焰是否可见。 */
+    private static double plumeChannelSum(float[] pixels, int channel) {
+        double result = 0;
+        for (int index = channel; index < pixels.length; index += 4) { result += pixels[index]; }
+        return result;
+    }
+
+    /** 比较两次真实回读，不依赖特定显卡在某一个像素上命中核心。 */
+    private static double plumePixelDifference(float[] first, float[] second) {
+        double result = 0;
+        for (int index = 0; index < first.length; index++) { result += Math.abs(first[index] - second[index]); }
+        return result;
     }
 
     /** 上传和生产一致的观察空间喷口/方向/缩放尺寸。 */

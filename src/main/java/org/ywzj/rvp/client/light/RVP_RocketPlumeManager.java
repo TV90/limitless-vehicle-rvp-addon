@@ -4,6 +4,7 @@ import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.light.RVP_RocketPlumeParameters;
 import org.ywzj.rvp.light.RVP_LightParameters;
 import org.ywzj.rvp.light.RVP_LightRuntimeTuning;
+import static org.ywzj.rvp.light.RVP_RocketPlumeRuntimeTuning.Parameter.*;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -53,6 +54,12 @@ public final class RVP_RocketPlumeManager {
                 remainingBurnTicks < 0 ? Double.POSITIVE_INFINITY : gameTime + (double) remainingBurnTicks);
     }
 
+    /** 本地两秒启停预览使用真实时间线，不需要实体心跳、不发送发射或伤害请求。 */
+    public void upsertEnginePreview(UUID key, Vec3 position, Vec3 direction, Float configuredScale, float caliber) {
+        // 调用同一登记流程；有限预览到四十刻立即清理，不能延长真实弹体的生命周期。
+        upsert(key, position, direction, configuredScale, caliber, 1, true, -1, gameTime + 40.0);
+    }
+
     /** 同 UUID 的逐刻/逐帧续期保留首次点火时刻；明确熄火删除后再次登记自然重播点火过渡。 */
     private void upsert(UUID key, Vec3 position, Vec3 direction, Float configuredScale,
             float caliber, float strength, boolean preview, int ownerEntityId, double burnEnd) {
@@ -85,19 +92,24 @@ public final class RVP_RocketPlumeManager {
             // 调用 ID 屏蔽门，覆盖暂停/切视角首帧以及远端 UUID 不同的同 ID 克隆。
             if (org.ywzj.rvp.client.state.RVP_ClientHitlState.shouldHideActiveMissileVfx(entry.ownerEntityId)) continue;
             if (endTime(entry) <= now) { continue; }
-            float fade = entry.preview ? (float) Math.max(0, 1 - (now - entry.start) / 40.0) : 1;
+            boolean fadingPreview = entry.preview && Double.isNaN(entry.burnEnd);
+            float fade = fadingPreview ? (float) Math.max(0, 1 - (now - entry.start) / 40.0) : 1;
             // 调用共用光晕曲线；只替换有限预览的光晕包络，真实持续喷焰仍跟随发动机燃烧事实。
-            float haloFade = entry.preview ? RVP_LightRuntimeTuning.haloFade(RVP_LightRuntimeTuning.Group.engine,
+            float haloFade = fadingPreview ? RVP_LightRuntimeTuning.haloFade(RVP_LightRuntimeTuning.Group.engine,
                     now - entry.start, 40, fade) : 1;
             // 调用正式喷焰启停曲线，使用部分 tick 逐帧过渡；续期不重置点火，暂停不推进年龄。
             float transition = Double.isNaN(entry.burnEnd) ? 1
                     : RVP_RocketPlumeParameters.transition(now - entry.start, entry.burnEnd - now);
             // 调用独立光晕半径调参，照亮范围改动不会影响已有预览、真实喷焰或几何长宽。
             RVP_RocketPlume base = entry.plume;
-            RVP_RocketPlume sample = new RVP_RocketPlume(base.position(), base.direction(), base.length() * transition,
-                    base.radius() * (float) Math.sqrt(transition),
+            // 调用独立长宽、尾轴偏移与启停曲线；在可见性筛选前应用，裁剪范围与实际绘制保持一致。
+            RVP_RocketPlume sample = new RVP_RocketPlume(
+                    base.position().add(base.direction().scale(AXIAL_OFFSET.value())), base.direction(),
+                    base.length() * LENGTH_SCALE.value() * (float) Math.pow(transition, LENGTH_RESPONSE.value()),
+                    base.radius() * WIDTH_SCALE.value() * (float) Math.pow(transition, WIDTH_RESPONSE.value()),
                     RVP_LightRuntimeTuning.haloRadius(RVP_LightRuntimeTuning.Group.engine, base.haloRadius()),
-                    base.strength() * fade, base.seed(), base.strength() * haloFade, transition);
+                    base.strength() * fade, base.seed(), base.strength() * haloFade,
+                    (float) Math.pow(transition, BRIGHTNESS_RESPONSE.value()));
             if (transition > 0 && (sample.strength() > 0 || sample.haloStrength() > 0) && visible.test(sample)) { result.add(sample); }
         }
         return result.stream().sorted(Comparator.comparingDouble(plume -> plume.center().distanceToSqr(camera)))
@@ -115,10 +127,12 @@ public final class RVP_RocketPlumeManager {
 
     /** 预览等待核心和独立光晕均结束；正式喷焰不能超过当前燃尽刻或两刻心跳期限。 */
     private static double endTime(Tracked entry) {
+        // 调用有限时间线约束启停预览；它不采用旧稳态预览的独立光晕延寿。
+        if (!Double.isNaN(entry.burnEnd)) { return Math.min(entry.expires, entry.burnEnd); }
         // 调用共用光晕寿命，使预览和真实短光采用同样的独立保持/淡出参数。
         return entry.preview ? entry.start + Math.max(40,
                 RVP_LightRuntimeTuning.haloDurationTicks(RVP_LightRuntimeTuning.Group.engine, 40))
-                : Double.isNaN(entry.burnEnd) ? entry.expires : Math.min(entry.expires, entry.burnEnd);
+                : entry.expires;
     }
 
     /** 拒绝 NaN/无穷坐标，避免损坏整屏绘制。 */
@@ -130,7 +144,7 @@ public final class RVP_RocketPlumeManager {
      * @param plume 几何与亮度快照
      * @param start 预览开始或本次连续燃烧首次登记的游戏 tick；逐帧续期不得重置
      * @param expires 到期游戏 tick
-     * @param preview 是否按四十 tick 衰减的命令预览
+     * @param preview 是否本地四十tick预览；无时间线时沿用旧降亮，有有限时间线时模拟启停
      * @param ownerEntityId 喷焰所属弹体 ID；无实体归属的预览使用 -1
      * @param burnEnd 当前燃烧窗口的游戏结束刻；NaN 表示原有预览/诊断，正无穷表示无有限燃烧窗口
      */

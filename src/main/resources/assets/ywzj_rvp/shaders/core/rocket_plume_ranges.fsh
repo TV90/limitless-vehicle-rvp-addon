@@ -29,6 +29,20 @@ uniform float PlumeHaloRadius;
 uniform float PlumeAmbient;
 // 广域橙晕亮度独立于喷焰外围橙焰，推进阶段由 Java 统一乘一次。
 uniform float PlumeHaloIntensity;
+// F8轮廓：根部半径比例、鼓起位置曲线、收尖强度、轴向亮度衰减。
+uniform vec4 PlumeShape;
+// F8分层：根部亮度渐入比例、核心粗细倍率、核心收边指数、外焰收边指数。
+uniform vec4 PlumeLayers;
+// F8流动：总速度、轮廓波动幅度、轮廓波纹密度、轴向亮节密度。
+uniform vec4 PlumeMotion;
+// F8亮节：明暗对比、集中程度、相对流速、核心白热饱满程度。
+uniform vec4 PlumeShocks;
+// 三层分别配色；默认同原橙色色比，高亮核心经显示映射后仍能达到白点。
+uniform vec3 PlumeCoreColor;
+uniform vec3 PlumeOuterColor;
+uniform vec3 PlumeHaloColor;
+// 广域光晕中心衰减与边缘归零指数，不修改实际世界半径。
+uniform vec2 PlumeHaloShape;
 uniform float Time;
 uniform int OutputMode;
 in vec2 screenUV;
@@ -117,7 +131,8 @@ vec3 plumeRadiance(vec3 ray, float sceneDistance, vec2 rayUV, vec2 intensities) 
     float extent = PlumeOriginLength.w;
     vec3 axis = normalize(PlumeAxisRadius.xyz);
     float radius = PlumeAxisRadius.w;
-    if (extent <= 0.0 || radius <= 0.0 || PlumeEmission.x <= 0.0) { return vec3(0.0); }
+    // 核心和外焰可以独立关到零，不能把核心亮度当成整个喷流的开关。
+    if (extent <= 0.0 || radius <= 0.0 || max(intensities.x, intensities.y) <= 0.0) { return vec3(0.0); }
     vec3 center = origin + axis * extent * 0.5;
     float bound = length(vec2(extent * 0.5, radius));
     if (center.z - bound >= 0.0) { return vec3(0.0); }
@@ -132,7 +147,7 @@ vec3 plumeRadiance(vec3 ray, float sceneDistance, vec2 rayUV, vec2 intensities) 
         float axialFacing = abs(dot(ray, axis));
         float frontExtent = extent * 0.5 * axialFacing + radius * sqrt(max(0.0, 1.0 - axialFacing * axialFacing));
         if (distanceAlong <= 0.0 || sceneDistance < distanceAlong - frontExtent - 0.01) { return vec3(0.0); }
-        return vec3(1.0, 0.38, 0.07) * intensities.x * coverage;
+        return max(PlumeCoreColor * intensities.x, PlumeOuterColor * intensities.y) * coverage;
     }
     vec2 interval;
     if (!plumeInterval(ray, origin, axis, extent, radius, interval)) { return vec3(0.0); }
@@ -141,33 +156,36 @@ vec3 plumeRadiance(vec3 ray, float sceneDistance, vec2 rayUV, vec2 intensities) 
     float stepLength = (interval.y - interval.x) / 20.0;
     float core = 0.0;
     float outer = 0.0;
-    float phase = Time * 13.0 + PlumeEmission.z * 6.283185;
+    float phase = Time * PlumeMotion.x + PlumeEmission.z * 6.283185;
     for (int step = 0; step < 20; step++) {
         vec3 relative = ray * (interval.x + (float(step) + 0.5) * stepLength) - origin;
         float axial = dot(relative, axis);
         float u = clamp(axial / extent, 0.0, 1.0);
-        // 喷口细、稍后膨胀、末端收尖；稳态几何由 flame_scale 决定，启停长宽已在 Java 端平滑收束。
-        float width = radius * max(0.01, (0.22 + 0.78 * sin(3.141593 * sqrt(u))) * pow(1.0 - u, 0.45));
-        float wave = 0.94 + 0.06 * sin(u * 31.0 - phase);
+        // 轮廓与波动始终不超过Java包围圆柱，调参后墙体遮挡与裁剪仍使用真实尺寸。
+        float width = radius * max(0.01, (PlumeShape.x + (1.0 - PlumeShape.x)
+                * sin(3.141593 * pow(u, PlumeShape.y))) * pow(1.0 - u, PlumeShape.z));
+        float wave = 1.0 - PlumeMotion.y + PlumeMotion.y * sin(u * PlumeMotion.z - phase);
         width *= wave;
         vec3 perpendicular = relative - axis * axial;
         float r2 = dot(perpendicular, perpendicular) / max(width * width, 0.00000001);
-        float envelope = smoothstep(0.0, 0.025, u) * pow(1.0 - u, 0.65);
+        float envelope = smoothstep(0.0, PlumeLayers.x, u) * pow(1.0 - u, PlumeShape.w);
         // 轴向明暗结节模拟火箭喷流的激波菱形；不读取纹理，不跟粒子数量累积。
-        float shock = pow(0.5 + 0.5 * cos(u * 43.0 - phase * 0.22), 6.0);
-        float hot = pow(max(0.0, 1.0 - r2 / 0.12), 4.0) * envelope * (0.45 + 0.55 * shock);
-        core = max(core, min(1.0, hot * 3.0));
-        outer += pow(max(0.0, 1.0 - r2), 2.0) * envelope * (0.65 + 0.35 * shock);
+        float shock = mix(1.0, pow(0.5 + 0.5 * cos(u * PlumeMotion.w - phase * PlumeShocks.z),
+                PlumeShocks.y), PlumeShocks.x);
+        float coreRadiusSq = 0.12 * PlumeLayers.y * PlumeLayers.y;
+        float hot = pow(max(0.0, 1.0 - r2 / coreRadiusSq), PlumeLayers.z) * envelope * (0.45 + 0.55 * shock);
+        core = max(core, min(1.0, hot * PlumeShocks.w));
+        outer += pow(max(0.0, 1.0 - r2), PlumeLayers.w) * envelope * (0.65 + 0.35 * shock);
     }
     outer *= stepLength / max(radius * 2.0, 0.000001);
     // HDR 内保留橙色比例，显示响应让高亮核心达到白点；光晕提取仍得到橙色。
-    return vec3(1.0, 0.38, 0.07) * (core * intensities.x + outer * intensities.y);
+    return PlumeCoreColor * core * intensities.x + PlumeOuterColor * outer * intensities.y;
 }
 
 // 只在一像素目标中执行：沿喷流七个轴向位置、每处三个横向样点，复用真实二十步辐射和近景/DH 裁剪。
 // 不能按“半径五百格的大球在墙前有一部分”判断可见，否则整条尾焰在墙后也会漏出巨型光晕。
 float visiblePlumeEmission() {
-    if (PlumeEmission.x <= 0.0 || PlumeOriginLength.w <= 0.0 || PlumeAxisRadius.w <= 0.0) { return 0.0; }
+    if (max(PlumeEmission.x, PlumeEmission.y) <= 0.0 || PlumeOriginLength.w <= 0.0 || PlumeAxisRadius.w <= 0.0) { return 0.0; }
     vec3 origin = PlumeOriginLength.xyz;
     vec3 axis = normalize(PlumeAxisRadius.xyz);
     vec3 center = origin + axis * PlumeOriginLength.w * 0.5;
@@ -211,10 +229,10 @@ vec3 worldHalo(vec3 ray) {
     float radialSq = dot(delta, delta) / (radius * radius);
     if (radialSq >= 1.0) { return vec3(0.0); }
     // 世界半径决定轮廓，亮度/阶段只改变强度；指数中心和平方边缘避免硬圆盘边界。
-    float falloff = exp(-6.0 * radialSq) * pow(1.0 - radialSq, 2.0);
+    float falloff = exp(-PlumeHaloShape.x * radialSq) * pow(1.0 - radialSq, PlumeHaloShape.y);
     float ambientMultiplier = rvpAmbientMultiplier(PlumeAmbient, rvpAmbientSceneBrightness(screenUV));
     float response = 1.0 - exp(-PlumeHaloIntensity * visible * falloff * ambientMultiplier);
-    return vec3(1.0, 0.38, 0.07) * response * clamp(PlumeTransition, 0.0, 1.0);
+    return PlumeHaloColor * response * clamp(PlumeTransition, 0.0, 1.0);
 }
 
 void main() {
