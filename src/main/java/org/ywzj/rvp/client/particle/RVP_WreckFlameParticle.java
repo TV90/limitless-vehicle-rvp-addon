@@ -9,12 +9,17 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
+import org.ywzj.rvp.client.visual.cookoff.RVP_WreckCookoffDynamics;
+import org.ywzj.rvp.client.visual.cookoff.RVP_WreckCookoffSettings;
+import org.ywzj.rvp.client.visual.cookoff.RVP_WreckCookoffSettings.Snapshot;
+
+import static org.ywzj.rvp.client.visual.cookoff.RVP_WreckCookoffSettings.Parameter.*;
 
 /**
  * 地面载具殉燃火柱的静态贴图粒子。
  *
  * <p>本类使用定向喷出、膨胀和淡出观感，
- * 每枚粒子出生时固定一张 128×128 贴图，生命周期内只改变位置、尺寸和透明度。
+ * 每枚粒子出生时固定一张 128×128 贴图，生命周期内按出生参数改变位置、配色、尺寸和透明度。
  * 贴图是白色 Alpha 形状，由粒子颜色染成橙黄火焰。</p>
  *
  * <p>贴图集由 {@link RVP_WreckCookoffParticleTextures} 统一加载，本类只负责火柱行为；
@@ -39,17 +44,20 @@ public final class RVP_WreckFlameParticle extends SingleQuadParticle {
     private final Vec3 travelOrigin;
     /** 有界车顶粒子的轴向单位向量；无边界喷燃粒子为 null。 */
     private final Vec3 travelAxis;
-    /** 有界车顶粒子的轴向循环长度，单位格；无边界喷燃粒子为正无穷。 */
+    /** 有界车顶粒子的轴向活动长度，单位格；支持循环或末端消散，无边界入口为正无穷。 */
     private final double maxTravelDistance;
-    /** 车顶喷燃沿自身轴向的持续上浮加速度，单位格/tick²。 */
-    private static final double AXIAL_UPDRAFT_PER_TICK = 0.0025D;
+    /** 本刻共享的不可变参数快照，已有粒子不随面板输入突然跳变。 */
+    private final Snapshot settings;
+    /** 原有逐片随机橙黄配色，分层配色为0时严格保留。 */
+    private final Vec3 originalColor;
 
     private RVP_WreckFlameParticle(ClientLevel level, double x, double y, double z,
                                    double vx, double vy, double vz,
                                    float size, float alpha, int lifetime, int textureIndex,
                                    float red, float green, float blue,
-                                   Vec3 travelOrigin, Vec3 travelAxis, double maxTravelDistance) {
+                                   Vec3 travelOrigin, Vec3 travelAxis, double maxTravelDistance, Snapshot settings) {
         super(level, x, y, z);
+        this.settings = settings;
         this.textureIndex = RVP_WreckCookoffParticleTextures.normalizeIndex(textureIndex);
         this.initialQuadSize = Math.max(0.08f, size);
         this.initialAlpha = Mth.clamp(alpha, 0.0f, 1.0f);
@@ -68,9 +76,12 @@ public final class RVP_WreckFlameParticle extends SingleQuadParticle {
         this.rCol = Mth.clamp(red, 0.0f, 1.0f);
         this.gCol = Mth.clamp(green, 0.0f, 1.0f);
         this.bCol = Mth.clamp(blue, 0.0f, 1.0f);
+        this.originalColor = new Vec3(this.rCol, this.gCol, this.bCol);
         this.roll = level.random.nextFloat() * Mth.TWO_PI;
         this.oRoll = this.roll;
         this.hasPhysics = false;
+        // 调用出生外观计算，根部、中段和末端的首帧也使用相同配色与消散曲线。
+        this.updateAppearance();
         // 调用本项目热成像登记入口：让静态喷燃粒子在本体热成像缓冲中作为热源重画。
         RVP_ThermalParticleChannel.register(this);
     }
@@ -99,7 +110,7 @@ public final class RVP_WreckFlameParticle extends SingleQuadParticle {
         // 调用本类构造器：固定贴图变体并把喷燃粒子加入客户端引擎。
         engine.add(new RVP_WreckFlameParticle(level, position.x, position.y, position.z,
                 velocity.x, velocity.y, velocity.z, size, alpha, lifetime, textureIndex,
-                red, green, blue, null, null, Double.POSITIVE_INFINITY));
+                red, green, blue, null, null, Double.POSITIVE_INFINITY, RVP_WreckCookoffSettings.snapshot()));
     }
 
     /**
@@ -127,6 +138,16 @@ public final class RVP_WreckFlameParticle extends SingleQuadParticle {
                                     Vec3 travelOrigin, Vec3 travelAxis, double maxTravelDistance,
                                     float size, float alpha, int lifetime, int textureIndex,
                                     float red, float green, float blue) {
+        // 调用统一快照入口；正式批量生成走下面的重载，每刻只创建一份。
+        spawnBounded(engine, level, position, velocity, travelOrigin, travelAxis, maxTravelDistance,
+                size, alpha, lifetime, textureIndex, red, green, blue, RVP_WreckCookoffSettings.snapshot());
+    }
+
+    /** 正式殉燃批次共享快照，不为每张火焰贴图重复复制全部参数。 */
+    public static void spawnBounded(ParticleEngine engine, ClientLevel level, Vec3 position, Vec3 velocity,
+                                    Vec3 travelOrigin, Vec3 travelAxis, double maxTravelDistance,
+                                    float size, float alpha, int lifetime, int textureIndex,
+                                    float red, float green, float blue, Snapshot settings) {
         if (engine == null || level == null || position == null || velocity == null
                 || travelOrigin == null || travelAxis == null) {
             return;
@@ -134,7 +155,7 @@ public final class RVP_WreckFlameParticle extends SingleQuadParticle {
         // 调用本类构造器：登记轴向边界，让高速车顶喷燃仍服从目标高度。
         engine.add(new RVP_WreckFlameParticle(level, position.x, position.y, position.z,
                 velocity.x, velocity.y, velocity.z, size, alpha, lifetime, textureIndex,
-                red, green, blue, travelOrigin, travelAxis, maxTravelDistance));
+                red, green, blue, travelOrigin, travelAxis, maxTravelDistance, settings));
     }
 
     /** 返回静态贴图数量，供控制器和单元测试共享边界。 */
@@ -180,34 +201,51 @@ public final class RVP_WreckFlameParticle extends SingleQuadParticle {
             return;
         }
 
-        float progress = this.age / (float) this.lifetime;
-        float fade = progress < 0.58f ? 1.0f : (1.0f - progress) / 0.42f;
-        float grow = 0.72f + 0.48f * Mth.clamp(progress / 0.72f, 0.0f, 1.0f);
-        this.quadSize = this.initialQuadSize * grow;
-        this.alpha = this.initialAlpha * Mth.clamp(fade, 0.0f, 1.0f);
         this.roll += this.rollSpeed;
 
         // 轻微阻尼配合沿车顶自身轴向漂移，载具侧翻时不会被世界 Y 轴重新拉回。
         this.xd *= 0.965;
         this.yd *= 0.975;
         this.zd *= 0.965;
-        if (this.travelAxis == null) {
-            this.yd += AXIAL_UPDRAFT_PER_TICK;
-        } else {
-            this.xd += this.travelAxis.x * AXIAL_UPDRAFT_PER_TICK;
-            this.yd += this.travelAxis.y * AXIAL_UPDRAFT_PER_TICK;
-            this.zd += this.travelAxis.z * AXIAL_UPDRAFT_PER_TICK;
-        }
+        // 调用连续气流和近口/远端上浮过渡，默认仍沿喷口自身上方。
+        Vec3 acceleration = RVP_WreckCookoffDynamics.flameAcceleration(new Vec3(this.x, this.y, this.z),
+                this.travelAxis == null ? new Vec3(0, 1, 0) : this.travelAxis,
+                this.axialProgress(), this.level.getGameTime(), this.settings);
+        this.xd += acceleration.x;
+        this.yd += acceleration.y;
+        this.zd += acceleration.z;
         if (this.travelAxis == null) {
             // 调用基类碰撞位移入口：无边界喷燃粒子保持普通运动轨迹。
             this.move(this.xd, this.yd, this.zd);
         } else {
-            // 调用本类有界位移入口：车顶粒子越过目标高度时截停并进入短淡出，避免高度漂移。
+            // 调用本类有界位移入口：根据出生参数在末端消散或重新铺回柱内。
             this.moveWithinTravelBoundary();
         }
+        // 调用统一外观曲线，让新位置对应的末端颜色与透明度一致。
+        this.updateAppearance();
     }
 
-    /** 在车顶轴向循环范围内移动；循环细节不外露，避免把客户端粒子状态扩散到控制器。 */
+    /** 沿喷口轴向的归一化进度；无边界入口以年龄推进配色。 */
+    private double axialProgress() {
+        return this.travelOrigin == null || this.travelAxis == null ? this.age / (double) this.lifetime
+                : new Vec3(this.x, this.y, this.z).subtract(this.travelOrigin).dot(this.travelAxis) / this.maxTravelDistance;
+    }
+
+    /** 现有贴图只做程序配色、膨胀和淡出，不增加动画帧或替换共用资源。 */
+    private void updateAppearance() {
+        float progress = this.age / (float) this.lifetime;
+        double axial = this.axialProgress();
+        float grow = 0.72f + 0.48f * Mth.clamp(progress / 0.72f, 0.0f, 1.0f);
+        this.quadSize = this.initialQuadSize * grow;
+        // 调用共用空间/年龄曲线，同时更新颜色和不透明度。
+        this.alpha = (float) (this.initialAlpha * RVP_WreckCookoffDynamics.flameFade(progress, axial, this.settings));
+        Vec3 color = RVP_WreckCookoffDynamics.flameColor(axial, progress, this.originalColor, this.settings);
+        this.rCol = (float) color.x;
+        this.gCol = (float) color.y;
+        this.bCol = (float) color.z;
+    }
+
+    /** 在车顶轴向范围内移动；循环和末端消散均由粒子自行处理。 */
     private void moveWithinTravelBoundary() {
         Vec3 current = new Vec3(this.x, this.y, this.z);
         Vec3 next = current.add(this.xd, this.yd, this.zd);
@@ -217,11 +255,21 @@ public final class RVP_WreckFlameParticle extends SingleQuadParticle {
             return;
         }
 
+        if (this.settings.enabled(NATURAL_TAIL)) {
+            // 调用原版移除入口：末端自然消散模式只向外流动，不把老火焰搬回喷口。
+            this.remove();
+            return;
+        }
+
         Vec3 relative = next.subtract(this.travelOrigin);
         Vec3 perpendicular = relative.subtract(this.travelAxis.scale(nextDistance));
         Vec3 capped = this.travelOrigin.add(perpendicular)
                 .add(this.travelAxis.scale(wrapTravelDistance(nextDistance, this.maxTravelDistance)));
         this.setPos(capped.x, capped.y, capped.z);
+        // 循环是同一粒子的重新铺设，不应把上一帧位置插值成贯穿整根火柱的逆向移动。
+        this.xo = this.x;
+        this.yo = this.y;
+        this.zo = this.z;
     }
 
     @Override

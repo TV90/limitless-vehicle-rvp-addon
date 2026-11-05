@@ -1,9 +1,13 @@
 package org.ywzj.rvp.client.visual.cookoff;
 
+import org.ywzj.rvp.client.visual.cookoff.RVP_WreckCookoffSettings.Parameter;
+import org.ywzj.rvp.client.visual.cookoff.RVP_WreckCookoffSettings.Snapshot;
+
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.sounds.SoundManager;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.entity.Entity;
 import org.ywzj.rvp.all.RVP_Sounds;
 import org.ywzj.rvp.client.particle.RVP_WreckFlameParticle;
 import org.ywzj.rvp.client.particle.RVP_WreckMuzzleSmokeParticle;
@@ -15,6 +19,7 @@ import org.ywzj.rvp.vehicle.wreck.RVP_WreckDestructionState;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.entity.vehicle.TrackedVehicle;
 import org.ywzj.vehicle.entity.vehicle.WheeledVehicle;
+import org.ywzj.vehicle.vehicle.structure.OBB;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -162,7 +167,7 @@ public final class RVP_WreckCookoffController {
             // 调用本项目权威快照；仅无伤害预览读取本地 common 配置作为时长基准。
             this.cookoffDurationTicks = state == null ? RVP_WreckCookoffController.cookoffDurationTicks(
                     RVP_CommonConfig.getWreckLifetimeSeconds(), WRECK_LIFETIME_PERCENT) : state.durationTicks();
-            this.endingDurationTicks = durationTicks(RVP_WreckCookoffSettings.shrinkTicks);
+            this.endingDurationTicks = durationTicks(Parameter.SHRINK_TICKS.value());
             // 调用自动挂点解析器，所有车型共用同一套只读规则；炮口只在建立绑定时收集一次
             Discovery discovery = discover(vehicle, true);
             List<Anchor> anchors = discovery.anchors();
@@ -251,7 +256,7 @@ public final class RVP_WreckCookoffController {
 
         /** 开始结束收缩；只在实例从当前 tick 的追踪集合中消失时调用。 */
         private void beginEnding(long tick) {
-            beginEnding(tick, durationTicks(RVP_WreckCookoffSettings.shrinkTicks));
+            beginEnding(tick, durationTicks(Parameter.SHRINK_TICKS.value()));
         }
 
         /** 开始结束收缩，并记录本次收缩时长，保证定时结束不会被重新激活。 */
@@ -287,14 +292,14 @@ public final class RVP_WreckCookoffController {
 
         /** 计算保留完整火柱后可用于收缩的前置活动时长，单位 tick。 */
         private long activeDurationTicks() {
-            long shrinkTicks = durationTicks(RVP_WreckCookoffSettings.shrinkTicks);
+            long shrinkTicks = durationTicks(Parameter.SHRINK_TICKS.value());
             return Math.max(0, cookoffDurationTicks - Math.min(cookoffDurationTicks, shrinkTicks));
         }
 
         /** 在达到总生命周期时开始按剩余时长收缩，确保火柱总可见时长不超过配置结果。 */
         private void startTimedEndingIfNeeded(long tick) {
             if (!isEnding() && shouldStartTimedEnding(tick)) {
-                long shrinkTicks = Math.min(durationTicks(RVP_WreckCookoffSettings.shrinkTicks),
+                long shrinkTicks = Math.min(durationTicks(Parameter.SHRINK_TICKS.value()),
                         Math.max(1, cookoffDurationTicks));
                 long endingAt = startedAt + activeDurationTicks();
                 // 定时检测可能因实体暂时离开遍历而晚到，仍按原定时刻开始收缩，避免生命周期被拖长。
@@ -314,7 +319,7 @@ public final class RVP_WreckCookoffController {
                 return RVP_WreckCookoffController.shrinkLifecycleScale(endStartScale, progress);
             }
             double progress = (double) (tick - startedAt)
-                    / durationTicks(RVP_WreckCookoffSettings.growthTicks);
+                    / durationTicks(Parameter.GROWTH_TICKS.value());
             return RVP_WreckCookoffController.growthLifecycleScale(progress);
         }
 
@@ -431,8 +436,8 @@ public final class RVP_WreckCookoffController {
     static double roofConeRadius(double progress, double envelopeWidth) {
         double width = Math.max(0.08D, Math.min(1.4D, envelopeWidth));
         double clampedProgress = clampProgress(progress);
-        double baseFactor = Math.max(0.02D, Math.min(1.5D, RVP_WreckCookoffSettings.roofConeBase));
-        double tipFactor = Math.max(baseFactor, Math.min(2.5D, RVP_WreckCookoffSettings.roofConeTip));
+        double baseFactor = Math.max(0.02D, Math.min(1.5D, Parameter.ROOF_CONE_BASE.value()));
+        double tipFactor = Math.max(baseFactor, Math.min(2.5D, Parameter.ROOF_CONE_TIP.value()));
         double baseRadius = width * baseFactor;
         double tipRadius = width * tipFactor;
         return baseRadius + (tipRadius - baseRadius) * clampedProgress;
@@ -441,9 +446,9 @@ public final class RVP_WreckCookoffController {
     /** 根据 [0, 1] 随机值计算车顶喷燃的轴向初速度，单位格/tick。 */
     static double roofFlameAxisSpeed(double random) {
         double clampedRandom = Double.isFinite(random) ? Math.max(0.0D, Math.min(1.0D, random)) : 0.0D;
-        double minimum = Math.max(0.05D, Math.min(20.0D, RVP_WreckCookoffSettings.roofAxisSpeedMin));
+        double minimum = Math.max(0.05D, Math.min(20.0D, Parameter.ROOF_SPEED_MIN.value()));
         double maximum = Math.max(minimum,
-                Math.max(0.05D, Math.min(20.0D, RVP_WreckCookoffSettings.roofAxisSpeedMax)));
+                Math.max(0.05D, Math.min(20.0D, Parameter.ROOF_SPEED_MAX.value())));
         return minimum + (maximum - minimum) * clampedRandom;
     }
 
@@ -466,7 +471,7 @@ public final class RVP_WreckCookoffController {
                 ? Math.max(0.0D, Math.min(1.0D, lifecycleScale))
                 : 0.0D;
         double maximumQuadSize = safeWidth * 1.32D * 1.2D
-                * Math.max(0.1D, Math.min(3.0D, RVP_WreckCookoffSettings.roofTextureScaleMax))
+                * Math.max(0.1D, Math.min(3.0D, Parameter.ROOF_SCALE_MAX.value()))
                 * scale;
         return Math.max(0.05D, safeHeight - maximumQuadSize);
     }
@@ -479,7 +484,7 @@ public final class RVP_WreckCookoffController {
                 ? Math.max(0.0D, Math.min(1.0D, lifecycleScale))
                 : 0.0D;
         double maximumQuadSize = safeWidth * 1.32D * 1.2D
-                * Math.max(0.1D, Math.min(3.0D, RVP_WreckCookoffSettings.roofTextureScaleMax))
+                * Math.max(0.1D, Math.min(3.0D, Parameter.ROOF_SCALE_MAX.value()))
                 * scale;
         double spacing = Math.max(0.18D, maximumQuadSize * 1.08D);
         int layers = (int) Math.ceil(centerTravel / spacing) + 1;
@@ -510,8 +515,8 @@ public final class RVP_WreckCookoffController {
         double scale = Double.isFinite(lifecycleScale)
                 ? Math.max(0.0D, Math.min(1.0D, lifecycleScale))
                 : 0.0D;
-        double smokeSize = Double.isFinite(RVP_WreckCookoffSettings.muzzleSmokeSize)
-                ? Math.max(0.1D, Math.min(3.0D, RVP_WreckCookoffSettings.muzzleSmokeSize))
+        double smokeSize = Double.isFinite(Parameter.MUZZLE_SIZE.value())
+                ? Math.max(0.1D, Math.min(3.0D, Parameter.MUZZLE_SIZE.value()))
                 : 0.1D;
         // 按当前首帧烟片尺寸留出保守间距；小烟片和增长阶段自动增加层数，避免轴向断层。
         double coverageSpacing = Math.max(0.18D, smokeSize * scale * 0.56D);
@@ -528,9 +533,9 @@ public final class RVP_WreckCookoffController {
     /** 根据 [0, 1] 随机值计算车顶贴图倍率，单位为无量纲尺寸倍率。 */
     static double roofTextureScale(double random) {
         double clampedRandom = Double.isFinite(random) ? Math.max(0.0D, Math.min(1.0D, random)) : 0.0D;
-        double minimum = Math.max(0.1D, Math.min(3.0D, RVP_WreckCookoffSettings.roofTextureScaleMin));
+        double minimum = Math.max(0.1D, Math.min(3.0D, Parameter.ROOF_SCALE_MIN.value()));
         double maximum = Math.max(minimum,
-                Math.max(0.1D, Math.min(3.0D, RVP_WreckCookoffSettings.roofTextureScaleMax)));
+                Math.max(0.1D, Math.min(3.0D, Parameter.ROOF_SCALE_MAX.value())));
         return minimum + (maximum - minimum) * clampedRandom;
     }
 
@@ -552,10 +557,10 @@ public final class RVP_WreckCookoffController {
      * @return 沿载具自身上方偏置后的喷燃原点
      */
     static Vec3 roofFlameOrigin(Vec3 hatchOrigin, Vec3 roofAxis) {
-        double offset = Double.isFinite(RVP_WreckCookoffSettings.roofVerticalOffset)
+        double offset = Double.isFinite(Parameter.ROOF_VERTICAL_OFFSET.value())
                 ? Math.max(RVP_WreckCookoffSettings.ROOF_VERTICAL_OFFSET_MIN,
                 Math.min(RVP_WreckCookoffSettings.ROOF_VERTICAL_OFFSET_MAX,
-                        RVP_WreckCookoffSettings.roofVerticalOffset))
+                        Parameter.ROOF_VERTICAL_OFFSET.value()))
                 : 0.0D;
         Vec3 safeAxis = roofAxis == null || roofAxis.lengthSqr() < 1.0E-8D
                 ? RVP_WreckCookoffGeometry.UP : roofAxis.normalize();
@@ -738,6 +743,8 @@ public final class RVP_WreckCookoffController {
         ORDERED.clear();
         ORDERED.addAll(INSTANCES.values());
         ORDERED.sort(Comparator.comparingDouble(instance -> instance.distance));
+        // 调用统一参数快照；本刻新生火焰与火星共享，已有粒子保持各自出生参数。
+        Snapshot settings = RVP_WreckCookoffSettings.snapshot();
         int[] requests = new int[ORDERED.size()];
         for (int i = 0; i < requests.length; i++) {
             Instance instance = ORDERED.get(i);
@@ -761,7 +768,7 @@ public final class RVP_WreckCookoffController {
                 case MINIMAL -> 0.2;
             };
             double wanted = base * RVP_WreckCookoffBudget.distanceScale(instance.distance)
-                    * RVP_WreckCookoffSettings.density * setting;
+                    * settings.value(Parameter.DENSITY) * settings.value(Parameter.SPARK_DENSITY) * setting;
             requests[i] = (int) wanted + (currentLevel.random.nextDouble() < wanted % 1 ? 1 : 0);
         }
         // 调用全局公平预算；单车额度的下限由测试锚定在"基础需求"上，防止出口变多后被预算压回去。
@@ -769,19 +776,18 @@ public final class RVP_WreckCookoffController {
                 RVP_WreckCookoffBudget.PARTICLES_PER_TICK, RVP_WreckCookoffBudget.PARTICLES_PER_VEHICLE);
         for (int i = 0; i < allocations.length; i++) {
             // 调用本类分类发射，保持舱盖/接缝大量、炮口中等的比例。
-            emit(ORDERED.get(i), allocations[i]);
-            emitted += allocations[i];
+            emitted += emit(ORDERED.get(i), allocations[i], settings);
         }
         // 调用本项目殉燃效果发射器：车顶保留火焰，炮口改为灰黑烟，二者共用公平粒子预算。
-        emitCookoffEffectParticles();
+        emitCookoffEffectParticles(settings);
     }
 
     /**
      * 分类权重同类出口按世界时间轮换避免固定一处独占。
      * 炮口已不喷火星，因此火星出口只有舱盖与接缝两类。
      */
-    private static void emit(Instance instance, int count) {
-        if (instance.isEnding()) return;
+    private static int emit(Instance instance, int count, Snapshot settings) {
+        if (instance.isEnding()) return 0;
         List<Column> weighted = new ArrayList<>();
         for (Kind kind : Kind.values()) {
             // 炮口出口不参与火星；这里跳过，避免权重表里留一项永不发射的死配置
@@ -795,10 +801,14 @@ public final class RVP_WreckCookoffController {
                 weighted.add(outlets.get((int) Math.floorMod(lastTick + i, outlets.size())));
             }
         }
-        if (weighted.isEmpty()) return;
+        if (weighted.isEmpty()) return 0;
+        int spawned = 0;
         for (int i = 0; i < count; i++) {
             Column column = weighted.get((int) Math.floorMod(lastTick * 7 + i, weighted.size()));
             Pose pose = column.current;
+            // 调用共享压力包络，同一舱盖的三处火星采样点与火柱使用同一轮强弱变化。
+            double pressure = RVP_WreckCookoffDynamics.pressure(lastTick, pressurePhase(column), settings);
+            if (pressure < 1 && currentLevel.random.nextDouble() >= pressure) continue;
             // 调用本类柱长入口，以连续柱身随机点补充溅出的火星。
             double along = currentLevel.random.nextDouble() * length(column) * 0.7;
             double spread = column.anchor.width() * 0.35;
@@ -807,23 +817,27 @@ public final class RVP_WreckCookoffController {
                     (currentLevel.random.nextDouble() - 0.5) * spread,
                     (currentLevel.random.nextDouble() - 0.5) * spread);
             Vec3 axis = pose.direction();
-            // 调用殉燃火星抛射速度规则，改用 RVP 自实现的"受重力下坠 + 落地弹跳"粒子，
-            // 速度直接沿采样方向给定（舱盖即 30° 圆锥内的一条母线）。
-            double axisSpeed = RVP_WreckSparkParticle.launchSpeed(currentLevel.random.nextDouble());
-            // 调用 RVP 火星生成入口，直接加入粒子引擎；数量与寿命仍按既有分配额与火星规则，
-            // 距离 LOD 由上面的分配额与火柱段数负责，寿命不随距离缩短（否则落地前就淡出）。
-            RVP_WreckSparkParticle.spawn(Minecraft.getInstance().particleEngine, currentLevel,
-                    origin.x, origin.y, origin.z,
-                    axis.x, axis.y, axis.z, axisSpeed,
-                    RVP_WreckSparkParticle.SPARK_QUAD_SIZE);
+            // 调用殉燃专用入口，接通轻重、冷却和拖影；命中装甲复用的普通spawn不读取这些覆盖。
+            RVP_WreckSparkParticle.spawnCookoff(Minecraft.getInstance().particleEngine, currentLevel,
+                    origin, axis, pressure, settings);
+            spawned++;
         }
+        return spawned;
+    }
+
+    /** 同一舱盖的三个采样点共用压力相位；不同部件错开，避免全车同步闪动。 */
+    private static double pressurePhase(Column column) {
+        // 调用既有散列，以车辆和只读结构盒身份区分出口，不按武器或模型ID做分支。
+        return RVP_WreckCookoffGeometry.seedRandom(column.vehicleId.hashCode()
+                ^ System.identityHashCode(column.anchor.cube())
+                ^ column.anchor.kind().ordinal()) * Math.PI * 2;
     }
 
     /**
      * 按当前出口轮询车顶火焰和炮口灰烟粒子；数量受粒子设置、密度和生命周期倍率共同控制。
      * 殉燃结束阶段仍会生成逐渐变少的短寿命视觉粒子，使效果自然淡出而非突然消失。
      */
-    private static void emitCookoffEffectParticles() {
+    private static void emitCookoffEffectParticles(Snapshot settings) {
         if (currentLevel == null) {
             return;
         }
@@ -836,7 +850,7 @@ public final class RVP_WreckCookoffController {
             case DECREASED -> 0.5D;
             case MINIMAL -> 0.2D;
         };
-        double density = Math.max(0.0D, Math.min(2.0D, RVP_WreckCookoffSettings.density));
+        double density = Math.max(0.0D, Math.min(2.0D, Parameter.DENSITY.value()));
         double baseChance = density * particleSetting;
         if (!(baseChance > 0.0D)) {
             return;
@@ -863,15 +877,19 @@ public final class RVP_WreckCookoffController {
                 }
                 double lifecycleScale = Math.max(0.0D, Math.min(1.0D, column.lifecycleScale()));
                 double effectDensity = column.isRoofColumn()
-                        ? 1.0D
-                        : Math.max(0.0D, Math.min(2.0D, RVP_WreckCookoffSettings.muzzleSmokeDensity));
+                        ? settings.value(Parameter.FLAME_DENSITY)
+                        : Math.max(0.0D, Math.min(2.0D, Parameter.MUZZLE_DENSITY.value()));
+                // 调用同一出口压力曲线，炮口灰烟保留原有持续表现。
+                if (column.isRoofColumn()) {
+                    effectDensity *= RVP_WreckCookoffDynamics.pressure(lastTick, column.phase(), settings);
+                }
                 double chance = baseChance * effectDensity * lifecycleScale;
                 if (!(chance > 0.0D)
                         || (chance < 1.0D && currentLevel.random.nextDouble() >= chance)) {
                     continue;
                 }
                 // 调用本项目单枚殉燃效果入口：车顶固定静态火焰贴图，炮口改用灰黑烟动画贴图。
-                spawnCookoffEffectParticle(column, lifecycleScale, layer);
+                spawnCookoffEffectParticle(column, lifecycleScale, layer, settings);
                 perVehicle.put(column.vehicleId(), vehicleCount + 1);
                 spawned++;
                 if (column.isRoofColumn()) {
@@ -886,7 +904,7 @@ public final class RVP_WreckCookoffController {
     }
 
     /** 创建一枚车顶火焰或炮口灰烟粒子；车顶出口额外使用连续分层和倒梯形圆锥分布。 */
-    private static void spawnCookoffEffectParticle(RenderColumn column, double lifecycleScale, int layer) {
+    private static void spawnCookoffEffectParticle(RenderColumn column, double lifecycleScale, int layer, Snapshot settings) {
         Pose pose = column.currentPose();
         if (pose == null) {
             return;
@@ -911,7 +929,9 @@ public final class RVP_WreckCookoffController {
             return;
         }
         int layerCount = effectLayerCount(column);
-        double targetHeight = roofFlameTargetHeight(length, lifecycleScale);
+        // 调用压力包络，同时影响高度、速度和浓度；峰值仍服从原有配置高度。
+        double pressure = RVP_WreckCookoffDynamics.pressure(lastTick, column.phase(), settings);
+        double targetHeight = roofFlameTargetHeight(length, lifecycleScale) * (0.65D + 0.35D * pressure);
         double travel = roofFlameCenterTravel(targetHeight, width, lifecycleScale);
         double along = roofFlameLayerPosition(travel, layer, layerCount);
         double coneProgress = along / Math.max(0.1D, travel);
@@ -925,20 +945,22 @@ public final class RVP_WreckCookoffController {
                 * (0.88D + 0.12D * (layer + 0.5D) / Math.max(1, layerCount));
         double radialDistance = Math.sqrt(currentLevel.random.nextDouble()) * coneRadius;
         position = position.add(radialDirection.scale(radialDistance));
-        double axisSpeed = roofFlameAxisSpeed(currentLevel.random.nextDouble());
+        double axisSpeed = roofFlameAxisSpeed(currentLevel.random.nextDouble()) * (0.65D + 0.35D * pressure);
         Vec3 velocity = axis.scale(axisSpeed)
                 .add(side.scale((currentLevel.random.nextDouble() - 0.5D) * 0.035D))
                 .add(cross.scale((currentLevel.random.nextDouble() - 0.5D) * 0.035D));
         // 远端同步增加径向速度，让喷燃方向也向外展开，而不只是把贴图散放在圆锥内。
-        double outwardSpeed = Math.max(0.0D, Math.min(0.5D, RVP_WreckCookoffSettings.roofOutwardSpeed))
+        double outwardSpeed = Math.max(0.0D, Math.min(0.5D, Parameter.ROOF_OUTWARD.value()))
                 * coneProgress;
         velocity = velocity.add(radialDirection.scale(outwardSpeed));
         double sizeProgress = 0.90D + 0.42D * coneProgress;
         double textureScale = roofTextureScale(currentLevel.random.nextDouble());
         float size = (float) (Math.max(0.16D, width)
                 * sizeProgress * textureScale * lifecycleScale);
-        float alpha = (float) ((0.56D + currentLevel.random.nextDouble() * 0.28D) * lifecycleScale);
-        int lifetime = 8 + currentLevel.random.nextInt(9);
+        float alpha = (float) (settings.value(Parameter.FLAME_ALPHA)
+                * (0.8D + currentLevel.random.nextDouble() * 0.4D) * lifecycleScale * pressure);
+        int lifetime = settings.integer(Parameter.FLAME_LIFETIME_MIN) + currentLevel.random.nextInt(
+                settings.integer(Parameter.FLAME_LIFETIME_MAX) - settings.integer(Parameter.FLAME_LIFETIME_MIN) + 1);
         int textureIndex = currentLevel.random.nextInt(RVP_WreckFlameParticle.textureCount());
         float red = 1.0F;
         float green = 0.32F + currentLevel.random.nextFloat() * 0.34F;
@@ -947,7 +969,7 @@ public final class RVP_WreckCookoffController {
         // 调用本项目有界喷燃粒子入口：把速度与目标高度解耦，防止高速粒子冲出可预测火柱范围。
         RVP_WreckFlameParticle.spawnBounded(Minecraft.getInstance().particleEngine, currentLevel,
                 position, velocity, flameOrigin, axis, travel,
-                size, alpha, lifetime, textureIndex, red, green, blue);
+                size, alpha, lifetime, textureIndex, red, green, blue, settings);
     }
 
     /** 创建一枚炮口灰烟；初速度沿炮管，粒子自身持续逼近世界竖直上浮速度。 */
@@ -966,20 +988,20 @@ public final class RVP_WreckCookoffController {
         Vec3 position = pose.position().add(axis.scale(along))
                 .add(side.scale((currentLevel.random.nextDouble() - 0.5D) * width))
                 .add(cross.scale((currentLevel.random.nextDouble() - 0.5D) * width));
-        double axisSpeed = Math.max(0.0D, Math.min(2.0D, RVP_WreckCookoffSettings.muzzleSmokeAxisSpeed));
-        double updraft = Math.max(0.0D, Math.min(1.0D, RVP_WreckCookoffSettings.muzzleSmokeUpdraft));
-        double spread = Math.max(0.0D, Math.min(0.25D, RVP_WreckCookoffSettings.muzzleSmokeSpread));
+        double axisSpeed = Math.max(0.0D, Math.min(2.0D, Parameter.MUZZLE_SPEED.value()));
+        double updraft = Math.max(0.0D, Math.min(1.0D, Parameter.MUZZLE_UPDRAFT.value()));
+        double spread = Math.max(0.0D, Math.min(0.25D, Parameter.MUZZLE_SPREAD.value()));
         Vec3 velocity = axis.scale(axisSpeed)
                 .add(RVP_WreckCookoffGeometry.UP.scale(updraft))
                 .add(side.scale((currentLevel.random.nextDouble() - 0.5D) * spread))
                 .add(cross.scale((currentLevel.random.nextDouble() - 0.5D) * spread));
-        float size = (float) (Math.max(0.1D, RVP_WreckCookoffSettings.muzzleSmokeSize)
+        float size = (float) (Math.max(0.1D, Parameter.MUZZLE_SIZE.value())
                 * (0.85D + currentLevel.random.nextDouble() * 0.30D) * lifecycleScale);
-        float alpha = (float) (Math.max(0.0D, Math.min(1.0D, RVP_WreckCookoffSettings.muzzleSmokeAlpha))
+        float alpha = (float) (Math.max(0.0D, Math.min(1.0D, Parameter.MUZZLE_ALPHA.value()))
                 * (0.85D + currentLevel.random.nextDouble() * 0.30D) * lifecycleScale);
         int lifetime = (int) Math.round(Math.max(4.0D,
-                Math.min(120.0D, RVP_WreckCookoffSettings.muzzleSmokeLifetime)));
-        float grey = (float) Math.max(0.02D, Math.min(0.5D, RVP_WreckCookoffSettings.muzzleSmokeGrey));
+                Math.min(120.0D, Parameter.MUZZLE_LIFETIME.value())));
+        float grey = (float) Math.max(0.02D, Math.min(0.5D, Parameter.MUZZLE_GREY.value()));
         // 调用本项目炮口灰烟自绘管理器：复用已有近处烟贴图，脱离 ParticleEngine 批次，
         // 由 AFTER_PARTICLES 阶段按距离排序自绘（与炮口白烟同一管线，深度三难正解）。
         int textureCount = RVP_WreckFlameParticle.textureCount();
@@ -1003,9 +1025,9 @@ public final class RVP_WreckCookoffController {
     /** 返回当前全局调参下的柱长；炮口柱长与出口类别分开取。 */
     public static double length(Column column) {
         return switch (column.anchor.kind()) {
-            case HATCH -> RVP_WreckCookoffSettings.height;
+            case HATCH -> Parameter.HEIGHT.value();
             case SEAM -> 0.8;
-            case MUZZLE -> RVP_WreckCookoffSettings.length;
+            case MUZZLE -> Parameter.MUZZLE_LENGTH.value();
         };
     }
 
@@ -1073,7 +1095,8 @@ public final class RVP_WreckCookoffController {
 
         @Override
         public double phase() {
-            return column.phase;
+            // 调用共用出口相位，让车顶火焰和对应火星同步泄压。
+            return pressurePhase(column);
         }
 
         @Override
@@ -1133,7 +1156,7 @@ public final class RVP_WreckCookoffController {
 
         @Override
         public double length() {
-            return RVP_WreckCookoffSettings.length;
+            return Parameter.MUZZLE_LENGTH.value();
         }
 
         @Override
@@ -1180,7 +1203,38 @@ public final class RVP_WreckCookoffController {
         return result;
     }
 
-    /** 开始 60 秒载具预览，不修改实体击毁标记。 */
+    /** 面板与指令共用的准星预览，不执行服务器命令或修改实体击毁标记。 */
+    public static String previewAtCrosshair() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.level == null || minecraft.player == null) {
+            throw new IllegalStateException("请先进入世界，再瞄准64格内的地面载具。");
+        }
+        Vec3 start = minecraft.player.getEyePosition();
+        Vec3 end = start.add(minecraft.player.getLookAngle().scale(64));
+        AbstractVehicle selected = null;
+        double closest = Double.POSITIVE_INFINITY;
+        for (Entity entity : minecraft.level.entitiesForRendering()) {
+            // 调用本项目地面载具门控，排除飞机和脱落残件。
+            if (!(entity instanceof AbstractVehicle vehicle) || vehicle.isRemoved() || !isGroundVehicle(vehicle)) continue;
+            // 调用本体结构盒转换，以实际车身范围选取，避免只靠实体中心猜测。
+            var cube = vehicle.getMainCubeOBB();
+            var bounds = cube == null ? vehicle.getBoundingBox() : OBB.toAABB(List.of(cube.obb()));
+            var hit = bounds.inflate(0.25).clip(start, end);
+            double distance = bounds.contains(start) ? 0 : hit.map(start::distanceToSqr).orElse(Double.POSITIVE_INFINITY);
+            if (distance < closest) { closest = distance; selected = vehicle; }
+        }
+        if (selected == null) { throw new IllegalStateException("请瞄准64格内的地面载具。"); }
+        // 调用只读挂点解析，显示几何近似边界，然后启动同一正式殉燃预览。
+        var discovery = RVP_WreckCookoffResolver.discover(selected, true);
+        long samples = discovery.anchors().stream().filter(a -> a.kind() == Kind.HATCH).count();
+        long hatches = discovery.anchors().stream().filter(RVP_WreckCookoffResolver::isHatchColumnAnchor).count();
+        long seams = discovery.anchors().stream().filter(a -> a.kind() == Kind.SEAM).count();
+        preview(selected);
+        return "已开始本地预览；舱盖火柱=" + hatches + "（火星采样点=" + samples + "），接缝采样点=" + seams
+                + "，炮口灰烟=" + discovery.muzzles().size() + "；无独立舱盖时使用顶部近似位置。";
+    }
+
+    /** 开启最多60秒的本地观察窗口；单次火柱仍遵守原殉燃总时长，不修改实体击毁标记。 */
     public static void preview(AbstractVehicle vehicle) {
         if (currentLevel != vehicle.level()) {
             // 调用统一清理，跨世界开启预览也不能绕过世界身份检查。
@@ -1218,28 +1272,28 @@ public final class RVP_WreckCookoffController {
     /** 调试状态，不暴露或修改服务端实体。 */
     public static String describe() {
         return "自动适配地面载具；活动残骸=" + INSTANCES.size() + "；上 tick 火星生成尝试数=" + emitted
-                + "/" + RVP_WreckCookoffBudget.PARTICLES_PER_TICK + "；height=" + RVP_WreckCookoffSettings.height
-                + " 格；length=" + RVP_WreckCookoffSettings.length
-                + " 格；density=" + RVP_WreckCookoffSettings.density
+                + "/" + RVP_WreckCookoffBudget.PARTICLES_PER_TICK + "；height=" + Parameter.HEIGHT.value()
+                + " 格；length=" + Parameter.MUZZLE_LENGTH.value()
+                + " 格；density=" + Parameter.DENSITY.value()
                 + "；车顶火焰=" + flameEmitted + "/" + RVP_WreckCookoffBudget.EFFECT_PARTICLES_PER_TICK
                 + "；炮管灰烟=" + muzzleSmokeEmitted + "/" + RVP_WreckCookoffBudget.EFFECT_PARTICLES_PER_TICK
-                + "；grow=" + RVP_WreckCookoffSettings.growthTicks
-                + " tick；shrink=" + RVP_WreckCookoffSettings.shrinkTicks + " tick"
-                + "；roof_speed=" + RVP_WreckCookoffSettings.roofAxisSpeedMin
-                + "～" + RVP_WreckCookoffSettings.roofAxisSpeedMax + " 格/tick"
-                + "；roof_cone=" + RVP_WreckCookoffSettings.roofConeBase
-                + "→" + RVP_WreckCookoffSettings.roofConeTip
-                + "；roof_outward=" + RVP_WreckCookoffSettings.roofOutwardSpeed + " 格/tick"
-                + "；roof_scale=" + RVP_WreckCookoffSettings.roofTextureScaleMin
-                + "～" + RVP_WreckCookoffSettings.roofTextureScaleMax
-                + "；roof_vertical_offset=" + RVP_WreckCookoffSettings.roofVerticalOffset + " 格"
-                + "；muzzle_smoke_density=" + RVP_WreckCookoffSettings.muzzleSmokeDensity
-                + "；muzzle_smoke_size=" + RVP_WreckCookoffSettings.muzzleSmokeSize + " 格"
-                + "；muzzle_smoke_lifetime=" + RVP_WreckCookoffSettings.muzzleSmokeLifetime + " tick"
-                + "；muzzle_smoke_axis_speed=" + RVP_WreckCookoffSettings.muzzleSmokeAxisSpeed + " 格/tick"
-                + "；muzzle_smoke_updraft=" + RVP_WreckCookoffSettings.muzzleSmokeUpdraft + " 格/tick"
-                + "；muzzle_smoke_spread=" + RVP_WreckCookoffSettings.muzzleSmokeSpread + " 格/tick"
-                + "；muzzle_smoke_alpha=" + RVP_WreckCookoffSettings.muzzleSmokeAlpha
-                + "；muzzle_smoke_grey=" + RVP_WreckCookoffSettings.muzzleSmokeGrey;
+                + "；grow=" + Parameter.GROWTH_TICKS.value()
+                + " tick；shrink=" + Parameter.SHRINK_TICKS.value() + " tick"
+                + "；roof_speed=" + Parameter.ROOF_SPEED_MIN.value()
+                + "～" + Parameter.ROOF_SPEED_MAX.value() + " 格/tick"
+                + "；roof_cone=" + Parameter.ROOF_CONE_BASE.value()
+                + "→" + Parameter.ROOF_CONE_TIP.value()
+                + "；roof_outward=" + Parameter.ROOF_OUTWARD.value() + " 格/tick"
+                + "；roof_scale=" + Parameter.ROOF_SCALE_MIN.value()
+                + "～" + Parameter.ROOF_SCALE_MAX.value()
+                + "；roof_vertical_offset=" + Parameter.ROOF_VERTICAL_OFFSET.value() + " 格"
+                + "；muzzle_smoke_density=" + Parameter.MUZZLE_DENSITY.value()
+                + "；muzzle_smoke_size=" + Parameter.MUZZLE_SIZE.value() + " 格"
+                + "；muzzle_smoke_lifetime=" + Parameter.MUZZLE_LIFETIME.value() + " tick"
+                + "；muzzle_smoke_axis_speed=" + Parameter.MUZZLE_SPEED.value() + " 格/tick"
+                + "；muzzle_smoke_updraft=" + Parameter.MUZZLE_UPDRAFT.value() + " 格/tick"
+                + "；muzzle_smoke_spread=" + Parameter.MUZZLE_SPREAD.value() + " 格/tick"
+                + "；muzzle_smoke_alpha=" + Parameter.MUZZLE_ALPHA.value()
+                + "；muzzle_smoke_grey=" + Parameter.MUZZLE_GREY.value();
     }
 }

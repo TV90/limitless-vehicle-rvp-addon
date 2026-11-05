@@ -4,6 +4,8 @@
 
 2026-11-05新增独立的 **“延时炮口白烟”** 分类：四组38项，覆盖喷烟时序、生成范围、烟量、初速、上浮、空气阻力、连续旋涡、风、运动继承、尺寸、浓度、消散、灰度和局部受光。原有8项指令参数和新增30项均实际接入白烟；完整清单见[载具炮口烟实现与调试](RVP载具炮口烟实现与调试_20261002.md)。沿用现有贴图，不增加美术资产。
 
+2026-11-05新增独立的 **“载具殉燃”** 分类：8组73项，原有21项与新增52项共用业务参数，覆盖喷焰形状、分层配色、喷发起伏、上浮与翻卷、火星冷却与短拖影、轻重比例、抛射弹跳和殉燃炮口灰烟。右键“喷焰形状与消散”组可预览准星64格内地面载具；生成参数下一刻生效，已有粒子保持出生参数。默认保留原有表现，继续使用现有贴图；完整清单与手动调参起点见[殉燃喷焰与火星F8调参](RVP殉燃喷焰与火星F8调参_20261105.md)。
+
 ## 使用方式
 
 - 游戏内按 **F8**，或输入客户端指令 **`/rvptune`**。不要求乘坐载具，不需要服务器管理员权限。按键可在原版控制设置的 YWZJ RVP 分类里修改。
@@ -43,6 +45,8 @@
 
 2026-11-05白烟接入后的登记回归为 `REGISTER bus=MOD modules=[screen_space, muzzle_smoke] options=141`，其中白烟4组38项，其余为屏幕空间特效参数。注册回归保留“游戏总线尚未启动”的真实条件，按生产订阅注解选择加载总线并执行实际回调；后续扩展会继续增加数量。
 
+2026-11-05殉燃接入后的当前登记回归为 `REGISTER bus=MOD modules=[screen_space, muzzle_smoke, wreck_cookoff] options=214`，殉燃新增独立分类8组73项。`/rvpcookoff set/reset`与面板共享覆盖及本地保存；指令速度仍用格/刻，面板速度换为格/秒。
+
 ## 保存与撤销
 
 | 操作 | 结果 |
@@ -80,6 +84,7 @@
 | `client/tuning/RVP_RegisterTuningModulesEvent.java` | MOD加载总线上的客户端扩展注册事件 |
 | `client/tuning/RVP_ScreenSpaceTuningModule.java` | 首批屏幕空间特效适配器 |
 | `client/tuning/RVP_MuzzleSmokeTuningModule.java` | 延时炮口白烟四组38项、格/秒换算和无伤害预览 |
+| `client/tuning/RVP_WreckCookoffTuningModule.java` | 载具殉燃8组73项、共用指令覆盖和准星载具无伤害预览 |
 | `client/tuning/RVP_TuningPresetStore.java` | 当前格式预设的读取和临时文件替换保存 |
 | `client/tuning/RVP_TuningClient.java` | 客户端启动、F8、命令和 Mods 配置入口 |
 | `client/tuning/RVP_TuningInputGuard.java` | 同键平滑视角点击的消费策略，保留原来的视角设置 |
