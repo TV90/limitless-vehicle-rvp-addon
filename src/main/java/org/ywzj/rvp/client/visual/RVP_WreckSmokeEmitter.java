@@ -6,6 +6,7 @@ import net.minecraft.util.Mth;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.event.TickEvent;
@@ -16,6 +17,7 @@ import org.ywzj.rvp.client.particle.RVP_NearSmokeParticle;
 import org.ywzj.rvp.client.particle.RVP_WreckSmokeParticle;
 import org.ywzj.rvp.client.particle.RVP_WreckSmokeParticle.SmokeLayer;
 import org.ywzj.rvp.client.visual.RVP_WreckSmokeDebugSettings.Parameter;
+import org.ywzj.rvp.client.visual.RVP_WreckSmokeDebugSettings.Snapshot;
 import org.ywzj.rvp.client.visual.cookoff.RVP_WreckCookoffController;
 import org.ywzj.rvp.vehicle.BoneEngineConfig;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
@@ -32,11 +34,9 @@ import java.util.List;
 @Mod.EventBusSubscriber(value = Dist.CLIENT, modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class RVP_WreckSmokeEmitter {
 
-    /** 两次发射的间隔，单位 tick；每辆残骸在 60 秒内持续生成烟团。 */
-    private static final int EMIT_PERIOD_TICKS = 5;
     /** 客户端额外发射距离阈值，单位格；实际仍受载具实体追踪和客户端渲染距离限制。 */
     private static final double EMIT_RANGE = 1536.0;
-    /** 单辆载具每轮最多生成的近处烟团数量，控制大型载具的粒子预算。 */
+    /** 单辆载具每轮原有短烟基础预算上限；调参数量倍率在此之后计算，最多12枚。 */
     private static final int MAX_SMOKE_PER_ROUND = 4;
     /** 指令预览持续时间，单位 tick；客户端世界切换时会提前停止。 */
     private static final int PREVIEW_DURATION_TICKS = 1200;
@@ -52,16 +52,39 @@ public final class RVP_WreckSmokeEmitter {
     private static long previewEndGameTime;
     /** 上次预览发射的客户端世界 tick，防止暂停时重复发射。 */
     private static long previewLastEmissionGameTime = Long.MIN_VALUE;
+    /** 当前预览是否只发射短烟；原指令start入口仍默认只预览长烟。 */
+    private static boolean previewNear;
 
     private RVP_WreckSmokeEmitter() {
     }
 
     /** 在指定客户端位置开启 60 秒长程烟预览，无须生成或击毁真实载具。 */
     public static void startPreview(ClientLevel level, Vec3 center) {
+        // 保留原指令入口的长烟预览语义，F8通过独立选择预览短烟。
+        startPreview(level, center, false);
+    }
+
+    /** 按长烟或短烟选择，在指定位置开启60秒的纯客户端预览。 */
+    private static void startPreview(ClientLevel level, Vec3 center, boolean near) {
         previewLevel = level;
         previewCenter = center;
+        previewNear = near;
         previewEndGameTime = level.getGameTime() + PREVIEW_DURATION_TICKS;
         previewLastEmissionGameTime = Long.MIN_VALUE;
+    }
+
+    /** F8的无伤害预览入口；使用准星命中点，未命中时使用眼前六格。 */
+    public static String previewAtCrosshair(boolean near) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.level == null || minecraft.player == null) {
+            throw new IllegalStateException("必须进入世界后才能预览击毁烟");
+        }
+        HitResult hit = minecraft.hitResult;
+        Vec3 center = hit != null && hit.getType() != HitResult.Type.MISS ? hit.getLocation()
+                : minecraft.player.getEyePosition().add(minecraft.player.getLookAngle().scale(6));
+        // 调用正式预览烟源，复用真实残骸的生成参数和粒子，不创建实体、不造成伤害。
+        startPreview(minecraft.level, center, near);
+        return "已在准星位置预览击毁" + (near ? "短烟" : "长烟") + "60秒；重新预览会替换当前烟源。";
     }
 
     /** 停止预览并释放对客户端世界的引用。 */
@@ -70,6 +93,7 @@ public final class RVP_WreckSmokeEmitter {
         previewLevel = null;
         previewEndGameTime = 0;
         previewLastEmissionGameTime = Long.MIN_VALUE;
+        previewNear = false;
     }
 
     @SubscribeEvent
@@ -86,7 +110,7 @@ public final class RVP_WreckSmokeEmitter {
             stopPreview();
             return;
         }
-        // 调用本项目预览发射入口：准星位置的临时烟柱与真实残骸共用长程生成逻辑。
+        // 调用本项目预览发射入口：准星位置的临时烟与真实残骸共用所选烟种的生成逻辑。
         emitPreviewSmoke(minecraft, level);
         // 调用本项目殉燃 tick 门控，共用当前实体遍历而不改变烟雾自身周期。
         boolean cookoffTick = RVP_WreckCookoffController.begin(level);
@@ -102,7 +126,8 @@ public final class RVP_WreckSmokeEmitter {
                     || minecraft.player.distanceToSqr(vehicle) > EMIT_RANGE * EMIT_RANGE) {
                 continue;
             }
-            boolean emitNear = vehicle.tickCount % EMIT_PERIOD_TICKS == 0;
+            boolean emitNear = vehicle.tickCount % Parameter.NEAR_EMIT_PERIOD.intValue() == 0
+                    && Parameter.NEAR_COUNT_SCALE.value() > 0;
             boolean emitLong = vehicle.tickCount % Parameter.EMIT_PERIOD.intValue() == 0
                     && RVP_WreckCookoffController.canEmitLongSmoke(vehicle, level.getGameTime());
             if (!emitNear && !emitLong) {
@@ -130,9 +155,15 @@ public final class RVP_WreckSmokeEmitter {
         double radius = Math.max(0.5, Math.min(width, depth) * 0.5);
         RandomSource random = level.random;
         if (emitNear) {
-            int count = Mth.clamp(Mth.ceil(Math.max(width, depth) / 2.5), 2, MAX_SMOKE_PER_ROUND);
+            // 调用每轮出生快照和小数烟量抽样；倍率1时保持原2～4枚预算及随机序列。
+            Snapshot settings = RVP_WreckSmokeDebugSettings.snapshot();
+            int count = RVP_WreckSmokeLogic.nearCount(
+                    Mth.clamp(Mth.ceil(Math.max(width, depth) / 2.5), 2, MAX_SMOKE_PER_ROUND),
+                    settings.value(Parameter.NEAR_COUNT_SCALE), random);
             // 调用本项目发动机骨骼解析入口：短程击毁烟优先从车体发动机实时 OBB 内生成。
-            emitNearSmokeAtEngine(minecraft, level, random, vehicle, count, center, radius, height);
+            if (count > 0) {
+                emitNearSmokeAtEngine(minecraft, level, random, vehicle, count, center, radius, height, settings);
+            }
         }
         if (emitLong) {
             // 调用本项目相位计算入口：使用当前调试周期决定单点的水平错相位置。
@@ -148,7 +179,7 @@ public final class RVP_WreckSmokeEmitter {
         return Mth.TWO_PI * (tick % period) / period;
     }
 
-    /** 在准星位置按真实长程烟周期发射预览，并在超时或切换世界时清理状态。 */
+    /** 在准星位置按所选烟种的真实周期发射，超时或切换世界时清理状态。 */
     private static void emitPreviewSmoke(Minecraft minecraft, ClientLevel level) {
         if (previewCenter == null) {
             return;
@@ -159,10 +190,20 @@ public final class RVP_WreckSmokeEmitter {
             stopPreview();
             return;
         }
-        if (gameTime == previewLastEmissionGameTime || gameTime % Parameter.EMIT_PERIOD.intValue() != 0) {
+        int period = previewNear ? Parameter.NEAR_EMIT_PERIOD.intValue() : Parameter.EMIT_PERIOD.intValue();
+        if (gameTime == previewLastEmissionGameTime || gameTime % period != 0) {
             return;
         }
         previewLastEmissionGameTime = gameTime;
+        if (previewNear) {
+            // 调用正式短烟生成入口；预览无发动机结构，用原车体范围兜底，便于观察尺寸与运动。
+            Snapshot settings = RVP_WreckSmokeDebugSettings.snapshot();
+            int count = RVP_WreckSmokeLogic.nearCount(2, settings.value(Parameter.NEAR_COUNT_SCALE), level.random);
+            for (int i = 0; i < count; i++) {
+                emitNearSmokeParticle(minecraft, level, level.random, previewCenter, PREVIEW_RADIUS, PREVIEW_HEIGHT, settings);
+            }
+            return;
+        }
         // 调用本项目相位与发射入口：预览和真实残骸使用同一套当前调试参数。
         emitLongSmokePair(minecraft, level, level.random, previewCenter, PREVIEW_RADIUS, PREVIEW_HEIGHT,
                 horizontalPhase(gameTime));
@@ -170,18 +211,22 @@ public final class RVP_WreckSmokeEmitter {
 
     /** 在载具主结构附近随机取样，保留近处浓烟原有的尺寸、寿命和分布。 */
     private static void emitNearSmokeParticle(Minecraft minecraft, ClientLevel level, RandomSource random,
-                                              Vec3 center, double radius, double height) {
+                                              Vec3 center, double radius, double height, Snapshot settings) {
         double angle = random.nextDouble() * Math.PI * 2.0;
-        double offset = Math.sqrt(random.nextDouble()) * radius * 0.8;
+        double offset = Math.sqrt(random.nextDouble()) * radius * 0.8 * settings.value(Parameter.NEAR_SOURCE_SCALE);
         double x = center.x + Math.cos(angle) * offset;
-        double y = center.y + Math.max(0.1, height * 0.22) + random.nextDouble() * 0.25;
+        double y = center.y + Math.max(0.1, height * 0.22)
+                + random.nextDouble() * 0.25 * settings.value(Parameter.NEAR_SOURCE_SCALE)
+                + settings.value(Parameter.NEAR_VERTICAL_OFFSET);
         double z = center.z + Math.sin(angle) * offset;
-        float size = RVP_NearSmokeParticle.resolveWreckStyleSize(radius, random.nextDouble());
-        int lifetime = 42 + random.nextInt(24);
+        // 调用原有车体尺寸规则后附加倍率；寿命使用与面板共用的合法随机区间。
+        float size = RVP_NearSmokeParticle.resolveWreckStyleSize(radius, random.nextDouble())
+                * (float) settings.value(Parameter.NEAR_SIZE_SCALE);
+        int lifetime = settings.integer(Parameter.NEAR_LIFETIME_MIN) + random.nextInt(
+                settings.integer(Parameter.NEAR_LIFETIME_MAX) - settings.integer(Parameter.NEAR_LIFETIME_MIN) + 1);
         int variant = random.nextInt(3);
         // 调用本项目通用近处烟粒子：击毁载具使用普通样式，不触发引擎瘫痪动画。
-        addNearSmokeParticle(minecraft, level, random, x, y, z, size, lifetime, variant,
-                RVP_NearSmokeParticle.Style.GENERIC);
+        addNearSmokeParticle(minecraft, level, random, x, y, z, size, lifetime, variant, settings);
     }
 
     /** 从水平错相的单个生成点发射略微错位的深色核心与浅色外层。 */
@@ -189,7 +234,8 @@ public final class RVP_WreckSmokeEmitter {
                                           Vec3 center, double radius, double height,
                                           double horizontalPhase) {
         double x = center.x + Math.sin(horizontalPhase) * Parameter.HORIZONTAL_OFFSET.value();
-        double y = center.y + Math.max(0.1, height * 0.22) + random.nextDouble() * 0.25;
+        double y = center.y + Math.max(0.1, height * 0.22) + Parameter.LONG_VERTICAL_OFFSET.value()
+                + random.nextDouble() * Parameter.LONG_VERTICAL_JITTER.value();
         double z = center.z + Math.sin(horizontalPhase + Math.toRadians(Parameter.Z_PHASE.value()))
                 * Parameter.HORIZONTAL_OFFSET.value();
         float coreSize = (float) Mth.clamp(radius * (0.44 + random.nextDouble() * 0.12), 0.8, 2.4)
@@ -199,9 +245,10 @@ public final class RVP_WreckSmokeEmitter {
                 Parameter.LIFETIME.intValue(), 0, SmokeLayer.LONG_CORE);
 
         double edgeAngle = horizontalPhase + 0.8 + random.nextDouble() * 1.6;
-        double edgeOffset = Mth.clamp(radius * (0.22 + random.nextDouble() * 0.16), 0.35, 1.2);
+        double edgeOffset = Mth.clamp(radius * (0.22 + random.nextDouble() * 0.16), 0.35, 1.2)
+                * Parameter.LONG_OUTER_OFFSET_SCALE.value();
         double edgeX = x + Math.cos(edgeAngle) * edgeOffset;
-        double edgeY = y + (random.nextDouble() - 0.5) * 0.9;
+        double edgeY = y + (random.nextDouble() - 0.5) * 0.9 * Parameter.LONG_OUTER_OFFSET_SCALE.value();
         double edgeZ = z + Math.sin(edgeAngle) * edgeOffset;
         float edgeSize = coreSize * (1.28f + random.nextFloat() * 0.18f)
                 * Parameter.OUTER_SIZE_SCALE.floatValue();
@@ -210,16 +257,17 @@ public final class RVP_WreckSmokeEmitter {
                 Parameter.LIFETIME.intValue(), 0, SmokeLayer.LONG_OUTER);
     }
 
-    /** 添加一枚通用近处烟粒子；调用方通过样式选择普通烟或橙色引擎烟。 */
+    /** 添加一枚击毁短烟；专用入口与受损发动机普通入口隔离。 */
     private static void addNearSmokeParticle(Minecraft minecraft, ClientLevel level, RandomSource random,
                                              double x, double y, double z, float size, int lifetime,
-                                             int variant, RVP_NearSmokeParticle.Style style) {
-        double vx = (random.nextDouble() - 0.5) * 0.035;
-        double vy = 0.025 + random.nextDouble() * 0.025;
-        double vz = (random.nextDouble() - 0.5) * 0.035;
-        // 调用本项目通用近处烟粒子：由样式决定普通烟或橙色引擎烟出生动画。
-        minecraft.particleEngine.add(RVP_NearSmokeParticle.create(level, x, y, z,
-                vx, vy, vz, size, lifetime, variant, style));
+                                             int variant, Snapshot settings) {
+        double vx = (random.nextDouble() - 0.5) * settings.value(Parameter.NEAR_INITIAL_SPREAD);
+        double vy = settings.value(Parameter.NEAR_INITIAL_UPDRAFT_MIN) + random.nextDouble()
+                * (settings.value(Parameter.NEAR_INITIAL_UPDRAFT_MAX) - settings.value(Parameter.NEAR_INITIAL_UPDRAFT_MIN));
+        double vz = (random.nextDouble() - 0.5) * settings.value(Parameter.NEAR_INITIAL_SPREAD);
+        // 调用击毁短烟专用工厂，已有短烟保持出生快照，受损发动机继续走原create入口。
+        minecraft.particleEngine.add(RVP_NearSmokeParticle.createWreck(level, x, y, z,
+                vx, vy, vz, size, lifetime, variant, settings));
     }
 
     /**
@@ -230,30 +278,35 @@ public final class RVP_WreckSmokeEmitter {
      */
     private static void emitNearSmokeAtEngine(Minecraft minecraft, ClientLevel level, RandomSource random,
                                               AbstractVehicle vehicle, int count, Vec3 fallbackCenter,
-                                              double fallbackRadius, double fallbackHeight) {
+                                              double fallbackRadius, double fallbackHeight, Snapshot settings) {
+        // 调用原有发动机实时包围盒入口，只调出烟取点范围，不修改模型或碰撞盒。
         List<OBB> engineObbs = resolveEngineObbs(vehicle);
         if (engineObbs.isEmpty()) {
             for (int i = 0; i < count; i++) {
                 // 调用本项目旧版主 OBB 短程烟入口：无发动机骨数据时保持原有视觉兜底。
-                emitNearSmokeParticle(minecraft, level, random, fallbackCenter, fallbackRadius, fallbackHeight);
+                emitNearSmokeParticle(minecraft, level, random, fallbackCenter, fallbackRadius, fallbackHeight, settings);
             }
             return;
         }
         for (int i = 0; i < count; i++) {
             OBB engineObb = engineObbs.get(i % engineObbs.size());
-            Vec3 point = randomPointIn(engineObb, random);
+            // 调用本项目取点入口，以包围盒中心为基准缩放局部随机范围。
+            Vec3 point = randomPointIn(engineObb, random, settings.value(Parameter.NEAR_SOURCE_SCALE));
             if (point == null) {
                 continue;
             }
             Vector3f extents = engineObb.extents();
             // OBB extents 是半尺寸；用发动机 OBB 的水平半径复用击毁烟尺寸规则。
             double engineRadius = Math.max(0.5, Math.min(extents.x, extents.z));
-            float size = RVP_NearSmokeParticle.resolveWreckStyleSize(engineRadius, random.nextDouble());
-            int lifetime = 42 + random.nextInt(24);
+            // 调用原有烟尺寸规则后附加击毁专用倍率，发动机受损烟不读取该倍率。
+            float size = RVP_NearSmokeParticle.resolveWreckStyleSize(engineRadius, random.nextDouble())
+                    * (float) settings.value(Parameter.NEAR_SIZE_SCALE);
+            int lifetime = settings.integer(Parameter.NEAR_LIFETIME_MIN) + random.nextInt(
+                    settings.integer(Parameter.NEAR_LIFETIME_MAX) - settings.integer(Parameter.NEAR_LIFETIME_MIN) + 1);
             int variant = random.nextInt(3);
             // 调用本项目通用近处烟粒子：发动机位置使用普通击毁烟样式。
-            addNearSmokeParticle(minecraft, level, random, point.x, point.y, point.z,
-                    size, lifetime, variant, RVP_NearSmokeParticle.Style.GENERIC);
+            addNearSmokeParticle(minecraft, level, random, point.x,
+                    point.y + settings.value(Parameter.NEAR_VERTICAL_OFFSET), point.z, size, lifetime, variant, settings);
         }
     }
 
@@ -275,12 +328,14 @@ public final class RVP_WreckSmokeEmitter {
     }
 
     /** 在 OBB 局部空间均匀取样一点，并转换为当前载具姿态下的世界坐标。 */
-    private static Vec3 randomPointIn(OBB obb, RandomSource random) {
+    private static Vec3 randomPointIn(OBB obb, RandomSource random, double scale) {
         Vector3f extents = obb.extents();
         Vector3f local = new Vector3f(
                 (random.nextFloat() * 2.0f - 1.0f) * extents.x,
                 (random.nextFloat() * 2.0f - 1.0f) * extents.y,
                 (random.nextFloat() * 2.0f - 1.0f) * extents.z);
+        local.mul((float) scale);
+        // 调用本体局部转世界坐标入口，让烟源跟随载具当前姿态。
         Vector3f world = obb.localToWorld(local, obb.getAxes());
         return new Vec3(world.x, world.y, world.z);
     }
@@ -289,9 +344,11 @@ public final class RVP_WreckSmokeEmitter {
     private static void addSmokeParticle(Minecraft minecraft, ClientLevel level, RandomSource random,
                                          double x, double y, double z, float size, int lifetime,
                                          int variant, SmokeLayer layer) {
-        double vx = (random.nextDouble() - 0.5) * 0.035;
-        double vy = 0.025 + random.nextDouble() * 0.025;
-        double vz = (random.nextDouble() - 0.5) * 0.035;
+        // 读取同一参数表的长烟出生速度，指令与F8修改在下一枚粒子生效。
+        double vx = (random.nextDouble() - 0.5) * Parameter.LONG_INITIAL_SPREAD.value();
+        double vy = Parameter.LONG_INITIAL_UPDRAFT_MIN.value() + random.nextDouble()
+                * (Parameter.LONG_INITIAL_UPDRAFT_MAX.value() - Parameter.LONG_INITIAL_UPDRAFT_MIN.value());
+        double vz = (random.nextDouble() - 0.5) * Parameter.LONG_INITIAL_SPREAD.value();
         // 调用本项目长程烟粒子工厂：按核心/外层选择贴图和透明度。
         minecraft.particleEngine.add(RVP_WreckSmokeParticle.create(level, x, y, z,
                 vx, vy, vz, size, lifetime, variant, layer));

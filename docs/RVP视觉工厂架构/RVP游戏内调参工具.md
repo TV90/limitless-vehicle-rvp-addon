@@ -8,6 +8,8 @@
 
 ## 使用方式
 
+2026-11-05新增 **“载具击毁烟”** 分类：长烟、短烟各四组，共69项（原长烟16项、新增53项）。覆盖烟源节奏、形状消散、浓度颜色和上浮气流；右键各自烟源组可做60秒无伤害预览。沿用现有默认表现，不填推荐数值，不新增素材；短烟出生快照与受损发动机烟隔离。完整清单见[击毁长烟与短烟F8调参](RVP击毁长烟与短烟F8调参_20261105.md)。
+
 - 游戏内按 **F8**，或输入客户端指令 **`/rvptune`**。不要求乘坐载具，不需要服务器管理员权限。按键可在原版控制设置的 YWZJ RVP 分类里修改。
 - 也可以从 **Mods → RVP → 配置** 进入。
 - 外观按参考图绘制：灰紫色不透明浮窗、居中的“— 配置”标题、顶部搜索与右侧操作按钮、左侧窄分类栏，以及名称/滑条/数值框同一行。初次打开时左边约在屏幕宽度36.1%、顶部在高度62.5%、窗口宽约48.2%，右侧保留世界画面；小窗口或较大的GUI缩放会限制最小宽高，避免输入框无法操作。
@@ -45,7 +47,9 @@
 
 2026-11-05白烟接入后的登记回归为 `REGISTER bus=MOD modules=[screen_space, muzzle_smoke] options=141`，其中白烟4组38项，其余为屏幕空间特效参数。注册回归保留“游戏总线尚未启动”的真实条件，按生产订阅注解选择加载总线并执行实际回调；后续扩展会继续增加数量。
 
-2026-11-05殉燃接入后的当前登记回归为 `REGISTER bus=MOD modules=[screen_space, muzzle_smoke, wreck_cookoff] options=214`，殉燃新增独立分类8组73项。`/rvpcookoff set/reset`与面板共享覆盖及本地保存；指令速度仍用格/刻，面板速度换为格/秒。
+2026-11-05殉燃接入后的登记回归为 `REGISTER bus=MOD modules=[screen_space, muzzle_smoke, wreck_cookoff] options=214`，殉燃新增独立分类8组73项。`/rvpcookoff set/reset`与面板共享覆盖及本地保存；指令速度仍用格/刻，面板速度换为格/秒。
+
+2026-11-05击毁烟接入后的登记包含第四个分类`wreck_smoke`，新增8组69项，总计283项。`/rvpwrecksmoke set/reset`与F8共享覆盖和本地保存；原指令预览仍默认长烟，F8可分别预览长烟、短烟。上升、风和消散等长烟项沿用实时语义，短烟已有粒子保持出生参数。
 
 ## 保存与撤销
 
@@ -85,6 +89,7 @@
 | `client/tuning/RVP_ScreenSpaceTuningModule.java` | 首批屏幕空间特效适配器 |
 | `client/tuning/RVP_MuzzleSmokeTuningModule.java` | 延时炮口白烟四组38项、格/秒换算和无伤害预览 |
 | `client/tuning/RVP_WreckCookoffTuningModule.java` | 载具殉燃8组73项、共用指令覆盖和准星载具无伤害预览 |
+| `client/tuning/RVP_WreckSmokeTuningModule.java` | 击毁长烟/短烟8组69项、原指令共用参数和两种无伤害预览 |
 | `client/tuning/RVP_TuningPresetStore.java` | 当前格式预设的读取和临时文件替换保存 |
 | `client/tuning/RVP_TuningClient.java` | 客户端启动、F8、命令和 Mods 配置入口 |
 | `client/tuning/RVP_TuningInputGuard.java` | 同键平滑视角点击的消费策略，保留原来的视角设置 |

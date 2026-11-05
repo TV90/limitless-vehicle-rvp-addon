@@ -24,7 +24,7 @@ import org.ywzj.rvp.client.visual.RVP_WreckSmokeEmitter;
 import java.util.Arrays;
 import java.util.List;
 
-/** 注册仅在本地客户端生效的长程击毁烟调试指令。 */
+/** 注册仅在本地客户端生效的击毁长烟、短烟指令，与F8共用参数及覆盖。 */
 @Mod.EventBusSubscriber(value = Dist.CLIENT, modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class RVP_WreckSmokeDebugCommands {
 
@@ -59,7 +59,7 @@ public final class RVP_WreckSmokeDebugCommands {
                         .then(Commands.literal("stop").executes(RVP_WreckSmokeDebugCommands::stopPreview))));
     }
 
-    /** 显示当前客户端全部长程烟参数及使用方法。 */
+    /** 显示当前客户端全部击毁烟参数及使用方法。 */
     private static int show(CommandContext<CommandSourceStack> context) {
         context.getSource().sendSuccess(() -> Component.literal("[RVP 击毁烟] /rvpwrecksmoke set <参数> <数值>；"
                 + "reset [参数]；preview start|stop"), false);
@@ -72,7 +72,7 @@ public final class RVP_WreckSmokeDebugCommands {
 
     /** 验证数值范围后修改本地会话参数。 */
     private static int set(CommandContext<CommandSourceStack> context) {
-        // 调用本项目参数查询入口：仅允许修改已登记的长程烟参数。
+        // 调用本项目参数查询入口：仅允许修改已登记的长烟或短烟参数。
         Parameter parameter = Parameter.find(StringArgumentType.getString(context, "parameter"));
         if (parameter == null) {
             context.getSource().sendFailure(Component.literal("未知参数；使用 /rvpwrecksmoke show 查看可用名称"));
@@ -86,7 +86,8 @@ public final class RVP_WreckSmokeDebugCommands {
             return 0;
         }
         context.getSource().sendSuccess(() -> Component.literal("[RVP 击毁烟] " + parameter.describe()
-                + "；发射、寿命和初始外观仅影响新粒子，其余参数也影响已存在的长程烟"), false);
+                + (parameter.liveForExisting() ? "；已有长烟下一刻生效"
+                : "；下一轮生成生效，已有粒子保持出生参数")), false);
         return 1;
     }
 
@@ -103,7 +104,7 @@ public final class RVP_WreckSmokeDebugCommands {
         return 1;
     }
 
-    /** 恢复全部长程烟参数的代码默认值。 */
+    /** 恢复全部击毁长烟、短烟参数的代码默认值。 */
     private static int resetAll(CommandContext<CommandSourceStack> context) {
         // 调用本项目参数重置入口：一次恢复所有会话级调试值。
         RVP_WreckSmokeDebugSettings.resetAll();
