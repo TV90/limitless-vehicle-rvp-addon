@@ -4,7 +4,6 @@ import net.minecraft.util.RandomSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.ywzj.rvp.client.visual.vehicle.RVP_DelayedMuzzleSmokeSettings.Parameter;
-import org.ywzj.rvp.client.visual.vehicle.RVP_DelayedMuzzleSmokeSettings.VelocityParameter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -29,7 +28,7 @@ class RVP_DelayedMuzzleSmokeTest {
         assertFalse(RVP_DelayedMuzzleSmokeEmitter.supportsDelayedMuzzleSmoke(Float.NaN));
     }
 
-    /** 固定喷烟间隔必须保持为每 1 tick 一枚。 */
+    /** 生成队列仍每刻推进一次，具体烟量由每刻烟团数控制。 */
     @Test
     void emissionIntervalIsOneTick() {
         assertEquals(1, RVP_DelayedMuzzleSmokeEmitter.EMIT_INTERVAL_TICKS);
@@ -44,8 +43,8 @@ class RVP_DelayedMuzzleSmokeTest {
         assertEquals(20, Parameter.EMIT_DURATION_MAX.intValue());
         assertEquals(40, Parameter.PARTICLE_LIFETIME_MIN.intValue());
         assertEquals(60, Parameter.PARTICLE_LIFETIME_MAX.intValue());
-        assertEquals(0.12, VelocityParameter.AXIAL_SPEED_MIN.doubleValue(), 1.0E-9);
-        assertEquals(0.15, VelocityParameter.AXIAL_SPEED_MAX.doubleValue(), 1.0E-9);
+        assertEquals(0.12, Parameter.AXIAL_SPEED_MIN.doubleValue(), 1.0E-9);
+        assertEquals(0.15, Parameter.AXIAL_SPEED_MAX.doubleValue(), 1.0E-9);
     }
 
     /** 随机取值包含上下边界，避免配置范围被错误地变成半开区间。 */
@@ -65,7 +64,7 @@ class RVP_DelayedMuzzleSmokeTest {
         }
         for (int i = 0; i < 200; i++) {
             double axialSpeed = RVP_DelayedMuzzleSmokeSettings.randomDoubleInclusive(
-                    VelocityParameter.AXIAL_SPEED_MIN, VelocityParameter.AXIAL_SPEED_MAX, random);
+                    Parameter.AXIAL_SPEED_MIN, Parameter.AXIAL_SPEED_MAX, random);
             assertTrue(axialSpeed >= 0.12 && axialSpeed <= 0.15);
         }
     }
@@ -79,9 +78,9 @@ class RVP_DelayedMuzzleSmokeTest {
         assertEquals(10, Parameter.DELAY_MIN.intValue());
         assertEquals(30, Parameter.DELAY_MAX.intValue());
 
-        RVP_DelayedMuzzleSmokeSettings.set(VelocityParameter.AXIAL_SPEED_MAX, 0.18);
+        RVP_DelayedMuzzleSmokeSettings.set(Parameter.AXIAL_SPEED_MAX, 0.18);
         assertThrows(IllegalArgumentException.class,
-                () -> RVP_DelayedMuzzleSmokeSettings.set(VelocityParameter.AXIAL_SPEED_MIN, 0.19));
-        assertEquals(0.12, VelocityParameter.AXIAL_SPEED_MIN.doubleValue(), 1.0E-9);
+                () -> RVP_DelayedMuzzleSmokeSettings.set(Parameter.AXIAL_SPEED_MIN, 0.19));
+        assertEquals(0.12, Parameter.AXIAL_SPEED_MIN.doubleValue(), 1.0E-9);
     }
 }
