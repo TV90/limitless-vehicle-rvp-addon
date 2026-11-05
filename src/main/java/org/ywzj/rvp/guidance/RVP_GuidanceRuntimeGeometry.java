@@ -110,10 +110,17 @@ public final class RVP_GuidanceRuntimeGeometry {
     /** 截获距离单独配置；持续跟踪仍直接读取 active.targetDistanceRange，不受搜索缩窄影响。 */
     public static RVP_Range<Float> resolveAcquireDistanceRange(
             RVP_BaseBullet projectile, RVP_GuidanceActiveConfig config) {
-        if (config.phase() == RVP_GuidancePhase.TERMINAL && projectile.getRvpData() != null) {
-            var terminal = projectile.getRvpData().getGuidanceData().getTerminalGuidance();
-            if (terminal != null && terminal.getSeekerSearchDistanceRange() != null) {
-                return terminal.getSeekerSearchDistanceRange();
+        if (projectile.getRvpData() != null) {
+            var guidance = projectile.getRvpData().getGuidanceData();
+            if (config.phase() == RVP_GuidancePhase.TERMINAL) {
+                var terminal = guidance.getTerminalGuidance();
+                if (terminal != null && terminal.getSeekerSearchDistanceRange() != null) {
+                    return terminal.getSeekerSearchDistanceRange();
+                }
+            } else if (config.guidanceType() == RVP_EnumGuidanceType.AIR
+                    && guidance.getSeekerSearchDistanceRange() != null) {
+                // 指定目标也必须通过弹载红外捕获距离，不能把发射前授权直接当成弹上锁定。
+                return guidance.getSeekerSearchDistanceRange();
             }
         }
         return config.targetDistanceRange();

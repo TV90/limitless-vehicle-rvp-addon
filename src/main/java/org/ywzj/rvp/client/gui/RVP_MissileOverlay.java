@@ -54,7 +54,8 @@ public class RVP_MissileOverlay implements IGuiOverlay {
             renderArmCircles(guiGraphics, weaponUnit, data, partialTick);
             return;
         }
-        if (!RVP_IrLockHelper.supportsInfraredLaunchSearch(data)) return;
+        // AIR 保留武器站的 RF 导引头圈，避免与本红外渲染层叠画。
+        if (!RVP_IrLockHelper.isIrLaunchWeapon(data)) return;
         if (RVP_IrHudProfile.resolve(RVP_IrLockHelper.getLaunchAltitudeRange(data)) == RVP_IrHudProfile.GROUND) return;
 
         float fov = data.resolveLaunchOffAxisLockAngle();
@@ -137,7 +138,7 @@ public class RVP_MissileOverlay implements IGuiOverlay {
 
         // [RVP] 2026-10-22：无头瞄 IR 弹没有 HMD 框（RVP_HmdOverlay 不进入 IR 分支），
         // 截获文案改挂在导引头大圈下方；armed 后 tracker 候选转 null ⇒ 文案自动消失。
-        if ((!data.isEnableIrHmd() || data.getGuidanceData().getGuidanceType() == RVP_EnumGuidanceType.AIR) && weaponUnit.isSeekerOn()
+        if (!data.isEnableIrHmd() && weaponUnit.isSeekerOn()
                 && hmdState.getIrTrackingEntity() != null) {
             Minecraft mc = Minecraft.getInstance();
             int labelHalf = mc.font.width(IR_ACQUIRING) / 2;
@@ -145,16 +146,8 @@ public class RVP_MissileOverlay implements IGuiOverlay {
                     (int) x - labelHalf, (int) y + 18, 0xFFFFFFFF, true);
         }
 
-        Entity locked = null;
-        if (weaponUnit.isSeekerOn()) {
-            // [RVP] 2026-10-21（方案 D2）：IR 弹红圈只认 armed 通道（连续 dwell 授权）——
-            // EO/RF/站级 cue 锁在 armed 之前不再触发锁定圈；非 IR 弹保持原读取。
-            if (data != null && RVP_IrLockHelper.supportsInfraredLaunchSearch(data)) {
-                locked = hmdState.getIrArmedEntity();
-            } else {
-                locked = hmdState.isIrHmd() ? hmdState.getLockedEntity() : weaponUnit.getLockedEntity();
-            }
-        }
+        // 调用红外授权状态，避免把武器站的雷达或光电锁定画成红外锁定。
+        Entity locked = weaponUnit.isSeekerOn() ? hmdState.getIrArmedEntity() : null;
         if (locked != null) {
             // 调用本项目统一弹体位置解析，与雷达框共用远距弹体外推或载具插值锚点。
             Vec3 renderCenter = RVP_ClientProjectileRenderInterpolator.resolveRenderCenter(locked, partialTick);

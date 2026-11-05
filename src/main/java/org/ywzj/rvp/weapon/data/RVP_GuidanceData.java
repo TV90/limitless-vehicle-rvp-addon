@@ -23,6 +23,13 @@ public class RVP_GuidanceData {
     @SerializedName("guidance_target_distance_range")
     private RVP_Range<Float> guidanceTargetDistanceRange;
 
+    /**
+     * 主段 AIR 弹载红外首次捕获和重捕获的距离区间，单位格。默认沿用制导目标距离。
+     * 发射前锁定、中继、已捕获目标跟踪和失锁计时各自使用原有配置。
+     */
+    @SerializedName("seeker_search_distance_range")
+    private RVP_Range<Float> seekerSearchDistanceRange;
+
     @SerializedName("guidance_altitude_range")
     private RVP_Range<Float> guidanceAltitudeRange;
 
@@ -194,6 +201,11 @@ public class RVP_GuidanceData {
 
     public RVP_Range<Float> getGuidanceTargetDistanceRange() {
         return guidanceTargetDistanceRange;
+    }
+
+    /** 返回单独配置的 AIR 弹载捕获包络。 */
+    public RVP_Range<Float> getSeekerSearchDistanceRange() {
+        return seekerSearchDistanceRange;
     }
 
     public RVP_Range<Float> getGuidanceAltitudeRange() {

@@ -29,7 +29,7 @@ final class RVP_RuntimeSeekerSupport {
     private static double acquireScanRadius(RVP_BaseBullet projectile, RVP_GuidanceActiveConfig config) {
         var searchRange = RVP_GuidanceRuntimeGeometry.resolveAcquireDistanceRange(projectile, config);
         double range = RVP_GuidanceRuntimeGeometry.resolveScanRadius(searchRange);
-        // 显式末段搜索区间是独立包络；只遍历已加载实体，不放大区块查询或持续跟踪距离。
+        // 显式搜索区间是独立包络；只遍历已加载实体，不放大区块查询或持续跟踪距离。
         if (searchRange != config.targetDistanceRange()) return range;
         return Math.min(range, ACQUIRE_SCAN_RADIUS);
     }
@@ -246,7 +246,8 @@ final class RVP_RuntimeSeekerSupport {
 
     private static Entity scanInfraredTarget(RVP_BaseBullet projectile, RVP_GuidanceActiveConfig config, boolean active) {
         // 已加载实体遍历不申请区块；AIR 的配置范围不再被雷达重捕获用的256格上限截断。
-        double range = active ? RVP_GuidanceRuntimeGeometry.resolveScanRadius(config.targetDistanceRange())
+        double range = active ? RVP_GuidanceRuntimeGeometry.resolveScanRadius(
+                RVP_GuidanceRuntimeGeometry.resolveAcquireDistanceRange(projectile, config))
                 : acquireScanRadius(projectile, config);
         Iterable<Entity> all = allServerEntities(projectile);
         Entity best = null;

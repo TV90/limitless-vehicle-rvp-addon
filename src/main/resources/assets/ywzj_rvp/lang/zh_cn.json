@@ -174,6 +174,7 @@
   "tips.ywzj_rvp.gunner_spawner.profile.mixed": "混合",
   "tips.ywzj_rvp.gunner_spawner.profile.friendly": "友好",
   "tips.ywzj_rvp.gunner_spawner.profile.enemy": "敌对",
+  "tips.ywzj_rvp.gunner_spawner.profile.target_drone": "靶机gunner",
   "tips.ywzj_rvp.gunner_spawner.profile.team": "阵营",
   "key.ywzj_rvp.arm_select_prev.desc": "ARM 上一个目标",
   "key.ywzj_rvp.arm_select_next.desc": "ARM 下一个目标",

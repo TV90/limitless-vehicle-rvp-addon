@@ -111,6 +111,22 @@ class RVP_GunnerProfileCompilerTest {
                 GunnerProfileManager.DEFAULT_PROFILE_ID, valid)).size());
     }
 
+    @Test
+    void targetDroneCompilesWithoutAnyCountermeasureBehavior() throws IOException {
+        var directory = Path.of("limitless_vehicle/rvp/data/rvp/gunner");
+        var targetPath = directory.resolve("target_drone.json");
+        // 靶机配置随载具包交付，纯源码检出时没有这份集成测试数据。
+        org.junit.jupiter.api.Assumptions.assumeTrue(Files.isRegularFile(targetPath));
+        var targetDrone = compileFile(targetPath);
+        var enemy = compileFile(directory.resolve("enemy.json"));
+        var defenseIds = java.util.Set.of("base_defense", "rvp_defense", "ecm", "smoke_cover", "sead");
+        // 保留敌对阵营、机动和常规交战，移除所有会提交反制意图的行为。
+        assertEquals(RVP_EnumGunnerFaction.ENEMY, targetDrone.getFaction());
+        assertEquals(enemy.getBehaviorPlan().behaviors().stream().map(behavior -> behavior.id())
+                        .filter(id -> !defenseIds.contains(id)).toList(),
+                targetDrone.getBehaviorPlan().behaviors().stream().map(behavior -> behavior.id()).toList());
+    }
+
     private static GunnerProfile compile(String id, String json) {
         return RVP_GunnerProfileCompiler.compile(new ResourceLocation("rvp", id), JsonParser.parseString(json));
     }

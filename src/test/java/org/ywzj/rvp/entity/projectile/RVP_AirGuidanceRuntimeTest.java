@@ -83,16 +83,62 @@ class RVP_AirGuidanceRuntimeTest {
         f.step();f.step();
         assertSame(flare, f.m.getTargetEntity());assertTrue(f.m.hasAutonomousSeekerCatch());
     }
+    @Test void airWithoutRadarCapturesOnlyInsideItsConfiguredSearchRange() {
+        var f = new Fixture(384, ",\"seeker_search_distance_range\":\"[[0,384]]\"");
+        var target = f.target(0, 1000);
+        f.designate(target);
+        Vec3 launchPoint = f.m.getTargetPos();
+
+        f.step();
+        target.setPos(30, 100, 800);
+        f.step();
+        assertTrue(f.m.isAutonomousSeekerOn(), "无雷达时仍立即搜索");
+        assertFalse(f.m.hasAutonomousSeekerCatch(), "远距发射授权不能直接变成弹载锁定");
+        assertNull(f.m.getTargetEntity());
+        assertEquals(launchPoint, f.m.getTargetPos());
+
+        target.setPos(0, 100, 384);
+        f.step();
+        assertSame(target, f.m.getTargetEntity());
+        assertTrue(f.m.hasAutonomousSeekerCatch());
+
+        target.setPos(30, 100, 800);
+        f.step();
+        assertSame(target, f.m.getTargetEntity(), "持续跟踪仍使用独立的跟踪距离");
+    }
+
+    @Test void freeAirSearchUsesTheSameCaptureRangeAsTheDesignatedTarget() {
+        var f = new Fixture(384, ",\"seeker_search_distance_range\":\"[[0,384]]\"");
+        var flare = new Decoy(f.level, RVP_EnumCountermeasureType.FLARE);
+        flare.setPos(0, 100, 385);
+        f.level.addObserver(flare);
+        f.step();
+        f.step();
+        assertNull(f.m.getTargetEntity());
+
+        flare.setPos(0, 100, 384);
+        f.step();
+        f.step();
+        assertSame(flare, f.m.getTargetEntity());
+    }
+
     private static final class Fixture {
         final RVP_ProjectileSimulationLevel level = RVP_ProjectileSimulationLevel.create(0, null);
-        final RVP_WeaponData data = GsonUtil.GSON.fromJson("""
-            {"type":"rvp:missile","life":1200,"projectile_data":{"velocity":1},
-             "guidance_data":{"guidance_type":"AIR","active_radar_activation_range":100,
-             "guidance_target_distance_range":"[[0,2000]]","max_lock_angle":30,
-             "max_guidance_angle":60,"scan_interval_tick":2,"enable_inertial_guidance":true}}
-            """, RVP_WeaponData.class);
+        /** 当前测试装载的武器配置。 */
+        final RVP_WeaponData data;
         final TestMissile m = new TestMissile(level);
+
         Fixture() {
+            this(100, "");
+        }
+
+        Fixture(int activationRange, String searchConfig) {
+            data = GsonUtil.GSON.fromJson("""
+                {"type":"rvp:missile","life":1200,"projectile_data":{"velocity":1},
+                 "guidance_data":{"guidance_type":"AIR","active_radar_activation_range":%d,
+                 "guidance_target_distance_range":"[[0,2000]]","max_lock_angle":30,
+                 "max_guidance_angle":60,"scan_interval_tick":2,"enable_inertial_guidance":true%s}}
+                """.formatted(activationRange, searchConfig), RVP_WeaponData.class);
             data.setWeaponKind(RVP_EnumWeaponKind.MISSILE);
             data.setWeaponId(net.minecraft.resources.ResourceLocation.tryParse("rvp:air_probe"));
             m.initFromWeapon(data,RVP_EnumWeaponKind.MISSILE,null,null,new Vec3(0,100,0),

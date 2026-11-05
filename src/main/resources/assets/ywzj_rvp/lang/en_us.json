@@ -241,6 +241,7 @@
   "tips.ywzj_rvp.gunner_spawner.profile.mixed": "Mixed",
   "tips.ywzj_rvp.gunner_spawner.profile.friendly": "Friendly",
   "tips.ywzj_rvp.gunner_spawner.profile.enemy": "Enemy",
+  "tips.ywzj_rvp.gunner_spawner.profile.target_drone": "Target Drone Gunner",
   "tips.ywzj_rvp.gunner_spawner.profile.team": "Team",
   "message.ywzj_rvp.targeting_pod.marked_both": "Marked %s target(s), pos %s",
   "message.ywzj_rvp.targeting_pod.marked_entity": "Marked %s target(s)",
