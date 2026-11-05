@@ -34,36 +34,30 @@ import java.util.List;
  * 一律由 {@link RVP_RadarScanHelper#appendRvpAmmoTargets} 按"最大探测距离 × 信号尺寸"
  * 缩放直接补入雷达探测表，等效实现原 mixin 的 RVP 弹体探测/锁定能力。</p>
  *
- * <p>已知近似：原 mixin 每 tick 扫描，本服务每 4 tick（本体接触保持最短 100ms 可覆盖）；</p>
+ * <p>新目标仍每 4 tick 扫描；已有接触每 tick 在本体清理之前检查并续期，不依赖现实耗时。</p>
  */
 @Mod.EventBusSubscriber(modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class RVP_RadarScanService {
 
+    /** 服务端发现新目标的扫描间隔，单位游戏刻；保活不消耗扫描轮次。 */
     private static final int SCAN_INTERVAL_TICK = 4;
-    /** 服务端接触保活间隔（tick）：本体 tickTargets 对 phase 雷达（yRotSpeed=0）寿命仅
-     *  100ms（2 tick，除法溢出取 Math.max(...,100)），服务端任何超过 2 tick 的扫描间隔
-     *  都会导致探测表在两次扫描之间被清空 → 目标"扫描出来瞬间消失/扫不出"。 */
-    private static final int CONTACT_HOLD_INTERVAL_TICK = 2;
 
     private RVP_RadarScanService() {
     }
 
     @SubscribeEvent
     public static void onServerTick(TickEvent.ServerTickEvent event) {
-        if (event.phase != TickEvent.Phase.END) {
-            return;
-        }
         MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
         if (server == null) {
             return;
         }
         int tick = server.getTickCount();
         for (ServerLevel level : server.getAllLevels()) {
-            // 接触保活：高频刷新已探测条目，防本体 100ms 寿命把服务端表清空
-            if (tick % CONTACT_HOLD_INTERVAL_TICK == 0) {
+            if (event.phase == TickEvent.Phase.START) {
+                // 调用既有接触检查，在本体 tickTargets 之前续期；END 每两刻执行会被 100ms 寿命抢先清表。
                 tickAllContactHold(level);
-            }
-            if (tick % SCAN_INTERVAL_TICK == 0) {
+            } else if (tick % SCAN_INTERVAL_TICK == 0) {
+                // 调用既有低频扫描，仅发现新目标，避免保活修复把全量扫描改为每刻执行。
                 scanLevel(level);
             }
         }
