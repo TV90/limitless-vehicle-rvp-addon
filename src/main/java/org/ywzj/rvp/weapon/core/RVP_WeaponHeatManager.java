@@ -215,13 +215,14 @@ public final class RVP_WeaponHeatManager {
             state.lastTick = tickCount;
             return;
         }
-        long elapsed = Math.max(0, tickCount - state.lastTick);
-        state.lastTick = tickCount;
-        if (elapsed > 0) {
-            // 恒定冷却速率：每 tick 固定减 1，避免旧算法（cooldownSpeed 累积加速）导致越冷越快；
-            // 长时间无访问后的首次读取会把间隔整段冷却完（elapsed 全额扣减，钳 0），语义正确。
-            state.currentHeat = (int) Math.max(0, state.currentHeat - elapsed);
+        // 单机两端交替读取时，落后的一端不能回拨已结算的游戏刻，否则相同刻会再次扣热量。
+        if (tickCount <= state.lastTick) {
+            return;
         }
+        long elapsed = tickCount - state.lastTick;
+        state.lastTick = tickCount;
+        // 每个新增游戏刻扣 1 点热量，长时间未读取时一次补齐冷却。
+        state.currentHeat = (int) Math.max(0, state.currentHeat - elapsed);
     }
 
     public static final class HeatState {
