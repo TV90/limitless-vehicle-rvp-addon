@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "pl15_loft_crossing",
+  "name": "PL-15 高抛退坡与横穿对照",
+  "description": "保留原 400 格高抛和二脉冲配置，检查路线控制与 PPN 的共同机动预算。",
+  "weapon": "rvp:pl_15",
+  "ticks": 800,
+  "position": [0, 164, 0],
+  "vehicleVelocity": [0, 0, 80],
+  "target": [0, 164, 1200],
+  "targetVelocity": [25, 0, 0],
+  "targetRadius": 1,
+  "guidance": true,
+  "seed": 721
+}

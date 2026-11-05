@@ -63,6 +63,10 @@ class RVP_VirtualEntityTrajectoryParityTest {
                 + "\"speed\":0.3,\"response\":0.1,\"turbulence\":0.03}", "", false, 6));
         cases.add(new FlightCase("thrust_curve", AERO
                 + ",\"thrust_curve\":{\"[[0,25]]\":15,\"[[26,55]]\":6}", "", false, 6));
+        // 红外实体寻的实际进入 PPN，跨虚拟化、存档重建和恢复继续使用同一闭环。
+        cases.add(new FlightCase("ppn_IR", AERO,
+                "\"guidance_type\":\"IR\",\"predict_target_pos\":true,"
+                        + "\"predict_target_pos_start_tick\":0,\"max_guidance_angle\":180", false, 6));
         // 每种正式制导源都执行完整生产 Tick 与虚拟入口逐刻对照，不用替身积分器模拟。
         for (var type : org.ywzj.rvp.guidance.RVP_EnumGuidanceType.values()) {
             // IOG 是内部惯导回退标识，当前武器 schema 禁止把它直接写成 guidance_type。
@@ -102,6 +106,7 @@ class RVP_VirtualEntityTrajectoryParityTest {
         scene.id = "virtual-parity"; scene.name = sample.name; scene.weapon = "rvp:probe";
         scene.groundY = -1000; scene.position = new double[]{0, 100, 0}; scene.pitch = 25;
         scene.target = new double[]{1200, 100, 5000};
+        if (sample.name.equals("ppn_IR")) scene.targetVelocity = new double[]{20, 0, 0};
         scene.vehicleVelocity = new double[]{-10, 4, 30};
         if (sample.cold) {
             scene.coldLaunchTicks = 10; scene.coldLaunchVelocity = new double[]{0, 40, 0};
@@ -163,6 +168,10 @@ class RVP_VirtualEntityTrajectoryParityTest {
             assertEquals(actual.createVirtualMidcourseSnapshot(), state.snapshot, sample.name + " 第 " + tick + " 刻完整快照");
             // NBT 会把 -0.0 与 +0.0 统一；运动记忆按编码值比较，位置/速度/角速度仍按精确值逐刻比较。
             assertEquals(actual.createVirtualMidcourseKinematics().save(), state.kinematics.save(), sample.name + " 第 " + tick + " 刻运动记忆");
+            if (sample.name.equals("ppn_IR")) {
+                assertNotNull(actual.getTargetEntity(), "PPN 对照必须保有真实实体观测，不能靠丢锁直飞通过");
+                assertTrue(actual.hasAttackAngleApplied(), "PPN 必须实际提交攻角与机头状态");
+            }
             angularResponseSeen |= Math.abs(state.trajectory().pitchRateDeg()) + Math.abs(state.trajectory().yawRateDeg()) > 1.0E-9;
             secondPulseSeen |= state.trajectory().secondPulseStartTick() >= 0;
             cruiseResetSeen |= state.snapshot.gpsCruiseVerticalResetApplied();

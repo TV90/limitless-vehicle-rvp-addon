@@ -77,6 +77,38 @@ class RVP_RuntimeVirtualRadarTargetTest {
         assertNull(RVP_RuntimeSeekerSupport.scanRadarTarget(seeker, config), "同车弹药不可被自主搜索误锁");
     }
 
+    @Test
+    void radarAcquisitionAndTrackingAcceptIndependentSupportFromTheSameCaller() {
+        var level = RVP_ProjectileSimulationLevel.create(0, null);
+        var data = GsonUtil.GSON.fromJson("""
+                {"type":"rvp:missile","projectile_data":{"velocity":4,"gravity":0},
+                 "guidance_data":{"guidance_type":"ARH","max_lock_angle":360,"max_guidance_angle":180}}
+                """, RVP_WeaponData.class);
+        data.setWeaponKind(RVP_EnumWeaponKind.MISSILE);
+        data.setWeaponId(net.minecraft.resources.ResourceLocation.tryParse("rvp:support_intercept_probe"));
+        var caller = environment(net.minecraft.world.entity.decoration.ArmorStand.class);
+        caller.setUUID(java.util.UUID.randomUUID());
+        write(net.minecraft.world.entity.Entity.class, caller, "level", level);
+        var carrier = environment(FixedWingVehicle.class);
+        carrier.setUUID(java.util.UUID.randomUUID());
+        var seeker = missile(level, data, new Vec3(0, 100, 0));
+        seeker.setOwner(caller);
+        write(RVP_BaseBullet.class, seeker, "shooterVehicle", carrier);
+        var incoming = new org.ywzj.rvp.entity.projectile.RVP_RocketEntity(RVP_Entities.RVP_ROCKET.get(), level);
+        incoming.initFromWeapon(data, RVP_EnumWeaponKind.ROCKET, null, caller, new Vec3(100, 100, 0),
+                new RVP_BaseBullet.AimRot(0, 90), new Vec3(-2, 0, 0));
+        level.addObserver(incoming);
+        var config = RVP_GuidanceModelResolver.resolveActive(data.getGuidanceData(), seeker.getGuidancePhaseState().phase());
+        // 调用正式自动搜索、发射指定与持续跟踪，防止只放开发射后又被在途的重复归属门清掉。
+        assertSame(incoming, RVP_RuntimeSeekerSupport.scanRadarTarget(seeker, config));
+        seeker.rvp$setActiveSeekerDesignatedTarget(incoming);
+        assertSame(incoming, seeker.rvp$getActiveSeekerDesignatedTargetEntity());
+        assertSame(incoming, RVP_RuntimeSeekerSupport.acquireEntity(seeker, incoming,
+                org.ywzj.rvp.guidance.RVP_EnumGuidanceType.ARH, config));
+        assertSame(incoming, RVP_RuntimeSeekerSupport.validateEntity(seeker, incoming,
+                org.ywzj.rvp.guidance.RVP_EnumGuidanceType.ARH, config));
+    }
+
     /** 正式构造并初始化导弹，只提供位置与姿态这些环境输入。 */
     private static RVP_MissileEntity missile(RVP_ProjectileSimulationLevel level, RVP_WeaponData data, Vec3 position) {
         var missile = new RVP_MissileEntity(RVP_Entities.RVP_MISSILE.get(), level, data.getWeaponId());

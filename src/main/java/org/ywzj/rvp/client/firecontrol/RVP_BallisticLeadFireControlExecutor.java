@@ -12,6 +12,7 @@ import org.ywzj.rvp.client.state.RVP_MachinegunLeadState;
 import org.ywzj.rvp.client.state.RVP_SemiAutoLeadTrimState;
 import org.ywzj.rvp.debug.RVP_LeadFcDebug;
 import org.ywzj.rvp.ext.WeaponUnitDataExt;
+import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.rvp.weapon.core.RVP_WeaponSensorHelper;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.util.VectorUtil;
@@ -57,6 +58,13 @@ public final class RVP_BallisticLeadFireControlExecutor {
      * @return {@code true} 表示本次瞄准已由RVP处理；{@code false} 表示应调用本体 {@code aim}
      */
     public static boolean tryApply(WeaponUnit weaponUnit, Vec3 trackedTargetWorldPos) {
+        // 调用既有软航迹判定：导引头自动捕获仅供 HUD、发射与数据链使用，不得覆盖鼠标方向。
+        // 必须先于模式解析执行，普通 RF 站未配置 rvp_rf 时也不能回退成本体强制瞄准。
+        if (RVP_RadarRoleHelper.isAutomaticRfSeekerTrack(weaponUnit)) {
+            clearAimAssist(weaponUnit);
+            RVP_SemiAutoLeadTrimState.clear(weaponUnit);
+            return true;
+        }
         WeaponUnitData data = weaponUnit.getData();
         if (!(data instanceof WeaponUnitDataExt ext)) {
             clearAimAssist(weaponUnit);

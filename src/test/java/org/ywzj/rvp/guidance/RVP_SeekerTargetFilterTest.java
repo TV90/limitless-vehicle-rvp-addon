@@ -32,6 +32,16 @@ class RVP_SeekerTargetFilterTest {
         assertTrue(RVP_SeekerTargetFilter.allows(ammo(null,carrier()),ammo(null,carrier())));
         assertTrue(RVP_SeekerTargetFilter.allows(ammo(null,null),ammo(null,null)),"双方null不代表同一射手");
     }
+    @Test void damageCreditOwnerDoesNotMakeIndependentSupportAmmoPartOfTheInterceptorCarrier() {
+        Marker caller = new Marker(EntityType.MARKER, level);
+        Carrier interceptorCarrier = carrier();
+        Ammo supportRound = ammo(caller, null);
+        // 终端炮火没有发射载具，owner 仅用于伤害/击杀归属；发射前与在途必须同时允许拦截。
+        assertTrue(RVP_SeekerTargetFilter.allows(caller, interceptorCarrier, supportRound));
+        assertTrue(RVP_SeekerTargetFilter.allows(ammo(caller, interceptorCarrier), supportRound));
+        // 同一玩家本车前一发仍须排除，不能因兼容终端炮火而恢复自锁。
+        assertFalse(RVP_SeekerTargetFilter.allows(caller, interceptorCarrier, ammo(caller, interceptorCarrier)));
+    }
     @Test void seekerCannotTargetItselfAndVehicleFriendlyFireRulesAreUnchanged() {
         Ammo a=ammo(null,null);
         assertFalse(RVP_SeekerTargetFilter.allows(a,a));

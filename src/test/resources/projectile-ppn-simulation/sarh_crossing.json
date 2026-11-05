@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "sarh_crossing",
+  "name": "SARH 实体寻的横穿对照",
+  "description": "保持权威 ESSM 参数，对照延迟点火、机头惯量下的首次交会；照射由理想实体观测代替。",
+  "weapon": "rvp:ddg51_essm",
+  "ticks": 400,
+  "position": [0, 164, 0],
+  "target": [0, 164, 350],
+  "targetVelocity": [25, 0, 0],
+  "targetRadius": 1,
+  "guidance": true,
+  "seed": 721
+}

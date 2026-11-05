@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "ticks": 1200,
+  "timingFractions": [0.25, 0.60, 0.85],
+  "mirrors": [-1, 1],
+  "weapons": [
+    {"id": "rvp:ebrc_mica_ng", "label": "MICA-NG / ARH", "distances": [350, 600, 850]},
+    {"id": "rvp:ah1z_fim92", "label": "FIM-92 / IR", "distances": [230, 350, 450]},
+    {"id": "rvp:bukm3_9m317m", "label": "9M317M / SARH", "distances": [500, 900, 1400]},
+    {"id": "rvp:irist_sl", "label": "IRIS-T SL / AIR", "distances": [350, 600, 850]},
+    {"id": "rvp:f16_aim120d", "label": "AIM-120D / 高抛", "distances": [900, 1200, 1400]},
+    {"id": "rvp:pl_15", "label": "PL-15 / 高抛", "distances": [900, 1200, 1400]}
+  ],
+  "profiles": [
+    {"id": "moderate", "speed": 35, "acceleratedSpeed": 55, "deceleratedSpeed": 20, "turnDeg": 60, "durationTicks": 60},
+    {"id": "sharp", "speed": 55, "acceleratedSpeed": 80, "deceleratedSpeed": 25, "turnDeg": -90, "durationTicks": 40},
+    {"id": "reverse", "speed": 65, "acceleratedSpeed": 90, "deceleratedSpeed": 30, "turnDeg": 180, "durationTicks": 60}
+  ]
+}

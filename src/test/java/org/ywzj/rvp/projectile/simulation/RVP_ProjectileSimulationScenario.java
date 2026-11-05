@@ -25,6 +25,8 @@ public final class RVP_ProjectileSimulationScenario {
     /** 目标脚本初速度，格/秒；给生产拦截制导提供真实 Entity 运动观测。 */ public double[] targetVelocity = {0, 0, 0};
     /** 目标脚本加速度，格/秒²；默认不加速。 */ public double[] targetAcceleration = {0, 0, 0};
     /** 可选到达点，默认空；非空时从第 0 刻的 target 沿各点匀速移动，替代 targetVelocity/targetAcceleration，末点后静止。 */ public TargetPoint[] targetPath = {};
+    /** 可选连续水平机动，默认空；与 targetPath、非零 targetAcceleration 互斥，段内速度与航向连续变化。 */
+    public TargetManeuver[] targetManeuvers = {};
     /** 测试停止球半径，格；不是武器引信半径。 */ public double targetRadius = 2;
     /** 平面地面世界 Y，格。 */ public double groundY = 64;
     /** 可选水平水面世界 Y，格；null 表示干燥，须高于 groundY。 */ public Double waterY;
@@ -33,6 +35,10 @@ public final class RVP_ProjectileSimulationScenario {
     /** 目标中心的到达点；第 0 刻起点只由 target 表达，避免同刻位置冲突。 */
     public record TargetPoint(/** 到达时刻，刻；必须为 1..ticks 的整数并严格递增，20 刻等于 1 秒。 */ double tick,
                               /** 到达点世界 X/Y/Z，格；必须为有限三元组。 */ double[] position) {}
+    /** 从上一段末尾继续运动；最后一段之后保持末速度和末航向，不突然停止。 */
+    public record TargetManeuver(/** 本段时长，整数 Tick，至少 1。 */ double durationTicks,
+                                 /** 本段结束时的水平速率，格/秒，非负。 */ double endSpeed,
+                                 /** 本段累计水平转角，度；从 +X 朝 +Z 为正，范围 -360～360。 */ double turnDeg) {}
     /** 某个绝对时刻的目标观测，供真实实体读取；速度单位为格/秒。 */
     public record TargetState(/** 目标中心世界坐标，格。 */ double[] position,
                               /** 当前段世界速度，格/秒；末点后为零。 */ double[] velocity) {}
@@ -61,6 +67,30 @@ public final class RVP_ProjectileSimulationScenario {
         if (position[1] <= groundY) throw new IllegalArgumentException("发射点必须高于地面");
         if (targetPath == null || targetPath.length > 256) throw new IllegalArgumentException("targetPath 必须为数组，最多 256 个到达点");
         if (targetPath.length > 0 && target == null) throw new IllegalArgumentException("使用 targetPath 前必须启用 target");
+        if (targetManeuvers == null || targetManeuvers.length > 64) {
+            throw new IllegalArgumentException("targetManeuvers 必须为数组，最多 64 段");
+        }
+        if (targetManeuvers.length > 0 && (target == null || targetPath.length > 0
+                || java.util.Arrays.stream(targetAcceleration).anyMatch(value -> value != 0.0))) {
+            throw new IllegalArgumentException("连续机动需要 target，且不能同时使用 targetPath 或非零 targetAcceleration");
+        }
+        double maneuverEnd = 0;
+        for (TargetManeuver maneuver : targetManeuvers) {
+            if (maneuver == null || !Double.isFinite(maneuver.durationTicks())
+                    || maneuver.durationTicks() != Math.rint(maneuver.durationTicks()) || maneuver.durationTicks() < 1
+                    || !Double.isFinite(maneuver.endSpeed()) || maneuver.endSpeed() < 0
+                    || !Double.isFinite(maneuver.turnDeg()) || Math.abs(maneuver.turnDeg()) > 360) {
+                throw new IllegalArgumentException("连续机动需要正整数时长、非负有限末速和 -360～360 度有限转角");
+            }
+            maneuverEnd += maneuver.durationTicks();
+            if (maneuverEnd > ticks) throw new IllegalArgumentException("连续机动总时长不能超过场景 ticks");
+        }
+        double checkedManeuverEnd = 0;
+        for (TargetManeuver maneuver : targetManeuvers) {
+            checkedManeuverEnd += maneuver.durationTicks();
+            // 全部段合法后才调用轨迹，避免尚未验证的后续坏段进入取样器。
+            targetAt(checkedManeuverEnd);
+        }
         double previousTick = 0;
         for (TargetPoint point : targetPath) {
             if (point == null || !Double.isFinite(point.tick()) || point.tick() != Math.rint(point.tick())
@@ -81,6 +111,12 @@ public final class RVP_ProjectileSimulationScenario {
     /** 直接按绝对时刻取样，倒拖和重复运行不依赖历史；折点刻使用下一段速度，末点后停住。 */
     public TargetState targetAt(double tick) {
         if (target == null) return null;
+        if (targetManeuvers.length > 0) {
+            // 调用连续目标脚本；只生成外部目标观测，不计算导弹制导或运动。
+            var state = RVP_TargetManeuverMath.sample(target, targetVelocity, targetManeuvers, tick);
+            vector(state.position(), "连续机动位置"); vector(state.velocity(), "连续机动速度");
+            return state;
+        }
         double[] result = new double[3], velocity = new double[3];
         double[] from = target;
         double fromTick = 0;
