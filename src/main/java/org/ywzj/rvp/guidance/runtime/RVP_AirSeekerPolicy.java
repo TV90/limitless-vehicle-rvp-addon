@@ -3,6 +3,9 @@ package org.ywzj.rvp.guidance.runtime;
 import net.minecraft.world.entity.Entity;
 import org.ywzj.rvp.countermeasure.RVP_Decoy;
 import org.ywzj.rvp.countermeasure.RVP_EnumCountermeasureType;
+import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
+import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
+import org.ywzj.vehicle.entity.weapon.BulletEntity;
 
 /** AIR 红外搜索、雷达更新和无目标计时的独立决策，不改变 ARH 的雷达语义。 */
 public final class RVP_AirSeekerPolicy {
@@ -35,7 +38,17 @@ public final class RVP_AirSeekerPolicy {
         return withinEnvelope && hardLocked;
     }
 
-    /** AIR 自主捕获和跟踪排除箔条；热焰弹仍由既有红外反制规则处理。 */
+    /** AIR 红外和雷达中继共用的弹种过滤，覆盖 RVP 与本体的机炮弹。 */
+    public static boolean allowsTarget(Entity target) {
+        return target != null && !(target instanceof BulletEntity)
+                && !(target instanceof RVP_BaseBullet bullet && bullet.getWeaponKind() == RVP_EnumWeaponKind.MACHINEGUN);
+    }
+
+    public static boolean isAirInfraredCandidate(Entity target) {
+        return allowsTarget(target) && isInfraredCandidate(target);
+    }
+
+    /** 红外捕获排除箔条，允许热焰弹参与反制。 */
     public static boolean isInfraredCandidate(Entity target) {
         return target != null && (!(target instanceof RVP_Decoy decoy)
                 || decoy.rvp$decoyType() == RVP_EnumCountermeasureType.FLARE);

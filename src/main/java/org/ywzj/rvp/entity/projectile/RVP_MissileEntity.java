@@ -412,10 +412,11 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         Entity designated = rvp$getActiveSeekerDesignatedTargetEntity();
         // 调用当前捕获状态；历史上捕获过不代表现在仍有有效红外跟踪。
         if (activeRadarCatch && (targetEntity == null || !targetEntity.isAlive()
-                || !org.ywzj.rvp.guidance.runtime.RVP_AirSeekerPolicy.isInfraredCandidate(targetEntity))) {
+                || !org.ywzj.rvp.guidance.runtime.RVP_AirSeekerPolicy.isAirInfraredCandidate(targetEntity))) {
             clearAutonomousSeekerCatch();
         }
-        boolean support = designated != null && !dircmJammed && !isSeekerShutOff()
+        boolean support = org.ywzj.rvp.guidance.runtime.RVP_AirSeekerPolicy.allowsTarget(designated)
+                && !dircmJammed && !isSeekerShutOff()
                 && !isJamGracePeriodActive() && !hasSmokeBreakLock()
                 && rvp$hasActiveSeekerSupportForDesignatedTarget();
         activeSeekerRelayLost = rvp$hasActiveSeekerDesignation() && !support;

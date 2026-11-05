@@ -20,7 +20,7 @@ public final class RVP_RuntimeAirGuidanceSource implements RVP_RuntimeGuidanceSo
         boolean blocked = missile.isSeekerShutOff() || missile.isJamGracePeriodActive() || missile.hasSmokeBreakLock();
         if (missile.isAutonomousSeekerOn() && !blocked) {
             if (missile.hasAutonomousSeekerCatch() && target != null && target.isAlive()
-                    && RVP_AirSeekerPolicy.isInfraredCandidate(target)) {
+                    && RVP_AirSeekerPolicy.isAirInfraredCandidate(target)) {
                 // 调用红外跟踪与干扰检查，已捕获目标不再依赖机载雷达或 RCS。
                 Entity tracked = RVP_RuntimeSeekerSupport.validateEntity(missile, target, type(), context.active());
                 if (tracked != null) return RVP_GuidanceIntent.entity(tracked, false, 1.0, type());
@@ -30,7 +30,7 @@ public final class RVP_RuntimeAirGuidanceSource implements RVP_RuntimeGuidanceSo
             }
             if (!blocked) {
                 Entity designated = missile.rvp$getActiveSeekerDesignatedTargetEntity();
-                if (RVP_AirSeekerPolicy.isInfraredCandidate(designated)) {
+                if (RVP_AirSeekerPolicy.isAirInfraredCandidate(designated)) {
                     // 调用捕获门限；指定身份仅是搜索提示，超出红外距离/离轴角不能获得实时位置。
                     Entity acquired = RVP_RuntimeSeekerSupport.acquireEntity(missile, designated, type(), context.active());
                     if (acquired != null) return acquired(missile, acquired);
@@ -61,7 +61,7 @@ public final class RVP_RuntimeAirGuidanceSource implements RVP_RuntimeGuidanceSo
         if (!missile.hasSmokeBreakLock() && !missile.isSeekerShutOff() && !missile.isJamGracePeriodActive()
                 && missile.rvp$hasAirRadarRelaySupport()) {
             Entity designated = missile.rvp$getActiveSeekerDesignatedTargetEntity();
-            if (designated != null) {
+            if (RVP_AirSeekerPolicy.allowsTarget(designated)) {
                 missile.setTargetEntity(designated);
                 return RVP_GuidanceIntent.entity(designated, false, 1.0, type());
             }

@@ -100,12 +100,9 @@ public class C2SIrSeekerArmed {
                     || target.level().dimension() != player.serverLevel().dimension()) {
                 return;
             }
-            // AIR 红外授权排除箔条；雷达硬锁箔条仍通过原雷达发射通道，不从本通道伪造授权。
-            if (rvpWeapon.getData().getGuidanceData().getGuidanceType() == org.ywzj.rvp.guidance.RVP_EnumGuidanceType.AIR
-                    && !org.ywzj.rvp.guidance.runtime.RVP_AirSeekerPolicy.isInfraredCandidate(target)) return;
             // 调用统一归属门，服务端拒绝客户端把同射手/同发射车或友方弹药上报为红外锁。
             if (!org.ywzj.rvp.guidance.RVP_SeekerTargetFilter.allows(player, vehicle, target)) return;
-            // ⑤ 包线复算（服务端可算：worldPivotPosition/worldVec；含离轴/距离/高度/LOS）。
+            // ⑤ 复查候选类型与包线，AIR 的雷达硬锁箔条仍走独立的雷达发射通道。
             RVP_WeaponData data = rvpWeapon.getData();
             // 几何复算用"武器自己的站"（与 tracker / 客户端门控同源），根站只作表键。
             WeaponUnit geo = rvpWeapon.getWeaponUnit() != null ? rvpWeapon.getWeaponUnit() : root;

@@ -9,6 +9,9 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.*;
 import org.junit.jupiter.api.*;
+import org.ywzj.rvp.all.RVP_Entities;
+import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
+import org.ywzj.rvp.entity.projectile.RVP_BulletEntity;
 import org.ywzj.rvp.guidance.RVP_IrLockHelper;
 import org.ywzj.rvp.weapon.core.RVP_ProjectileWeapon;
 import org.ywzj.rvp.weapon.data.*;
@@ -71,6 +74,19 @@ class RVP_AirIndependentLockTest {
         station.locked=null;
         assertTrue(weapon.passesShootLockGates(),"AIR独立红外授权必须允许无雷达发射");
         assertSame(target,station.locked);
+    }
+
+    @Test void airLaunchSearchAndHoldRejectCannonRounds() {
+        var round = new RVP_BulletEntity(RVP_Entities.RVP_BULLET.get(), level);
+        var roundData = new RVP_WeaponData();
+        roundData.setWeaponKind(RVP_EnumWeaponKind.MACHINEGUN);
+        round.initFromWeapon(roundData, RVP_EnumWeaponKind.MACHINEGUN, null, null,
+                new Vec3(0, 100, 20), new RVP_BaseBullet.AimRot(0, 0), new Vec3(0, 0, 1));
+        level.live.put(round.getId(), round);
+
+        assertTrue(RVP_IrLockHelper.isTargetWithinHoldLimits(station, round, data("IR")));
+        assertFalse(RVP_IrLockHelper.isTargetWithinHoldLimits(station, round, weapon.getData()));
+        assertSame(target, RVP_ClientWeaponTargets.findInfraredTarget(station, 30f));
     }
 
     @Test void terminalInfraredNeverCreatesAPrelaunchSeekerOnSaclos() {

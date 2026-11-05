@@ -122,6 +122,40 @@ class RVP_AirGuidanceRuntimeTest {
         assertSame(flare, f.m.getTargetEntity());
     }
 
+    @Test void airSearchSkipsCannonRoundsBeforeRankingTargets() {
+        var f = new Fixture();
+        var round = f.addAmmo(new RVP_BulletEntity(RVP_Entities.RVP_BULLET.get(), f.level),
+                RVP_EnumWeaponKind.MACHINEGUN, new Vec3(0, 100, 20));
+        assertTrue(round.getSignatureSize() > 0, "机炮弹原本会进入信号筛选");
+        f.step();
+        f.step();
+        assertNull(f.m.getTargetEntity());
+
+        var rocket = f.addAmmo(new RVP_RocketEntity(RVP_Entities.RVP_ROCKET.get(), f.level),
+                RVP_EnumWeaponKind.ROCKET, new Vec3(10, 100, 100));
+        f.step();
+        f.step();
+        assertSame(rocket, f.m.getTargetEntity(), "更近、更居中的机炮弹不应挡住有效候选");
+        assertTrue(f.m.hasAutonomousSeekerCatch());
+    }
+
+    @Test void airDropsExistingCannonLockEvenWithRadarSupport() {
+        var f = new Fixture();
+        var round = f.addAmmo(new RVP_BulletEntity(RVP_Entities.RVP_BULLET.get(), f.level),
+                RVP_EnumWeaponKind.MACHINEGUN, new Vec3(0, 100, 20));
+        f.designate(round);
+        Vec3 memory = f.m.getTargetPos();
+        f.m.setTargetEntity(round);
+        f.m.markAutonomousSeekerCatch();
+        f.m.radar = true;
+        round.setPos(0, 100, 30);
+        f.step();
+        f.step();
+        assertFalse(f.m.hasAutonomousSeekerCatch());
+        assertNull(f.m.getTargetEntity());
+        assertEquals(memory, f.m.getTargetPos());
+    }
+
     private static final class Fixture {
         final RVP_ProjectileSimulationLevel level = RVP_ProjectileSimulationLevel.create(0, null);
         /** 当前测试装载的武器配置。 */
@@ -145,6 +179,15 @@ class RVP_AirGuidanceRuntimeTest {
                     new RVP_BaseBullet.AimRot(0,0),new Vec3(0,0,1));
         }
         Marker target(double x,double z) { var t=new Marker(EntityType.MARKER,level);t.setPos(x,100,z);level.addObserver(t);return t; }
+        <T extends RVP_BaseBullet> T addAmmo(T ammo, RVP_EnumWeaponKind kind, Vec3 position) {
+            var weapon = new RVP_WeaponData();
+            weapon.setWeaponKind(kind);
+            ammo.initFromWeapon(weapon, kind, null, null, position,
+                    new RVP_BaseBullet.AimRot(0, 0), new Vec3(0, 0, 1));
+            level.addObserver(ammo);
+            return ammo;
+        }
+
         void designate(Entity t) { m.rvp$setActiveSeekerDesignatedTarget(t);m.setTargetPos(t.position()); }
         void step() {
             m.tickCount++;level.observeTick(m.tickCount);

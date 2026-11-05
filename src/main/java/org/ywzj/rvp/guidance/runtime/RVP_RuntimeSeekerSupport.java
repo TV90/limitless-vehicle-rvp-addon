@@ -65,7 +65,7 @@ final class RVP_RuntimeSeekerSupport {
         // 捕获与持续跟踪共用归属门，指定目标不能绕过自由搜索的友方弹药过滤。
         if (!org.ywzj.rvp.guidance.RVP_SeekerTargetFilter.allows(projectile, target)) return null;
         // AIR 主动红外不允许把雷达指定的箔条套成自主捕获或继续跟踪。
-        if (type == RVP_EnumGuidanceType.AIR && !RVP_AirSeekerPolicy.isInfraredCandidate(target)) return null;
+        if (type == RVP_EnumGuidanceType.AIR && !RVP_AirSeekerPolicy.isAirInfraredCandidate(target)) return null;
         // 反舰导引头（2026-10-05 用户需求）：仅截获阶段（acquire）过滤——目标 RCS 综合值
         // 不足 SCAN_SEA_RCS_THRESHOLD（500，与 scan_sea 海面搜索同门限）时拒绝截获：
         // 雷达/RF 硬锁指定的目标不满足 RCS 也不会被导引头自动套上（含自由扫描候选）。
@@ -261,7 +261,8 @@ final class RVP_RuntimeSeekerSupport {
                     || !org.ywzj.rvp.guidance.RVP_SeekerTargetFilter.allows(projectile, entity)) {
                 continue;
             }
-            if (entity == projectile || active && entity instanceof RVP_BaseBullet ammo
+            if (entity == projectile || active && !RVP_AirSeekerPolicy.isAirInfraredCandidate(entity)) continue;
+            if (active && entity instanceof RVP_BaseBullet ammo
                     && (ammo.getSignatureSize() <= 0f
                     || projectile.getOwner() != null && ammo.getOwner() == projectile.getOwner()
                     || org.ywzj.rvp.ecm.RVP_EcmIff.areVehiclesFriendly(projectile.getShooterVehicle(), ammo.getShooterVehicle()))) continue;

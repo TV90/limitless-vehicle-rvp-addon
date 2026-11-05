@@ -12,6 +12,7 @@ import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.entity.PartEntity;
 import org.jetbrains.annotations.Nullable;
+import org.ywzj.rvp.guidance.runtime.RVP_AirSeekerPolicy;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.data.RVP_Range;
 import org.ywzj.vehicle.api.entity.SightObstruction;
@@ -50,7 +51,7 @@ public final class RVP_IrLockHelper {
     }
 
     public static boolean isTargetWithinAcquireLimits(WeaponUnit weaponUnit, Entity target, RVP_WeaponData data, float extraAngleMargin) {
-        if (!allowsLaunchTarget(weaponUnit, target)) return false;
+        if (!allowsLaunchTarget(weaponUnit, target, data)) return false;
         RVP_GuidanceLaunchConfig launch = RVP_GuidanceModelResolver.resolveLaunch(data);
         return isTargetWithinRangedLimits(
                 weaponUnit, target, null,
@@ -59,7 +60,7 @@ public final class RVP_IrLockHelper {
     }
 
     public static boolean isTargetWithinHoldLimits(WeaponUnit weaponUnit, Entity target, RVP_WeaponData data) {
-        if (!allowsLaunchTarget(weaponUnit, target)) return false;
+        if (!allowsLaunchTarget(weaponUnit, target, data)) return false;
         RVP_GuidanceLaunchConfig launch = RVP_GuidanceModelResolver.resolveLaunch(data);
         return isTargetWithinRangedLimits(
                 weaponUnit, target, null,
@@ -72,7 +73,7 @@ public final class RVP_IrLockHelper {
      * that grace period extend range, altitude, or line-of-sight validity.
      */
     public static boolean isTargetWithinHoldEnvelope(WeaponUnit weaponUnit, Entity target, RVP_WeaponData data) {
-        if (!allowsLaunchTarget(weaponUnit, target)) return false;
+        if (!allowsLaunchTarget(weaponUnit, target, data)) return false;
         RVP_GuidanceLaunchConfig launch = RVP_GuidanceModelResolver.resolveLaunch(data);
         return isTargetWithinRangedLimits(
                 weaponUnit, target, null, 180f,
@@ -202,8 +203,10 @@ public final class RVP_IrLockHelper {
     }
 
     /** 调用统一归属过滤，搜索、HMD候选、授权复核与保锁不得套上己方弹药。 */
-    private static boolean allowsLaunchTarget(WeaponUnit unit, Entity target) {
-        return unit != null && RVP_SeekerTargetFilter.allows(unit.getOwner(), unit.getVehicle(), target);
+    private static boolean allowsLaunchTarget(WeaponUnit unit, Entity target, RVP_WeaponData data) {
+        return unit != null && RVP_SeekerTargetFilter.allows(unit.getOwner(), unit.getVehicle(), target)
+                && (data.getGuidanceData().getGuidanceType() != RVP_EnumGuidanceType.AIR
+                || RVP_AirSeekerPolicy.isAirInfraredCandidate(target));
     }
 
     private static boolean containsAltitude(@Nullable RVP_Range<Float> altitudeRange, Entity target) {
