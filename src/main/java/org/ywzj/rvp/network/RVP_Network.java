@@ -44,7 +44,8 @@ public class RVP_Network {
     /** 协议 45：新增每玩家客户端视距上报，导弹与载具近远交接随各自客户端设置动态变化。 */
     /** 协议 46：合并虚拟弹/动态视距消息与权威电视锁定状态，双端须一同更新。 */
     /** 协议 47：视距上报附带客户端扩展请求，载具快照下发服务端实际视距与许可。 */
-    private static final String PROTOCOL = "47";
+    /** 协议 48：新版吊舱绝对请求、实际轨迹与预测确认；双端须一同更新。 */
+    private static final String PROTOCOL = "48";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "main"))
@@ -60,6 +61,12 @@ public class RVP_Network {
         }
         initialized = true;
         int id = 0;
+        CHANNEL.messageBuilder(C2SOpticalSightCommand.class, id++, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(C2SOpticalSightCommand::encode).decoder(C2SOpticalSightCommand::decode)
+                .consumerMainThread(C2SOpticalSightCommand::handle).add();
+        CHANNEL.messageBuilder(S2COpticalSightState.class, id++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(S2COpticalSightState::encode).decoder(S2COpticalSightState::decode)
+                .consumerMainThread(S2COpticalSightState::handle).add();
         // 服务端权威的 HITL 观察会话；消息处理均在主线程并明确传输方向。
         CHANNEL.messageBuilder(org.ywzj.rvp.network.hitl.S2CHitlRemoteView.class, id++, NetworkDirection.PLAY_TO_CLIENT)
                 .encoder(org.ywzj.rvp.network.hitl.S2CHitlRemoteView::encode)

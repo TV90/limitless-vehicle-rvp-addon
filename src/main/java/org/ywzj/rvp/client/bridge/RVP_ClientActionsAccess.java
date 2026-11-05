@@ -15,6 +15,32 @@ public final class RVP_ClientActionsAccess {
 
     private RVP_ClientActionsAccess() {}
 
+    /** 共享吊舱经桥判断本地预测资格，服务端不引用 LocalVehiclePlayer。 */
+    public static boolean isLocalOpticalOperator(org.ywzj.rvp.vehicle.RVP_OpticalWeaponUnit station) {
+        // 调用物理侧实现，专用服务端返回 false。
+        return INSTANCE.isLocalOpticalOperator(station);
+    }
+
+    /** 既有手动锁定注入经桥刷新新版吊舱实际选点方向。 */
+    public static void prepareOpticalSelection(org.ywzj.vehicle.vehicle.part.WeaponUnit station) {
+        // 调用物理侧处理，普通站保留原相机状态。
+        INSTANCE.prepareOpticalSelection(station);
+    }
+
+    /** 未知距离焦点经桥读取保存方向，不能把代理当成真实点。 */
+    @org.jetbrains.annotations.Nullable
+    public static net.minecraft.world.phys.Vec3 opticalDirectionFocus(org.ywzj.vehicle.vehicle.part.WeaponUnit station,
+                                                                      net.minecraft.world.phys.Vec3 origin) {
+        // 调用客户端焦点类型判定，服务端方向已经由专用消息显式表达。
+        return INSTANCE.opticalDirectionFocus(station, origin);
+    }
+
+    /** 共享网络消息只经安全桥转交客户端。 */
+    public static void acceptOpticalSightState(org.ywzj.rvp.network.S2COpticalSightState message) {
+        // 调用物理侧快照接收，服务端保持 NOOP。
+        INSTANCE.acceptOpticalSightState(message);
+    }
+
     /** 经双端安全桥搜索红外目标，公共注入类不直接加载客户端候选表。 */
     public static net.minecraft.world.entity.Entity findInfraredTarget(
             org.ywzj.vehicle.vehicle.part.WeaponUnit station, float halfAngle) {

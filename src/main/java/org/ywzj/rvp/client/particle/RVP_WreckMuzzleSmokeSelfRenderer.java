@@ -17,11 +17,16 @@ import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.client.visual.vehicle.RVP_DelayedMuzzleSmokeLogic;
+import org.ywzj.rvp.client.visual.vehicle.RVP_DelayedMuzzleSmokeSettings.Parameter;
+import org.ywzj.rvp.client.visual.vehicle.RVP_DelayedMuzzleSmokeSettings.Snapshot;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Iterator;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 炮口白烟自绘管理器：白烟脱离 ParticleEngine 批次的正解（2026-10-07 三轮实机迭代定稿）。
@@ -43,6 +48,8 @@ public final class RVP_WreckMuzzleSmokeSelfRenderer {
 
     /** 自绘炮口烟活动列表；全部只在客户端线程访问。 */
     private static final List<RVP_WreckMuzzleSmokeParticle> ACTIVE = new ArrayList<>();
+    /** 按实际炮口对象统计延时白烟，不把殉燃烟和其它炮口混入同一预算。 */
+    private static final Map<Object, Integer> DELAYED_SOURCE_COUNTS = new IdentityHashMap<>();
     /** 列表安全上限，防止极端齐射场景客户端状态无限增长（超限丢弃最老粒子）。 */
     private static final int MAX_ACTIVE = 2048;
     /** 列表当前绑定的客户端世界，用于检测世界切换并整体清理。 */
@@ -69,16 +76,55 @@ public final class RVP_WreckMuzzleSmokeSelfRenderer {
                              net.minecraft.world.phys.Vec3 velocity,
                              float size, float alpha, int lifetime, int textureIndex,
                              double updraft, double spread, float grey) {
+        // 调用世界绑定入口，避免首次生成后又被本刻世界切换清理误删。
+        bindLevel(level);
         add(new RVP_WreckMuzzleSmokeParticle(level, position, velocity, size, alpha, lifetime,
                 textureIndex, updraft, spread, grey));
+    }
+
+    /** 正式开火与预览共用的延时白烟入口；达到同炮口上限时不补发积压烟。 */
+    public static boolean spawnDelayed(ClientLevel level, RVP_DelayedMuzzleSmokeLogic.Spawn spawn,
+                                        Snapshot settings, Object source) {
+        // 调用统一世界生命周期，计数与实际粒子列表同步清理。
+        bindLevel(level);
+        if (DELAYED_SOURCE_COUNTS.getOrDefault(source, 0) >= settings.integer(Parameter.MAX_PARTICLES_PER_MUZZLE)) {
+            return false;
+        }
+        if (spawn.alpha() <= 0) { return true; }
+        // 调用现有烟粒子和贴图集合；只给开火白烟传入扩展参数，殉燃烟不受影响。
+        add(new RVP_WreckMuzzleSmokeParticle(level, spawn.position(), spawn.velocity(), spawn.size(), spawn.alpha(),
+                spawn.lifetime(), level.random.nextInt(RVP_WreckMuzzleSmokeParticle.textureCount()),
+                settings.value(Parameter.UPDRAFT), settings.value(Parameter.SPREAD), (float) settings.value(Parameter.GREY),
+                settings, source));
+        return true;
+    }
+
+    /** 换世界或离开游戏时同步丢弃粒子及炮口引用，防止跨世界预算残留。 */
+    private static void bindLevel(ClientLevel level) {
+        if (activeLevel != level) {
+            ACTIVE.clear();
+            DELAYED_SOURCE_COUNTS.clear();
+            activeLevel = level;
+        }
+    }
+
+    /** 释放一枚延时烟占用的炮口预算；殉燃粒子没有预算身份。 */
+    private static void releaseSource(RVP_WreckMuzzleSmokeParticle particle) {
+        Object source = particle.delayedSource();
+        if (source != null) {
+            DELAYED_SOURCE_COUNTS.computeIfPresent(source, (key, count) -> count <= 1 ? null : count - 1);
+        }
     }
 
     /** 加入自绘列表；超出预算时丢弃最早粒子。 */
     private static void add(RVP_WreckMuzzleSmokeParticle particle) {
         while (ACTIVE.size() >= MAX_ACTIVE) {
-            ACTIVE.remove(0);
+            // 调用预算释放，全局安全上限淘汰也不能遗留炮口计数。
+            releaseSource(ACTIVE.remove(0));
         }
         ACTIVE.add(particle);
+        Object source = particle.delayedSource();
+        if (source != null) { DELAYED_SOURCE_COUNTS.merge(source, 1, Integer::sum); }
     }
 
     /**
@@ -93,20 +139,18 @@ public final class RVP_WreckMuzzleSmokeSelfRenderer {
         }
         ClientLevel level = Minecraft.getInstance().level;
         if (level == null) {
-            ACTIVE.clear();
-            activeLevel = null;
+            // 调用同一清理入口，退出游戏时释放全部烟源对象引用。
+            bindLevel(null);
             return;
         }
-        if (level != activeLevel) {
-            // 世界/维度切换：粒子坐标是旧世界的，整体丢弃。
-            ACTIVE.clear();
-            activeLevel = level;
-        }
+        bindLevel(level);
         Iterator<RVP_WreckMuzzleSmokeParticle> iterator = ACTIVE.iterator();
         while (iterator.hasNext()) {
             RVP_WreckMuzzleSmokeParticle particle = iterator.next();
             particle.tick();
             if (particle.isGone()) {
+                // 调用同一释放逻辑，让新一发能复用正常消散烟团腾出的额度。
+                releaseSource(particle);
                 iterator.remove();
             }
         }

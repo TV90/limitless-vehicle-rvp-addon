@@ -4,10 +4,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
-import org.ywzj.rvp.client.firecontrol.RVP_RadarMissileTrackHelper;
-import org.ywzj.rvp.client.lead.RVP_MachinegunLeadSolver;
-import org.ywzj.rvp.client.state.RVP_FireControlStabilizerState;
-import org.ywzj.rvp.client.state.RVP_SemiAutoLeadTrimState;
+import org.ywzj.rvp.client.firecontrol.RVP_ManualSightInput;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
@@ -27,15 +24,11 @@ public class LocalVehiclePlayerMachinegunLeadTurnMixin {
             remap = false
     )
     private void ywzj_rvp$suppressStableLeadMouseX(WeaponUnit weaponUnit, float xAimRot) {
-        if (ywzj_rvp$shouldSuppressMouseAim(weaponUnit)) {
+        if (RVP_ManualSightInput.suppressed(weaponUnit)) {
             return;
         }
-        if (mouseTurnedAfterScope
-                && RVP_FireControlStabilizerState.getMode(weaponUnit)
-                == RVP_FireControlStabilizerState.Mode.SEMI_AUTO) {
-            // 调用本项目半自动微调状态，把本体即将写入的俯仰增量锁存为相对当前基准方向偏置。
-            RVP_SemiAutoLeadTrimState.recordPitchInput(weaponUnit, xAimRot);
-        }
+        // 调用共用输入策略，旧站保持原有全自动抑制和半自动微调行为。
+        RVP_ManualSightInput.recordPitch(weaponUnit, xAimRot, mouseTurnedAfterScope);
         weaponUnit.setXAimRot(xAimRot);
     }
 
@@ -48,36 +41,12 @@ public class LocalVehiclePlayerMachinegunLeadTurnMixin {
             remap = false
     )
     private void ywzj_rvp$suppressStableLeadMouseY(WeaponUnit weaponUnit, float yAimRot) {
-        if (ywzj_rvp$shouldSuppressMouseAim(weaponUnit)) {
+        if (RVP_ManualSightInput.suppressed(weaponUnit)) {
             return;
         }
-        if (mouseTurnedAfterScope
-                && RVP_FireControlStabilizerState.getMode(weaponUnit)
-                == RVP_FireControlStabilizerState.Mode.SEMI_AUTO) {
-            // 调用本项目半自动微调状态，把本体即将写入的方位增量锁存为相对当前基准方向偏置。
-            RVP_SemiAutoLeadTrimState.recordYawInput(weaponUnit, yAimRot);
-        }
+        // 调用同一策略，在目标写入前锁存偏航微调。
+        RVP_ManualSightInput.recordYaw(weaponUnit, yAimRot, mouseTurnedAfterScope);
         weaponUnit.setYAimRot(yAimRot);
     }
 
-    private static boolean ywzj_rvp$shouldSuppressMouseAim(WeaponUnit weaponUnit) {
-        if (weaponUnit == null) {
-            return false;
-        }
-        if (LocalVehiclePlayer.instance == null
-                || LocalVehiclePlayer.instance.viewType != LocalVehiclePlayer.ViewType.SCOPE) {
-            return false;
-        }
-        if (RVP_FireControlStabilizerState.getMode(weaponUnit) != RVP_FireControlStabilizerState.Mode.STABLE) {
-            return false;
-        }
-        if (RVP_MachinegunLeadSolver.isCurrentRvpMachinegun(weaponUnit)) {
-            // 调用本项目锁定目标解析器只做轻量资格判断；实际弹道解由共享状态每 tick 至多计算一次，
-            // 禁止在 X/Y 鼠标重定向中重复扫描 239 组候选时间导致客户端卡顿。
-            return RVP_MachinegunLeadSolver.resolveTrackedTarget(weaponUnit) != null;
-        }
-        // 调用本项目RF导弹跟踪辅助器，只有实际雷达硬锁时才在 STABLE 中屏蔽鼠标。
-        return RVP_RadarMissileTrackHelper.isEligible(weaponUnit)
-                && RVP_RadarMissileTrackHelper.resolveHardLockedTarget(weaponUnit) != null;
-    }
 }

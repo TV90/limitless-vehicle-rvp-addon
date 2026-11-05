@@ -6,6 +6,7 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.EntityLeaveLevelEvent;
+import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.jetbrains.annotations.Nullable;
@@ -54,7 +55,7 @@ import java.util.Map;
  * <p>原 mixin 还 HEAD-cancel 了 {@code tickTargets}，用自己的接触保持寿命
  * （contactHoldTick / scanPeriodTick / 扫描周期）并清理出扇区/高度、死亡、
  * 不可探测的目标。本类以客户端 tick 事件复刻等价语义：每 tick
- * {@link #tickContactHold(RadarUnit)} 刷新仍在扫描范围内目标的接触时间戳（保活），
+ * 在本体清理前及扫描后刷新仍在扫描范围内目标的接触时间戳（保活），
  * 移除出扇区/高度/死亡/不可探测目标——目标在扫描间隙不会瞬间消失。</p>
  *
  * <p>实体 {@code RadarUnit} 为纯 Forge 服务端启动的"带毒"目标不可再 mixin，本类以
@@ -86,21 +87,21 @@ public final class RVP_ClientRadarTickHandler {
                 && (event.getEntity().getRemovalReason() == Entity.RemovalReason.UNLOADED_TO_CHUNK
                 || org.ywzj.rvp.client.state.RVP_ClientVirtualMissileState.target(event.getEntity().getId()) != null)) {
             // 调用本项目统一交接入口，仅迁移仍有新鲜广播样本的已有接触与硬锁。
-            reconcilePlayerRadarTargets();
+            reconcilePlayerRadarTargets(false);
         }
     }
 
-    /** 在世界实体开始更新前统一引用，覆盖网络包先替换探测对象的情况。 */
-    @SubscribeEvent
+    /** 在世界实体开始更新前统一引用并保活；最后执行，覆盖其它 START 监听器的首次加载耗时。 */
+    @SubscribeEvent(priority = EventPriority.LOWEST)
     public static void onClientTickStart(TickEvent.ClientTickEvent event) {
         if (event.phase == TickEvent.Phase.START) {
-            // 调用本项目交接入口，避免本体按旧对象引用检查锁定。
-            reconcilePlayerRadarTargets();
+            // 调用本项目交接与保活入口：本体先 tickTargets 再 tickLock，不能等 END 才续期。
+            reconcilePlayerRadarTargets(true);
         }
     }
 
     /** 只处理当前玩家拥有且开启的雷达，不重新建立已经解除的锁定。 */
-    private static void reconcilePlayerRadarTargets() {
+    private static void reconcilePlayerRadarTargets(boolean holdPhaseContacts) {
         LocalVehiclePlayer player = LocalVehiclePlayer.instance;
         if (player == null || player.getPlayer() == null || player.vehicle == null
                 || !(player.vehicle.level() instanceof net.minecraft.client.multiplayer.ClientLevel level)) {
@@ -113,11 +114,24 @@ public final class RVP_ClientRadarTickHandler {
         if (weapon == null || weapon.getOwner() != player.getPlayer()) {
             return;
         }
+        // 调用本体动力/损毁与驾驶员接口，只为当前玩家实际工作的雷达续期。
+        boolean canHold = holdPhaseContacts && !player.vehicle.isDestroyed() && player.vehicle.hasPower()
+                && !(player.vehicle.getDriver() instanceof GunnerEntity);
         // 调用本体部件列表，只向启用中的雷达迁移同 ID 对象。
         for (PartUnit<?> part : player.vehicle.getPartUnits()) {
             if (part instanceof RadarUnit radar && radar.isOn()) {
                 // 调用既有接管逻辑，保留新鲜度校验及本地实体优先规则。
                 reconcileTrackedEntityRepresentations(radar, weapon, level);
+                // 调用本体数据与本项目模块状态，只接管 phase 雷达，机械雷达仍沿用本体寿命。
+                if (canHold && radar.getData() instanceof RadarUnitDataExt ext
+                        && "phase".equalsIgnoreCase(ext.ywzj_rvp$getScanAnimationMode())
+                        && RVP_ClientBoneModuleState.isModuleActive(
+                                player.vehicle.getId(), radar.getId(), BoneModuleType.RADAR)) {
+                    // 调用完整几何/存活/广播新鲜度检查后续期，不扫描新目标、不恢复已解除的锁定。
+                    tickContactHold(radar, level);
+                    // 调用隐身距离过滤，提前保活也不能延续已超出有效发现距离的航迹。
+                    applyAspectRcsFilter(radar, level.getGameTime());
+                }
             }
         }
     }
@@ -186,7 +200,7 @@ public final class RVP_ClientRadarTickHandler {
             RadarUnitDataExt ext = data instanceof RadarUnitDataExt radarExt ? radarExt : null;
             boolean phaseMode = ext != null && "phase".equalsIgnoreCase(ext.ywzj_rvp$getScanAnimationMode());
             if (phaseMode) {
-                // 扫描后保活：每 tick 刷新仍在扫描范围内目标的接触时间戳（复刻原 mixin tickTargets 语义）
+                // 调用同一保活检查，补验本 tick 移动后的目标；START 已先阻止本体按现实耗时误删。
                 tickContactHold(radar, (net.minecraft.client.multiplayer.ClientLevel) vehicle.level());
                 if (shouldSkipScan(radar, ext)) {
                     applyAspectRcsFilter(radar, vehicle.level().getGameTime());

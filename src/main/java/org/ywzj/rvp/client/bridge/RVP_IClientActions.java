@@ -6,6 +6,19 @@ import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 
 /** 公共弹体可安全调用的客户端动作接口；服务端实现不引用任何纯客户端类型。 */
 public interface RVP_IClientActions {
+    /** 新版吊舱是否由本地玩家操作；服务端默认 false，不加载客户端类型。 */
+    default boolean isLocalOpticalOperator(org.ywzj.rvp.vehicle.RVP_OpticalWeaponUnit station) { return false; }
+
+    /** 接收吊舱权威实际轨迹；服务端默认空操作。 */
+    default void acceptOpticalSightState(org.ywzj.rvp.network.S2COpticalSightState message) {}
+
+    /** 既有 R 键入口准备新版吊舱本帧选点；其他站和服务端为空操作。 */
+    default void prepareOpticalSelection(org.ywzj.vehicle.vehicle.part.WeaponUnit station) {}
+
+    /** 未知距离焦点的保存方向；真实点或服务端返回 null。 */
+    @org.jetbrains.annotations.Nullable
+    default net.minecraft.world.phys.Vec3 opticalDirectionFocus(org.ywzj.vehicle.vehicle.part.WeaponUnit station,
+                                                              net.minecraft.world.phys.Vec3 origin) { return null; }
 
     /** 查找含远距显示代理的红外候选；专用服务端返回 null。 */
     @org.jetbrains.annotations.Nullable

@@ -124,7 +124,8 @@ public final class RVP_ProjectileSimulation {
         if (target != null) summary.add(new Value("最近目标距离（格）", closest));
         return new Replay("rvp-projectile-simulation", 2, scene.id, scene.name, scene.description, TICK_RATE, scene.groundY,
                 scene, ordered("id", weapon.id(), "sha256", weapon.sha256(), "json", weapon.source()),
-                ordered("implementation", "rvp-entity-flight", "entityClass", entityClass, "motionEntry", entry),
+                ordered("implementation", "rvp-entity-flight", "entityClass", entityClass, "motionEntry", entry,
+                        "guidanceRuntime", RVP_GuidanceSimulationIdentity.current()),
                 objects, List.of(), frames, events, summary,
                 List.of(new Check("真实实体逐刻记录", "passed", "直接读取实体位置、速度、姿态及航程；共 " + frames.size() + " 帧。"),
                         new Check("测试停止球", "info", target == null ? "未设置目标。" : reached ? "完整运动段进入目标球；不代表真实命中。" : "本次未进入目标球。")),

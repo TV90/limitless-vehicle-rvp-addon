@@ -18,20 +18,29 @@ import static org.junit.jupiter.api.Assertions.*;
 class RVP_ProjectileInertiaSimulationTest {
     /** 本轮独立场景目录，不混入默认 052D 回放。 */
     private static final Path SCENARIOS = Path.of("src/test/resources/projectile-inertia-simulation");
+    /** PPN 新增 AIR/SARH 与高抛交接场景，同样读取未改参数的权威武器。 */
+    private static final Path PPN_SCENARIOS = Path.of("src/test/resources/projectile-ppn-simulation");
     /** 只读取项目根的权威武器配置。 */
     private static final Path WEAPONS = Path.of("limitless_vehicle/rvp/data/rvp/weapons");
 
     /** 各种发射速度、离轴角与目标运动均须独立报告测试结果。 */
     @TestFactory
     List<DynamicTest> authoritativeMissilesRespectNoseCapAndFirstEncounter() throws IOException {
-        try (var paths = Files.list(SCENARIOS)) {
-            return paths.filter(path -> path.toString().endsWith(".json")).sorted()
-                    .map(path -> DynamicTest.dynamicTest(path.getFileName().toString(), () -> verify(path))).toList();
+        try (var paths = Files.list(SCENARIOS); var ppnPaths = Files.list(PPN_SCENARIOS)) {
+            return java.util.stream.Stream.concat(paths, ppnPaths).filter(path -> path.toString().endsWith(".json")).sorted()
+                    .flatMap(path -> {
+                        var ordinary = java.util.stream.Stream.of(DynamicTest.dynamicTest(
+                                path.getFileName().toString(), () -> verify(path, false)));
+                        if (!path.getFileName().toString().contains("_loft_")) return ordinary;
+                        // 只补测高抛的另一交接条件：到原开机距离后显式自主捕获，不模拟雷达搜索。
+                        return java.util.stream.Stream.concat(ordinary, java.util.stream.Stream.of(DynamicTest.dynamicTest(
+                                path.getFileName() + " 自主捕获交接", () -> verify(path, true))));
+                    }).toList();
         }
     }
 
     /** 真正推进游戏实体，直接测量机头总夹角与相对运动段，不以引信半径冒充几何误差。 */
-    private void verify(Path path) throws IOException {
+    private void verify(Path path, boolean catchAtActivation) throws IOException {
         // 调用现有场景与权威武器解析器，不复制武器参数或在生产代码中区分武器 ID。
         var scene = RVP_ProjectileSimulationMain.read(path);
         var weapon = RVP_ProjectileSimulationWeapon.read(WEAPONS, scene.weapon);
@@ -40,6 +49,7 @@ class RVP_ProjectileInertiaSimulationTest {
         Vec3 oldTarget = flight.targetPosition();
         double best = before.position().distanceTo(oldTarget);
         boolean angularMotionSeen = false;
+        boolean catchSeen = false;
         int closestTick = 0;
         for (int tick = 1; tick <= scene.ticks; tick++) {
             var data = weapon.data().getProjectileData();
@@ -50,6 +60,12 @@ class RVP_ProjectileInertiaSimulationTest {
             double ratio = before.velocity().length() / limits.referenceSpeed();
             double pressure = Math.max(0.05, Math.min(1.0, limits.densityFactor() * ratio * ratio));
             double cap = 90.0 * (limits.rvpMaxGs() != null ? 0.5 : limits.turningFactor()) * pressure;
+            if (catchAtActivation && !catchSeen && before.position().distanceTo(oldTarget)
+                    <= weapon.data().getGuidanceData().getActiveRadarActivationRange()) {
+                // 调用正式捕获状态入口；这里只提供外部捕获事件，交接和执行器必须跑真实代码。
+                flight.entity().markAutonomousSeekerCatch();
+                catchSeen = true;
+            }
             // 调用真实实体制导、攻角兜底与运动入口；所有生产状态保持连续。
             var after = flight.step();
             Vec3 target = flight.targetPosition();
@@ -70,8 +86,10 @@ class RVP_ProjectileInertiaSimulationTest {
             oldTarget = target;
         }
         assertTrue(angularMotionSeen, "必须实际推进双轴角速度，不能一直直飞通过限幅检查");
+        if (catchAtActivation) assertTrue(catchSeen, "必须实际发生自主捕获后的高抛退出");
         // 此门槛比当前五格近炸半径更严；实体验证允许既有时间顺序/重力，纯数学 PIP 另守半格预算。
         assertTrue(best < 2.0, scene.id + " 首次交会误差=" + best);
-        System.out.printf("INERTIA-ENTITY %s closestTick=%d firstMiss=%.9f%n", scene.id, closestTick, best);
+        System.out.printf("INERTIA-ENTITY %s catch=%s closestTick=%d firstMiss=%.9f%n",
+                scene.id, catchAtActivation, closestTick, best);
     }
 }

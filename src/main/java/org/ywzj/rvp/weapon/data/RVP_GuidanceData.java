@@ -68,15 +68,29 @@ public class RVP_GuidanceData {
     @SerializedName("off_axis_stacks_with_station_rotation")
     private boolean offAxisStacksWithStationRotation = false;
 
+    /**
+     * 自动实体拦截开关，无单位，默认 false；IR/AIR/ARH/SARH 导弹在有效实体观测下使用 PPN。
+     * 高抛段按原退坡权重保留 PIP 路线并交给 PPN；其他原有 PIP 路径保持预测点语义。
+     * 仍受起始 Tick、诱饵、二脉冲等待、距离和角度门控限制，不改变目标捕获能力。
+     */
     @SerializedName("predict_target_pos")
     private boolean predictTargetPos = false;
 
+    /**
+     * 实体 PPN 的无量纲比例系数 N，默认 3.0；仅上述 PPN 分支且开关有效时生效。
+     * 0 不请求 PPN 转弯，负值按 0；不提高 G/攻角/机头转速预算，末段继承主段值。
+     * 其他 PIP、坐标、人工指令和电视路径不消费此增益。
+     */
     @SerializedName("predict_target_pos_gain")
     private float predictTargetPosGain = 3.0f;
 
     @SerializedName("max_lateral_accel")
     private float maxLateralAccel = 0f;
 
+    /**
+     * 自动实体拦截最早启用时刻，单位为发射后的总飞行 Tick，默认 10，负值按 0。
+     * PPN 与保留的 PIP 共用；末段继承主段值，切段不重新计时。
+     */
     @SerializedName("predict_target_pos_start_tick")
     private int predictTargetPosStartTick = 10;
 

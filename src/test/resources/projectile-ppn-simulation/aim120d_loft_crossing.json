@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "aim120d_loft_crossing",
+  "name": "AIM-120D 高抛退坡与横穿对照",
+  "description": "保留原高抛高度、退坡距离、机动与发动机参数，覆盖高抛向 PPN 的衔接。",
+  "weapon": "rvp:f16_aim120d",
+  "ticks": 700,
+  "position": [0, 164, 0],
+  "vehicleVelocity": [0, 0, 80],
+  "target": [0, 164, 1350],
+  "targetVelocity": [20, 0, 0],
+  "targetRadius": 1,
+  "guidance": true,
+  "seed": 721
+}

@@ -293,6 +293,12 @@ public final class RVP_ScreenLightDebugCommands {
 
     /** 口径提供两种范围的基础值，各自倍率独立应用；缩放仍只改变喷焰本身长宽。 */
     public static int preview(float radius, boolean engine, float scale, float caliber) {
+        // 调用兼容入口；原有命令及F8光照预览仍使用原先的稳态衰减。
+        return preview(radius, engine, scale, caliber, false);
+    }
+
+    /** 可选启停预览走正式点火/燃尽曲线；其余放置、照明和旧命令行为保持一致。 */
+    public static int preview(float radius, boolean engine, float scale, float caliber, boolean transition) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null || mc.player == null) { return 0; }
         Vec3 position = mc.gameRenderer.getMainCamera().getPosition().add(mc.player.getLookAngle().scale(4));
@@ -318,7 +324,13 @@ public final class RVP_ScreenLightDebugCommands {
             Vec3 direction = mc.player.getLookAngle().cross(new Vec3(0, 1, 0)).normalize();
             if (direction.lengthSqr() < 0.01) { direction = new Vec3(1, 0, 0); }
             RVP_RocketPlumeManager.INSTANCE.beginWorld(mc.level, mc.level.getGameTime());
-            RVP_RocketPlumeManager.INSTANCE.upsert(java.util.UUID.randomUUID(), position, direction, scale, caliber, 1, true);
+            if (transition) {
+                // 调用有限时间线预览，独立观察展开、收束，不生成真实弹体。
+                RVP_RocketPlumeManager.INSTANCE.upsertEnginePreview(java.util.UUID.randomUUID(), position, direction, scale, caliber);
+            } else {
+                // 调用既有稳态预览，仍按原有两秒亮度与光晕曲线播放。
+                RVP_RocketPlumeManager.INSTANCE.upsert(java.util.UUID.randomUUID(), position, direction, scale, caliber, 1, true);
+            }
             // 调用两种独立范围规则，提示照亮半径和光晕半径，避免把分离后的结果说成同一个值。
             mc.player.displayClientMessage(Component.literal("[RVP Light] 发动机预览：口径 " + caliber
                     + " mm，照亮半径 " + RVP_LightRuntimeTuning.radius(Group.engine, preset.radius())

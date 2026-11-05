@@ -32,6 +32,8 @@ public abstract class WeaponUnitFireControlLockMixin {
     @Inject(method = "fireControlLock", at = @At("HEAD"), cancellable = true, remap = false)
     private void rvp$handleRfFireControlLock(CallbackInfo ci) {
         WeaponUnit self = (WeaponUnit) (Object) this;
+        // 调用既有 HEAD 的安全桥，仅新版吊舱对齐本体光电射线与实际画面。
+        RVP_ClientActionsAccess.prepareOpticalSelection(self);
         Optional<?> weaponOpt = self.getCurrentWeapon();
         AbstractVehicleWeapon<?> currentWeapon = weaponOpt.isPresent() && weaponOpt.get() instanceof AbstractVehicleWeapon<?> weapon
                 ? weapon

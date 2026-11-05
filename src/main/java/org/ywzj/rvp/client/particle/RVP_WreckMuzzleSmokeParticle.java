@@ -9,12 +9,17 @@ import net.minecraft.client.Camera;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.particle.ParticleRenderType;
 import net.minecraft.client.particle.SingleQuadParticle;
+import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.texture.TextureManager;
+import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
+import org.ywzj.rvp.client.visual.vehicle.RVP_DelayedMuzzleSmokeLogic;
+import org.ywzj.rvp.client.visual.vehicle.RVP_DelayedMuzzleSmokeSettings.Parameter;
+import org.ywzj.rvp.client.visual.vehicle.RVP_DelayedMuzzleSmokeSettings.Snapshot;
 
 /**
  * 地面载具殉燃炮口的灰黑烟粒子（<b>自绘管线</b>）。
@@ -51,17 +56,36 @@ public final class RVP_WreckMuzzleSmokeParticle extends SingleQuadParticle {
     private final float rollSpeed;
     /** 每枚烟团独立的水平摆动相位。 */
     private final double swayPhase;
+    /** 仅开火延时白烟持有；殉燃烟为 null，继续使用原有运动与淡出。 */
+    private final Snapshot delayedSettings;
+    /** 延时白烟的实际炮口身份，用于同炮口活跃粒子预算；殉燃烟为 null。 */
+    private final Object delayedSource;
 
     RVP_WreckMuzzleSmokeParticle(ClientLevel level, Vec3 position, Vec3 velocity,
                                          float size, float alpha, int lifetime, int textureIndex,
                                          double updraft, double spread, float grey) {
+        this(level, position, velocity, size, alpha, lifetime, textureIndex, updraft, spread, grey, null, null);
+    }
+
+    /** 白烟扩展入口；保留原构造器，避免改变殉燃炮口烟。 */
+    RVP_WreckMuzzleSmokeParticle(ClientLevel level, Vec3 position, Vec3 velocity,
+                                float size, float alpha, int lifetime, int textureIndex,
+                                double updraft, double spread, float grey,
+                                Snapshot delayedSettings, Object delayedSource) {
         super(level, position.x, position.y, position.z);
+        this.delayedSettings = delayedSettings;
+        this.delayedSource = delayedSource;
         this.textureIndex = normalizeTextureIndex(textureIndex);
-        this.initialQuadSize = Math.max(0.1F, size);
+        this.initialQuadSize = Math.max(delayedSettings == null ? 0.1F : 0.001F, size);
         this.initialAlpha = Mth.clamp(alpha, 0.0F, 1.0F);
         this.lifetime = Math.max(4, lifetime);
         this.quadSize = this.initialQuadSize * 0.7F;
         this.alpha = this.initialAlpha;
+        if (delayedSettings != null) {
+            // 调用白烟自己的尺寸和淡入曲线；殉燃入口继续使用原出生值。
+            this.quadSize = (float) (this.initialQuadSize * RVP_DelayedMuzzleSmokeLogic.sizeMultiplier(delayedSettings, 0));
+            this.alpha = (float) (this.initialAlpha * RVP_DelayedMuzzleSmokeLogic.alphaMultiplier(delayedSettings, 0, this.lifetime));
+        }
         this.xd = velocity.x;
         this.yd = velocity.y;
         this.zd = velocity.z;
@@ -69,9 +93,11 @@ public final class RVP_WreckMuzzleSmokeParticle extends SingleQuadParticle {
         this.spread = Math.max(0.0D, Math.min(0.25D, spread));
         this.roll = level.random.nextFloat() * Mth.TWO_PI;
         this.oRoll = this.roll;
-        this.rollSpeed = (level.random.nextFloat() - 0.5F) * 0.025F;
+        this.rollSpeed = (level.random.nextFloat() - 0.5F) * (delayedSettings == null ? 0.025F
+                : (float) (Math.toRadians(delayedSettings.value(Parameter.ROLL_SPEED)) / 10));
         this.swayPhase = level.random.nextDouble() * Mth.TWO_PI;
-        float shade = Mth.clamp(grey * (0.85F + level.random.nextFloat() * 0.30F), 0.0F, 1.0F);
+        double variation = delayedSettings == null ? 0.15 : delayedSettings.value(Parameter.VARIATION);
+        float shade = Mth.clamp((float) (grey * (1 + (level.random.nextFloat() * 2 - 1) * variation)), 0.0F, 1.0F);
         this.rCol = shade;
         this.gCol = Mth.clamp(shade + 0.005F, 0.0F, 1.0F);
         this.bCol = Mth.clamp(shade + 0.015F, 0.0F, 1.0F);
@@ -99,6 +125,9 @@ public final class RVP_WreckMuzzleSmokeParticle extends SingleQuadParticle {
     int textureIndex() {
         return this.textureIndex;
     }
+
+    /** 自绘列表移除或淘汰粒子时同步释放实际炮口预算。 */
+    Object delayedSource() { return delayedSource; }
 
     /** 返回本粒子是否已结束（寿命耗尽或被移除），供自绘管理器从列表摘除。 */
     boolean isGone() {
@@ -159,7 +188,14 @@ public final class RVP_WreckMuzzleSmokeParticle extends SingleQuadParticle {
     @Override
     public int getLightColor(float partialTick) {
         // 灰烟保持可见，但不产生方块照明。
-        return 15 << 20;
+        int original = 15 << 20;
+        if (delayedSettings == null || delayedSettings.value(Parameter.ENVIRONMENT_LIGHT_MIX) == 0) {
+            return original;
+        }
+        // 调用原版局部光照取样和本项目分通道混合；不影响已有RVP烟雾额外照亮通道。
+        int environment = LevelRenderer.getLightColor(this.level, BlockPos.containing(this.x, this.y, this.z));
+        return RVP_DelayedMuzzleSmokeLogic.blendLight(original, environment,
+                delayedSettings.value(Parameter.ENVIRONMENT_LIGHT_MIX));
     }
 
     @Override
@@ -195,14 +231,27 @@ public final class RVP_WreckMuzzleSmokeParticle extends SingleQuadParticle {
             return;
         }
         float progress = this.age / (float) this.lifetime;
-        this.quadSize = this.initialQuadSize * (0.7F + 1.0F * progress);
-        this.alpha = this.initialAlpha * Mth.clamp(progress < 0.58F
-                ? 1.0F : (1.0F - progress) / 0.42F, 0.0F, 1.0F);
         this.roll += this.rollSpeed;
-        double wave = this.age * 0.07D + this.swayPhase;
-        this.xd = this.xd * 0.965D + Math.sin(wave) * this.spread;
-        this.zd = this.zd * 0.965D + Math.cos(wave) * this.spread;
-        this.yd = approachUpdraft(this.yd, this.updraft);
+        if (delayedSettings == null) {
+            // 殉燃炮口烟保留原先尺寸、浓度、水平摆动和上浮计算。
+            this.quadSize = this.initialQuadSize * (0.7F + 1.0F * progress);
+            this.alpha = this.initialAlpha * Mth.clamp(progress < 0.58F
+                    ? 1.0F : (1.0F - progress) / 0.42F, 0.0F, 1.0F);
+            double wave = this.age * 0.07D + this.swayPhase;
+            this.xd = this.xd * 0.965D + Math.sin(wave) * this.spread;
+            this.zd = this.zd * 0.965D + Math.cos(wave) * this.spread;
+            this.yd = approachUpdraft(this.yd, this.updraft);
+        } else {
+            // 调用开火白烟自己的快照计算，F8修改不会回溯影响已经存在的烟。
+            this.quadSize = (float) (this.initialQuadSize * RVP_DelayedMuzzleSmokeLogic.sizeMultiplier(delayedSettings, progress));
+            this.alpha = (float) (this.initialAlpha * RVP_DelayedMuzzleSmokeLogic.alphaMultiplier(delayedSettings, this.age, this.lifetime));
+            Vec3 velocity = RVP_DelayedMuzzleSmokeLogic.velocityStep(delayedSettings,
+                    new Vec3(this.xd, this.yd, this.zd), new Vec3(this.x, this.y, this.z),
+                    this.level.getGameTime(), this.age, this.swayPhase);
+            this.xd = velocity.x;
+            this.yd = velocity.y;
+            this.zd = velocity.z;
+        }
         // 调用本类粒子基类位移：维持炮口烟离管后向上漂移和水平轻微摆动。
         this.move(this.xd, this.yd, this.zd);
     }

@@ -22,6 +22,31 @@ import net.minecraft.client.particle.Particle;
 /** 客户端真实动作实现。 */
 @OnlyIn(Dist.CLIENT)
 public final class RVP_ClientActions implements RVP_IClientActions {
+    @Override
+    public boolean isLocalOpticalOperator(org.ywzj.rvp.vehicle.RVP_OpticalWeaponUnit station) {
+        // 调用本地乘员解析，只有自己的站允许忽略远端目标广播并预测。
+        var player = Minecraft.getInstance().player;
+        return player != null && station.getOwner() == player && LocalVehiclePlayer.instance.vehicle == station.getVehicle();
+    }
+
+    @Override
+    public void acceptOpticalSightState(org.ywzj.rvp.network.S2COpticalSightState message) {
+        // 调用客户端控制器处理确认与轨迹，公共消息不加载客户端类型。
+        org.ywzj.rvp.client.state.RVP_ClientOpticalSight.receive(message);
+    }
+
+    @Override
+    public void prepareOpticalSelection(org.ywzj.vehicle.vehicle.part.WeaponUnit station) {
+        // 调用新版吊舱逻辑相机适配，资格门确保普通站保持原行为。
+        org.ywzj.rvp.client.state.RVP_ClientOpticalSight.prepareSelection(station);
+    }
+
+    @Override
+    public net.minecraft.world.phys.Vec3 opticalDirectionFocus(org.ywzj.vehicle.vehicle.part.WeaponUnit station,
+                                                              net.minecraft.world.phys.Vec3 origin) {
+        // 调用只读焦点状态，未知距离时返回保存的世界方向。
+        return RVP_ClientFocusLock.directionOnlyFocus(station, origin);
+    }
 
     @Override
     public net.minecraft.world.entity.Entity findInfraredTarget(

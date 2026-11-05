@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "air_crossing",
+  "name": "AIR 实体寻的横穿对照",
+  "description": "保持权威 HQ-10 参数，对照原 PIP 与实体 PPN；不模拟导引头搜索、引信或距离自毁。",
+  "weapon": "rvp:052d_hq10",
+  "ticks": 400,
+  "position": [0, 164, 0],
+  "target": [0, 164, 350],
+  "targetVelocity": [20, 0, 0],
+  "targetRadius": 1,
+  "guidance": true,
+  "seed": 721
+}

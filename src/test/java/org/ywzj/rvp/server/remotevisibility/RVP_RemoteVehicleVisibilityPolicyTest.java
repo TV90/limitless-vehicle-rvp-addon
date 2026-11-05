@@ -1,5 +1,6 @@
 package org.ywzj.rvp.server.remotevisibility;
 
+import net.minecraftforge.common.ForgeConfigSpec;
 import org.junit.jupiter.api.Test;
 import org.ywzj.rvp.config.RVP_CommonConfig;
 import org.ywzj.rvp.config.RVP_CommonConfig.VisibilityMode;
@@ -15,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class RVP_RemoteVehicleVisibilityPolicyTest {
+    /** 正式配置与首包前的默认名单必须一致，覆盖步行及四类载具观察者。 */
     @Test
     void defaultMatrixMatchesConfiguredAuthority() {
         Set<VehicleCategory> all = Set.of(
@@ -23,15 +25,19 @@ class RVP_RemoteVehicleVisibilityPolicyTest {
                 VehicleCategory.GROUND_VEHICLES,
                 VehicleCategory.SHIPS);
 
-        assertEquals(all, RVP_CommonConfig.getRemoteVehicleVisibleTargetTypes(VehicleCategory.HELICOPTER));
-        assertEquals(all, RVP_CommonConfig.getRemoteVehicleVisibleTargetTypes(VehicleCategory.AIRCRAFT));
-        assertEquals(Set.of(VehicleCategory.HELICOPTER, VehicleCategory.AIRCRAFT),
-                RVP_CommonConfig.getRemoteVehicleVisibleTargetTypes(VehicleCategory.GROUND_VEHICLES));
-        // 船默认设为开启（用户定版）：舰船观察者默认放行直升机/固定翼/舰船（船→船超视距可见）。
-        assertEquals(Set.of(VehicleCategory.HELICOPTER, VehicleCategory.AIRCRAFT, VehicleCategory.SHIPS),
-                RVP_CommonConfig.getRemoteVehicleVisibleTargetTypes(VehicleCategory.SHIPS));
-        assertEquals(Set.of(VehicleCategory.HELICOPTER, VehicleCategory.AIRCRAFT),
-                RVP_CommonConfig.getRemoteVehicleVisibleTargetTypes(VehicleCategory.WALKING_PLAYERS));
+        ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
+        // 调用正式配置构造器读取实际生成文件使用的默认值，避免只验证尚未加载配置时的备用名单。
+        new RVP_CommonConfig(builder);
+        ForgeConfigSpec spec = builder.build();
+        for (VehicleCategory observer : VehicleCategory.values()) {
+            // 调用当前默认名单入口，覆盖配置尚未加载的状态。
+            assertEquals(all, RVP_CommonConfig.getRemoteVehicleVisibleTargetTypes(observer), observer.token());
+            ForgeConfigSpec.ConfigValue<List<? extends String>> configuredTypes = spec.getValues().get(
+                    List.of("remoteVehicleRendering", "visibilityByObserverVehicleType", observer.token()));
+            // 调用生产 token 解析入口，验证正式配置默认值也包含全部四类目标。
+            assertEquals(all, RVP_RemoteVehicleVisibilityPolicy
+                    .normalizeConfiguredTypes(configuredTypes.getDefault()).accepted(), observer.token());
+        }
     }
 
     @Test
@@ -202,22 +208,26 @@ class RVP_RemoteVehicleVisibilityPolicyTest {
                 candidates).isEmpty());
     }
 
-    /** 步行玩家使用 walking_players 矩阵项时可看见默认的两类空中目标。 */
+    /** 默认模式下，步行及乘车观察者无需雷达发现也能获准显示全部载具类型。 */
     @Test
-    void walkingPlayerObserverUsesWalkingPlayerMatrix() {
+    void walkingAndVehicleObserversAuthorizeAllDefaultTargetTypes() {
         List<Candidate> candidates = List.of(
                 candidate(1, VehicleCategory.AIRCRAFT, 600, false),
                 candidate(2, VehicleCategory.HELICOPTER, 700, false),
-                candidate(3, VehicleCategory.GROUND_VEHICLES, 800, false));
+                candidate(3, VehicleCategory.GROUND_VEHICLES, 800, false),
+                candidate(4, VehicleCategory.SHIPS, 900, false));
 
-        assertEquals(List.of(1, 2), ids(select(
-                VisibilityMode.VEHICLE_OCCUPANTS,
-                VehicleCategory.WALKING_PLAYERS,
-                -1,
-                Set.of(VehicleCategory.HELICOPTER, VehicleCategory.AIRCRAFT),
-                4096,
-                32,
-                candidates)));
+        for (VehicleCategory observer : VehicleCategory.values()) {
+            // 调用实际默认名单与服务端筛选入口，避免测试传入的自造名单掩盖生产配置遗漏。
+            assertEquals(List.of(1, 2, 3, 4), ids(select(
+                    VisibilityMode.VEHICLE_OCCUPANTS,
+                    observer,
+                    -1,
+                    RVP_CommonConfig.getRemoteVehicleVisibleTargetTypes(observer),
+                    4096,
+                    32,
+                    candidates)), observer.token());
+        }
     }
 
     /** 自车排除后按距离和实体 ID 稳定排序并截断。 */

@@ -37,6 +37,8 @@ public final class RVP_ProjectileEntitySimulation {
     /** 只提供平地、水面和就绪查询的测试环境。 */ private final RVP_ProjectileSimulationLevel level;
     /** 原始场景初态。 */ private final RVP_ProjectileSimulationScenario scene;
     /** 可选脚本目标；生产预测拦截直接读取其 Entity 运动观测。 */ private final Marker target;
+    /** 上一步正式制导是否成功输出指令；只供统计，不参与任何生产控制决策。 */
+    private boolean guidanceAppliedLastTick;
     /** 用于所有实体类型的真实动态分派运动入口。 */ private static final Method MOTION = method(RVP_BaseBullet.class, "tickMotion");
     /** 炮弹在实体 Tick 中使用的专属运动和姿态入口。 */ private static final Method CANNON = method(RVP_BulletEntity.class, "tickBulletMotionAndFacing");
     /** 智能引信已接管时使用的实体点制导入口。 */ private static final Method SMART = method(RVP_BaseBullet.class, "tickSmartFuseGuidance");
@@ -105,6 +107,8 @@ public final class RVP_ProjectileEntitySimulation {
 
     /** 真实实体只读出口，用于导出和直接数值对照；不能用历史峰值回填当前速度。 */
     public RVP_BaseBullet entity() { return projectile; }
+    /** 读取正式控制器返回值，区分正常机动、原门控暂停和无目标；不以攻角兜底冒充制导。 */
+    public boolean guidanceAppliedLastTick() { return guidanceAppliedLastTick; }
     /** 当前脚本目标中心，供界面与最近距离统计使用。 */
     public Vec3 targetPosition() { return target == null ? null : target.getBoundingBox().getCenter(); }
     /** 当前真实实体运动状态，原样保留位置、速度和 Java 姿态角。 */
@@ -146,10 +150,11 @@ public final class RVP_ProjectileEntitySimulation {
 
     /** 场景目标观测的统一入口，完整 Tick 和独立调度只共享这层外部输入。 */
     void executeGuidance() {
+        guidanceAppliedLastTick = false;
         if (projectile.smartFuseActive) invoke(SMART, projectile);
         else if (scene.guidance) {
             // 调用同一个生产制导控制器；只有目标观测来自场景，阶段、时间/包线门控和执行器均保持生产实现。
-            RVP_GuidanceRuntimeController.tick(projectile, context -> target == null
+            guidanceAppliedLastTick = RVP_GuidanceRuntimeController.tick(projectile, context -> target == null
                     ? RVP_GuidanceIntent.failed(context.active().guidanceType()) : observeTarget(context));
         }
     }

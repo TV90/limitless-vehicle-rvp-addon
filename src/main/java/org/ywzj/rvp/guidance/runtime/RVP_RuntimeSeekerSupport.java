@@ -165,13 +165,7 @@ final class RVP_RuntimeSeekerSupport {
                     || !isRadarScannable(entity)) {
                 continue;
             }
-            if (entity instanceof RVP_BaseBullet ammo
-                    && (projectile.getOwner() != null && ammo.getOwner() == projectile.getOwner()
-                    || org.ywzj.rvp.ecm.RVP_EcmIff.areVehiclesFriendly(
-                            projectile.getShooterVehicle(), ammo.getShooterVehicle()))) {
-                // 调用既有敌我规则，新增弹药搜索候选不能让导引头捕获同射手或友方载具的弹。
-                continue;
-            }
+            // 弹药归属已由上方统一过滤器判定，不能再按 owner 重复排除独立炮火支援。
             // 目的：分角度 RCS + 弹舱开启增幅（2026-09-16）——载具目标的导引头截获距离
             // 按"扫描半径 × 综合隐身因子"缩放（正面隐身机要贴近才可被截获）。
             // 仅雷达导引头分支生效；AIR 主动红外不受 RCS 影响。非载具（HBM 导弹）因子 1。
@@ -261,11 +255,9 @@ final class RVP_RuntimeSeekerSupport {
                     || !org.ywzj.rvp.guidance.RVP_SeekerTargetFilter.allows(projectile, entity)) {
                 continue;
             }
+            // 归属由统一过滤器处理，AIR 另外检查弹种和红外信号。
             if (entity == projectile || active && !RVP_AirSeekerPolicy.isAirInfraredCandidate(entity)) continue;
-            if (active && entity instanceof RVP_BaseBullet ammo
-                    && (ammo.getSignatureSize() <= 0f
-                    || projectile.getOwner() != null && ammo.getOwner() == projectile.getOwner()
-                    || org.ywzj.rvp.ecm.RVP_EcmIff.areVehiclesFriendly(projectile.getShooterVehicle(), ammo.getShooterVehicle()))) continue;
+            if (active && entity instanceof RVP_BaseBullet ammo && ammo.getSignatureSize() <= 0f) continue;
             boolean isTarget = entity instanceof AbstractVehicle
                     || active && entity instanceof RVP_BaseBullet
                     // IR 开启导引头阶段把热焰弹也当作锁定目标（无抗性）

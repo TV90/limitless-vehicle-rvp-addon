@@ -4,16 +4,15 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
-import org.ywzj.rvp.client.particle.RVP_WreckMuzzleSmokeParticle;
+import org.ywzj.rvp.client.particle.RVP_WreckMuzzleSmokeSelfRenderer;
 import org.ywzj.rvp.client.visual.vehicle.RVP_DelayedMuzzleSmokeSettings.Parameter;
-import org.ywzj.rvp.client.visual.vehicle.RVP_DelayedMuzzleSmokeSettings.VelocityParameter;
+import org.ywzj.rvp.client.visual.vehicle.RVP_DelayedMuzzleSmokeSettings.Snapshot;
 import org.ywzj.rvp.util.RVP_WeaponResolveHelper;
 import org.ywzj.rvp.weapon.core.RVP_AimContexts;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
@@ -42,7 +41,7 @@ import java.util.WeakHashMap;
  *
  * <p>本类不修改现有 {@link RVP_MuzzleSmokeEmitter} 的小口径即时烟路径。它只消费本体已经
  * 成功的 {@link VehicleFireEvent.Post}，在开火后排队一段时间，再按武器站和炮口骨索引
- * 每次重新解析实时炮口位置，每 1 tick 生成一枚白烟粒子。</p>
+ * 每次重新解析实时炮口位置，每刻按参数快照决定烟量与运动。</p>
  */
 @Mod.EventBusSubscriber(value = Dist.CLIENT, modid = RVP_MOD.MOD_ID,
         bus = Mod.EventBusSubscriber.Bus.FORGE)
@@ -53,7 +52,7 @@ public final class RVP_DelayedMuzzleSmokeEmitter {
     /** 延迟烟连续喷出的固定间隔，单位 tick。 */
     static final int EMIT_INTERVAL_TICKS = 1;
     /** 超过该距离后不再生成延迟烟，单位格。 */
-    private static final double MAX_SPAWN_DISTANCE = 256.0;
+    private static final double MAX_SPAWN_DISTANCE = RVP_DelayedMuzzleSmokeLogic.MAX_DISTANCE;
     /** {@link #MAX_SPAWN_DISTANCE} 的平方，避免重复开平方。 */
     private static final double MAX_SPAWN_DISTANCE_SQR = MAX_SPAWN_DISTANCE * MAX_SPAWN_DISTANCE;
     /** 待处理的延迟烟队列；所有条目都只在客户端线程访问。 */
@@ -99,27 +98,28 @@ public final class RVP_DelayedMuzzleSmokeEmitter {
 
         RandomSource random = level.random;
         long fireTick = level.getGameTime();
-        float particleSize = RVP_MuzzleSmokeEmitter.resolveParticleSize(profile.effectiveCaliber());
+        // 调用完整参数快照：本次开火的待发烟和已生成烟不受之后调参影响。
+        Snapshot settings = RVP_DelayedMuzzleSmokeSettings.snapshot();
         for (MuzzleContext muzzleContext : muzzleContexts) {
             if (!tryReserveScheduleTick(vehicle, weaponUnit, muzzleContext.muzzleIndex(), fireTick)) {
                 continue;
             }
             // 调用本体武器站上下文：保存武器站和炮口骨索引，延迟期间每次生成时重新解析实时位置。
-            int delay = RVP_DelayedMuzzleSmokeSettings.randomInclusive(
-                    Parameter.DELAY_MIN, Parameter.DELAY_MAX, random);
-            int duration = RVP_DelayedMuzzleSmokeSettings.randomInclusive(
-                    Parameter.EMIT_DURATION_MIN, Parameter.EMIT_DURATION_MAX, random);
-            int lifetime = RVP_DelayedMuzzleSmokeSettings.randomInclusive(
-                    Parameter.PARTICLE_LIFETIME_MIN, Parameter.PARTICLE_LIFETIME_MAX, random);
+            int delay = settings.randomInt(Parameter.DELAY_MIN, Parameter.DELAY_MAX, random);
+            int duration = settings.randomInt(Parameter.EMIT_DURATION_MIN, Parameter.EMIT_DURATION_MAX, random);
+            // 调用本体炮口上下文作为运动采样起点；延迟期间继续逐刻采样，包含炮塔转动速度。
+            AimContext initialAim = weaponUnit.aimContext(muzzleContext.bolt());
+            if (initialAim == null) { continue; }
+            Vec3 initialMuzzle = RVP_AimContexts.muzzle(initialAim);
             long firstEmissionTick = fireTick + delay;
             enqueue(new PendingEmission(level, vehicle, weaponUnit, muzzleContext.bolt(),
-                    particleSize, lifetime,
-                    firstEmissionTick, firstEmissionTick + duration));
+                    profile.effectiveCaliber(), settings, firstEmissionTick, firstEmissionTick + duration,
+                    initialMuzzle, fireTick, null));
         }
     }
 
     /**
-     * 在客户端 Tick 末尾推进延迟队列；每个条目每 1 tick 最多生成一枚粒子。
+     * 在客户端 Tick 末尾推进延迟队列，按每发参数快照生成白烟。
      *
      * @param event 客户端 Tick 事件
      */
@@ -144,30 +144,40 @@ public final class RVP_DelayedMuzzleSmokeEmitter {
                 iterator.remove();
                 continue;
             }
-            if (pending.vehicle().isRemoved()
-                    || !pending.weaponUnit().getBolts().contains(pending.bolt())) {
-                // 调用本体实体/武器站状态：载具或炮口已不存在时停止继续追踪该延迟任务。
+            if (pending.preview == null && (pending.vehicle.isRemoved()
+                    || !pending.weaponUnit.getBolts().contains(pending.bolt))) {
+                // 调用本体状态检查；预览没有载具，真实任务的载具或炮口消失就停止生成。
                 iterator.remove();
                 continue;
             }
-            if (gameTime >= pending.endEmissionTick()) {
+            if (gameTime >= pending.endEmissionTick) {
                 iterator.remove();
                 continue;
             }
-            if (gameTime < pending.nextEmissionTick()) {
-                continue;
+            Vec3 realtimeMuzzle;
+            Vec3 axis;
+            if (pending.preview != null) {
+                realtimeMuzzle = pending.preview.position();
+                axis = pending.preview.axis();
+            } else {
+                // 调用本体实时瞄准上下文，只让新烟跟随炮口；旧烟仍留在世界坐标中。
+                AimContext currentAim = pending.resolveCurrentAimContext();
+                if (currentAim == null) {
+                    iterator.remove();
+                    continue;
+                }
+                realtimeMuzzle = RVP_AimContexts.muzzle(currentAim);
+                axis = VectorUtil.rotToVec(currentAim.direction.x, currentAim.direction.y).normalize();
             }
-            AimContext currentAim = pending.resolveCurrentAimContext();
-            if (currentAim == null) {
-                iterator.remove();
-                continue;
+            // 延迟等待期间也采样位置，避免第一次喷烟继承整个等待期的平均速度。
+            Vec3 muzzleVelocity = pending.sampleMuzzleVelocity(realtimeMuzzle, gameTime);
+            if (gameTime < pending.nextEmissionTick) { continue; }
+            double distance = clientDistance(realtimeMuzzle);
+            if (distance <= MAX_SPAWN_DISTANCE) {
+                // 调用正式生成计算，预览与真实开火共用节奏、距离减量和粒子预算。
+                emitWhiteSmoke(level, pending, realtimeMuzzle, axis, muzzleVelocity, distance, gameTime, level.random);
             }
-            // 调用本项目炮口上下文工具：按当前载具/炮塔变换取得实时炮口位置。
-            Vec3 realtimeMuzzle = RVP_AimContexts.muzzle(currentAim);
-            if (isWithinClientRange(realtimeMuzzle)) {
-                emitWhiteSmoke(level, pending, currentAim, realtimeMuzzle, level.random);
-            }
-            pending.advanceNextEmissionTick(gameTime + EMIT_INTERVAL_TICKS);
+            pending.nextEmissionTick = gameTime + EMIT_INTERVAL_TICKS;
         }
     }
 
@@ -187,47 +197,53 @@ public final class RVP_DelayedMuzzleSmokeEmitter {
         }
     }
 
-    /**
-     * 在实时炮口位置生成延迟烟（2026-10-07 补完：19979b25 只换了贴图，本方法对齐殉燃炮口烟的
-     * 完整生成逻辑——炮口到 3 格喷出段的柱状连续分层、初速沿炮管 + 上浮 + 侧向抖动、
-     * 殉燃同款尺寸/透明度/寿命；grey=1.0 染白做白色试验）。
-     */
-    private static void emitWhiteSmoke(ClientLevel level, PendingEmission pending,
-                                       AimContext currentAim, Vec3 realtimeMuzzle,
+    /** 用同一份快照生成白烟；不再把寿命、初速、尺寸和浓度写死在生成器里。 */
+    private static void emitWhiteSmoke(ClientLevel level, PendingEmission pending, Vec3 muzzle,
+                                       Vec3 axis, Vec3 muzzleVelocity, double distance, long gameTime,
                                        RandomSource random) {
-        // 炮管轴向量（与 resolveSmokeVelocity 同源：按实时炮管姿态）
-        Vec3 axis = VectorUtil.rotToVec(currentAim.direction.x, currentAim.direction.y).normalize();
-        Vec3 side = axis.cross(new Vec3(0, 1, 0));
-        if (side.lengthSqr() < 1.0E-8) {
-            side = axis.cross(new Vec3(1, 0, 0));
+        // 调用实际喷烟包络：起烟渐强、后段泄劲与收尾保留比例同时作用于烟量和喷出状态。
+        double strength = RVP_DelayedMuzzleSmokeLogic.emissionStrength(pending.settings,
+                (int) (gameTime - pending.startEmissionTick),
+                (int) (pending.endEmissionTick - pending.startEmissionTick));
+        int count = pending.particleCounter.next(pending.settings, strength, distance);
+        for (int index = 0; index < count; index++) {
+            // 调用纯计算入口，确保面板设置确实进入正式出生位置、初速、大小、浓度和寿命。
+            RVP_DelayedMuzzleSmokeLogic.Spawn spawn = RVP_DelayedMuzzleSmokeLogic.sample(pending.settings,
+                    pending.caliber, muzzle, axis, muzzleVelocity, index, count, strength, random);
+            // 调用既有自绘烟管线的新白烟入口；殉燃烟继续使用原入口，不读取F8白烟参数。
+            if (!RVP_WreckMuzzleSmokeSelfRenderer.spawnDelayed(level, spawn, pending.settings, pending.sourceKey())) {
+                break;
+            }
         }
-        side = side.normalize();
-        Vec3 cross = axis.cross(side).normalize();
-        // 喷出段长度与柱状连续分层数（殉燃 muzzleSmokeLayerCount 同式：间距 = max(0.18, size×0.56)）
-        double travel = 3.0;
-        double smokeSize = 0.65;
-        double spacing = Math.max(0.18, smokeSize * 0.56);
-        int layerCount = Mth.clamp((int) Math.ceil(travel / spacing) + 1, 1, 8);
-        for (int layer = 0; layer < layerCount; layer++) {
-            // 轴向等距覆盖炮口到喷出段（殉燃 muzzleSmokeLayerPosition 同语义）+ 横向抖动
-            double along = travel * (layerCount == 1 ? 0.5 : (double) layer / (layerCount - 1));
-            Vec3 pos = realtimeMuzzle.add(axis.scale(along))
-                    .add(side.scale((random.nextDouble() - 0.5) * 0.4))
-                    .add(cross.scale((random.nextDouble() - 0.5) * 0.4));
-            // 初速 = 炮管轴 × 轴向速度 + 竖直上浮 + 侧向抖动（粒子自身持续逼近上浮速度）
-            Vec3 velocity = axis.scale(0.18)
-                    .add(new Vec3(0, 0.08, 0))
-                    .add(side.scale((random.nextDouble() - 0.5) * 0.003))
-                    .add(cross.scale((random.nextDouble() - 0.5) * 0.003));
-            float size = (float) (smokeSize * (0.85 + random.nextDouble() * 0.30));
-            float alpha = (float) (0.60 * (0.85 + random.nextDouble() * 0.30));
-            int lifetime = 36;
-            // grey=1.0 → 白色（殉燃原版为 0.13 灰黑）。调用本项目炮口烟自绘管理器：
-            // 脱离 ParticleEngine 批次，由 AFTER_PARTICLES 阶段按距离排序自绘（深度三难正解）。
-            org.ywzj.rvp.client.particle.RVP_WreckMuzzleSmokeSelfRenderer.spawn(
-                    level, pos, velocity, size, alpha, lifetime,
-                    random.nextInt(16), 0.08, 0.003, 1.0f);
+    }
+
+    /** 本地静止炮口预览；共用真实延时队列，不生成弹体、不发送网络包。 */
+    public static void previewAtPlayer(float caliber) {
+        Minecraft minecraft = Minecraft.getInstance();
+        ClientLevel level = minecraft.level;
+        if (level == null || minecraft.player == null) {
+            throw new IllegalStateException("需要先进入世界才能预览白烟。");
         }
+        if (!supportsDelayedMuzzleSmoke(caliber)) {
+            throw new IllegalArgumentException("白烟预览口径必须至少为45毫米。");
+        }
+        // 调用当前视线，只固定预览源；生成后的烟继续使用真实世界坐标与正式运动逻辑。
+        Vec3 axis = minecraft.player.getLookAngle().normalize();
+        Vec3 position = minecraft.player.getEyePosition().add(axis.scale(4)).add(0, -0.5, 0);
+        Snapshot settings = RVP_DelayedMuzzleSmokeSettings.snapshot();
+        long now = level.getGameTime();
+        int delay = settings.randomInt(Parameter.DELAY_MIN, Parameter.DELAY_MAX, level.random);
+        int duration = settings.randomInt(Parameter.EMIT_DURATION_MIN, Parameter.EMIT_DURATION_MAX, level.random);
+        enqueue(new PendingEmission(level, null, null, null, caliber, settings, now + delay,
+                now + delay + duration, position, now, new PreviewSource(position, axis)));
+    }
+
+    /** 返回相机到烟源距离；没有相机时使用无穷大，禁止无效生成。 */
+    private static double clientDistance(Vec3 position) {
+        Minecraft minecraft = Minecraft.getInstance();
+        Entity cameraEntity = minecraft.getCameraEntity();
+        if (cameraEntity == null) { cameraEntity = minecraft.player; }
+        return cameraEntity == null ? Double.POSITIVE_INFINITY : cameraEntity.position().distanceTo(position);
     }
 
     /** 判断坐标是否在当前客户端烟雾生成范围内。 */
@@ -318,22 +334,6 @@ public final class RVP_DelayedMuzzleSmokeEmitter {
         };
     }
 
-    /** 计算以世界竖直上浮为主、叠加少量炮管轴向和水平扰动的基础速度。 */
-    private static Vec3 resolveSmokeVelocity(AimContext aim, RandomSource random) {
-        // 调用本体向量工具：把炮管方向转换为少量轴向烟雾速度。
-        Vec3 axis = VectorUtil.rotToVec(aim.direction.x, aim.direction.y).normalize();
-        // 调用本项目参数管理器：按指令设定的范围随机取得出膛方向初速度。
-        double axialSpeed = RVP_DelayedMuzzleSmokeSettings.randomDoubleInclusive(
-                VelocityParameter.AXIAL_SPEED_MIN, VelocityParameter.AXIAL_SPEED_MAX, random);
-        double lateralX = (random.nextDouble() - 0.5) * 0.018;
-        double lateralZ = (random.nextDouble() - 0.5) * 0.018;
-        double upwardSpeed = 0.035 + random.nextDouble() * 0.025;
-        return new Vec3(
-                axis.x * axialSpeed + lateralX,
-                Math.max(0.02, upwardSpeed + axis.y * axialSpeed),
-                axis.z * axialSpeed + lateralZ);
-    }
-
     /** 为指定炮口保留一个客户端游戏 tick 的唯一排队资格。 */
     private static boolean tryReserveScheduleTick(AbstractVehicle vehicle, WeaponUnit weaponUnit,
                                                   int muzzleIndex, long gameTime) {
@@ -351,7 +351,7 @@ public final class RVP_DelayedMuzzleSmokeEmitter {
         }
     }
 
-    /** 大口径分类结果；口径用于复用现有烟团尺寸映射。 */
+    /** 大口径分类结果；真实口径供可调的烟团及出生范围比例使用。 */
     private static final class HeavySmokeProfile {
 
         /** 大口径烟团尺寸计算使用的有效口径，单位毫米。 */
@@ -367,91 +367,80 @@ public final class RVP_DelayedMuzzleSmokeEmitter {
         }
     }
 
-    /** 一次炮口延迟烟喷发任务的延迟参数快照和实时炮口追踪引用。 */
+    /** 预览使用固定世界烟源，不依赖实际载具和武器。 */
+    private record PreviewSource(
+            /** 固定世界炮口位置。 */ Vec3 position,
+            /** 固定出膛方向单位向量。 */ Vec3 axis) { }
+
+    /** 一次开火的参数快照、实时炮口引用和小数烟量累积。 */
     private static final class PendingEmission {
-
-        /** 任务所属的客户端世界，用于阻止跨世界生成。 */
+        /** 任务所属世界，换世界后丢弃。 */
         private final ClientLevel level;
-        /** 任务关联的载具，用于检查载具是否仍存在。 */
+        /** 真实载具；静止预览为 null。 */
         private final AbstractVehicle vehicle;
-        /** 任务关联的武器站，用于每次生成时重新读取实时炮口变换。 */
+        /** 真实武器站；静止预览为 null。 */
         private final WeaponUnit weaponUnit;
-        /** 任务关联的炮口骨索引对象，用于跟踪同一个实际炮口。 */
+        /** 同一实际炮口的身份，同时作为连续开火粒子预算键；预览为 null。 */
         private final Bolt bolt;
-        /** 按大口径有效口径映射出的粒子尺寸。 */
-        private final float particleSize;
-        /** 任务中每枚白烟粒子的寿命，单位 tick。 */
-        private final int particleLifetime;
-        /** 下一枚烟允许生成的客户端游戏 tick。 */
-        private long nextEmissionTick;
-        /** 本次连续喷烟的结束 tick，采用右开区间。 */
+        /** 武器的真实口径，单位毫米。 */
+        private final float caliber;
+        /** 本次开火完整参数，已生成和待生成烟均保持此快照。 */
+        private final Snapshot settings;
+        /** 第一刻喷烟时间，用于计算喷烟强弱。 */
+        private final long startEmissionTick;
+        /** 喷烟结束时间，右开区间。 */
         private final long endEmissionTick;
+        /** 下一次允许生成的世界刻。 */
+        private long nextEmissionTick;
+        /** 小数烟量累积器，防止低烟量或远处效果完全消失。 */
+        private final RVP_DelayedMuzzleSmokeLogic.EmissionCounter particleCounter =
+                new RVP_DelayedMuzzleSmokeLogic.EmissionCounter();
+        /** 上次采样的炮口世界位置。 */
+        private Vec3 lastMuzzlePosition;
+        /** 上次炮口采样对应的世界刻。 */
+        private long lastMuzzleTick;
+        /** 仅预览时存在的固定炮口，真实任务为 null。 */
+        private final PreviewSource preview;
 
-        private PendingEmission(ClientLevel level, AbstractVehicle vehicle,
-                                WeaponUnit weaponUnit, Bolt bolt,
-                                float particleSize, int particleLifetime,
-                                long nextEmissionTick, long endEmissionTick) {
+        private PendingEmission(ClientLevel level, AbstractVehicle vehicle, WeaponUnit weaponUnit, Bolt bolt,
+                                float caliber, Snapshot settings, long start, long end,
+                                Vec3 initialMuzzle, long initialTick, PreviewSource preview) {
             this.level = level;
             this.vehicle = vehicle;
             this.weaponUnit = weaponUnit;
             this.bolt = bolt;
-            this.particleSize = particleSize;
-            this.particleLifetime = particleLifetime;
-            this.nextEmissionTick = nextEmissionTick;
-            this.endEmissionTick = endEmissionTick;
+            this.caliber = caliber;
+            this.settings = settings;
+            this.startEmissionTick = start;
+            this.nextEmissionTick = start;
+            this.endEmissionTick = end;
+            this.lastMuzzlePosition = initialMuzzle;
+            this.lastMuzzleTick = initialTick;
+            this.preview = preview;
         }
 
-        /** 返回所属客户端世界。 */
-        private ClientLevel level() {
-            return level;
-        }
+        private ClientLevel level() { return level; }
 
-        /** 返回任务关联的载具。 */
-        private AbstractVehicle vehicle() {
-            return vehicle;
-        }
-
-        /** 返回任务关联的武器站。 */
-        private WeaponUnit weaponUnit() {
-            return weaponUnit;
-        }
-
-        /** 返回任务关联的炮口骨索引对象。 */
-        private Bolt bolt() {
-            return bolt;
-        }
-
-        /** 调用本体武器站接口取得当前炮塔/载具变换下的实时炮口上下文。 */
+        /** 调用稳定器和本体上下文，采样当刻真实炮口变换。 */
         private AimContext resolveCurrentAimContext() {
-            // 延迟出烟可能跨过一次稳定器更新；采样时校正父炮塔，不能沿用一刻内的未受限姿态。
+            // 调用本项目稳定器约束，避免本刻尚未限位的父炮塔姿态被白烟提前缓存。
             org.ywzj.rvp.event.RVP_TurretTraverseHandler.constrain(weaponUnit);
             return weaponUnit.aimContext(bolt);
         }
 
-        /** 返回单枚粒子尺寸。 */
-        private float particleSize() {
-            return particleSize;
+        /** 同一炮口的连续开火共用预算；不同预览使用各自的预算。 */
+        private Object sourceKey() { return bolt == null ? this : bolt; }
+
+        /** 用逐刻世界位置差同时包含载具平移与炮塔转动，瞬移不继承异常巨大速度。 */
+        private Vec3 sampleMuzzleVelocity(Vec3 muzzle, long gameTime) {
+            if (gameTime <= lastMuzzleTick) { return Vec3.ZERO; }
+            Vec3 velocity = muzzle.subtract(lastMuzzlePosition).scale(1.0 / (gameTime - lastMuzzleTick));
+            lastMuzzlePosition = muzzle;
+            lastMuzzleTick = gameTime;
+            // 每刻超过16格按瞬移处理，避免把传送变成数百格长的白烟拖尾。
+            return velocity.lengthSqr() > 256 ? Vec3.ZERO : velocity;
         }
 
-        /** 返回单枚粒子寿命。 */
-        private int particleLifetime() {
-            return particleLifetime;
-        }
-
-        /** 返回下一次生成 tick。 */
-        private long nextEmissionTick() {
-            return nextEmissionTick;
-        }
-
-        /** 返回连续喷烟结束 tick。 */
-        private long endEmissionTick() {
-            return endEmissionTick;
-        }
-
-        /** 将下一次生成时间推进到当前生成时间之后的固定间隔。 */
-        private void advanceNextEmissionTick(long nextTick) {
-            this.nextEmissionTick = nextTick;
-        }
     }
 
     /** 一次事件中待处理的炮口上下文及其武器站内稳定索引。 */

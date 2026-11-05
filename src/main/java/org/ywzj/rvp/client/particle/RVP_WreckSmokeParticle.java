@@ -8,13 +8,19 @@ import com.mojang.blaze3d.vertex.VertexFormat;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.particle.ParticleRenderType;
 import net.minecraft.client.particle.SingleQuadParticle;
+import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.texture.TextureManager;
+import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
+import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.client.visual.RVP_WreckSmokeDebugSettings;
 import org.ywzj.rvp.client.visual.RVP_WreckSmokeDebugSettings.Parameter;
+import org.ywzj.rvp.client.visual.RVP_WreckSmokeLogic;
+import org.ywzj.rvp.client.visual.vehicle.RVP_DelayedMuzzleSmokeLogic;
 
 /** 长程击毁烟粒子；近处烟已抽取为可复用的 {@link RVP_NearSmokeParticle}。 */
 @OnlyIn(Dist.CLIENT)
@@ -59,31 +65,39 @@ public final class RVP_WreckSmokeParticle extends SingleQuadParticle {
         this.lifetime = Math.max(16, lifetime);
         this.spawnY = y;
         // 长程烟从较稀疏的第 3 帧开始，避免生成瞬间闪现完整烟团。
-        this.frame = 2;
+        // 调用共用成团曲线；零成团时间立即用完整帧，默认保持原稀疏出生帧。
+        this.frame = RVP_WreckSmokeLogic.longFrame(0, Parameter.FORMATION_TICKS.intValue());
         this.initialSize = Math.max(0.15f, size);
         this.quadSize = this.initialSize;
         // 调用本项目调试参数：长程烟出生时读取当前东向风。
         this.xd = Parameter.EAST_WIND.value() + vx;
         this.yd = vy;
-        this.zd = vz;
+        this.zd = Parameter.LONG_SOUTH_WIND.value() + vz;
         this.breezePhase = level.random.nextDouble() * Mth.TWO_PI;
         this.hasPhysics = false;
         float shade = layer == SmokeLayer.LONG_OUTER
                 ? 0.18f + level.random.nextFloat() * 0.10f
                 : 0.08f + level.random.nextFloat() * 0.09f;
+        // 调用共用染色计算：保留原始随机序列，均值和差异可独立调整。
+        shade = RVP_WreckSmokeLogic.grey(shade, layer == SmokeLayer.LONG_OUTER ? 0.23f : 0.125f,
+                layer == SmokeLayer.LONG_OUTER ? Parameter.LONG_OUTER_GREY.value() : Parameter.LONG_CORE_GREY.value(),
+                Parameter.LONG_GREY_VARIATION.value());
         this.rCol = shade;
-        this.gCol = shade + 0.005f;
-        this.bCol = shade + 0.015f;
+        this.gCol = Math.min(1, shade + 0.005f);
+        this.bCol = Math.min(1, shade + 0.015f);
         float baseAlpha = layer == SmokeLayer.LONG_OUTER
                 ? 0.28f + level.random.nextFloat() * 0.12f
                 : 0.66f + level.random.nextFloat() * 0.18f;
-        this.initialAlpha = Mth.clamp(baseAlpha * (layer == SmokeLayer.LONG_CORE
-                ? Parameter.CORE_ALPHA_SCALE.floatValue() : Parameter.OUTER_ALPHA_SCALE.floatValue()),
-                0.0f, 1.0f);
-        this.alpha = this.initialAlpha;
+        // 调用共用浓度和淡入曲线；出生色与浓度锁定，其后的消散仍实时读取长烟参数。
+        this.initialAlpha = RVP_WreckSmokeLogic.alpha(baseAlpha, layer == SmokeLayer.LONG_OUTER ? 0.34f : 0.75f,
+                Parameter.LONG_ALPHA_VARIATION.value(), layer == SmokeLayer.LONG_CORE
+                        ? Parameter.CORE_ALPHA_SCALE.value() : Parameter.OUTER_ALPHA_SCALE.value());
+        this.alpha = this.initialAlpha * RVP_WreckSmokeLogic.alphaMultiplier(
+                RVP_WreckSmokeDebugSettings.LIVE, false, 0, this.lifetime, 1);
         this.roll = level.random.nextFloat() * Mth.TWO_PI;
         this.oRoll = this.roll;
-        this.rollSpeed = (level.random.nextFloat() - 0.5f) * 0.025f;
+        this.rollSpeed = (level.random.nextFloat() - 0.5f)
+                * (float) (Math.toRadians(Parameter.LONG_ROLL_SPEED.value()) / 10);
     }
 
     /** 创建一枚长程击毁烟粒子；调用方决定层次、位置、寿命和尺寸。 */
@@ -128,8 +142,12 @@ public final class RVP_WreckSmokeParticle extends SingleQuadParticle {
 
     @Override
     public int getLightColor(float partialTick) {
-        // 长程烟保持天空光全亮，避免夜间烟柱被环境光完全吞掉。
-        return 15 << 20;
+        int original = 15 << 20;
+        double mix = Parameter.LONG_ENVIRONMENT_LIGHT_MIX.value();
+        if (mix == 0) { return original; }
+        // 复用本项目分通道混光，选择性读取烟所在地光照；RVP额外照亮通道保持原入口。
+        return RVP_DelayedMuzzleSmokeLogic.blendLight(original,
+                LevelRenderer.getLightColor(this.level, BlockPos.containing(this.x, this.y, this.z)), mix);
     }
 
     @Override
@@ -163,27 +181,21 @@ public final class RVP_WreckSmokeParticle extends SingleQuadParticle {
             this.remove();
             return;
         }
-        float progress = (float) this.age / this.lifetime;
         double rise = Math.max(0.0, this.y - this.spawnY);
-        int formationTicks = Parameter.FORMATION_TICKS.intValue();
-        if (this.age < formationTicks) {
-            this.frame = 2 - Math.min(2, this.age * 3 / formationTicks);
-        } else {
-            this.frame = 0;
-        }
-        this.quadSize = this.initialSize * (1.0f + (float) rise * Parameter.SIZE_GAIN.floatValue());
-        float fadeStart = Parameter.FADE_START.floatValue();
-        this.alpha = this.initialAlpha * (progress < fadeStart ? 1.0f
-                : (1.0f - progress) / (1.0f - fadeStart));
+        // 调用共用成团与消散曲线，原长烟实时参数下一刻即可作用于已有烟团。
+        this.frame = RVP_WreckSmokeLogic.longFrame(this.age, Parameter.FORMATION_TICKS.intValue());
+        float sizeMultiplier = 1.0f + (float) rise * Parameter.SIZE_GAIN.floatValue();
+        this.quadSize = this.initialSize * sizeMultiplier;
+        this.alpha = this.initialAlpha * RVP_WreckSmokeLogic.alphaMultiplier(
+                RVP_WreckSmokeDebugSettings.LIVE, false, this.age, this.lifetime, sizeMultiplier);
         this.roll += this.rollSpeed;
-        double breezeWave = this.age * 0.06 + this.breezePhase;
-        double windGain = Parameter.WIND_GAIN.value();
-        double sway = Parameter.SWAY.value();
-        double targetEastSpeed = Parameter.EAST_WIND.value() * (1.0 + rise * windGain);
-        this.xd = targetEastSpeed + (this.xd - targetEastSpeed) * 0.96
-                + Math.sin(breezeWave) * sway;
-        this.zd = this.zd * 0.96 + Math.cos(breezeWave) * sway;
-        this.yd = Parameter.UPDRAFT.value() + (this.yd - Parameter.UPDRAFT.value()) * 0.98;
+        // 调用共用气流步进；默认仍为原有上升、东风和微摆，可选连续翻卷不增加贴图。
+        Vec3 velocity = RVP_WreckSmokeLogic.velocityStep(RVP_WreckSmokeDebugSettings.LIVE, false,
+                new Vec3(this.xd, this.yd, this.zd), new Vec3(this.x, this.y, this.z),
+                this.level.getGameTime(), this.age, this.breezePhase, rise);
+        this.xd = velocity.x;
+        this.yd = velocity.y;
+        this.zd = velocity.z;
         // 调用本类粒子基类位移：保持长程烟的上升、东风和微摆运动。
         this.move(this.xd, this.yd, this.zd);
     }

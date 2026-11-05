@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "aim120d_loft_accelerating",
+  "name": "AIM-120D 高抛与缓慢机动目标对照",
+  "description": "目标持续缓慢横向加速和爬升，PPN 仅使用当前目标位置、速度，不外推未来相遇点。",
+  "weapon": "rvp:f16_aim120d",
+  "ticks": 700,
+  "position": [0, 164, 0],
+  "vehicleVelocity": [0, 0, 80],
+  "target": [0, 164, 1300],
+  "targetVelocity": [10, 0, 0],
+  "targetAcceleration": [0.25, 0.08, 0],
+  "targetRadius": 1,
+  "guidance": true,
+  "seed": 721
+}

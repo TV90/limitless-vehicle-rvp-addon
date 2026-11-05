@@ -22,6 +22,8 @@ import java.util.Set;
 /** RVP 双端 common 配置（{@code ywzj_rvp-common.toml}）。 */
 @Mod.EventBusSubscriber(modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.MOD)
 public class RVP_CommonConfig {
+    /** 新版吊舱加减速时间，单位秒，由服务端随实际姿态同步。 */
+    private final ForgeConfigSpec.DoubleValue opticalSightAccelerationSeconds;
     /** 配置规范化告警日志。 */
     private static final Logger LOGGER = LogUtils.getLogger();
     /** 已注册的 common 配置实例。 */
@@ -127,6 +129,10 @@ public class RVP_CommonConfig {
     private volatile Map<VehicleCategory, Set<VehicleCategory>> normalizedVisibilityMatrix = defaultVisibilityMatrix();
 
     public RVP_CommonConfig(ForgeConfigSpec.Builder builder) {
+        builder.push("opticalSight");
+        opticalSightAccelerationSeconds = builder.comment("新版吊舱从静止达到额定轴速的时间，单位秒；服务端权威，其他观瞄站不受影响。")
+                .defineInRange("accelerationSeconds", 0.1, 0.01, 2.0);
+        builder.pop();
         builder.push("spawning");
 
         spawnVehicleWithCreativeAmmo = builder
@@ -208,15 +214,15 @@ public class RVP_CommonConfig {
 
         builder.push("visibilityByObserverVehicleType");
         helicopterVisibleTargets = defineVehicleTypeList(builder, "helicopter",
-                List.of("helicopter", "aircraft", "ground_vehicles"));
+                List.of("helicopter", "aircraft", "ground_vehicles", "ships"));
         aircraftVisibleTargets = defineVehicleTypeList(builder, "aircraft",
-                List.of("helicopter", "aircraft", "ground_vehicles"));
+                List.of("helicopter", "aircraft", "ground_vehicles", "ships"));
         groundVehicleVisibleTargets = defineVehicleTypeList(builder, "ground_vehicles",
-                List.of("helicopter", "aircraft"));
+                List.of("helicopter", "aircraft", "ground_vehicles", "ships"));
         shipsVisibleTargets = defineVehicleTypeList(builder, "ships",
-                List.of("helicopter", "aircraft", "ships"));
+                List.of("helicopter", "aircraft", "ground_vehicles", "ships"));
         walkingPlayerVisibleTargets = defineVehicleTypeList(builder, "walking_players",
-                List.of("helicopter", "aircraft"));
+                List.of("helicopter", "aircraft", "ground_vehicles", "ships"));
         builder.pop();
         builder.pop();
     }
@@ -232,6 +238,11 @@ public class RVP_CommonConfig {
     /** 返回是否在放置载具时补充创造弹药。 */
     public static boolean isSpawnVehicleWithCreativeAmmo() {
         return INSTANCE != null && INSTANCE.spawnVehicleWithCreativeAmmo.get();
+    }
+
+    /** 配置未加载时也返回共同默认值，避免客户端预测初帧和测试读取失败。 */
+    public static double opticalSightAccelerationSeconds() {
+        return INSTANCE != null && SPEC != null && SPEC.isLoaded() ? INSTANCE.opticalSightAccelerationSeconds.get() : 0.1;
     }
 
     /** 返回载具残骸保留时间，单位秒；配置尚未加载时回退到默认值 60 秒。 */
@@ -368,7 +379,7 @@ public class RVP_CommonConfig {
         unknownTokens.addAll(result.unknown());
     }
 
-    /** 创建配置尚未加载时使用的权威默认类型矩阵。 */
+    /** 创建与正式配置一致的默认类型矩阵；步行及所有乘车状态默认均允许全部载具类型。 */
     private static Map<VehicleCategory, Set<VehicleCategory>> defaultVisibilityMatrix() {
         Set<VehicleCategory> all = Set.of(
                 VehicleCategory.HELICOPTER, VehicleCategory.AIRCRAFT,
@@ -376,12 +387,9 @@ public class RVP_CommonConfig {
         return Map.of(
                 VehicleCategory.HELICOPTER, all,
                 VehicleCategory.AIRCRAFT, all,
-                VehicleCategory.GROUND_VEHICLES,
-                Set.of(VehicleCategory.HELICOPTER, VehicleCategory.AIRCRAFT),
-                VehicleCategory.SHIPS,
-                Set.of(VehicleCategory.HELICOPTER, VehicleCategory.AIRCRAFT, VehicleCategory.SHIPS),
-                VehicleCategory.WALKING_PLAYERS,
-                Set.of(VehicleCategory.HELICOPTER, VehicleCategory.AIRCRAFT));
+                VehicleCategory.GROUND_VEHICLES, all,
+                VehicleCategory.SHIPS, all,
+                VehicleCategory.WALKING_PLAYERS, all);
     }
 
     /** 注册 common 配置；必须在模组构造阶段调用。 */

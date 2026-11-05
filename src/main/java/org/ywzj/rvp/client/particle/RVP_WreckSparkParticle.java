@@ -6,15 +6,25 @@ import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.Tesselator;
 import com.mojang.blaze3d.vertex.VertexFormat;
+import com.mojang.blaze3d.vertex.VertexConsumer;
+import net.minecraft.client.Camera;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.particle.ParticleEngine;
 import net.minecraft.client.particle.ParticleRenderType;
 import net.minecraft.client.particle.SingleQuadParticle;
 import net.minecraft.client.renderer.texture.TextureManager;
 import net.minecraft.util.RandomSource;
+import net.minecraft.util.Mth;
+import net.minecraft.world.phys.Vec3;
+import org.joml.Vector3f;
+import org.ywzj.rvp.client.visual.cookoff.RVP_WreckCookoffDynamics;
+import org.ywzj.rvp.client.visual.cookoff.RVP_WreckCookoffDynamics.SparkKind;
+import org.ywzj.rvp.client.visual.cookoff.RVP_WreckCookoffSettings.Snapshot;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 import org.ywzj.rvp.RVP_MOD;
+
+import static org.ywzj.rvp.client.visual.cookoff.RVP_WreckCookoffSettings.Parameter.*;
 
 /**
  * RVP 地面载具殉燃的"重物理火星"：贴图仍复用现有 {@code textures/nuclear/flare.png} 径向光斑
@@ -41,7 +51,7 @@ import org.ywzj.rvp.RVP_MOD;
  * 再 {@code setPos}，是为了让"可见面片中心 = 盒中心 = 出生点、盒底 = 出生点 − 半个身位"，
  * 否则粒子一出生就处于触地状态。</p>
  *
- * 所有物理量都是 {@code static} 常量，碰撞响应是纯函数，便于自动测试直接引用断言。
+ * 普通命中入口保留原有常量；殉燃专用入口读取F8出生快照。碰撞响应仍为可独立验证的纯函数。
  */
 @OnlyIn(Dist.CLIENT)
 public final class RVP_WreckSparkParticle extends SingleQuadParticle {
@@ -106,14 +116,27 @@ public final class RVP_WreckSparkParticle extends SingleQuadParticle {
     private final float startQuadSize;
     /** 出生时的透明度；淡出期按剩余寿命线性衰减。 */
     private final float startAlpha;
+    /** 殉燃专用出生快照；命中装甲复用入口为null，始终使用原有表现。 */
+    private final Snapshot cookoffSettings;
+    /** 本颗殉燃火星的轻重类别；普通命中火星固定为中等且不读取类别倍率。 */
+    private final SparkKind kind;
     /** 本次落地后已发生的弹跳次数，达 {@link #MAX_BOUNCES} 后不再起跳。 */
     private int bounces;
 
     private RVP_WreckSparkParticle(ClientLevel level, double x, double y, double z,
                                    double vx, double vy, double vz, float scale, int lifetime) {
+        // 调用无殉燃覆盖的构造入口，避免F8殉燃参数改变命中装甲火花。
+        this(level, x, y, z, vx, vy, vz, scale, lifetime, null, SparkKind.MEDIUM);
+    }
+
+    private RVP_WreckSparkParticle(ClientLevel level, double x, double y, double z,
+                                   double vx, double vy, double vz, float scale, int lifetime,
+                                   Snapshot settings, SparkKind kind) {
         super(level, x, y, z);
+        this.cookoffSettings = settings;
+        this.kind = kind;
         // 寿命必须由构造器写入：基类缺省为 0，首 tick 就会因 age >= lifetime 被移除
-        this.lifetime = clampLifetime(lifetime);
+        this.lifetime = settings == null ? clampLifetime(lifetime) : Math.max(4, lifetime);
         this.xd = vx;
         this.yd = vy;
         this.zd = vz;
@@ -129,6 +152,8 @@ public final class RVP_WreckSparkParticle extends SingleQuadParticle {
         this.setSize(scale, scale);
         this.setPos(x, y, z);
         this.hasPhysics = true;
+        // 调用外观更新，让新生粒子第一帧就采用出生快照，而不是等到下一刻才变色。
+        this.updateFade();
         // 热成像自登记：殉燃火星在本体热成像视角下作为热源重画发白，与曳光火星一致
         RVP_ThermalParticleChannel.register(this);
     }
@@ -155,6 +180,22 @@ public final class RVP_WreckSparkParticle extends SingleQuadParticle {
                 dirX * axisSpeed, dirY * axisSpeed, dirZ * axisSpeed, scale, lifetime));
     }
 
+    /** 殉燃独立入口；所有新粒子共享本刻参数快照，普通命中火星仍走原spawn。 */
+    public static void spawnCookoff(ParticleEngine engine, ClientLevel level, Vec3 origin, Vec3 axis,
+                                     double pressure, Snapshot settings) {
+        if (engine == null || level == null || origin == null || axis == null || settings == null) return;
+        // 调用统一类别和寿命采样，默认权重保持全中等火星。
+        SparkKind kind = RVP_WreckCookoffDynamics.sparkKind(level.random.nextDouble(), settings);
+        int lifetime = RVP_WreckCookoffDynamics.sparkLifetime(level.random.nextDouble(), kind, settings);
+        double speed = Mth.lerp(level.random.nextDouble(), settings.value(SPARK_SPEED_MIN), settings.value(SPARK_SPEED_MAX))
+                * kind.speed * (0.65 + 0.35 * pressure);
+        float size = (float) (settings.value(SPARK_SIZE) * kind.size
+                * (1 + (level.random.nextDouble() * 2 - 1) * settings.value(SPARK_SIZE_VARIATION)));
+        // 调用带快照的构造入口，出生后调参不会反向改变正在飞行的颗粒。
+        engine.add(new RVP_WreckSparkParticle(level, origin.x, origin.y, origin.z,
+                axis.x * speed, axis.y * speed, axis.z * speed, size, lifetime, settings, kind));
+    }
+
     @Override
     public void tick() {
         this.xo = this.x;
@@ -167,9 +208,17 @@ public final class RVP_WreckSparkParticle extends SingleQuadParticle {
             return;
         }
         // 本 tick 先结算全部受力：重力 + 水平空气阻尼，再用末速度位移
-        this.yd -= GRAVITY_PER_TICK;
-        this.xd *= AIR_DRAG;
-        this.zd *= AIR_DRAG;
+        if (this.cookoffSettings == null) {
+            this.yd -= GRAVITY_PER_TICK;
+            this.xd *= AIR_DRAG;
+            this.zd *= AIR_DRAG;
+        } else {
+            double drag = Math.min(1, this.cookoffSettings.value(SPARK_HORIZONTAL_DRAG) * this.kind.drag);
+            this.xd += (this.cookoffSettings.value(WIND_X) - this.xd) * drag;
+            this.zd += (this.cookoffSettings.value(WIND_Z) - this.zd) * drag;
+            this.yd -= this.cookoffSettings.value(SPARK_GRAVITY);
+            this.yd *= 1 - Math.min(1, this.cookoffSettings.value(SPARK_VERTICAL_DRAG) * this.kind.drag);
+        }
         // 记录位移前速度：基类 move 会把被挡住的速度清零，反射必须用这一步的撞击速度
         double impactYd = this.yd;
         // 调用基类碰撞位移：它按运动扫掠求交并只推进到接触点，遇方块/水会清零对应轴速度
@@ -186,7 +235,7 @@ public final class RVP_WreckSparkParticle extends SingleQuadParticle {
      */
     private void applyGroundContact(double impactYd) {
         // 调用本类纯函数碰撞响应，便于自动测试直接断言
-        Contact contact = respondToContact(this.xd, impactYd, this.zd, this.bounces, this.onGround);
+        Contact contact = respondToContact(this.xd, impactYd, this.zd, this.bounces, this.onGround, this.cookoffSettings);
         this.xd = contact.xd();
         this.yd = contact.yd();
         this.zd = contact.zd();
@@ -208,13 +257,23 @@ public final class RVP_WreckSparkParticle extends SingleQuadParticle {
      */
     public static Contact respondToContact(double inXd, double inImpactYd, double inZd,
                                            int inBounces, boolean onGround) {
+        // 调用原常量分支，保证复用该粒子的命中火花和旧调用保持一致。
+        return respondToContact(inXd, inImpactYd, inZd, inBounces, onGround, null);
+    }
+
+    /** 殉燃触地响应读取出生快照，普通命中火星不受F8殉燃覆盖影响。 */
+    public static Contact respondToContact(double inXd, double inImpactYd, double inZd,
+                                           int inBounces, boolean onGround, Snapshot settings) {
         if (!onGround) {
             return new Contact(inXd, inImpactYd, inZd, inBounces);
         }
-        if (inImpactYd < 0.0 && -inImpactYd >= MIN_BOUNCE_SPEED && inBounces < MAX_BOUNCES) {
+        int maximum = settings == null ? MAX_BOUNCES : settings.integer(SPARK_MAX_BOUNCES);
+        double restitution = settings == null ? GROUND_RESTITUTION : settings.value(SPARK_RESTITUTION);
+        double friction = settings == null ? GROUND_FRICTION : 1 - settings.value(SPARK_GROUND_FRICTION);
+        if (inImpactYd < 0.0 && -inImpactYd >= MIN_BOUNCE_SPEED && inBounces < maximum && restitution > 0) {
             // 触地：下落按恢复系数翻成上升，水平分量被地面摩擦吃掉，弹跳计数递增
-            return new Contact(inXd * GROUND_FRICTION, -inImpactYd * GROUND_RESTITUTION,
-                    inZd * GROUND_FRICTION, inBounces + 1);
+            return new Contact(inXd * friction, -inImpactYd * restitution,
+                    inZd * friction, inBounces + 1);
         }
         // 下落速度低于起跳阈值或已达弹跳上限：竖直停住，保留水平滑行
         return new Contact(inXd, 0.0, inZd, inBounces);
@@ -226,6 +285,17 @@ public final class RVP_WreckSparkParticle extends SingleQuadParticle {
     /** 寿命末端线性淡出并轻微收小，避免火星在空气里瞬间消失。 */
     private void updateFade() {
         float progress = this.age / (float) this.lifetime;
+        if (this.cookoffSettings != null) {
+            // 调用连续冷却配色和寿命曲线，拖影不改变碰撞尺寸或运动轨迹。
+            Vec3 color = RVP_WreckCookoffDynamics.sparkColor(progress, this.cookoffSettings);
+            float fade = (float) RVP_WreckCookoffDynamics.fade(progress, this.cookoffSettings.value(SPARK_FADE_START));
+            this.rCol = (float) color.x;
+            this.gCol = (float) color.y;
+            this.bCol = (float) color.z;
+            this.alpha = this.startAlpha * fade;
+            this.quadSize = this.startQuadSize * (0.5f + 0.5f * fade);
+            return;
+        }
         if (progress <= FADE_START_RATIO) {
             this.quadSize = this.startQuadSize;
             this.alpha = this.startAlpha;
@@ -234,6 +304,45 @@ public final class RVP_WreckSparkParticle extends SingleQuadParticle {
         float fade = (progress - (float) FADE_START_RATIO) / (1.0f - (float) FADE_START_RATIO);
         this.quadSize = this.startQuadSize * (1.0f - 0.5f * fade);
         this.alpha = this.startAlpha * (1.0f - fade);
+    }
+
+    /** 用现有光斑沿画面内速度短暂拉伸；默认关闭，命中装甲火花始终用原面片。 */
+    @Override
+    public void render(VertexConsumer buffer, Camera camera, float partialTick) {
+        if (this.cookoffSettings == null || this.cookoffSettings.value(SPARK_TRAIL_TIME) == 0) {
+            // 调用原版面向相机渲染，不影响旧入口。
+            super.render(buffer, camera, partialTick);
+            return;
+        }
+        // 调用投影计算，朝相机飞行的速度不形成错误横向拖影。
+        Vec3 trail = RVP_WreckCookoffDynamics.projectedSparkTrail(
+                new Vec3(this.xd, this.yd, this.zd), camera.rotation(), this.cookoffSettings);
+        double length = trail.length();
+        if (length < 1.0E-8) {
+            super.render(buffer, camera, partialTick);
+            return;
+        }
+        float dx = (float) (trail.x / length), dy = (float) (trail.y / length);
+        float size = this.getQuadSize(partialTick);
+        float halfLength = size + (float) length * 0.5f;
+        float centerX = -(float) trail.x * 0.5f, centerY = -(float) trail.y * 0.5f;
+        Vector3f[] corners = {
+                new Vector3f(centerX - dx * halfLength + dy * size, centerY - dy * halfLength - dx * size, 0),
+                new Vector3f(centerX - dx * halfLength - dy * size, centerY - dy * halfLength + dx * size, 0),
+                new Vector3f(centerX + dx * halfLength - dy * size, centerY + dy * halfLength + dx * size, 0),
+                new Vector3f(centerX + dx * halfLength + dy * size, centerY + dy * halfLength - dx * size, 0)
+        };
+        Vec3 cameraPosition = camera.getPosition();
+        float x = (float) (Mth.lerp(partialTick, this.xo, this.x) - cameraPosition.x);
+        float y = (float) (Mth.lerp(partialTick, this.yo, this.y) - cameraPosition.y);
+        float z = (float) (Mth.lerp(partialTick, this.zo, this.z) - cameraPosition.z);
+        int light = this.getLightColor(partialTick);
+        for (int index = 0; index < corners.length; index++) {
+            Vector3f corner = corners[index].rotate(camera.rotation()).add(x, y, z);
+            buffer.vertex(corner.x, corner.y, corner.z).uv(index < 2 ? this.getU1() : this.getU0(),
+                            index == 0 || index == 3 ? this.getV1() : this.getV0())
+                    .color(this.rCol, this.gCol, this.bCol, this.alpha).uv2(light).endVertex();
+        }
     }
 
     /** 全亮自发光：光斑贴图自带径向衰减，无需方块光。 */

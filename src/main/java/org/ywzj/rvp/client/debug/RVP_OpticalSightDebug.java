@@ -78,7 +78,7 @@ public final class RVP_OpticalSightDebug {
                                 + " version=" + RVP_MOD.class.getPackage().getImplementationVersion()
                                 + " code_source=" + RVP_MOD.class.getProtectionDomain().getCodeSource().getLocation()
                                 + " angles=degrees positions=blocks input=handlePlayerTurn_sensitivity_adjusted_not_pixels"
-                                + " input_model=screen_axes_v3 scope_exit_reset=aircraft_default_v1");
+                                + " input_model=constrained_sight_v4 scope_exit_reset=aircraft_default_v1");
                     }
                     return status(context.getSource());
                 }))
@@ -247,6 +247,8 @@ public final class RVP_OpticalSightDebug {
         return " tick=" + vehicle.level().getGameTime() + " vehicle=" + vehicle.getVehicleId()
                 + " entity=" + vehicle.getId() + " station=" + unit.getId() + " station_index=" + unit.getIndex()
                 + " actual_pitch=" + unit.getXRot() + " actual_yaw=" + unit.getYRot()
+                + (unit instanceof RVP_OpticalWeaponUnit optical ? " motion_phase=" + optical.motionPhase()
+                    + " accepted_sequence=" + optical.acceptedSequence() + " acceleration_seconds=" + optical.accelerationSeconds() : "")
                 + " aim_pitch=" + unit.getXAimRot() + " aim_yaw=" + unit.getYAimRot()
                 + " previous_pitch=" + unit.xRotO + " previous_yaw=" + unit.yRotO
                 + " actual_world_direction=" + unit.worldVec()

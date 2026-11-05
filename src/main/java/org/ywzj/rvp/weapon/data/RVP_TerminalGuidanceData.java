@@ -61,6 +61,11 @@ public class RVP_TerminalGuidanceData {
     @SerializedName("scan_interval_tick")
     private Integer scanIntervalTick;
 
+    /**
+     * 末段自动实体拦截开关，无单位，默认 false；有效 IR/AIR/ARH/SARH 导弹实体观测走 PPN。
+     * 增益和起始总飞行 Tick 继承主段；没有有效实体、仍在搜索或被门控暂停时不进入 PPN。
+     * 其他末段路径保持原有行为，不把坐标或人工指令自动升级为实体寻的。
+     */
     @SerializedName("predict_target_pos")
     private boolean predictTargetPos = false;
 

@@ -15,11 +15,9 @@ import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.client.visual.vehicle.RVP_DelayedMuzzleSmokeSettings;
 import org.ywzj.rvp.client.visual.vehicle.RVP_DelayedMuzzleSmokeSettings.Parameter;
-import org.ywzj.rvp.client.visual.vehicle.RVP_DelayedMuzzleSmokeSettings.VelocityParameter;
 
 import java.util.Arrays;
 import java.util.List;
-import java.util.stream.Stream;
 
 /** 注册本地客户端的大口径延迟炮口烟调试指令。 */
 @Mod.EventBusSubscriber(value = Dist.CLIENT, modid = RVP_MOD.MOD_ID,
@@ -27,10 +25,8 @@ import java.util.stream.Stream;
 public final class RVP_MuzzleSmokeDebugCommands {
 
     /** 指令参数名列表，供客户端输入补全使用。 */
-    private static final List<String> PARAMETER_NAMES = Stream.concat(
-            Arrays.stream(Parameter.values()).map(Parameter::commandName),
-            Arrays.stream(VelocityParameter.values()).map(VelocityParameter::commandName))
-            .toList();
+    private static final List<String> PARAMETER_NAMES = Arrays.stream(Parameter.values())
+            .map(Parameter::commandName).toList();
 
     private RVP_MuzzleSmokeDebugCommands() {
     }
@@ -64,10 +60,6 @@ public final class RVP_MuzzleSmokeDebugCommands {
             // 调用本项目参数格式化入口：向聊天栏展示当前会话参数及默认值。
             context.getSource().sendSuccess(() -> Component.literal(parameter.describe()), false);
         }
-        for (VelocityParameter parameter : VelocityParameter.values()) {
-            // 调用本项目速度参数格式化入口：向聊天栏展示出膛方向初速度和默认值。
-            context.getSource().sendSuccess(() -> Component.literal(parameter.describe()), false);
-        }
         return Parameter.values().length;
     }
 
@@ -75,29 +67,23 @@ public final class RVP_MuzzleSmokeDebugCommands {
     private static int set(CommandContext<CommandSourceStack> context) {
         String parameterName = StringArgumentType.getString(context, "parameter");
         Parameter parameter = Parameter.find(parameterName);
-        VelocityParameter velocityParameter = VelocityParameter.find(parameterName);
-        if (parameter == null && velocityParameter == null) {
+        if (parameter == null) {
             context.getSource().sendFailure(Component.literal(
                     "未知参数；使用 /rvpmuzzlesmoke show 查看可用名称"));
             return 0;
         }
         try {
             double value = DoubleArgumentType.getDouble(context, "value");
-            if (parameter != null) {
-                // 调用本项目 tick 参数校验入口：同时校验整数范围和同组 min/max 关系。
-                RVP_DelayedMuzzleSmokeSettings.set(parameter, value);
-            } else {
-                // 调用本项目速度参数校验入口：校验格/tick 范围和同组 min/max 关系。
-                RVP_DelayedMuzzleSmokeSettings.set(velocityParameter, value);
-            }
+            // 调用与F8共用的业务存储；指令保留严格范围、整刻和 min/max 关系校验。
+            RVP_DelayedMuzzleSmokeSettings.set(parameter, value);
         } catch (IllegalArgumentException exception) {
             context.getSource().sendFailure(Component.literal(exception.getMessage()));
             return 0;
         }
-        String description = parameter != null ? parameter.describe() : velocityParameter.describe();
+        String description = parameter.describe();
         context.getSource().sendSuccess(() -> Component.literal(
                 "[RVP 延迟炮口烟] 已设置 " + description
-                        + "；仅影响之后产生的延迟炮口烟"), false);
+                        + "；下一次开火或预览生效；F8可保存本地"), false);
         return 1;
     }
 
@@ -105,20 +91,14 @@ public final class RVP_MuzzleSmokeDebugCommands {
     private static int resetOne(CommandContext<CommandSourceStack> context) {
         String parameterName = StringArgumentType.getString(context, "parameter");
         Parameter parameter = Parameter.find(parameterName);
-        VelocityParameter velocityParameter = VelocityParameter.find(parameterName);
-        if (parameter == null && velocityParameter == null) {
+        if (parameter == null) {
             context.getSource().sendFailure(Component.literal(
                     "未知参数；使用 /rvpmuzzlesmoke show 查看可用名称"));
             return 0;
         }
-        if (parameter != null) {
-            // 调用本项目 tick 参数重置入口：必要时同步恢复同组配对参数。
-            RVP_DelayedMuzzleSmokeSettings.reset(parameter);
-        } else {
-            // 调用本项目速度参数重置入口：必要时同步恢复同组配对参数。
-            RVP_DelayedMuzzleSmokeSettings.reset(velocityParameter);
-        }
-        String description = parameter != null ? parameter.describe() : velocityParameter.describe();
+        // 调用与F8共用的单项重置，必要时同步恢复同组配对参数。
+        RVP_DelayedMuzzleSmokeSettings.reset(parameter);
+        String description = parameter.describe();
         context.getSource().sendSuccess(() -> Component.literal(
                 "[RVP 延迟炮口烟] 已恢复 " + description), false);
         return 1;

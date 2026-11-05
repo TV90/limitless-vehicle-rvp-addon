@@ -10,7 +10,7 @@ import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 public final class RVP_SeekerTargetFilter {
     private RVP_SeekerTargetFilter() {}
 
-    /** 同一飞行/同射手/同发射车及其友方弹药不能成为自动寻的目标。 */
+    /** 同一飞行、本车及友方载具弹药不能成为寻的目标；独立无载具炮火不按伤害归属人排除。 */
     public static boolean allows(RVP_BaseBullet seeker, @Nullable Entity target) {
         return target != null && !sameIdentity(seeker, target)
                 && allows(seeker.getOwner(), seeker.getShooterVehicle(), target);
@@ -20,9 +20,14 @@ public final class RVP_SeekerTargetFilter {
     public static boolean allows(@Nullable Entity shooter, @Nullable AbstractVehicle carrier, @Nullable Entity target) {
         if (target == null) return false;
         if (!(target instanceof RVP_BaseBullet ammo)) return true;
-        if (sameIdentity(shooter, ammo.getOwner()) || sameIdentity(carrier, ammo.getShooterVehicle())) return false;
+        // 调用弹体发射来源，先排除本车前一发；owner 相同不代表来自同一发射平台。
+        AbstractVehicle ammoCarrier = ammo.getShooterVehicle();
+        if (sameIdentity(carrier, ammoCarrier)) return false;
+        // 炮火支援的无载具弹药把呼叫者记为 owner，只用于伤害/击杀归属。
+        // 有载具的拦截方仍可拦截这些独立来袭弹；手持自弹与有载具同射手弹继续沿用原过滤。
+        if (sameIdentity(shooter, ammo.getOwner()) && (carrier == null || ammoCarrier != null)) return false;
         // 调用已有载具IFF，保留同队/联盟/Gunner阵营规则；敌方弹药仍可用于反导。
-        return !RVP_EcmIff.areVehiclesFriendly(carrier, ammo.getShooterVehicle());
+        return !RVP_EcmIff.areVehiclesFriendly(carrier, ammoCarrier);
     }
 
     /** UUID覆盖虚拟/真实交接后的不同Java对象；双方无归属时不能误判为同射手。 */

@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "pl15_loft_head_on",
+  "name": "PL-15 高抛退坡与迎头对照",
+  "description": "使用同一权威武器与原始参数，检查快速接近时高抛退坡后的首次交会。",
+  "weapon": "rvp:pl_15",
+  "ticks": 700,
+  "position": [0, 164, 0],
+  "vehicleVelocity": [0, 0, 80],
+  "target": [0, 164, 1200],
+  "targetVelocity": [0, 0, -20],
+  "targetRadius": 1,
+  "guidance": true,
+  "seed": 721
+}

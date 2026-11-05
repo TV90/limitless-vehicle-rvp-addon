@@ -13,6 +13,8 @@ import org.apache.commons.lang3.tuple.Pair;
  * 以及温压粒子质量、音量、闪光和震动的客户端上限。
  */
 public class RVP_ClientConfig {
+    /** 新版吊舱基础鼠标灵敏度倍率，与机械转速无关；默认 1。 */
+    private final ForgeConfigSpec.DoubleValue opticalSightSensitivity;
 
     /** Distant Horizons 兼容通道选择。 */
     public enum DistantHorizonsCompatMode {
@@ -118,6 +120,10 @@ public class RVP_ClientConfig {
     private final ForgeConfigSpec.BooleanValue distantHorizonsDiagnosticLayerColors;
 
     public RVP_ClientConfig(ForgeConfigSpec.Builder builder) {
+        builder.push("opticalSight");
+        opticalSightSensitivity = builder.comment("新版吊舱普通/焦点共同使用的鼠标灵敏度倍率；高倍按实际视野缩放，不影响机械转速。")
+                .defineInRange("sensitivity", 1.0, 0.05, 10.0);
+        builder.pop();
         builder.push("mesh");
         acceleratedDenseMesh = builder
                 .comment("让较大的不透明 mesh 使用 AR 的 dense 提交，减少 sparse 路径逐顶点 CPU 写入。",
@@ -295,6 +301,11 @@ public class RVP_ClientConfig {
     public static boolean isAcceleratedDenseMeshEnabled() {
         return INSTANCE != null && CLIENT_SPEC != null && CLIENT_SPEC.isLoaded()
                 && INSTANCE.acceleratedDenseMesh.get();
+    }
+
+    /** 新版吊舱输入倍率；配置尚未加载时使用默认值，便于启动和无窗口验证。 */
+    public static double opticalSightSensitivity() {
+        return INSTANCE != null && CLIENT_SPEC != null && CLIENT_SPEC.isLoaded() ? INSTANCE.opticalSightSensitivity.get() : 1.0;
     }
 
     /** 未加载配置时不接管绘制；与 dense 总开关分开保留对照能力。 */
