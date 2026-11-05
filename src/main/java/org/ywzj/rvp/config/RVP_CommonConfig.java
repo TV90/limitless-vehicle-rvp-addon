@@ -214,15 +214,15 @@ public class RVP_CommonConfig {
 
         builder.push("visibilityByObserverVehicleType");
         helicopterVisibleTargets = defineVehicleTypeList(builder, "helicopter",
-                List.of("helicopter", "aircraft", "ground_vehicles"));
+                List.of("helicopter", "aircraft", "ground_vehicles", "ships"));
         aircraftVisibleTargets = defineVehicleTypeList(builder, "aircraft",
-                List.of("helicopter", "aircraft", "ground_vehicles"));
+                List.of("helicopter", "aircraft", "ground_vehicles", "ships"));
         groundVehicleVisibleTargets = defineVehicleTypeList(builder, "ground_vehicles",
-                List.of("helicopter", "aircraft"));
+                List.of("helicopter", "aircraft", "ground_vehicles", "ships"));
         shipsVisibleTargets = defineVehicleTypeList(builder, "ships",
-                List.of("helicopter", "aircraft", "ships"));
+                List.of("helicopter", "aircraft", "ground_vehicles", "ships"));
         walkingPlayerVisibleTargets = defineVehicleTypeList(builder, "walking_players",
-                List.of("helicopter", "aircraft"));
+                List.of("helicopter", "aircraft", "ground_vehicles", "ships"));
         builder.pop();
         builder.pop();
     }
@@ -379,7 +379,7 @@ public class RVP_CommonConfig {
         unknownTokens.addAll(result.unknown());
     }
 
-    /** 创建配置尚未加载时使用的权威默认类型矩阵。 */
+    /** 创建与正式配置一致的默认类型矩阵；步行及所有乘车状态默认均允许全部载具类型。 */
     private static Map<VehicleCategory, Set<VehicleCategory>> defaultVisibilityMatrix() {
         Set<VehicleCategory> all = Set.of(
                 VehicleCategory.HELICOPTER, VehicleCategory.AIRCRAFT,
@@ -387,12 +387,9 @@ public class RVP_CommonConfig {
         return Map.of(
                 VehicleCategory.HELICOPTER, all,
                 VehicleCategory.AIRCRAFT, all,
-                VehicleCategory.GROUND_VEHICLES,
-                Set.of(VehicleCategory.HELICOPTER, VehicleCategory.AIRCRAFT),
-                VehicleCategory.SHIPS,
-                Set.of(VehicleCategory.HELICOPTER, VehicleCategory.AIRCRAFT, VehicleCategory.SHIPS),
-                VehicleCategory.WALKING_PLAYERS,
-                Set.of(VehicleCategory.HELICOPTER, VehicleCategory.AIRCRAFT));
+                VehicleCategory.GROUND_VEHICLES, all,
+                VehicleCategory.SHIPS, all,
+                VehicleCategory.WALKING_PLAYERS, all);
     }
 
     /** 注册 common 配置；必须在模组构造阶段调用。 */

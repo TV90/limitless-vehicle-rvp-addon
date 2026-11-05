@@ -61,14 +61,16 @@
     minHeightAboveGroundWithoutDH = 25
 
     [remoteVehicleRendering.visibilityByObserverVehicleType]
-        #允许该观察者类型看见的目标类型。仅接受 helicopter、aircraft、ground_vehicles。
-        helicopter = ["helicopter", "aircraft", "ground_vehicles"]
-        #允许该观察者类型看见的目标类型。仅接受 helicopter、aircraft、ground_vehicles。
-        aircraft = ["helicopter", "aircraft", "ground_vehicles"]
-        #允许该观察者类型看见的目标类型。仅接受 helicopter、aircraft、ground_vehicles。
-        ground_vehicles = ["helicopter", "aircraft"]
-        #允许该观察者类型看见的目标类型。仅接受 helicopter、aircraft、ground_vehicles。
-        walking_players = ["helicopter", "aircraft"]
+        #允许该观察者类型看见的目标类型。默认全部允许；仅接受 helicopter、aircraft、ground_vehicles、ships。
+        helicopter = ["helicopter", "aircraft", "ground_vehicles", "ships"]
+        #允许该观察者类型看见的目标类型。默认全部允许；仅接受 helicopter、aircraft、ground_vehicles、ships。
+        aircraft = ["helicopter", "aircraft", "ground_vehicles", "ships"]
+        #允许该观察者类型看见的目标类型。默认全部允许；仅接受 helicopter、aircraft、ground_vehicles、ships。
+        ground_vehicles = ["helicopter", "aircraft", "ground_vehicles", "ships"]
+        #允许该观察者类型看见的目标类型。默认全部允许；仅接受 helicopter、aircraft、ground_vehicles、ships。
+        ships = ["helicopter", "aircraft", "ground_vehicles", "ships"]
+        #允许该观察者类型看见的目标类型。默认全部允许；仅接受 helicopter、aircraft、ground_vehicles、ships。
+        walking_players = ["helicopter", "aircraft", "ground_vehicles", "ships"]
 
 [vehicleLifecycle]
     #载具残骸保留时间，单位秒；超过该时间后服务端移除残骸。默认：60
