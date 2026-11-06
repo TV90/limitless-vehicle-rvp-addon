@@ -44,9 +44,6 @@ public final class RVP_BallisticLeadFireControlExecutor {
     /** 超过该Tick间隔后丢弃旧的软限位平滑方向。 */
     private static final int AIM_ASSIST_STALE_TICKS = 4;
 
-    /** 现有 {@code rvp_rf} 机炮离轴角的兼容缩放，保持原有防空车手感不变。 */
-    private static final float RVP_RF_MACHINEGUN_OFF_AXIS_SCALE = 0.1F;
-
     /** 工具类不允许实例化。 */
     private RVP_BallisticLeadFireControlExecutor() {}
 
@@ -128,9 +125,6 @@ public final class RVP_BallisticLeadFireControlExecutor {
                     : null;
             if (leadSolution != null) {
                 trackedTargetWorldPos = leadSolution.leadWorldPos();
-                if (profile == RVP_BallisticLeadFireControlPolicy.Profile.RVP_RF) {
-                    offAxisDeg *= RVP_RF_MACHINEGUN_OFF_AXIS_SCALE;
-                }
             }
 
             // 调用本项目稳定器状态，决定本Tick采用全自动、软限位或完全手动控制。
@@ -257,7 +251,7 @@ public final class RVP_BallisticLeadFireControlExecutor {
         }
     }
 
-    /** 按模式读取各自的离轴角字段，避免把现有RF字段当作旧键别名迁移。 */
+    /** 按火控模式读取对应的离轴角字段，机炮与导弹均直接按配置的度数使用。 */
     private static float resolveOffAxisDeg(RVP_BallisticLeadFireControlPolicy.Profile profile,
                                            WeaponUnitDataExt ext) {
         float configured = profile == RVP_BallisticLeadFireControlPolicy.Profile.RVP_RF
