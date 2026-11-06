@@ -73,6 +73,25 @@ public final class ScreenLightFrameGpuRegression {
             for (int i = 0; i < 4; i++) { near(COLOR[i], copiedColor[i], "production final color/alpha"); }
             System.out.println("PASS production near/DH/final-color copies under external MRT and offset viewport");
 
+            try (RVP_ScreenFrameResources.State ignored = new RVP_ScreenFrameResources.State()) {
+                // 模拟灯光/尾烟已经改写主颜色，热浪必须复制最新合成，不能读最初的背景。
+                RenderSystem.activeTexture(GL13.GL_TEXTURE0); RenderSystem.bindTexture(worldColor);
+                float[] composed = new float[16 * 16 * 4];
+                for (int at = 0; at < composed.length; at += 4) {
+                    composed[at] = 0.8F; composed[at + 1] = 0.4F; composed[at + 2] = 0.2F; composed[at + 3] = COLOR[3];
+                }
+                GL11.glTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, 16, 16, GL11.GL_RGBA, GL11.GL_FLOAT, composed);
+                // 调用正式爆炸背景复制入口，只刷新颜色，不重新消费或污染深度。
+                require(frame.refreshCompositeColor(world, 16, 16), "explosion composite background refresh failed");
+                require(!frame.refreshCompositeColor(world, 17, 16), "resized composite input was reused");
+                require(!frame.refreshCompositeColor(externalRead, 16, 16), "foreign composite target was accepted");
+            }
+            assertExternalState();
+            near(0.8F, read(frame.color(), 16, 16, false)[0], "explosion sees latest composed color");
+            near(COLOR[3], read(frame.color(), 16, 16, false)[3], "composed color alpha preserved");
+            near(0.75F, read(frame.depth(), 16, 16, true)[0], "composite refresh leaves opaque depth unchanged");
+            System.out.println("PASS explosion composite refresh, target/resize checks, opaque depth and external GL state");
+
             int plumeVisibility;
             try (RVP_ScreenFrameResources.State ignored = new RVP_ScreenFrameResources.State()) {
                 // 调用正式广域光晕目标，验证仅分配一像素且重复申请复用，外部多目标状态完整恢复。

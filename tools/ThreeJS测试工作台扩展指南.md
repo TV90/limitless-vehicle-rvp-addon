@@ -32,6 +32,15 @@ npm start
 
 自带的解析抛体示例无需 Java 构建。要生成 Gunner 数据，回到项目根目录：
 
+停止命令
+4173,4174为当前默认工作台端口
+```powershell
+Get-NetTCPConnection -LocalPort 4173,4174 -State Listen -ErrorAction SilentlyContinue |
+Select-Object -ExpandProperty OwningProcess -Unique |
+Where-Object { $_ -gt 0 } |
+ForEach-Object { Stop-Process -Id $_ -Force }
+```
+
 ```powershell
 
 

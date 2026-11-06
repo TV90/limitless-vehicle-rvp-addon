@@ -21,6 +21,7 @@ import org.ywzj.rvp.light.RVP_LightRuntimeTuning;
 import org.ywzj.rvp.weapon.visual.RVP_PressureWaveGeometry;
 import org.ywzj.rvp.client.compat.distanthorizons.RVP_DhProjectionMath;
 import org.ywzj.rvp.client.compat.distanthorizons.RVP_DistantHorizonsCompatBootstrap;
+import org.ywzj.rvp.client.visual.explosion.RVP_VehicleExplosionPreview;
 import java.util.List;
 
 /** 世界颜色/深度→统一八盏光→四尺度光晕；总在 CRT/TV/HUD 之前完成。 */
@@ -47,6 +48,8 @@ public final class RVP_ScreenLightPass {
     private static List<RVP_RocketPlume> plumes = List.of();
     /** 独立于灯光和仍燃烧喷口的本帧世界尾烟。 */
     private static List<RVP_RocketTrailSegment> trails = List.of();
+    /** 只来自F8手动操作的一团程序爆炸；真实爆炸链路不写此字段。 */
+    private static RVP_VehicleExplosionPreview.Frame explosion;
     /** 世界时钟驱动动画，暂停时冻结；资源重载不沿用系统实时时间。 */
     private static float plumeTime;
     /** 捕获时的相机位置，世界坐标 double 相减后再交显卡。 */
@@ -77,7 +80,10 @@ public final class RVP_ScreenLightPass {
         lights = List.of(); frameLevel = null; distant = null; distantAnalysis = null;
         plumes = List.of();
         trails = List.of();
+        explosion = null;
         Minecraft mc = Minecraft.getInstance();
+        // 调用预览世界身份检查，早期DH事件之前先清掉其它世界的手动效果。
+        RVP_VehicleExplosionPreview.INSTANCE.active(mc.level);
         // 调用独立喷焰世界检查，早期 DH 回调到来之前先淘汰旧世界/过期状态。
         RVP_RocketPlumeManager.INSTANCE.beginWorld(mc.level, mc.level == null ? 0 : mc.level.getGameTime());
         // 调用世界尾烟时钟，燃尽后即使没有活动灯，也继续淘汰和绘制残留烟段。
@@ -153,12 +159,18 @@ public final class RVP_ScreenLightPass {
             // 调用已获确认的新体积尾烟资源注册，不覆盖任何既有喷焰或烟贴图资源。
             RVP_RocketTrailPass.register(event);
         } catch (Exception exception) { LOGGER.warn("RVP 体积尾烟加载失败，请检查 rocket_trail_volume 资源", exception); }
+        try {
+            // 调用F8专用大爆炸程序登记，失败时其它屏幕视觉层继续工作。
+            RVP_VehicleExplosionPass.register(event);
+        } catch (Exception exception) { LOGGER.warn("RVP 程序大爆炸加载失败，请检查 vehicle_explosion 资源", exception); }
     }
 
     /** 尾焰是弹体视觉；关闭环境光或八灯预算为零时，仍要保留喷焰所需 DH 当帧输入。 */
     private static boolean hasVisualInputs() {
         return RVP_RocketPlumeManager.INSTANCE.hasActive()
                 || RVP_RocketTrailManager.INSTANCE.hasActive()
+                || RVP_VehicleExplosionPass.available()
+                        && RVP_VehicleExplosionPreview.INSTANCE.active(Minecraft.getInstance().level)
                 || hasLightWork();
     }
 
@@ -179,6 +191,7 @@ public final class RVP_ScreenLightPass {
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_TRIPWIRE_BLOCKS) { return; }
         lights = List.of(); plumes = List.of(); frameLevel = null;
         trails = List.of();
+        explosion = null;
         // 调用帧输入失效，暂停、窗口变化和无光帧均不复用旧深度。
         FRAME.discard();
         Minecraft mc = Minecraft.getInstance();
@@ -186,6 +199,11 @@ public final class RVP_ScreenLightPass {
             // 调用天空散射追踪，记录“着色器或世界不可用”这类整帧跳过。
             RVP_SkyScatterTrace.skip(mc.level == null ? "客户端世界为空" : "屏幕光着色器未加载（资源重载失败）");
             return;
+        }
+        // 调用本地时间线；只采样用户手动开启的预览，定格时形状和噪声共用固定年龄。
+        if (RVP_VehicleExplosionPass.available()) {
+            explosion = RVP_VehicleExplosionPreview.INSTANCE.sample(mc.level,
+                    (mc.level.getGameTime() + event.getPartialTick()) / 20.0);
         }
         // 调用世界身份检查，渲染先于客户端 tick 的新世界首帧也能正确清理。
         RVP_ScreenLightManager.INSTANCE.beginWorld(mc.level, mc.level.getGameTime());
@@ -221,6 +239,10 @@ public final class RVP_ScreenLightPass {
             return;
         }
         camera = event.getCamera().getPosition();
+        // 调用体积保守裁剪，离屏预览仍正常计时，但不为它申请屏幕输入。
+        if (explosion != null && RVP_VehicleExplosionPass.bounds(explosion, VIEW, PROJECTION, camera) == null) {
+            explosion = null;
+        }
         // 调用统一预算和球体投影裁剪，先剔除离屏光，最多只为八盏光查询实体/地形遮挡。
         // 追踪开启时额外传入诊断回调，把每条被剔除的候选与具体原因写进日志。
         // 照亮总开关只关闭照亮通道，不阻止采集：干扰机光晕仍需进入预算，逐灯分项由 hasEnabledChannel 判定。
@@ -251,7 +273,7 @@ public final class RVP_ScreenLightPass {
             trails = RVP_RocketTrailManager.INSTANCE.collect(camera, event.getPartialTick(),
                     segment -> RVP_RocketTrailPass.bounds(segment, VIEW, PROJECTION, camera) != null);
         }
-        if (lights.isEmpty() && plumes.isEmpty() && trails.isEmpty()) {
+        if (lights.isEmpty() && plumes.isEmpty() && trails.isEmpty() && explosion == null) {
             RVP_SkyScatterTrace.skip("采样与预算后没有任何可绘制内容");
             return;
         }
@@ -290,7 +312,7 @@ public final class RVP_ScreenLightPass {
         ClientLevel expected = frameLevel;
         frameLevel = null;
         if (expected == null || expected != Minecraft.getInstance().level
-                || lights.isEmpty() && plumes.isEmpty() && trails.isEmpty() || lightShader == null) {
+                || lights.isEmpty() && plumes.isEmpty() && trails.isEmpty() && explosion == null || lightShader == null) {
             // 调用天空散射追踪，区分“上一帧的帧身份失效/本帧无光/着色器丢失”。
             RVP_SkyScatterTrace.skip(expected == null ? "本帧没有捕获到世界画面（capture 阶段提前返回）"
                     : expected != Minecraft.getInstance().level ? "世界已切换，丢弃上一帧光源"
@@ -354,6 +376,8 @@ public final class RVP_ScreenLightPass {
                 RVP_SmokeLightPass.render(FRAME, event.getCamera(), event.getPartialTick());
                 // 调用独立体积烟合成；无活动灯、关闭 Bloom 时也需要保留尾烟。
                 RVP_RocketTrailPass.render(FRAME, trails, VIEW, PROJECTION, camera);
+                // 调用F8独立爆炸末端合成，灯光关闭或零灯数时也可预览，不触发真实伤害。
+                RVP_VehicleExplosionPass.render(FRAME, explosion, VIEW, PROJECTION, camera);
                 // 调用用户显式请求的离屏诊断，已经合成完成的世界画面不受影响。
                 if (!lights.isEmpty()) { RVP_LightOcclusionPass.captureReport(FRAME, lightShader); }
                 return;
@@ -399,11 +423,14 @@ public final class RVP_ScreenLightPass {
             RVP_SmokeLightPass.render(FRAME, event.getCamera(), event.getPartialTick());
             // 调用烟的吸收/散射混合，不加入高亮提取，也不污染用于遮挡的场景深度。
             RVP_RocketTrailPass.render(FRAME, trails, VIEW, PROJECTION, camera);
+            // 调用同一预览通道，开启Bloom时也只绘制一遍程序爆炸。
+            RVP_VehicleExplosionPass.render(FRAME, explosion, VIEW, PROJECTION, camera);
             // 调用可选单帧回读；正常绘制不会同步读取 GPU。
             if (!lights.isEmpty()) { RVP_LightOcclusionPass.captureReport(FRAME, lightShader); }
         } catch (RuntimeException exception) { diagnostic("灯光合成失败，保留世界画面", exception); }
         finally {
             lights = List.of(); plumes = List.of(); trails = List.of(); FRAME.discard();
+            explosion = null;
             // 调用环境缓存释放，即使某个绘制层失败也不把世界引用留到下一帧。
             AMBIENT.clear();
         }
@@ -666,6 +693,9 @@ public final class RVP_ScreenLightPass {
         lastSubmittedLights = List.of();
         plumes = List.of();
         trails = List.of();
+        explosion = null;
+        // 调用本地预览清理，卸载和资源重载后不引用旧世界，也不自动开始爆炸。
+        RVP_VehicleExplosionPreview.INSTANCE.clear();
         lastFrameStatus = "资源已清理，等待活动光源";
         // 调用借用引用清理，卸载后不触碰 DH 或光影拥有的纹理。
         RVP_LightDepthFrame.INSTANCE.clear();

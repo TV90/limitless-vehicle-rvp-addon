@@ -148,6 +148,27 @@ final class RVP_ScreenFrameResources {
         boolean ready = depthReady;
         depthReady = false;
         if (!ready || sourceFramebuffer != main || currentWidth != width || currentHeight != height) { return false; }
+        // 调用同帧颜色复制；深度有效性仍只在首次捕获时消费一次。
+        return copyColor();
+    }
+
+    /** 爆炸热浪需要已合成灯光和尾烟的背景；只更新颜色，不重读或延长旧深度的有效期。 */
+    boolean refreshCompositeColor() {
+        Minecraft mc = Minecraft.getInstance();
+        // 调用与隐藏显卡回归相同的归属检查，目标和分辨率必须仍属于这次合成。
+        return refreshCompositeColor(mc.getMainRenderTarget().frameBufferId,
+                mc.getMainRenderTarget().width, mc.getMainRenderTarget().height);
+    }
+
+    /** 显式目标入口供生产和显卡回归共用；不能把其它世界/窗口的颜色复制进本帧。 */
+    boolean refreshCompositeColor(int main, int currentWidth, int currentHeight) {
+        if (sceneColor == 0 || sourceFramebuffer != main || width != currentWidth || height != currentHeight) { return false; }
+        // 调用同一只读复制，输入输出保持分离，避免显卡边写主颜色边采样它。
+        return copyColor();
+    }
+
+    /** 只复制明确所属主目标的颜色，调用方负责帧身份校验及外层GL状态恢复。 */
+    private boolean copyColor() {
         // Iris/Oculus 的 final pass 可能绑定一个共用主颜色的自有 FBO；只从明确的主目标读最终颜色。
         // 调用双向 FBO 同步，已安装 Oculus 但关闭光影时也不能只相信其缓存。
         RVP_GlStateSync.bindFramebuffer(GL30.GL_READ_FRAMEBUFFER, sourceFramebuffer);

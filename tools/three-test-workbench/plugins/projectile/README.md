@@ -21,6 +21,15 @@ npm ci
 npm start
 ```
 
+停止命令
+4173,4174为当前默认工作台端口
+```powershell
+Get-NetTCPConnection -LocalPort 4173,4174 -State Listen -ErrorAction SilentlyContinue |
+Select-Object -ExpandProperty OwningProcess -Unique |
+Where-Object { $_ -gt 0 } |
+ForEach-Object { Stop-Process -Id $_ -Force }
+```
+
 打开 <http://127.0.0.1:4174>。默认包含六个通用场景：XM829A5 炮弹、Hydra-70 火箭弹、MK-84 炸弹、风暴阴影 GPS 导弹、鱼-7 入水过渡、鹰击-20 冷发射与二脉冲；另有 [200 个 052D 专项场景与逐例索引](../../../../src/test/resources/projectile-simulation/README.md)，覆盖当前挂载的七种武器及尚未挂载的鱼-7 配置，共 206 个场景。
 
 快速观察另一把武器：

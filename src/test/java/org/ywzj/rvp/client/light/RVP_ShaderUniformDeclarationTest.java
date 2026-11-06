@@ -30,7 +30,7 @@ class RVP_ShaderUniformDeclarationTest {
     private static final Path INCLUDE = Path.of("src", "main", "resources", "assets", "ywzj_rvp", "shaders", "include");
     /** 与 RVP 注册入口一一对应的生产程序；未注册的旧资源不参与本约束。 */
     private static final List<String> PRODUCTION = List.of("screen_light_occlusion", "screen_light_bloom_multiscale",
-            "smoke_light_occlusion", "rocket_plume_ranges", "rocket_trail_volume", "nvg_glow");
+            "smoke_light_occlusion", "rocket_plume_ranges", "rocket_trail_volume", "vehicle_explosion", "nvg_glow");
     /** 片段程序中的单行 uniform 声明，包含数组形式。 */
     private static final Pattern DECLARATION =
             Pattern.compile("^\\s*uniform\\s+(\\w+)\\s+(\\w+)\\s*(?:\\[\\d+\\])?\\s*;", Pattern.MULTILINE);
