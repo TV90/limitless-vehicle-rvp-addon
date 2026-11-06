@@ -1,5 +1,8 @@
 package org.ywzj.rvp.client.compat.distanthorizons;
 
+import org.ywzj.rvp.client.performance.RVP_RenderMetric;
+import org.ywzj.rvp.client.performance.RVP_RenderStage;
+import org.ywzj.rvp.client.performance.RVP_RenderPerformance;
 import com.mojang.blaze3d.shaders.Uniform;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.BufferBuilder;
@@ -116,90 +119,93 @@ public final class RVP_DhDepthCompositeRenderer {
         }
 
         long started = System.nanoTime();
-        try (RVP_DhGlStateScope ignored = RVP_DhGlStateScope.capture()) {
-            int width = textureDimension(dhColorTexture, GL11.GL_TEXTURE_WIDTH);
-            int height = textureDimension(dhColorTexture, GL11.GL_TEXTURE_HEIGHT);
-            int depthWidth = textureDimension(dhDepthTexture, GL11.GL_TEXTURE_WIDTH);
-            int depthHeight = textureDimension(dhDepthTexture, GL11.GL_TEXTURE_HEIGHT);
-            if (width <= 0 || height <= 0 || width != depthWidth || height != depthHeight) {
-                return fail("TEXTURE_UNAVAILABLE", "color=" + width + "x" + height
-                        + ", depth=" + depthWidth + "x" + depthHeight);
-            }
-
-            OFFSCREEN_TARGET.ensureSize(width, height);
-            DH_DEPTH_COPY.ensureSize(width, height);
-            DH_FRAMEBUFFERS.attachBorrowedTextures(dhColorTexture, dhDepthTexture);
-            boolean captureLayerSamples = shouldCaptureLayerSamples();
-            // 调用限频像素取证，关联当前帧离屏、DH 写回及世界最终目标。
-            RVP_DhPixelDiagnostics.begin(captureLayerSamples, width, height,
-                    DH_FRAMEBUFFERS.compositeFramebuffer(), dhColorTexture, dhDepthTexture);
-            int remoteAlphaSamples = -1;
-            int remotePassedSamples = -1;
-            int trackedAlphaSamples = -1;
-            int trackedPassedSamples = -1;
-
-            RVP_RemoteVehicleFramePlan remotePlan = plan.remotePlan();
-            if (remotePlan != null) {
-                if (remotePlan.projectionPlan() == null) {
-                    return fail("REMOTE_PROJECTION_UNAVAILABLE", "remote projection unavailable");
+        // 调用通用性能范围，默认关闭时不申请显卡查询；所有提前返回和异常均自动封口。
+        try (var performance = RVP_RenderPerformance.scope(RVP_RenderStage.DH_COMPOSITE)) {
+            try (RVP_DhGlStateScope ignored = RVP_DhGlStateScope.capture()) {
+                int width = textureDimension(dhColorTexture, GL11.GL_TEXTURE_WIDTH);
+                int height = textureDimension(dhColorTexture, GL11.GL_TEXTURE_HEIGHT);
+                int depthWidth = textureDimension(dhDepthTexture, GL11.GL_TEXTURE_WIDTH);
+                int depthHeight = textureDimension(dhDepthTexture, GL11.GL_TEXTURE_HEIGHT);
+                if (width <= 0 || height <= 0 || width != depthWidth || height != depthHeight) {
+                    return fail("TEXTURE_UNAVAILABLE", "color=" + width + "x" + height
+                            + ", depth=" + depthWidth + "x" + depthHeight);
                 }
-                Matrix4f remoteProjection = remotePlan.projectionPlan().offscreenProjection();
-                // 调用投影数学工具，以远距层独立 near/far 校验其高精度离屏投影。
-                Optional<RVP_DhProjectionMath.ProjectionAnalysis> remoteAnalysis =
-                        RVP_DhProjectionMath.analyze(remoteProjection,
-                                (float) remotePlan.projectionPlan().offscreenNearPlane(),
-                                (float) remotePlan.projectionPlan().offscreenFarPlane());
-                if (remoteAnalysis.isEmpty()) {
-                    return fail("REMOTE_PROJECTION_UNAVAILABLE",
-                            "remote near/far endpoint validation failed");
-                }
-                // 调用通用分层合成：先写远距代理，使后续 tracked 层可读取已更新的 DH 深度。
-                LayerSampleCounts remoteSamples = compositeLayer(remoteAnalysis.get(), dhAnalysis.get(),
-                        dhParameters.projection(),
-                        width, height,
-                        () -> RVP_RemoteVehicleVisualRenderer.renderPrepared(remotePlan, camera, true),
-                        RVP_ClientConfig.getDistantHorizonsOcclusionBiasBlocks(), captureLayerSamples, "remote");
-                remoteAlphaSamples = remoteSamples.alphaSamples();
-                remotePassedSamples = remoteSamples.passedSamples();
-            }
 
-            RVP_DhTrackedVehicleFramePlan trackedPlan = plan.trackedPlan();
-            if (trackedPlan != null) {
-                // 调用投影数学工具，从当帧 Minecraft 投影恢复真实载具层的独立视深度参数。
-                Optional<RVP_DhProjectionMath.ProjectionAnalysis> trackedAnalysis =
-                        RVP_DhProjectionMath.analyzeFromProjection(trackedPlan.projection());
-                if (trackedAnalysis.isEmpty()) {
-                    return fail("TRACKED_PROJECTION_UNAVAILABLE",
-                            "tracked Minecraft projection validation failed");
-                }
-                // 调用通用分层合成：刷新已含 remote 的 DH 深度后再合入真实载具。
-                LayerSampleCounts trackedSamples = compositeLayer(trackedAnalysis.get(), dhAnalysis.get(),
-                        dhParameters.projection(),
-                        width, height,
-                        () -> {
-                            // 调用限频取光对照，关联目标实体与离屏暗色；关闭 diagnostics 时直接返回。
-                            RVP_DhPixelDiagnostics.trackedLighting(trackedPlan);
-                            // 调用只读主体绘制，使用计划内与正常实体渲染一致的冻结光照。
-                            RVP_DhTrackedVehicleProtectionRenderer.renderPrepared(trackedPlan);
-                        },
-                        RVP_ClientConfig.getDistantHorizonsTrackedOcclusionBiasBlocks(),
-                        captureLayerSamples, "tracked");
-                trackedAlphaSamples = trackedSamples.alphaSamples();
-                trackedPassedSamples = trackedSamples.passedSamples();
-            }
+                OFFSCREEN_TARGET.ensureSize(width, height);
+                DH_DEPTH_COPY.ensureSize(width, height);
+                DH_FRAMEBUFFERS.attachBorrowedTextures(dhColorTexture, dhDepthTexture);
+                boolean captureLayerSamples = shouldCaptureLayerSamples();
+                // 调用限频像素取证，关联当前帧离屏、DH 写回及世界最终目标。
+                RVP_DhPixelDiagnostics.begin(captureLayerSamples, width, height,
+                        DH_FRAMEBUFFERS.compositeFramebuffer(), dhColorTexture, dhDepthTexture);
+                int remoteAlphaSamples = -1;
+                int remotePassedSamples = -1;
+                int trackedAlphaSamples = -1;
+                int trackedPassedSamples = -1;
 
-            double milliseconds = (System.nanoTime() - started) / 1_000_000.0D;
-            // 调用本项目诊断器，按配置与一秒频率限制输出合成状态。
-            RVP_DhCompatDiagnostics.recordComposite(
-                    dhAnalysis.get().reverseZ() ? "REVERSE_Z" : "FORWARD_Z",
-                    dhParameters.renderPass(), plan.remoteSelectedCount(),
-                    plan.trackedLoadedCount(), plan.trackedSelectedCount(),
-                    remoteAlphaSamples, remotePassedSamples,
-                    trackedAlphaSamples, trackedPassedSamples, milliseconds);
-            return true;
-        } finally {
-            // 调用像素取证，必须在 try-with-resources 完成 GL 恢复后读取 DH 附件。
-            RVP_DhPixelDiagnostics.afterScope();
+                RVP_RemoteVehicleFramePlan remotePlan = plan.remotePlan();
+                if (remotePlan != null) {
+                    if (remotePlan.projectionPlan() == null) {
+                        return fail("REMOTE_PROJECTION_UNAVAILABLE", "remote projection unavailable");
+                    }
+                    Matrix4f remoteProjection = remotePlan.projectionPlan().offscreenProjection();
+                    // 调用投影数学工具，以远距层独立 near/far 校验其高精度离屏投影。
+                    Optional<RVP_DhProjectionMath.ProjectionAnalysis> remoteAnalysis =
+                            RVP_DhProjectionMath.analyze(remoteProjection,
+                                    (float) remotePlan.projectionPlan().offscreenNearPlane(),
+                                    (float) remotePlan.projectionPlan().offscreenFarPlane());
+                    if (remoteAnalysis.isEmpty()) {
+                        return fail("REMOTE_PROJECTION_UNAVAILABLE",
+                                "remote near/far endpoint validation failed");
+                    }
+                    // 调用通用分层合成：先写远距代理，使后续 tracked 层可读取已更新的 DH 深度。
+                    LayerSampleCounts remoteSamples = compositeLayer(remoteAnalysis.get(), dhAnalysis.get(),
+                            dhParameters.projection(),
+                            width, height,
+                            () -> RVP_RemoteVehicleVisualRenderer.renderPrepared(remotePlan, camera, true),
+                            RVP_ClientConfig.getDistantHorizonsOcclusionBiasBlocks(), captureLayerSamples, "remote");
+                    remoteAlphaSamples = remoteSamples.alphaSamples();
+                    remotePassedSamples = remoteSamples.passedSamples();
+                }
+
+                RVP_DhTrackedVehicleFramePlan trackedPlan = plan.trackedPlan();
+                if (trackedPlan != null) {
+                    // 调用投影数学工具，从当帧 Minecraft 投影恢复真实载具层的独立视深度参数。
+                    Optional<RVP_DhProjectionMath.ProjectionAnalysis> trackedAnalysis =
+                            RVP_DhProjectionMath.analyzeFromProjection(trackedPlan.projection());
+                    if (trackedAnalysis.isEmpty()) {
+                        return fail("TRACKED_PROJECTION_UNAVAILABLE",
+                                "tracked Minecraft projection validation failed");
+                    }
+                    // 调用通用分层合成：刷新已含 remote 的 DH 深度后再合入真实载具。
+                    LayerSampleCounts trackedSamples = compositeLayer(trackedAnalysis.get(), dhAnalysis.get(),
+                            dhParameters.projection(),
+                            width, height,
+                            () -> {
+                                // 调用限频取光对照，关联目标实体与离屏暗色；关闭 diagnostics 时直接返回。
+                                RVP_DhPixelDiagnostics.trackedLighting(trackedPlan);
+                                // 调用只读主体绘制，使用计划内与正常实体渲染一致的冻结光照。
+                                RVP_DhTrackedVehicleProtectionRenderer.renderPrepared(trackedPlan);
+                            },
+                            RVP_ClientConfig.getDistantHorizonsTrackedOcclusionBiasBlocks(),
+                            captureLayerSamples, "tracked");
+                    trackedAlphaSamples = trackedSamples.alphaSamples();
+                    trackedPassedSamples = trackedSamples.passedSamples();
+                }
+
+                double milliseconds = (System.nanoTime() - started) / 1_000_000.0D;
+                // 调用本项目诊断器，按配置与一秒频率限制输出合成状态。
+                RVP_DhCompatDiagnostics.recordComposite(
+                        dhAnalysis.get().reverseZ() ? "REVERSE_Z" : "FORWARD_Z",
+                        dhParameters.renderPass(), plan.remoteSelectedCount(),
+                        plan.trackedLoadedCount(), plan.trackedSelectedCount(),
+                        remoteAlphaSamples, remotePassedSamples,
+                        trackedAlphaSamples, trackedPassedSamples, milliseconds);
+                return true;
+            } finally {
+                // 调用像素取证，必须在 try-with-resources 完成 GL 恢复后读取 DH 附件。
+                RVP_DhPixelDiagnostics.afterScope();
+            }
         }
     }
 
@@ -214,50 +220,53 @@ public final class RVP_DhDepthCompositeRenderer {
             float occlusionBiasBlocks,
             boolean capturePassedSamples,
             String layerName) {
-        OFFSCREEN_TARGET.bindAndClear();
-        renderLayer.run();
-        // 调用取证器扫描真实 draw FBO，验证模型是否写入预期离屏附件。
-        RVP_DhPixelDiagnostics.afterGeometry(layerName, OFFSCREEN_TARGET.framebufferId());
-        // 调用本项目 DH 深度复制器，每层都读取前一层已经写回的最新 DH 深度。
-        DH_DEPTH_COPY.copyFrom(DH_FRAMEBUFFERS.depthSourceFramebuffer());
-        // 调用取证器比对深度副本与 DH 原始附件，检查 blit 链路。
-        RVP_DhPixelDiagnostics.afterDepthCopy();
+        // 调用通用性能范围，默认关闭时不申请显卡查询；所有提前返回和异常均自动封口。
+        try (var performance = RVP_RenderPerformance.scope(RVP_RenderStage.DH_LAYER)) {
+            OFFSCREEN_TARGET.bindAndClear();
+            renderLayer.run();
+            // 调用取证器扫描真实 draw FBO，验证模型是否写入预期离屏附件。
+            RVP_DhPixelDiagnostics.afterGeometry(layerName, OFFSCREEN_TARGET.framebufferId());
+            // 调用本项目 DH 深度复制器，每层都读取前一层已经写回的最新 DH 深度。
+            DH_DEPTH_COPY.copyFrom(DH_FRAMEBUFFERS.depthSourceFramebuffer());
+            // 调用取证器比对深度副本与 DH 原始附件，检查 blit 链路。
+            RVP_DhPixelDiagnostics.afterDepthCopy();
 
-        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, DH_FRAMEBUFFERS.compositeFramebuffer());
-        GL11.glViewport(0, 0, width, height);
-        GL11.glDisable(GL11.GL_SCISSOR_TEST);
-        GL11.glEnable(GL11.GL_DEPTH_TEST);
-        GL11.glDepthFunc(GL11.GL_ALWAYS);
-        GL11.glDepthMask(true);
-        GL11.glEnable(GL11.GL_BLEND);
-        GL14.glBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA,
-                GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
-        GL11.glDisable(GL11.GL_CULL_FACE);
-        GL11.glColorMask(true, true, true, true);
+            GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, DH_FRAMEBUFFERS.compositeFramebuffer());
+            GL11.glViewport(0, 0, width, height);
+            GL11.glDisable(GL11.GL_SCISSOR_TEST);
+            GL11.glEnable(GL11.GL_DEPTH_TEST);
+            GL11.glDepthFunc(GL11.GL_ALWAYS);
+            GL11.glDepthMask(true);
+            GL11.glEnable(GL11.GL_BLEND);
+            GL14.glBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA,
+                    GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
+            GL11.glDisable(GL11.GL_CULL_FACE);
+            GL11.glColorMask(true, true, true, true);
 
-        RenderSystem.setShader(() -> depthCompositeShader);
-        depthCompositeShader.setSampler("RvpColor", OFFSCREEN_TARGET.colorTextureId());
-        depthCompositeShader.setSampler("RvpDepth", OFFSCREEN_TARGET.depthTextureId());
-        depthCompositeShader.setSampler("DhDepthCopy", DH_DEPTH_COPY.textureId());
-        setMatrix(rvpInverseProjectionUniform, layerAnalysis.inverseProjection());
-        setMatrix(dhInverseProjectionUniform, dhAnalysis.inverseProjection());
-        setMatrix(dhProjectionUniform, dhProjection);
-        setFloat(dhEmptyDepthUniform, dhAnalysis.emptyDepth());
-        setFloat(dhNearDepthUniform, dhAnalysis.nearDepth());
-        setFloat(dhFarPlaneUniform, dhAnalysis.farPlane());
-        setFloat(occlusionBiasUniform, occlusionBiasBlocks);
-        // 调用本项目染色开关与 DH 调试总开关：只有 /rvpdebug flags dh on 且配置允许时才标识来源层，
-        // 正常游玩保持原色，避免默认画面被诊断色污染。
-        setInt(diagnosticLayerColorModeUniform,
-                RVP_DhCompatDiagnostics.isDiagnosticsEnabled()
-                        && RVP_ClientConfig.isDistantHorizonsDiagnosticLayerColorsEnabled()
-                        ? ("remote".equals(layerName) ? 1 : 2) : 0);
-        int alphaSamples = countLayerAlphaSamples(capturePassedSamples);
-        setInt(diagnosticBypassOcclusionUniform, 0);
-        int passedSamples = drawFullscreenQuadAndCountPassedSamples(capturePassedSamples);
-        // 调用取证器检查当前层写回，并复查前一层像素是否仍在。
-        RVP_DhPixelDiagnostics.afterCompositeLayer();
-        return new LayerSampleCounts(alphaSamples, passedSamples);
+            RenderSystem.setShader(() -> depthCompositeShader);
+            depthCompositeShader.setSampler("RvpColor", OFFSCREEN_TARGET.colorTextureId());
+            depthCompositeShader.setSampler("RvpDepth", OFFSCREEN_TARGET.depthTextureId());
+            depthCompositeShader.setSampler("DhDepthCopy", DH_DEPTH_COPY.textureId());
+            setMatrix(rvpInverseProjectionUniform, layerAnalysis.inverseProjection());
+            setMatrix(dhInverseProjectionUniform, dhAnalysis.inverseProjection());
+            setMatrix(dhProjectionUniform, dhProjection);
+            setFloat(dhEmptyDepthUniform, dhAnalysis.emptyDepth());
+            setFloat(dhNearDepthUniform, dhAnalysis.nearDepth());
+            setFloat(dhFarPlaneUniform, dhAnalysis.farPlane());
+            setFloat(occlusionBiasUniform, occlusionBiasBlocks);
+            // 调用本项目染色开关与 DH 调试总开关：只有 /rvpdebug flags dh on 且配置允许时才标识来源层，
+            // 正常游玩保持原色，避免默认画面被诊断色污染。
+            setInt(diagnosticLayerColorModeUniform,
+                    RVP_DhCompatDiagnostics.isDiagnosticsEnabled()
+                            && RVP_ClientConfig.isDistantHorizonsDiagnosticLayerColorsEnabled()
+                            ? ("remote".equals(layerName) ? 1 : 2) : 0);
+            int alphaSamples = countLayerAlphaSamples(capturePassedSamples);
+            setInt(diagnosticBypassOcclusionUniform, 0);
+            int passedSamples = drawFullscreenQuadAndCountPassedSamples(capturePassedSamples);
+            // 调用取证器检查当前层写回，并复查前一层像素是否仍在。
+            RVP_DhPixelDiagnostics.afterCompositeLayer();
+            return new LayerSampleCounts(alphaSamples, passedSamples);
+        }
     }
 
     /**
@@ -332,24 +341,27 @@ public final class RVP_DhDepthCompositeRenderer {
             fail("TEXTURE_UNAVAILABLE", "fallback shader unavailable");
             return;
         }
-        try (RVP_DhGlStateScope ignored = RVP_DhGlStateScope.capture()) {
-            int destinationFramebuffer = GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
-            int[] viewport = currentViewport();
-            if (viewport[2] <= 0 || viewport[3] <= 0) {
-                return;
-            }
-            OFFSCREEN_TARGET.ensureSize(viewport[2], viewport[3]);
-            if (plan.remotePlan() != null) {
-                // 调用分层晚期输出，避免 remote 与 tracked 的不同投影深度混入同一离屏附件。
-                renderLateLayer(destinationFramebuffer, viewport, fallbackMode,
-                        () -> RVP_RemoteVehicleVisualRenderer
-                                .renderPrepared(plan.remotePlan(), camera, true));
-            }
-            if (plan.trackedPlan() != null) {
-                // 调用分层晚期输出，只提交真实载具保护副本，不重复完整 EntityRenderer 副作用。
-                renderLateLayer(destinationFramebuffer, viewport, fallbackMode,
-                        () -> RVP_DhTrackedVehicleProtectionRenderer
-                                .renderPrepared(plan.trackedPlan()));
+        // 调用通用性能范围，默认关闭时不申请显卡查询；所有提前返回和异常均自动封口。
+        try (var performance = RVP_RenderPerformance.scope(RVP_RenderStage.DH_FALLBACK)) {
+            try (RVP_DhGlStateScope ignored = RVP_DhGlStateScope.capture()) {
+                int destinationFramebuffer = GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
+                int[] viewport = currentViewport();
+                if (viewport[2] <= 0 || viewport[3] <= 0) {
+                    return;
+                }
+                OFFSCREEN_TARGET.ensureSize(viewport[2], viewport[3]);
+                if (plan.remotePlan() != null) {
+                    // 调用分层晚期输出，避免 remote 与 tracked 的不同投影深度混入同一离屏附件。
+                    renderLateLayer(destinationFramebuffer, viewport, fallbackMode,
+                            () -> RVP_RemoteVehicleVisualRenderer
+                                    .renderPrepared(plan.remotePlan(), camera, true));
+                }
+                if (plan.trackedPlan() != null) {
+                    // 调用分层晚期输出，只提交真实载具保护副本，不重复完整 EntityRenderer 副作用。
+                    renderLateLayer(destinationFramebuffer, viewport, fallbackMode,
+                            () -> RVP_DhTrackedVehicleProtectionRenderer
+                                    .renderPrepared(plan.trackedPlan()));
+                }
             }
         }
     }
@@ -402,6 +414,8 @@ public final class RVP_DhDepthCompositeRenderer {
 
     /** 使用当前 ShaderInstance 绘制覆盖 NDC 的四边形。 */
     private static void drawFullscreenQuad() {
+        // 调用真实全屏draw统计；离屏目标尺寸是本层输出尺寸，不查询或等待GPU。
+        RVP_RenderPerformance.draw((long) OFFSCREEN_TARGET.width() * OFFSCREEN_TARGET.height(), 0);
         BufferBuilder builder = Tesselator.getInstance().getBuilder();
         builder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION);
         builder.vertex(-1.0D, -1.0D, 0.0D).endVertex();

@@ -45,6 +45,8 @@ public final class VehicleExplosionGpuRegression {
     private static int sceneColor;
     /** 用于复制背景的自有只读帧缓冲。 */
     private static int sceneReadTarget;
+    /** 需要真实已编译程序的附加诊断；普通爆炸回归不安装回调。 */
+    public static Runnable afterProductionChecks;
 
     public static void main(String[] args) throws Exception {
         require(GLFW.glfwInit(), "GLFW initialization");
@@ -76,6 +78,8 @@ public final class VehicleExplosionGpuRegression {
             sceneReadTarget = GL30.glGenFramebuffers(); TARGETS.add(sceneReadTarget);
             // 调用正式程序回归和阶段预览，禁止用测试简化火球代替生产算法。
             tests();
+            // 调用可选性能计时回归，复用当前正式程序和隐藏GL上下文，不另外模拟火球。
+            if (afterProductionChecks != null) { afterProductionChecks.run(); }
             preview(root);
             require(GL11.glGetError() == GL11.GL_NO_ERROR, "OpenGL error at completion");
             System.out.println("PASS all production vehicle explosion GPU checks; OpenGL error=0");

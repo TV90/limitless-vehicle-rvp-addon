@@ -1,5 +1,8 @@
 package org.ywzj.rvp.client.gui;
 
+import org.ywzj.rvp.client.performance.RVP_RenderMetric;
+import org.ywzj.rvp.client.performance.RVP_RenderStage;
+import org.ywzj.rvp.client.performance.RVP_RenderPerformance;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -44,17 +47,22 @@ public final class RVP_HitlVideoLossRenderer {
      * 由原来的「每帧循环数千次 fill 小矩形」改为「黑底一次 draw + 噪点纹理一次 blit」，
      * 消除逐像素顶点提交导致的客户端 FPS 骤降。 */
     public static void drawSnow(GuiGraphics gg, long tick) {
-        int w = gg.guiWidth();
-        int h = gg.guiHeight();
-        // 提交背景前后都 flush，禁止噪点批次延迟到展板模型之后才绘制。
-        gg.flush();
-        gg.fill(0, 0, w, h, 0xFF000000); // 黑底（单次 draw）
-        ResourceLocation loc = ensureSnowTexture(tick, w, h);
-        if (loc != null) {
-            // 整屏贴噪点纹理：单次 draw（替代原来数千次 2×2 fill）
-            gg.blit(loc, 0, 0, 0, 0, w, h, w, h);
+        // 调用通用性能范围，默认关闭时不申请显卡查询；所有提前返回和异常均自动封口。
+        try (var performance = RVP_RenderPerformance.gui(RVP_RenderStage.VIDEO_SNOW, gg)) {
+            int w = gg.guiWidth();
+            int h = gg.guiHeight();
+            // 提交背景前后都 flush，禁止噪点批次延迟到展板模型之后才绘制。
+            gg.flush();
+            RVP_RenderPerformance.guiQuad(gg, w, h);
+            gg.fill(0, 0, w, h, 0xFF000000); // 黑底（单次 draw）
+            ResourceLocation loc = ensureSnowTexture(tick, w, h);
+            if (loc != null) {
+                // 整屏贴噪点纹理：单次 draw（替代原来数千次 2×2 fill）
+                RVP_RenderPerformance.guiQuad(gg, w, h);
+                gg.blit(loc, 0, 0, 0, 0, w, h, w, h);
+            }
+            gg.flush();
         }
-        gg.flush();
     }
 
     /** 复用/生成一张屏幕尺寸的雪花噪点纹理；每 {@code SNOW_REGEN_INTERVAL} tick 重绘一次模拟闪动。
@@ -89,6 +97,8 @@ public final class RVP_HitlVideoLossRenderer {
                 img.setPixelRGBA(x, y, (0xFF << 24) | (gray << 16) | (gray << 8) | gray);
             }
         }
+        // 调用动态视频纹理上传量统计；此项主要用于识别噪点刷新成本。
+        RVP_RenderPerformance.add(RVP_RenderMetric.UPLOAD_BYTES, (long) w * h * 4);
         snowTexture.upload();
         snowRegenTick = gameTick;
         return snowTextureLocation;

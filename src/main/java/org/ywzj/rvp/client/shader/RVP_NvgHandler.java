@@ -1,5 +1,8 @@
 package org.ywzj.rvp.client.shader;
 
+import org.ywzj.rvp.client.performance.RVP_RenderMetric;
+import org.ywzj.rvp.client.performance.RVP_RenderStage;
+import org.ywzj.rvp.client.performance.RVP_RenderPerformance;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.PostChain;
@@ -88,7 +91,8 @@ public class RVP_NvgHandler implements ResourceManagerReloadListener {
         if (ensureChain(minecraft)) {
             applyUniforms(minecraft, event.getPartialTick());
             try {
-                postChain.process(event.getPartialTick());
+                // 调用通用后处理计时，原处理链和步骤顺序保持不变。
+            RVP_RenderPerformance.post(RVP_RenderStage.NIGHT_VISION, postChain, event.getPartialTick(), lastWidth, lastHeight);
                 minecraft.getMainRenderTarget().bindWrite(true);
             } catch (Exception exception) {
                 exception.printStackTrace();

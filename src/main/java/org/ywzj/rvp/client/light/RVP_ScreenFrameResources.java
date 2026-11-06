@@ -15,6 +15,9 @@ import org.lwjgl.opengl.GL33;
 import org.ywzj.rvp.client.render.RVP_GlStateSync;
 import org.ywzj.rvp.client.render.RVP_BlendModeState;
 import org.ywzj.rvp.light.RVP_BloomParameters;
+import org.ywzj.rvp.client.performance.RVP_RenderPerformance;
+import org.ywzj.rvp.client.performance.RVP_RenderMetric;
+import org.ywzj.rvp.client.performance.RVP_RenderStage;
 import java.util.Arrays;
 
 /**
@@ -60,6 +63,10 @@ final class RVP_ScreenFrameResources {
     private int height;
     /** 本帧深度准备完成。 */
     private boolean depthReady;
+    /** 当前输出矩形的保守像素数量，仅供性能统计，不改变GL裁剪。 */
+    private long profilePixels;
+    /** 当前绘制每像素最多体积步数；0表示该程序未声明体积步数指标。 */
+    private int profileRaySteps;
     /** 深度所属的主目标，窗口重建后不复用旧附件。 */
     private int sourceFramebuffer;
     /** 清屏前保存的清除色，清空离屏目标后必须原样交回其它渲染阶段。 */
@@ -78,7 +85,7 @@ final class RVP_ScreenFrameResources {
         depthReady = false;
         if (main <= 0 || depth <= 0 || requestedWidth <= 0 || requestedHeight <= 0) { return false; }
         // 调用完整状态作用域，分配、复制和异常退出均不泄漏绑定或采样器。
-        try (State ignored = new State()) {
+        try (var performance = RVP_RenderPerformance.scope(RVP_RenderStage.SCENE_DEPTH); State ignored = new State()) {
             ensureSize(requestedWidth, requestedHeight);
             // 调用借用深度读取，不要求当前 DRAW FBO 等于原版目标，也不改外部 FBO 的附件。
             if (!copyDepth(depth, sceneDepth, width, height)) { return false; }
@@ -90,7 +97,7 @@ final class RVP_ScreenFrameResources {
 
     /** 独立保存 DH 的真实尺寸深度；只在有活动灯且 DH 本帧提供来源时执行一次。 */
     boolean captureDistantDepth(int sourceTexture) {
-        try (State ignored = new State()) {
+        try (var performance = RVP_RenderPerformance.scope(RVP_RenderStage.SCENE_DISTANT_DEPTH); State ignored = new State()) {
             if (sourceTexture <= 0 || !GL11.glIsTexture(sourceTexture)) { return false; }
             // 调用双向纹理同步，防止 DH 原生恢复之后缓存命中到错误的真实纹理。
             RVP_GlStateSync.activeTexture(GL13.GL_TEXTURE0);
@@ -128,6 +135,8 @@ final class RVP_ScreenFrameResources {
             if (GL30.glCheckFramebufferStatus(GL30.GL_READ_FRAMEBUFFER) != GL30.GL_FRAMEBUFFER_COMPLETE) { return false; }
             RVP_GlStateSync.bindTexture2D(destination);
             GL11.glCopyTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, 0, 0, expectedWidth, expectedHeight);
+            // 调用通用工作量计数，深度目标为32位浮点，每像素估算4字节。
+            RVP_RenderPerformance.copy(expectedWidth, expectedHeight, 4);
             return true;
         } finally {
             // 借用期立即结束，后续外部删除纹理时不会因 RVP 仍持有附件而延迟销毁。
@@ -169,19 +178,24 @@ final class RVP_ScreenFrameResources {
 
     /** 只复制明确所属主目标的颜色，调用方负责帧身份校验及外层GL状态恢复。 */
     private boolean copyColor() {
-        // Iris/Oculus 的 final pass 可能绑定一个共用主颜色的自有 FBO；只从明确的主目标读最终颜色。
-        // 调用双向 FBO 同步，已安装 Oculus 但关闭光影时也不能只相信其缓存。
-        RVP_GlStateSync.bindFramebuffer(GL30.GL_READ_FRAMEBUFFER, sourceFramebuffer);
-        if (GL30.glCheckFramebufferStatus(GL30.GL_READ_FRAMEBUFFER) != GL30.GL_FRAMEBUFFER_COMPLETE) { return false; }
-        int previousRead = GL11.glGetInteger(GL11.GL_READ_BUFFER);
-        GL11.glReadBuffer(GL30.GL_COLOR_ATTACHMENT0);
-        try {
-            // 调用双向纹理同步，背景副本只能写入自有纹理。
-            RVP_GlStateSync.activeTexture(GL13.GL_TEXTURE0);
-            RVP_GlStateSync.bindTexture2D(sceneColor);
-            GL11.glCopyTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, 0, 0, width, height);
-        } finally { GL11.glReadBuffer(previousRead); }
-        return true;
+        // 调用通用性能范围，默认关闭时不申请显卡查询；所有提前返回和异常均自动封口。
+        try (var performance = RVP_RenderPerformance.scope(RVP_RenderStage.SCENE_COLOR)) {
+            // Iris/Oculus 的 final pass 可能绑定一个共用主颜色的自有 FBO；只从明确的主目标读最终颜色。
+            // 调用双向 FBO 同步，已安装 Oculus 但关闭光影时也不能只相信其缓存。
+            RVP_GlStateSync.bindFramebuffer(GL30.GL_READ_FRAMEBUFFER, sourceFramebuffer);
+            if (GL30.glCheckFramebufferStatus(GL30.GL_READ_FRAMEBUFFER) != GL30.GL_FRAMEBUFFER_COMPLETE) { return false; }
+            int previousRead = GL11.glGetInteger(GL11.GL_READ_BUFFER);
+            GL11.glReadBuffer(GL30.GL_COLOR_ATTACHMENT0);
+            try {
+                // 调用双向纹理同步，背景副本只能写入自有纹理。
+                RVP_GlStateSync.activeTexture(GL13.GL_TEXTURE0);
+                RVP_GlStateSync.bindTexture2D(sceneColor);
+                GL11.glCopyTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, 0, 0, width, height);
+                // 调用颜色复制计数，RGBA16F目标每像素估算8字节。
+                RVP_RenderPerformance.copy(width, height, 8);
+            } finally { GL11.glReadBuffer(previousRead); }
+            return true;
+        }
     }
 
     /** 只在首次有光或窗口缩放时申请纹理，不触碰磁盘资源。 */
@@ -244,6 +258,8 @@ final class RVP_ScreenFrameResources {
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL14.GL_TEXTURE_COMPARE_MODE, GL11.GL_NONE);
         GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, internal, width, height, 0, format, GL11.GL_FLOAT, 0L);
+        // 调用存储分配估算，记录新分配量而非显卡总占用。
+        RVP_RenderPerformance.add(RVP_RenderMetric.ALLOCATION_BYTES, (long) width * height * (internal == GL30.GL_RGBA16F ? 8 : 4));
         return texture;
     }
 
@@ -263,6 +279,7 @@ final class RVP_ScreenFrameResources {
 
     /** 设置离屏目标或主画面目标；仅允许写入第一个颜色附件。 */
     void bind(int framebuffer, int width, int height) {
+        profilePixels = (long) width * height; profileRaySteps = 0;
         // 调用双向 FBO 同步，目标切换在真实 GL 与引擎缓存两侧同时生效。
         RVP_GlStateSync.bindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, framebuffer);
         GL11.glDrawBuffer(GL30.GL_COLOR_ATTACHMENT0);
@@ -288,8 +305,33 @@ final class RVP_ScreenFrameResources {
         try {
             // 调用强制同步：背景已经包含原图，残留混合或减法方程会把天空相减成黑色。
             RVP_GlStateSync.blend(false);
+            // 调用通用实际绘制计数，像素范围由当前输出尺寸及已知裁剪上界给出。
+            RVP_RenderPerformance.draw(profilePixels, profileRaySteps);
             GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 3);
         } finally { shader.clear(); }
+    }
+
+    /** 已有调用点可给出稳定业务阶段，不需要在通用资源里判断具体shader名称。 */
+    void draw(ShaderInstance shader, RVP_RenderStage stage) {
+        // 调用统一时间范围，关闭记录时不会申请查询对象。
+        try (var performance = RVP_RenderPerformance.scope(stage)) { draw(shader); }
+    }
+
+    /** 已知GL剪裁矩形与采样步数的调用方补充上界，不查询显卡状态。 */
+    void profileArea(int width, int height, int raySteps) {
+        profilePixels = Math.max(0L, (long) width * height); profileRaySteps = Math.max(0, raySteps);
+    }
+
+    /** 同一裁剪矩形切到非体积程序时只调整步数，保留已有像素上界。 */
+    void profileRaySteps(int raySteps) { profileRaySteps = Math.max(0, raySteps); }
+
+    /** 带业务条目数的绘制归属，光源数量与显卡耗时写入同一阶段。 */
+    void draw(ShaderInstance shader, RVP_RenderStage stage, int items) {
+        // 调用独立阶段范围，业务条目会同时计入祖先且明确为包含关系。
+        try (var performance = RVP_RenderPerformance.scope(stage)) {
+            RVP_RenderPerformance.add(RVP_RenderMetric.ITEMS, items);
+            draw(shader);
+        }
     }
 
     /** 清空离屏颜色目标；没有环境灯时用清屏代替整屏灯光绘制，同时避免复用上一帧残留贡献。 */
@@ -308,8 +350,16 @@ final class RVP_ScreenFrameResources {
         try {
             // 调用和生产状态回归共用的混合入口，避免 HDR 核心改写原场景透明度。
             beginEmissionBlend();
+            // 调用同一实际draw统计，不把发光混合误计成额外全屏后处理。
+            RVP_RenderPerformance.draw(profilePixels, profileRaySteps);
             GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 3);
         } finally { shader.clear(); }
+    }
+
+    /** 自发光核心可独立归属阶段；程序喷流仍使用外层自己的阶段范围。 */
+    void drawEmission(ShaderInstance shader, RVP_RenderStage stage) {
+        // 调用同一计时入口，完整包含显卡混合和绘制提交。
+        try (var performance = RVP_RenderPerformance.scope(stage)) { drawEmission(shader); }
     }
 
     /** 单独设置喷口混合，也供真实 GL 状态回归验证，调用方须处在 State 作用域内。 */
@@ -326,6 +376,8 @@ final class RVP_ScreenFrameResources {
         try {
             // 调用与显卡状态回归共用的峰值合并入口，重叠喷流也只写有限亮度。
             beginContributionBlend();
+            // 调用通用绘制统计，HDR来源计入当前业务范围。
+            RVP_RenderPerformance.draw(profilePixels, profileRaySteps);
             GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 3);
         } finally { shader.clear(); }
     }
@@ -344,6 +396,8 @@ final class RVP_ScreenFrameResources {
         try {
             // 调用独立预乘混合，烟不能复用喷焰加亮通道，否则灰烟会变成发光白条。
             beginVolumeSmokeBlend();
+            // 调用通用绘制统计，烟的采样上界由调用方提供。
+            RVP_RenderPerformance.draw(profilePixels, profileRaySteps);
             GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 3);
         } finally { shader.clear(); }
     }

@@ -1,5 +1,8 @@
 package org.ywzj.rvp.client.nuclear;
 
+import org.ywzj.rvp.client.performance.RVP_RenderMetric;
+import org.ywzj.rvp.client.performance.RVP_RenderStage;
+import org.ywzj.rvp.client.performance.RVP_RenderPerformance;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.pipeline.TextureTarget;
 import com.mojang.blaze3d.platform.GlConst;
@@ -97,62 +100,69 @@ public final class RVP_NuclearShockwaveRenderer {
         if (minecraft.level == null) {
             return;
         }
+        // 调用通用性能范围，默认关闭时不申请显卡查询；所有提前返回和异常均自动封口。
+        try (var performance = RVP_RenderPerformance.scope(RVP_RenderStage.NUCLEAR_REFRACTION)) {
+            RenderTarget mainTarget = minecraft.getMainRenderTarget();
+            ensureSceneCopy(mainTarget);
+            copyMainTarget(mainTarget);
+            // 调用核爆背景复制计数，既有TextureTarget颜色目标按4字节像素估算。
+            RVP_RenderPerformance.copy(mainTarget.width, mainTarget.height, 4);
 
-        RenderTarget mainTarget = minecraft.getMainRenderTarget();
-        ensureSceneCopy(mainTarget);
-        copyMainTarget(mainTarget);
+            Camera camera = event.getCamera();
+            Vec3 cameraPos = camera.getPosition();
+            float partialTick = event.getPartialTick();
 
-        Camera camera = event.getCamera();
-        Vec3 cameraPos = camera.getPosition();
-        float partialTick = event.getPartialTick();
+            RenderSystem.backupProjectionMatrix();
+            RenderSystem.setProjectionMatrix(event.getProjectionMatrix(), VertexSorting.DISTANCE_TO_ORIGIN);
+            PoseStack modelView = RenderSystem.getModelViewStack();
+            modelView.pushPose();
+            modelView.setIdentity();
+            modelView.mulPose(Axis.XP.rotationDegrees(camera.getXRot()));
+            modelView.mulPose(Axis.YP.rotationDegrees(camera.getYRot() + 180.0F));
+            RenderSystem.applyModelViewMatrix();
 
-        RenderSystem.backupProjectionMatrix();
-        RenderSystem.setProjectionMatrix(event.getProjectionMatrix(), VertexSorting.DISTANCE_TO_ORIGIN);
-        PoseStack modelView = RenderSystem.getModelViewStack();
-        modelView.pushPose();
-        modelView.setIdentity();
-        modelView.mulPose(Axis.XP.rotationDegrees(camera.getXRot()));
-        modelView.mulPose(Axis.YP.rotationDegrees(camera.getYRot() + 180.0F));
-        RenderSystem.applyModelViewMatrix();
+            RenderSystem.enableDepthTest();
+            RenderSystem.depthMask(false);
+            RenderSystem.enableCull();
+            RenderSystem.setShader(() -> shader);
+            shader.setSampler("ScreenTexture", sceneCopy);
+            Uniform useTypeUniform = shader.getUniform("useType");
+            Uniform timeUniform = shader.getUniform("time");
+            Uniform intensityUniform = shader.getUniform("intensity");
+            setUniform(useTypeUniform, 1);
+            setUniform(timeUniform, minecraft.level.getGameTime() + partialTick);
 
-        RenderSystem.enableDepthTest();
-        RenderSystem.depthMask(false);
-        RenderSystem.enableCull();
-        RenderSystem.setShader(() -> shader);
-        shader.setSampler("ScreenTexture", sceneCopy);
-        Uniform useTypeUniform = shader.getUniform("useType");
-        Uniform timeUniform = shader.getUniform("time");
-        Uniform intensityUniform = shader.getUniform("intensity");
-        setUniform(useTypeUniform, 1);
-        setUniform(timeUniform, minecraft.level.getGameTime() + partialTick);
-
-        Tesselator tesselator = Tesselator.getInstance();
-        for (Shockwave shockwave : ACTIVE) {
-            float visualAge = shockwave.age + partialTick;
-            float alpha = alpha(visualAge);
-            if (alpha <= 0.0F) {
-                continue;
+            Tesselator tesselator = Tesselator.getInstance();
+            for (Shockwave shockwave : ACTIVE) {
+                float visualAge = shockwave.age + partialTick;
+                float alpha = alpha(visualAge);
+                if (alpha <= 0.0F) {
+                    continue;
+                }
+                setUniform(intensityUniform, alpha);
+                BufferBuilder builder = tesselator.getBuilder();
+                builder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX_COLOR_NORMAL);
+                // 调用共用半径公式绘制核爆球壳，使相机抵达判断与眼前波面保持同一速度。
+                buildSphere(builder,
+                        (float) (shockwave.x - cameraPos.x),
+                        (float) (shockwave.y - cameraPos.y),
+                        (float) (shockwave.z - cameraPos.z),
+                        radius(visualAge),
+                        Mth.clamp((int) (alpha * 255.0F), 0, 255));
+                // 调用球壳实际绘制计数，几何投影面积不在这里猜测。
+                RVP_RenderPerformance.add(RVP_RenderMetric.DRAW_CALLS, 1);
+                RVP_RenderPerformance.add(RVP_RenderMetric.ITEMS, 1);
+                BufferUploader.drawWithShader(builder.end());
             }
-            setUniform(intensityUniform, alpha);
-            BufferBuilder builder = tesselator.getBuilder();
-            builder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX_COLOR_NORMAL);
-            // 调用共用半径公式绘制核爆球壳，使相机抵达判断与眼前波面保持同一速度。
-            buildSphere(builder,
-                    (float) (shockwave.x - cameraPos.x),
-                    (float) (shockwave.y - cameraPos.y),
-                    (float) (shockwave.z - cameraPos.z),
-                    radius(visualAge),
-                    Mth.clamp((int) (alpha * 255.0F), 0, 255));
-            BufferUploader.drawWithShader(builder.end());
-        }
 
-        RenderSystem.enableDepthTest();
-        RenderSystem.enableCull();
-        RenderSystem.depthMask(true);
-        modelView.popPose();
-        RenderSystem.applyModelViewMatrix();
-        RenderSystem.restoreProjectionMatrix();
-        mainTarget.bindWrite(false);
+            RenderSystem.enableDepthTest();
+            RenderSystem.enableCull();
+            RenderSystem.depthMask(true);
+            modelView.popPose();
+            RenderSystem.applyModelViewMatrix();
+            RenderSystem.restoreProjectionMatrix();
+            mainTarget.bindWrite(false);
+        }
     }
 
     private static float alpha(float age) {

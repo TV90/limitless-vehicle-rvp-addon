@@ -1,5 +1,8 @@
 package org.ywzj.rvp.client.laser;
 
+import org.ywzj.rvp.client.performance.RVP_RenderMetric;
+import org.ywzj.rvp.client.performance.RVP_RenderStage;
+import org.ywzj.rvp.client.performance.RVP_RenderPerformance;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraftforge.api.distmarker.Dist;
@@ -46,8 +49,13 @@ public final class RVP_LaserBlindOverlay {
             return;
         }
         GuiGraphics guiGraphics = event.getGuiGraphics();
-        guiGraphics.fill(RenderType.gui(), 0, 0,
-                guiGraphics.guiWidth(), guiGraphics.guiHeight(),
-                (alpha << 24) | 0x00FFFFFF);
+        // 调用通用性能范围，默认关闭时不申请显卡查询；所有提前返回和异常均自动封口。
+        try (var performance = RVP_RenderPerformance.gui(RVP_RenderStage.LASER_BLIND, guiGraphics)) {
+            // 调用逻辑面片及物理像素上界统计，实际批处理draw次数不在这里猜测。
+            RVP_RenderPerformance.guiQuad(guiGraphics, guiGraphics.guiWidth(), guiGraphics.guiHeight());
+            guiGraphics.fill(RenderType.gui(), 0, 0,
+                    guiGraphics.guiWidth(), guiGraphics.guiHeight(),
+                    (alpha << 24) | 0x00FFFFFF);
+        }
     }
 }

@@ -1,5 +1,8 @@
 package org.ywzj.rvp.client.visual.thermobaric;
 
+import org.ywzj.rvp.client.performance.RVP_RenderMetric;
+import org.ywzj.rvp.client.performance.RVP_RenderStage;
+import org.ywzj.rvp.client.performance.RVP_RenderPerformance;
 import com.mojang.blaze3d.platform.GlStateManager;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.Minecraft;
@@ -88,16 +91,21 @@ public final class RVP_ThermobaricScreenFeedback {
             return;
         }
         GuiGraphics graphics = event.getGuiGraphics();
-        RenderSystem.enableBlend();
-        RenderSystem.blendFunc(GlStateManager.SourceFactor.SRC_ALPHA,
-                GlStateManager.DestFactor.ONE);
-        RenderSystem.depthMask(false);
-        graphics.fill(0, 0, event.getWindow().getGuiScaledWidth(),
-                event.getWindow().getGuiScaledHeight(), (alpha << 24) | 0xFFFFFF);
-        graphics.flush();
-        RenderSystem.depthMask(true);
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableBlend();
+        // 调用通用性能范围，默认关闭时不申请显卡查询；所有提前返回和异常均自动封口。
+        try (var performance = RVP_RenderPerformance.gui(RVP_RenderStage.THERMOBARIC_FLASH, graphics)) {
+            RenderSystem.enableBlend();
+            RenderSystem.blendFunc(GlStateManager.SourceFactor.SRC_ALPHA,
+                    GlStateManager.DestFactor.ONE);
+            RenderSystem.depthMask(false);
+            // 调用逻辑面片及物理像素上界统计，实际批处理draw次数不在这里猜测。
+            RVP_RenderPerformance.guiQuad(graphics, graphics.guiWidth(), graphics.guiHeight());
+            graphics.fill(0, 0, event.getWindow().getGuiScaledWidth(),
+                    event.getWindow().getGuiScaledHeight(), (alpha << 24) | 0xFFFFFF);
+            graphics.flush();
+            RenderSystem.depthMask(true);
+            RenderSystem.defaultBlendFunc();
+            RenderSystem.disableBlend();
+        }
     }
 
     /** 取消指定实例的反馈脉冲。 */

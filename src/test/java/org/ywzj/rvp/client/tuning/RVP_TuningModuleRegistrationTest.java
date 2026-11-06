@@ -30,6 +30,7 @@ class RVP_TuningModuleRegistrationTest {
             assertEquals("MOD", readSubscriberBus(RVP_WreckSmokeTuningModule.class), "击毁烟须使用MOD总线");
             assertEquals("MOD", readSubscriberBus(RVP_RocketPlumeTuningModule.class), "程序尾焰须使用MOD总线");
             assertEquals("MOD", readSubscriberBus(RVP_VehicleExplosionTuningModule.class), "程序大爆炸须使用MOD总线");
+            assertEquals("MOD", readSubscriberBus(RVP_RenderPerformanceTuningModule.class), "性能记录入口须使用MOD总线");
             assertTrue(IModBusEvent.class.isAssignableFrom(RVP_RegisterTuningModulesEvent.class));
             RVP_TuningRegistry registry = new RVP_TuningRegistry();
             RVP_RegisterTuningModulesEvent event = new RVP_RegisterTuningModulesEvent(registry);
@@ -43,12 +44,13 @@ class RVP_TuningModuleRegistrationTest {
             loadingBus.register(RVP_WreckSmokeTuningModule.class);
             loadingBus.register(RVP_RocketPlumeTuningModule.class);
             loadingBus.register(RVP_VehicleExplosionTuningModule.class);
+            loadingBus.register(RVP_RenderPerformanceTuningModule.class);
 
             gameplayBus.post(event);
             assertTrue(registry.modules().isEmpty(), "尚未启动的游戏总线不会执行登记回调");
             loadingBus.post(event);
             registry.seal();
-            assertEquals(6, registry.modules().size());
+            assertEquals(7, registry.modules().size());
             assertEquals("screen_space", registry.modules().get(0).id());
             assertEquals(6, registry.modules().get(0).groups().size());
             assertFalse(registry.options().isEmpty());
@@ -64,6 +66,7 @@ class RVP_TuningModuleRegistrationTest {
             assertNotNull(registry.options().get("rocket_plume/transition/ignitionTicks"));
             assertNotNull(registry.options().get("vehicle_explosion/shape/radius"));
             assertNotNull(registry.options().get("vehicle_explosion/preview/hold"));
+            assertNotNull(registry.options().get("render_performance/recording/intervalSeconds"));
             assertTrue(registry.snapshot().isEmpty(), "登记时不能把默认值写成用户覆盖");
             System.out.println("REGRESSION_REGISTER bus=" + subscriberBus + " modules="
                     + registry.modules().stream().map(RVP_TuningModule::id).toList() + " options=" + registry.options().size());
@@ -75,6 +78,7 @@ class RVP_TuningModuleRegistrationTest {
             loadingBus.unregister(RVP_WreckSmokeTuningModule.class);
             loadingBus.unregister(RVP_RocketPlumeTuningModule.class);
             loadingBus.unregister(RVP_VehicleExplosionTuningModule.class);
+            loadingBus.unregister(RVP_RenderPerformanceTuningModule.class);
         }
     }
 

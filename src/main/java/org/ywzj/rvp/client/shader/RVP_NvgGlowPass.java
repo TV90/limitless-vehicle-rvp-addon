@@ -1,5 +1,8 @@
 package org.ywzj.rvp.client.shader;
 
+import org.ywzj.rvp.client.performance.RVP_RenderMetric;
+import org.ywzj.rvp.client.performance.RVP_RenderStage;
+import org.ywzj.rvp.client.performance.RVP_RenderPerformance;
 import com.mojang.blaze3d.platform.GlStateManager;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.BufferBuilder;
@@ -99,73 +102,79 @@ public final class RVP_NvgGlowPass {
             POINTS.clear();
             return;
         }
-        Minecraft minecraft = Minecraft.getInstance();
-        // 2026-10-31 修正：不能拿 poseStack 当视图矩阵。AFTER_LEVEL 阶段它的内容依赖
-        // 上一层是否 pop 干净（RVP_ScreenLightPass 拿完之后也要用 sceneMatrices 覆盖），
-        // 用它算出来的 NDC 是错的，表现就是"日志显示画了、屏幕上一个像素都没有"。
-        // 直接用相机朝向构造旋转视图矩阵，再手动减去相机位置，语义唯一。
-        Quaternionf cameraRotation = new Quaternionf(event.getCamera().rotation());
-        cameraRotation.conjugate();
-        Matrix4f view = new Matrix4f().rotation(cameraRotation);
-        Matrix4f projection = event.getProjectionMatrix();
-        Vec3 camera = event.getCamera().getPosition();
-        if (!loggedOnce) {
-            loggedOnce = true;
-            Vec3 p0 = POINTS.get(0);
-            Vector4f v = new Vector4f((float) (p0.x - camera.x), (float) (p0.y - camera.y),
-                    (float) (p0.z - camera.z), 1.0F);
-            view.transform(v);
-            Vector4f clip = new Vector4f(v);
-            projection.transform(clip);
-            float ndcX = clip.w == 0.0F ? 0.0F : clip.x / clip.w;
-            float ndcY = clip.w == 0.0F ? 0.0F : clip.y / clip.w;
-            LOGGER.info("[RVP-NVG] glow points={} viewZ={} ndc=({}, {}) w={}",
-                    POINTS.size(), String.format("%.2f", v.z),
-                    String.format("%.3f", ndcX), String.format("%.3f", ndcY),
-                    String.format("%.3f", clip.w));
-        }
-
-        // 显式写 uniform：不依赖 program JSON 的默认值（默认值缺失时颜色会算成 0，整片涂黑）
-        if (glowShader.safeGetUniform("CoreColor") != null) {
-            glowShader.safeGetUniform("CoreColor").set(1.0F, 0.96F, 0.88F, 1.0F);
-        }
-        if (glowShader.safeGetUniform("EdgeColor") != null) {
-            glowShader.safeGetUniform("EdgeColor").set(0.95F, 0.14F, 0.05F, 1.0F);
-        }
-        if (glowShader.safeGetUniform("Intensity") != null) {
-            glowShader.safeGetUniform("Intensity").set(GLOW_INTENSITY);
-        }
-        if (glowShader.safeGetUniform("HaloPower") != null) {
-            glowShader.safeGetUniform("HaloPower").set(HALO_POWER);
-        }
-
-        // GL 默认深度函数是 LESS，quad 的 z 与玻片表面相等时会被整片丢弃；
-        // 显式改 LEQUAL，顶点上再向相机方向退一点点，双保险避免 z-fighting。
-        RenderSystem.enableDepthTest();
-        RenderSystem.depthFunc(GL11.GL_LEQUAL);
-        RenderSystem.enableBlend();
-        // 加性混合：多台干扰机靠近时自然累加，重叠处直接烧白
-        RenderSystem.blendFunc(GlStateManager.SourceFactor.ONE, GlStateManager.DestFactor.ONE);
-        RenderSystem.depthMask(false);
-        RenderSystem.disableCull();
-        RenderSystem.setShader(() -> glowShader);
-        try {
-            Tesselator tesselator = Tesselator.getInstance();
-            BufferBuilder builder = tesselator.getBuilder();
-            builder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION);
-            for (Vec3 point : POINTS) {
-                appendQuad(builder, point, view, projection, camera);
+        // 调用通用性能范围，默认关闭时不申请显卡查询；所有提前返回和异常均自动封口。
+        try (var performance = RVP_RenderPerformance.scope(RVP_RenderStage.NIGHT_VISION_GLOW)) {
+            Minecraft minecraft = Minecraft.getInstance();
+            // 2026-10-31 修正：不能拿 poseStack 当视图矩阵。AFTER_LEVEL 阶段它的内容依赖
+            // 上一层是否 pop 干净（RVP_ScreenLightPass 拿完之后也要用 sceneMatrices 覆盖），
+            // 用它算出来的 NDC 是错的，表现就是"日志显示画了、屏幕上一个像素都没有"。
+            // 直接用相机朝向构造旋转视图矩阵，再手动减去相机位置，语义唯一。
+            Quaternionf cameraRotation = new Quaternionf(event.getCamera().rotation());
+            cameraRotation.conjugate();
+            Matrix4f view = new Matrix4f().rotation(cameraRotation);
+            Matrix4f projection = event.getProjectionMatrix();
+            Vec3 camera = event.getCamera().getPosition();
+            if (!loggedOnce) {
+                loggedOnce = true;
+                Vec3 p0 = POINTS.get(0);
+                Vector4f v = new Vector4f((float) (p0.x - camera.x), (float) (p0.y - camera.y),
+                        (float) (p0.z - camera.z), 1.0F);
+                view.transform(v);
+                Vector4f clip = new Vector4f(v);
+                projection.transform(clip);
+                float ndcX = clip.w == 0.0F ? 0.0F : clip.x / clip.w;
+                float ndcY = clip.w == 0.0F ? 0.0F : clip.y / clip.w;
+                LOGGER.info("[RVP-NVG] glow points={} viewZ={} ndc=({}, {}) w={}",
+                        POINTS.size(), String.format("%.2f", v.z),
+                        String.format("%.3f", ndcX), String.format("%.3f", ndcY),
+                        String.format("%.3f", clip.w));
             }
-            // 空批次也走 end()：零顶点绘制是合法的，比手工判断更不易漏掉收尾
-            tesselator.end();
-        } finally {
-            RenderSystem.depthMask(true);
-            RenderSystem.defaultBlendFunc();
-            RenderSystem.enableCull();
+
+            // 显式写 uniform：不依赖 program JSON 的默认值（默认值缺失时颜色会算成 0，整片涂黑）
+            if (glowShader.safeGetUniform("CoreColor") != null) {
+                glowShader.safeGetUniform("CoreColor").set(1.0F, 0.96F, 0.88F, 1.0F);
+            }
+            if (glowShader.safeGetUniform("EdgeColor") != null) {
+                glowShader.safeGetUniform("EdgeColor").set(0.95F, 0.14F, 0.05F, 1.0F);
+            }
+            if (glowShader.safeGetUniform("Intensity") != null) {
+                glowShader.safeGetUniform("Intensity").set(GLOW_INTENSITY);
+            }
+            if (glowShader.safeGetUniform("HaloPower") != null) {
+                glowShader.safeGetUniform("HaloPower").set(HALO_POWER);
+            }
+
+            // GL 默认深度函数是 LESS，quad 的 z 与玻片表面相等时会被整片丢弃；
+            // 显式改 LEQUAL，顶点上再向相机方向退一点点，双保险避免 z-fighting。
+            RenderSystem.enableDepthTest();
             RenderSystem.depthFunc(GL11.GL_LEQUAL);
-            POINTS.clear();
+            RenderSystem.enableBlend();
+            // 加性混合：多台干扰机靠近时自然累加，重叠处直接烧白
+            RenderSystem.blendFunc(GlStateManager.SourceFactor.ONE, GlStateManager.DestFactor.ONE);
+            RenderSystem.depthMask(false);
+            RenderSystem.disableCull();
+            RenderSystem.setShader(() -> glowShader);
+            try {
+                Tesselator tesselator = Tesselator.getInstance();
+                BufferBuilder builder = tesselator.getBuilder();
+                builder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION);
+                for (Vec3 point : POINTS) {
+                    appendQuad(builder, point, view, projection, camera);
+                }
+                // 空批次也走 end()：零顶点绘制是合法的，比手工判断更不易漏掉收尾
+                // 调用真实光斑批次绘制计数，条目数量包含投影前候选。
+                RVP_RenderPerformance.add(RVP_RenderMetric.DRAW_CALLS, 1);
+                RVP_RenderPerformance.add(RVP_RenderMetric.ITEMS, POINTS.size());
+                tesselator.end();
+            } finally {
+                RenderSystem.depthMask(true);
+                RenderSystem.defaultBlendFunc();
+                RenderSystem.enableCull();
+                RenderSystem.depthFunc(GL11.GL_LEQUAL);
+                POINTS.clear();
+            }
+            minecraft.getMainRenderTarget().bindWrite(true);
         }
-        minecraft.getMainRenderTarget().bindWrite(true);
     }
 
     /** 把一个世界点投影成椭圆四边形写入 builder；不可见时返回 false。 */

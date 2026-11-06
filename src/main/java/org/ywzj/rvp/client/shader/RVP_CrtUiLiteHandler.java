@@ -1,5 +1,8 @@
 package org.ywzj.rvp.client.shader;
 
+import org.ywzj.rvp.client.performance.RVP_RenderMetric;
+import org.ywzj.rvp.client.performance.RVP_RenderStage;
+import org.ywzj.rvp.client.performance.RVP_RenderPerformance;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.PostChain;
 import net.minecraft.client.renderer.PostPass;
@@ -50,7 +53,8 @@ public class RVP_CrtUiLiteHandler implements ResourceManagerReloadListener {
         if (!ensureChain(minecraft)) {
             return;
         }
-        postChain.process(event.getPartialTick());
+        // 调用通用后处理计时，原处理链和步骤顺序保持不变。
+            RVP_RenderPerformance.post(RVP_RenderStage.CRT, postChain, event.getPartialTick(), lastWidth, lastHeight);
         if (postChain instanceof PostPassesGetter getter) {
             for (PostPass pass : getter.getPasses()) {
                 pass.getEffect().safeGetUniform("Resolution")

@@ -1,5 +1,8 @@
 package org.ywzj.rvp.client.compat.distanthorizons;
 
+import org.ywzj.rvp.client.performance.RVP_RenderMetric;
+import org.ywzj.rvp.client.performance.RVP_RenderStage;
+import org.ywzj.rvp.client.performance.RVP_RenderPerformance;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
 import org.lwjgl.opengl.GL30;
@@ -46,10 +49,15 @@ final class RVP_DhDepthCopy {
 
     /** 从只附加 DH 深度的借用 FBO blit 到 RVP 自有深度副本。 */
     void copyFrom(int sourceFramebuffer) {
-        GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, sourceFramebuffer);
-        GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, framebufferId);
-        GL30.glBlitFramebuffer(0, 0, width, height, 0, 0, width, height,
-                GL11.GL_DEPTH_BUFFER_BIT, GL11.GL_NEAREST);
+        // 调用通用性能范围，默认关闭时不申请显卡查询；所有提前返回和异常均自动封口。
+        try (var performance = RVP_RenderPerformance.scope(RVP_RenderStage.DH_DEPTH_COPY)) {
+            GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, sourceFramebuffer);
+            GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, framebufferId);
+            GL30.glBlitFramebuffer(0, 0, width, height, 0, 0, width, height,
+                    GL11.GL_DEPTH_BUFFER_BIT, GL11.GL_NEAREST);
+            // 调用独立深度复制计数，保留原DH的读取/写回顺序。
+            RVP_RenderPerformance.copy(width, height, 4);
+        }
     }
 
     /** 返回只属于 RVP 的可采样深度副本纹理。 */

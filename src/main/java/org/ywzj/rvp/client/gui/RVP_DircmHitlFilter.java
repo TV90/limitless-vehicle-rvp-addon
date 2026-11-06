@@ -1,5 +1,8 @@
 package org.ywzj.rvp.client.gui;
 
+import org.ywzj.rvp.client.performance.RVP_RenderMetric;
+import org.ywzj.rvp.client.performance.RVP_RenderStage;
+import org.ywzj.rvp.client.performance.RVP_RenderPerformance;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.util.Mth;
@@ -63,37 +66,42 @@ public class RVP_DircmHitlFilter {
         float alpha = spread * fade;
 
         GuiGraphics gg = event.getGuiGraphics();
-        int w = gg.guiWidth();
-        int h = gg.guiHeight();
-        int cx = w / 2;
-        int cy = h / 2;
-        // 中心 → 四周：以中心为圆心的多个同心白色叠加，中心优先白
-        // 满屏扩散：先画中心小圆，再逐步向外（用矩形模拟径向，简单稳定）
-        int maxRadius = (int) Math.ceil(Math.hypot(w, h) / 2.0) + 1;
-        int radius = Math.max(1, (int) (maxRadius * spread));
-        // 最外层（全屏范围）淡白背景，随扩散覆盖
-        int outerAlpha = (int) (alpha * 120);
-        if (outerAlpha > 0) {
-            // 白色 ARGB：RGB 必须置 0xFFFFFF，否则只有 alpha 通道会显示为半透明黑
-            gg.fill(0, 0, w, h, 0xFFFFFF | (outerAlpha << 24));
-        }
-        // 中心实白区：从中心半径 0 → maxRadius 扩散
-        int innerAlpha = (int) (alpha * 255);
-        if (innerAlpha > 0 && radius > 0) {
-            // 以中心为中心画一个「圆形近似」：逐行填充带水平半宽 = sqrt(r^2 - dy^2)
-            int[] steps = {4, 12, 24, 48, 96, 192};
-            int lastDy = -1;
-            for (int step : steps) {
-                int dy = Math.min(radius, step);
-                if (dy == lastDy) {
-                    continue;
+        // 调用通用性能范围，默认关闭时不申请显卡查询；所有提前返回和异常均自动封口。
+        try (var performance = RVP_RenderPerformance.gui(RVP_RenderStage.DIRCM, gg)) {
+            int w = gg.guiWidth();
+            int h = gg.guiHeight();
+            int cx = w / 2;
+            int cy = h / 2;
+            // 中心 → 四周：以中心为圆心的多个同心白色叠加，中心优先白
+            // 满屏扩散：先画中心小圆，再逐步向外（用矩形模拟径向，简单稳定）
+            int maxRadius = (int) Math.ceil(Math.hypot(w, h) / 2.0) + 1;
+            int radius = Math.max(1, (int) (maxRadius * spread));
+            // 最外层（全屏范围）淡白背景，随扩散覆盖
+            int outerAlpha = (int) (alpha * 120);
+            if (outerAlpha > 0) {
+                // 白色 ARGB：RGB 必须置 0xFFFFFF，否则只有 alpha 通道会显示为半透明黑
+                RVP_RenderPerformance.guiQuad(gg, w, h);
+                gg.fill(0, 0, w, h, 0xFFFFFF | (outerAlpha << 24));
+            }
+            // 中心实白区：从中心半径 0 → maxRadius 扩散
+            int innerAlpha = (int) (alpha * 255);
+            if (innerAlpha > 0 && radius > 0) {
+                // 以中心为中心画一个「圆形近似」：逐行填充带水平半宽 = sqrt(r^2 - dy^2)
+                int[] steps = {4, 12, 24, 48, 96, 192};
+                int lastDy = -1;
+                for (int step : steps) {
+                    int dy = Math.min(radius, step);
+                    if (dy == lastDy) {
+                        continue;
+                    }
+                    lastDy = dy;
+                    int halfWidth = (int) Math.sqrt(Math.max(0, radius * radius - dy * dy));
+                    if (halfWidth <= 0) {
+                        continue;
+                    }
+                    RVP_RenderPerformance.guiQuad(gg, halfWidth * 2, dy * 2 + 1);
+                    gg.fill(cx - halfWidth, cy - dy, cx + halfWidth, cy + dy + 1, 0xFFFFFF | (innerAlpha << 24));
                 }
-                lastDy = dy;
-                int halfWidth = (int) Math.sqrt(Math.max(0, radius * radius - dy * dy));
-                if (halfWidth <= 0) {
-                    continue;
-                }
-                gg.fill(cx - halfWidth, cy - dy, cx + halfWidth, cy + dy + 1, 0xFFFFFF | (innerAlpha << 24));
             }
         }
     }

@@ -1,5 +1,8 @@
 package org.ywzj.rvp.client.particle;
 
+import org.ywzj.rvp.client.performance.RVP_RenderMetric;
+import org.ywzj.rvp.client.performance.RVP_RenderStage;
+import org.ywzj.rvp.client.performance.RVP_RenderPerformance;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.platform.GlStateManager;
 import com.mojang.blaze3d.systems.RenderSystem;
@@ -123,9 +126,14 @@ public final class RVP_ThermalParticleChannel {
         if (thermalBuffer == null) {
             return;
         }
-        List<Particle> visible = collectVisibleParticles(event);
-        visible.addAll(collectVanillaThermalParticles(event, mc));
-        renderIntoThermalBuffer(mc, thermalBuffer, event, visible);
+        // 调用通用性能范围，默认关闭时不申请显卡查询；所有提前返回和异常均自动封口。
+        try (var performance = RVP_RenderPerformance.scope(RVP_RenderStage.THERMAL_PARTICLES)) {
+            List<Particle> visible = collectVisibleParticles(event);
+            visible.addAll(collectVanillaThermalParticles(event, mc));
+            // 调用热粒子候选工作量统计；本体自己的热成像后处理不记成本项目耗时。
+            RVP_RenderPerformance.add(RVP_RenderMetric.ITEMS, visible.size());
+            renderIntoThermalBuffer(mc, thermalBuffer, event, visible);
+        }
     }
 
     /**

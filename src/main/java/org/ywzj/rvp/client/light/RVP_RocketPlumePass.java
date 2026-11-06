@@ -1,5 +1,8 @@
 package org.ywzj.rvp.client.light;
 
+import org.ywzj.rvp.client.performance.RVP_RenderMetric;
+import org.ywzj.rvp.client.performance.RVP_RenderStage;
+import org.ywzj.rvp.client.performance.RVP_RenderPerformance;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import net.minecraft.client.renderer.ShaderInstance;
 import net.minecraft.world.phys.Vec3;
@@ -76,30 +79,33 @@ final class RVP_RocketPlumePass {
         // 调用导弹广域橙晕开关：关闭后喷焰不再写亮部输入，只保留显示模式的真实白热喷流，
         // 远处亚像素喷流因此不会再被光晕放大成固定像素亮斑。
         if (mode == 1 && !RVP_LightingConfig.missileHaloEnabled()) { return; }
-        // 调用共用场景上传，近景、DH、光影手持物使用与环境照明完全相同的配对矩阵。
-        RVP_ScreenLightPass.uploadScene(shader);
-        shader.safeGetUniform("OutputMode").set(mode);
-        shader.safeGetUniform("Time").set(time);
-        // 调用光晕开关：关闭时远距喷流按真实尺寸缩小消失，不再保留固定像素亮斑。
-        shader.safeGetUniform("HaloEnabled").set(RVP_LightingConfig.missileHaloEnabled() ? 1 : 0);
-        for (RVP_RocketPlume plume : plumes) {
-            // 光晕范围为零时仅取消模糊来源，显示模式仍保留真实白热喷焰。
-            if (mode == 1 && (plume.haloRadius() <= 0 || plume.haloStrength() <= 0)) { continue; }
-            // 调用整条喷流的包围框，不要求喷口本身在屏幕内。
-            RVP_PressureWaveGeometry.Bounds bounds = shapeBounds(plume, view, projection, camera, frame.height());
-            if (bounds == null) { continue; }
-            // 调用同一喷口、朝向、燃烧强度上传，细尾焰与广域光晕不能各自推算弹体姿态。
-            uploadPlume(plume, view, camera, mode == 1);
-            // 未使用可见度采样的模式也绑定有效外部输入，避免采样器别名指向正在写入的附件。
-            shader.setSampler("PlumeVisibility", frame.depth());
-            frame.bind(mode == 1 ? frame.glowTarget() : frame.mainTarget(), frame.width(), frame.height());
-            // 调用实际包围框裁剪，不额外执行离屏片元的二十次采样。
-            scissor(frame, bounds);
-            // 调用有限峰值合并或显示叠加，保持原世界 Alpha，不写深度，不读写同一颜色纹理。
-            if (mode == 1) { frame.drawContribution(shader); }
-            else { frame.drawEmission(shader); }
+        // 调用通用性能范围，默认关闭时不申请显卡查询；所有提前返回和异常均自动封口。
+        try (var performance = RVP_RenderPerformance.scope(RVP_RenderStage.PLUME)) {
+            // 调用共用场景上传，近景、DH、光影手持物使用与环境照明完全相同的配对矩阵。
+            RVP_ScreenLightPass.uploadScene(shader);
+            shader.safeGetUniform("OutputMode").set(mode);
+            shader.safeGetUniform("Time").set(time);
+            // 调用光晕开关：关闭时远距喷流按真实尺寸缩小消失，不再保留固定像素亮斑。
+            shader.safeGetUniform("HaloEnabled").set(RVP_LightingConfig.missileHaloEnabled() ? 1 : 0);
+            for (RVP_RocketPlume plume : plumes) {
+                // 光晕范围为零时仅取消模糊来源，显示模式仍保留真实白热喷焰。
+                if (mode == 1 && (plume.haloRadius() <= 0 || plume.haloStrength() <= 0)) { continue; }
+                // 调用整条喷流的包围框，不要求喷口本身在屏幕内。
+                RVP_PressureWaveGeometry.Bounds bounds = shapeBounds(plume, view, projection, camera, frame.height());
+                if (bounds == null) { continue; }
+                // 调用同一喷口、朝向、燃烧强度上传，细尾焰与广域光晕不能各自推算弹体姿态。
+                uploadPlume(plume, view, camera, mode == 1);
+                // 未使用可见度采样的模式也绑定有效外部输入，避免采样器别名指向正在写入的附件。
+                shader.setSampler("PlumeVisibility", frame.depth());
+                frame.bind(mode == 1 ? frame.glowTarget() : frame.mainTarget(), frame.width(), frame.height());
+                // 调用实际包围框裁剪，不额外执行离屏片元的二十次采样。
+                scissor(frame, bounds);
+                // 调用有限峰值合并或显示叠加，保持原世界 Alpha，不写深度，不读写同一颜色纹理。
+                if (mode == 1) { frame.drawContribution(shader); }
+                else { frame.drawEmission(shader); }
+            }
+            GL11.glDisable(GL11.GL_SCISSOR_TEST);
         }
-        GL11.glDisable(GL11.GL_SCISSOR_TEST);
     }
 
     /** 先以一像素求可见发光比例，再绘制世界尺寸光晕；所有喷流共用一份小目标，不新增数量上限。 */
@@ -108,32 +114,39 @@ final class RVP_RocketPlumePass {
         // 调用客户端画质配置：导弹广域光圈默认关闭，关闭时保留喷焰核心与世界受光。
         if (!available() || !RVP_LightingConfig.bloomEnabled()
                 || !RVP_LightingConfig.missileHaloEnabled() || plumes.isEmpty()) { return; }
-        // 调用共享目标与矩阵输入，支持原版、DH、光影及组合路径。
-        frame.ensurePlumeVisibility();
-        RVP_ScreenLightPass.uploadScene(shader);
-        shader.safeGetUniform("Time").set(time);
-        // 本方法只在光晕开关打开时进入，可见度采样仍按完整喷流计算。
-        shader.safeGetUniform("HaloEnabled").set(1);
-        for (RVP_RocketPlume plume : plumes) {
-            if (plume.haloStrength() <= 0) { continue; }
-            var bounds = haloBounds(plume, view, projection, camera);
-            if (bounds == null) { continue; }
-            // 调用独立光晕快照；照亮范围和光晕范围分别调参，阶段仍仅改变亮度。
-            // 调用光晕自身亮度作为可见度开关，预览核心先结束时仍能正确显示尚在淡出的光晕。
-            uploadPlume(plume, view, camera, true);
-            // 可见度模式只写一像素；此时采样器指向近景深度，绝不读写自己的同一附件。
-            shader.setSampler("PlumeVisibility", frame.depth());
-            shader.safeGetUniform("OutputMode").set(3);
-            frame.bind(frame.plumeVisibilityTarget(), 1, 1);
-            frame.draw(shader);
-            // 广域模式只读上一步结果；每像素不再重复二十步喷流采样或查询光源可见度。
-            shader.setSampler("PlumeVisibility", frame.plumeVisibility());
-            shader.safeGetUniform("OutputMode").set(4);
-            frame.bind(frame.mainTarget(), frame.width(), frame.height());
-            scissor(frame, bounds);
-            frame.drawEmission(shader);
+        // 调用通用性能范围，默认关闭时不申请显卡查询；所有提前返回和异常均自动封口。
+        try (var performance = RVP_RenderPerformance.scope(RVP_RenderStage.PLUME_HALO)) {
+            // 调用共享目标与矩阵输入，支持原版、DH、光影及组合路径。
+            frame.ensurePlumeVisibility();
+            RVP_ScreenLightPass.uploadScene(shader);
+            shader.safeGetUniform("Time").set(time);
+            // 本方法只在光晕开关打开时进入，可见度采样仍按完整喷流计算。
+            shader.safeGetUniform("HaloEnabled").set(1);
+            for (RVP_RocketPlume plume : plumes) {
+                if (plume.haloStrength() <= 0) { continue; }
+                var bounds = haloBounds(plume, view, projection, camera);
+                if (bounds == null) { continue; }
+                // 调用独立光晕快照；照亮范围和光晕范围分别调参，阶段仍仅改变亮度。
+                // 调用光晕自身亮度作为可见度开关，预览核心先结束时仍能正确显示尚在淡出的光晕。
+                uploadPlume(plume, view, camera, true);
+                // 可见度模式只写一像素；此时采样器指向近景深度，绝不读写自己的同一附件。
+                shader.setSampler("PlumeVisibility", frame.depth());
+                shader.safeGetUniform("OutputMode").set(3);
+                frame.bind(frame.plumeVisibilityTarget(), 1, 1);
+                // 一像素可见度最多7×3条视线，每条最多20步，不误记为一次普通喷流积分。
+                frame.profileArea(1, 1, 7 * 3 * 20);
+                frame.draw(shader);
+                // 广域模式只读上一步结果；每像素不再重复二十步喷流采样或查询光源可见度。
+                shader.setSampler("PlumeVisibility", frame.plumeVisibility());
+                shader.safeGetUniform("OutputMode").set(4);
+                frame.bind(frame.mainTarget(), frame.width(), frame.height());
+                scissor(frame, bounds);
+                // 广域光晕仅做一像素可见度读取，不把它误计为每像素20步体积采样。
+                frame.profileRaySteps(0);
+                frame.drawEmission(shader);
+            }
+            GL11.glDisable(GL11.GL_SCISSOR_TEST);
         }
-        GL11.glDisable(GL11.GL_SCISSOR_TEST);
     }
 
     /** 上传真实几何、世界光晕半径与代码亮度；不把照明半径用作喷焰模型缩放。 */
@@ -177,6 +190,9 @@ final class RVP_RocketPlumePass {
         int top = Math.min(frame.height(), (int) Math.ceil((bounds.top() + 1) * 0.5 * frame.height()) + 2);
         GL11.glEnable(GL11.GL_SCISSOR_TEST);
         GL11.glScissor(x, y, right - x, top - y);
+        // 调用保守矩形工作量统计；程序喷流主积分每像素最多20步。
+        frame.profileArea(right - x, top - y, 20);
+        RVP_RenderPerformance.add(RVP_RenderMetric.ITEMS, 1);
     }
 
     /** 先用 double 相减，避免远世界坐标的喷焰抖动。 */

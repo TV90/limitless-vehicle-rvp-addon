@@ -113,5 +113,26 @@ allprojects { lightingProject ->
             systemProperty 'org.lwjgl.system.SharedLibraryExtractPath',
                     layout.buildDirectory.dir('rocket-trail-interior-gpu-regression/natives').get().asFile.absolutePath
         }
+        // 通用性能记录：真实时间戳后端、正式程序爆炸及独立后台日志，不启动Minecraft世界。
+        def performanceOutput = lightingProject.layout.buildDirectory.dir('render-performance-gpu-regression/classes')
+        def performanceCompile = tasks.register('compileRenderPerformanceGpuRegression', JavaCompile) {
+            dependsOn tasks.named('classes')
+            source = lightingProject.files(
+                    new File(lightingProject.projectDir, 'scripts/diagnostics/RenderPerformanceGpuRegression.java'),
+                    new File(lightingProject.projectDir, 'scripts/diagnostics/VehicleExplosionGpuRegression.java'))
+            classpath = sourceSets.test.runtimeClasspath
+            destinationDirectory.set(performanceOutput)
+            options.encoding = 'UTF-8'
+            javaCompiler.set(javaToolchains.compilerFor { languageVersion.set(JavaLanguageVersion.of(17)) })
+        }
+        tasks.register('renderPerformanceGpuRegression', JavaExec) {
+            dependsOn performanceCompile
+            classpath = sourceSets.test.runtimeClasspath + lightingProject.files(performanceOutput) + lightingProject.files(lightingNatives)
+            mainClass.set('org.ywzj.rvp.client.performance.RenderPerformanceGpuRegression')
+            args lightingProject.projectDir.absolutePath
+            javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(17)) })
+            systemProperty 'org.lwjgl.system.SharedLibraryExtractPath',
+                    layout.buildDirectory.dir('render-performance-gpu-regression/natives').get().asFile.absolutePath
+        }
     }
 }

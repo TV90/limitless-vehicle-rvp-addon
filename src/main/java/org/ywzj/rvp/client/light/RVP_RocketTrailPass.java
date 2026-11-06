@@ -1,5 +1,8 @@
 package org.ywzj.rvp.client.light;
 
+import org.ywzj.rvp.client.performance.RVP_RenderMetric;
+import org.ywzj.rvp.client.performance.RVP_RenderStage;
+import org.ywzj.rvp.client.performance.RVP_RenderPerformance;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import net.minecraft.client.renderer.ShaderInstance;
 import net.minecraft.world.phys.Vec3;
@@ -45,40 +48,46 @@ final class RVP_RocketTrailPass {
     static void render(RVP_ScreenFrameResources frame, List<RVP_RocketTrailSegment> segments,
             Matrix4f view, Matrix4f projection, Vec3 camera) {
         if (!available() || segments.isEmpty()) { return; }
-        // 调用统一深度与手持物输入，烟团使用和程序喷焰相同的近景/DH 坐标约定。
-        RVP_ScreenLightPass.uploadScene(shader);
-        shader.safeGetUniform("ViewToWorld").set(new Matrix4f(view).invert());
-        // 调用投影面积总预算，进入密烟时也不会对数百层整屏烟重复运行二十四步。
-        var projected = RVP_RocketTrailGeometry.budget(segments, camera, segment -> bounds(segment, view, projection, camera));
-        for (RVP_RocketTrailGeometry.Projected input : projected) {
-            RVP_RocketTrailSegment segment = input.segment();
-            var box = input.bounds();
-            shader.safeGetUniform("RaySteps").set(Math.max(8,
-                    RVP_RocketTrailParameters.RAY_STEPS - (int) (input.area() * 16)));
-            Vector3f start = viewPosition(segment.start(), view, camera);
-            Vector3f end = viewPosition(segment.end(), view, camera);
-            shader.safeGetUniform("TrailStart").set(start.x, start.y, start.z, segment.startRadius());
-            shader.safeGetUniform("TrailEnd").set(end.x, end.y, end.z, segment.endRadius());
-            shader.safeGetUniform("TrailDensity").set(segment.startDensity(), segment.endDensity());
-            shader.safeGetUniform("TrailColor").set(segment.grey(), segment.age(), segment.seed(), segment.noiseScale());
-            // 世界坐标先用 double 求噪声周期余数，再转 float；大坐标处也不让翻滚纹理跟着相机游动。
-            shader.safeGetUniform("TrailNoiseOrigin").set((float) ((segment.start().x * segment.noiseScale()) % 4096),
-                    (float) ((segment.start().y * segment.noiseScale()) % 4096),
-                    (float) ((segment.start().z * segment.noiseScale()) % 4096));
-            // 调用同帧光源筛选，最多四盏与烟段相交的灯；只改变烟色，不把烟登记为挡光实体。
-            uploadLights(segment);
-            frame.bind(frame.mainTarget(), frame.width(), frame.height());
-            int x = Math.max(0, (int) Math.floor((box.left() + 1) * 0.5 * frame.width()) - 1);
-            int y = Math.max(0, (int) Math.floor((box.bottom() + 1) * 0.5 * frame.height()) - 1);
-            int right = Math.min(frame.width(), (int) Math.ceil((box.right() + 1) * 0.5 * frame.width()) + 1);
-            int top = Math.min(frame.height(), (int) Math.ceil((box.top() + 1) * 0.5 * frame.height()) + 1);
-            // 调用双向状态同步，不能污染 DH/光影缓存中裁剪和混合的开关状态。
-            RVP_GlStateSync.scissor(true);
-            GL11.glScissor(x, y, Math.max(0, right - x), Math.max(0, top - y));
-            frame.drawVolumeSmoke(shader);
+        // 调用通用性能范围，默认关闭时不申请显卡查询；所有提前返回和异常均自动封口。
+        try (var performance = RVP_RenderPerformance.scope(RVP_RenderStage.TRAIL)) {
+            // 调用统一深度与手持物输入，烟团使用和程序喷焰相同的近景/DH 坐标约定。
+            RVP_ScreenLightPass.uploadScene(shader);
+            shader.safeGetUniform("ViewToWorld").set(new Matrix4f(view).invert());
+            // 调用投影面积总预算，进入密烟时也不会对数百层整屏烟重复运行二十四步。
+            var projected = RVP_RocketTrailGeometry.budget(segments, camera, segment -> bounds(segment, view, projection, camera));
+            for (RVP_RocketTrailGeometry.Projected input : projected) {
+                RVP_RocketTrailSegment segment = input.segment();
+                var box = input.bounds();
+                shader.safeGetUniform("RaySteps").set(Math.max(8,
+                        RVP_RocketTrailParameters.RAY_STEPS - (int) (input.area() * 16)));
+                Vector3f start = viewPosition(segment.start(), view, camera);
+                Vector3f end = viewPosition(segment.end(), view, camera);
+                shader.safeGetUniform("TrailStart").set(start.x, start.y, start.z, segment.startRadius());
+                shader.safeGetUniform("TrailEnd").set(end.x, end.y, end.z, segment.endRadius());
+                shader.safeGetUniform("TrailDensity").set(segment.startDensity(), segment.endDensity());
+                shader.safeGetUniform("TrailColor").set(segment.grey(), segment.age(), segment.seed(), segment.noiseScale());
+                // 世界坐标先用 double 求噪声周期余数，再转 float；大坐标处也不让翻滚纹理跟着相机游动。
+                shader.safeGetUniform("TrailNoiseOrigin").set((float) ((segment.start().x * segment.noiseScale()) % 4096),
+                        (float) ((segment.start().y * segment.noiseScale()) % 4096),
+                        (float) ((segment.start().z * segment.noiseScale()) % 4096));
+                // 调用同帧光源筛选，最多四盏与烟段相交的灯；只改变烟色，不把烟登记为挡光实体。
+                uploadLights(segment);
+                frame.bind(frame.mainTarget(), frame.width(), frame.height());
+                int x = Math.max(0, (int) Math.floor((box.left() + 1) * 0.5 * frame.width()) - 1);
+                int y = Math.max(0, (int) Math.floor((box.bottom() + 1) * 0.5 * frame.height()) - 1);
+                int right = Math.min(frame.width(), (int) Math.ceil((box.right() + 1) * 0.5 * frame.width()) + 1);
+                int top = Math.min(frame.height(), (int) Math.ceil((box.top() + 1) * 0.5 * frame.height()) + 1);
+                // 调用双向状态同步，不能污染 DH/光影缓存中裁剪和混合的开关状态。
+                RVP_GlStateSync.scissor(true);
+                GL11.glScissor(x, y, Math.max(0, right - x), Math.max(0, top - y));
+                // 调用有界尾烟采样的工作量统计，步数与刚上传的RaySteps一致。
+                frame.profileArea(right - x, top - y, Math.max(8, RVP_RocketTrailParameters.RAY_STEPS - (int) (input.area() * 16)));
+                RVP_RenderPerformance.add(RVP_RenderMetric.ITEMS, 1);
+                frame.drawVolumeSmoke(shader);
+            }
+            // 调用同步恢复，外层 State 继续负责恢复进入整套屏幕通道之前的完整显卡状态。
+            RVP_GlStateSync.scissor(false);
         }
-        // 调用同步恢复，外层 State 继续负责恢复进入整套屏幕通道之前的完整显卡状态。
-        RVP_GlStateSync.scissor(false);
     }
 
     /** 每段只上传附近四盏光，避免所有烟段都进行八灯多步遮挡计算。 */

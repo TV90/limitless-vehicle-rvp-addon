@@ -4,6 +4,8 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.util.Mth;
 import net.minecraftforge.client.event.ViewportEvent;
+import org.ywzj.rvp.client.performance.RVP_RenderPerformance;
+import org.ywzj.rvp.client.performance.RVP_RenderStage;
 
 import java.util.Collection;
 import java.util.Iterator;
@@ -30,7 +32,11 @@ public final class RVP_ScreenShakeExecutor {
             return;
         }
         // 统一采样世界时间与帧内插值，避免不同调用方的震动节奏偏移。
-        ShakeOffset offset = sampleAll(level.getGameTime() + event.getPartialTick());
+        ShakeOffset offset;
+        // 调用纯CPU性能范围，镜头角度计算不伪装成GPU绘制耗时。
+        try (var performance = RVP_RenderPerformance.cpu(RVP_RenderStage.CAMERA_SHAKE)) {
+            offset = sampleAll(level.getGameTime() + event.getPartialTick());
+        }
         event.setYaw(event.getYaw() + offset.yaw());
         event.setPitch(event.getPitch() + offset.pitch());
         event.setRoll(event.getRoll() + offset.roll());

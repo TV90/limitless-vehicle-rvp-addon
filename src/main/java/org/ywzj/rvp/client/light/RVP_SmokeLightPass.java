@@ -1,5 +1,8 @@
 package org.ywzj.rvp.client.light;
 
+import org.ywzj.rvp.client.performance.RVP_RenderMetric;
+import org.ywzj.rvp.client.performance.RVP_RenderStage;
+import org.ywzj.rvp.client.performance.RVP_RenderPerformance;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.*;
 import com.mojang.logging.LogUtils;
@@ -161,62 +164,68 @@ public final class RVP_SmokeLightPass {
                 // 干扰机仅保留玻片周围的小范围受光，不将夜间红光投到所有烟雾。
                 .filter(light -> light.type() != RVP_LightSourceType.ROCKET_ENGINE && light.type() != RVP_LightSourceType.EO_JAMMER).toList();
         if (!wanted() || lights.isEmpty()) { return; }
-        // 调用引擎收集，覆盖本体/原版粒子和所有已知 RVP 粒子烟；自绘烟已由正常绘制记录。
-        collectParticles(camera, partialTick);
-        RVP_ScreenLightPass.uploadScene(shader);
-        // 调用同帧分层深度绑定；烟面片只接收光照，仍不会进入遮挡输入。
-        RVP_LightOcclusionPass.upload(shader, frame.depth());
-        // 调用表面光同一套三维碰撞几何，烟雾自身仍不成为遮挡物。
-        RVP_LightGeometryPass.upload(shader);
-        shader.safeGetUniform("OutputMode").set(0);
-        shader.safeGetUniform("LightCount").set(lights.size());
-        for (int index = 0; index < RVP_ScreenLightBudget.MAX_LIGHTS; index++) {
-            if (index >= lights.size()) {
-                shader.safeGetUniform("LightAmbient" + index).set(RVP_AmbientLightSampler.UNAVAILABLE);
-                shader.safeGetUniform("LightPositionRadius" + index).set(0F, 0F, 0F, 0F);
-                shader.safeGetUniform("LightColorIntensity" + index).set(0F, 0F, 0F, 0F); continue;
-            }
-            RVP_ScreenLight light = lights.get(index);
-            // 调用同帧源位置缓存，烟雾筛掉发动机及干扰机后不能沿用原八灯槽号。
-            shader.safeGetUniform("LightAmbient" + index).set(RVP_ScreenLightPass.ambientBrightness(light.position()));
-            // 调用相同观察变换与年龄/阶段采样，爆炸、炮口、发动机没有烟雾专用白名单。
-            Vector3f position = RVP_ScreenLightPass.viewPosition(light.position());
-            VIEW_LIGHT_SPHERES[index * 4] = position.x;
-            VIEW_LIGHT_SPHERES[index * 4 + 1] = position.y;
-            VIEW_LIGHT_SPHERES[index * 4 + 2] = position.z;
-            VIEW_LIGHT_SPHERES[index * 4 + 3] = light.radius();
-            shader.safeGetUniform("LightPositionRadius" + index).set(position.x, position.y, position.z, light.radius());
-            // 调用烟雾独立亮度倍率，沿用同一批已调参光源、透明边缘和场景遮挡。
-            shader.safeGetUniform("LightColorIntensity" + index).set(light.red(), light.green(), light.blue(),
-                    light.intensity() * light.surfaceWeight() * RVP_LightingConfig.intensity()
-                            * RVP_LightRuntimeTuning.get(RVP_LightRuntimeTuning.Group.global,
-                                    RVP_LightRuntimeTuning.Parameter.smokeBrightness));
-        }
-        if (vertexBuffer == null) { vertexBuffer = new VertexBuffer(VertexBuffer.Usage.DYNAMIC); }
-        for (RVP_SmokeLightGeometry.Batch batch : GEOMETRY.batches()) {
-            boolean open = false;
-            for (int quad = 0; quad + 4 * RVP_SmokeLightGeometry.STRIDE <= batch.size; quad += 4 * RVP_SmokeLightGeometry.STRIDE) {
-                // 调用面片/光球相交筛选，远离所有光源的云团不进入额外显卡通道。
-                if (!batch.intersects(quad, lights, camera.getPosition(), batch.viewSpace ? VIEW_LIGHT_SPHERES : null)) { continue; }
-                if (!open) { BUILDER.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX_COLOR); open = true; }
-                for (int vertex = 0; vertex < 4; vertex++) {
-                    int at = quad + vertex * RVP_SmokeLightGeometry.STRIDE;
-                    float[] data = batch.data;
-                    BUILDER.vertex(data[at], data[at + 1], data[at + 2]).uv(data[at + 3], data[at + 4])
-                            .color(data[at + 5], data[at + 6], data[at + 7], data[at + 8]).endVertex();
+        // 调用通用性能范围，默认关闭时不申请显卡查询；所有提前返回和异常均自动封口。
+        try (var performance = RVP_RenderPerformance.scope(RVP_RenderStage.SMOKE_LIGHT)) {
+            // 调用引擎收集，覆盖本体/原版粒子和所有已知 RVP 粒子烟；自绘烟已由正常绘制记录。
+            collectParticles(camera, partialTick);
+            RVP_ScreenLightPass.uploadScene(shader);
+            // 调用同帧分层深度绑定；烟面片只接收光照，仍不会进入遮挡输入。
+            RVP_LightOcclusionPass.upload(shader, frame.depth());
+            // 调用表面光同一套三维碰撞几何，烟雾自身仍不成为遮挡物。
+            RVP_LightGeometryPass.upload(shader);
+            shader.safeGetUniform("OutputMode").set(0);
+            shader.safeGetUniform("LightCount").set(lights.size());
+            for (int index = 0; index < RVP_ScreenLightBudget.MAX_LIGHTS; index++) {
+                if (index >= lights.size()) {
+                    shader.safeGetUniform("LightAmbient" + index).set(RVP_AmbientLightSampler.UNAVAILABLE);
+                    shader.safeGetUniform("LightPositionRadius" + index).set(0F, 0F, 0F, 0F);
+                    shader.safeGetUniform("LightColorIntensity" + index).set(0F, 0F, 0F, 0F); continue;
                 }
+                RVP_ScreenLight light = lights.get(index);
+                // 调用同帧源位置缓存，烟雾筛掉发动机及干扰机后不能沿用原八灯槽号。
+                shader.safeGetUniform("LightAmbient" + index).set(RVP_ScreenLightPass.ambientBrightness(light.position()));
+                // 调用相同观察变换与年龄/阶段采样，爆炸、炮口、发动机没有烟雾专用白名单。
+                Vector3f position = RVP_ScreenLightPass.viewPosition(light.position());
+                VIEW_LIGHT_SPHERES[index * 4] = position.x;
+                VIEW_LIGHT_SPHERES[index * 4 + 1] = position.y;
+                VIEW_LIGHT_SPHERES[index * 4 + 2] = position.z;
+                VIEW_LIGHT_SPHERES[index * 4 + 3] = light.radius();
+                shader.safeGetUniform("LightPositionRadius" + index).set(position.x, position.y, position.z, light.radius());
+                // 调用烟雾独立亮度倍率，沿用同一批已调参光源、透明边缘和场景遮挡。
+                shader.safeGetUniform("LightColorIntensity" + index).set(light.red(), light.green(), light.blue(),
+                        light.intensity() * light.surfaceWeight() * RVP_LightingConfig.intensity()
+                                * RVP_LightRuntimeTuning.get(RVP_LightRuntimeTuning.Group.global,
+                                        RVP_LightRuntimeTuning.Parameter.smokeBrightness));
             }
-            if (!open) { continue; }
-            frame.bind(frame.mainTarget(), frame.width(), frame.height());
-            vertexBuffer.bind(); vertexBuffer.upload(BUILDER.end());
-            shader.setSampler("Sampler0", batch.texture);
-            // 调用空间匹配：粒子额外乘世界观察矩阵，炮口已在观察空间，使用单位矩阵。
-            RVP_ScreenLightPass.uploadGeometryView(shader, batch.viewSpace);
-            shader.apply();
-            try {
-                // 调用只加亮、保留原场景 Alpha 的混合；贴图透明区域由片元程序保持零贡献。
-                frame.beginEmissionBlend(); vertexBuffer.draw();
-            } finally { shader.clear(); VertexBuffer.unbind(); }
+            if (vertexBuffer == null) { vertexBuffer = new VertexBuffer(VertexBuffer.Usage.DYNAMIC); }
+            for (RVP_SmokeLightGeometry.Batch batch : GEOMETRY.batches()) {
+                boolean open = false;
+                for (int quad = 0; quad + 4 * RVP_SmokeLightGeometry.STRIDE <= batch.size; quad += 4 * RVP_SmokeLightGeometry.STRIDE) {
+                    // 调用面片/光球相交筛选，远离所有光源的云团不进入额外显卡通道。
+                    if (!batch.intersects(quad, lights, camera.getPosition(), batch.viewSpace ? VIEW_LIGHT_SPHERES : null)) { continue; }
+                    if (!open) { BUILDER.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX_COLOR); open = true; }
+                    for (int vertex = 0; vertex < 4; vertex++) {
+                        int at = quad + vertex * RVP_SmokeLightGeometry.STRIDE;
+                        float[] data = batch.data;
+                        BUILDER.vertex(data[at], data[at + 1], data[at + 2]).uv(data[at + 3], data[at + 4])
+                                .color(data[at + 5], data[at + 6], data[at + 7], data[at + 8]).endVertex();
+                    }
+                }
+                if (!open) { continue; }
+                frame.bind(frame.mainTarget(), frame.width(), frame.height());
+                vertexBuffer.bind(); vertexBuffer.upload(BUILDER.end());
+                shader.setSampler("Sampler0", batch.texture);
+                // 调用空间匹配：粒子额外乘世界观察矩阵，炮口已在观察空间，使用单位矩阵。
+                RVP_ScreenLightPass.uploadGeometryView(shader, batch.viewSpace);
+                shader.apply();
+                try {
+                    // 调用只加亮、保留原场景 Alpha 的混合；贴图透明区域由片元程序保持零贡献。
+                    frame.beginEmissionBlend();
+                    // 调用实际批次绘制计数；贴图面片没有可靠屏幕面积时不填伪造像素数。
+                    RVP_RenderPerformance.add(RVP_RenderMetric.DRAW_CALLS, 1);
+                    vertexBuffer.draw();
+                } finally { shader.clear(); VertexBuffer.unbind(); }
+            }
         }
     }
 

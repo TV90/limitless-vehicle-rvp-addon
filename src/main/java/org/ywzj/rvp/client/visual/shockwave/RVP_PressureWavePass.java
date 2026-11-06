@@ -1,5 +1,8 @@
 package org.ywzj.rvp.client.visual.shockwave;
 
+import org.ywzj.rvp.client.performance.RVP_RenderMetric;
+import org.ywzj.rvp.client.performance.RVP_RenderStage;
+import org.ywzj.rvp.client.performance.RVP_RenderPerformance;
 import com.mojang.logging.LogUtils;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
@@ -99,17 +102,22 @@ final class RVP_PressureWavePass {
         RenderSystem.assertOnRenderThread();
         depthReady = false;
         if (shader == null) { return false; }
-        // 调用状态作用域，复制过程中不改变其它世界效果使用的绑定、裁剪或采样状态。
-        try (State state = new State()) {
-            // 调用实际附件查询；不假定世界一定使用 Minecraft 主缓冲或某一种深度格式。
-            if (state.viewport[2] <= 0 || state.viewport[3] <= 0 || state.drawBuffers[0] == GL11.GL_NONE
-                    || !state.hasDepth()) { return false; }
-            // 调用副本分配和深度复制，每帧只在后处理之前读取一次世界遮挡。
-            ensureSize(state.viewport[2], state.viewport[3]);
-            copyScene(sceneDepth, state.viewport);
-            System.arraycopy(state.viewport, 0, depthViewport, 0, depthViewport.length);
-            depthReady = true;
-            return true;
+        // 调用通用性能范围，默认关闭时不申请显卡查询；所有提前返回和异常均自动封口。
+        try (var performance = RVP_RenderPerformance.scope(RVP_RenderStage.PRESSURE_DEPTH)) {
+            // 调用状态作用域，复制过程中不改变其它世界效果使用的绑定、裁剪或采样状态。
+            try (State state = new State()) {
+                // 调用实际附件查询；不假定世界一定使用 Minecraft 主缓冲或某一种深度格式。
+                if (state.viewport[2] <= 0 || state.viewport[3] <= 0 || state.drawBuffers[0] == GL11.GL_NONE
+                        || !state.hasDepth()) { return false; }
+                // 调用副本分配和深度复制，每帧只在后处理之前读取一次世界遮挡。
+                ensureSize(state.viewport[2], state.viewport[3]);
+                copyScene(sceneDepth, state.viewport);
+                // 调用深度复制字节估算，32位目标不冒充实际显存带宽。
+                RVP_RenderPerformance.copy(state.viewport[2], state.viewport[3], 4);
+                System.arraycopy(state.viewport, 0, depthViewport, 0, depthViewport.length);
+                depthReady = true;
+                return true;
+            }
         }
     }
 
@@ -136,53 +144,62 @@ final class RVP_PressureWavePass {
         boolean ready = depthReady;
         depthReady = false;
         if (shader == null || !ready) { return; }
-        RenderSystem.assertOnRenderThread();
-        // 调用状态作用域，在异常、窗口缩放和不同光影缓冲下都恢复调用前的 GL 状态。
-        try (State state = new State()) {
-            // 两阶段视口必须相同；窗口变化时跳过本帧，下一帧重新保存，不能临时读取已被改写的深度。
-            if (state.viewport[2] <= 0 || state.viewport[3] <= 0 || state.drawBuffers[0] == GL11.GL_NONE
-                    || !Arrays.equals(state.viewport, depthViewport)) { return; }
-            shader.setSampler("SceneColor", sceneColor);
-            shader.setSampler("SceneDepth", sceneDepth);
-            shader.safeGetUniform("InverseProjection").set(new Matrix4f(projection).invert());
-            shader.safeGetUniform("ViewToWorld").set(new Matrix3f(view).invert());
-            shader.safeGetUniform("ProjectionScale").set(projection.m00(), projection.m11());
-            shader.safeGetUniform("ScreenSize").set((float) width, (float) height);
-            GL30.glBindVertexArray(vertexArray);
-            // 调用双向状态同步，不能继承 DH 回调留下的错误引擎缓存。
-            RVP_GlStateSync.depthTest(false);
-            RVP_GlStateSync.depthMask(false);
-            RVP_GlStateSync.cull(false);
-            RVP_GlStateSync.scissor(true);
-            GL11.glDisable(GL11.GL_STENCIL_TEST);
-            RVP_GlStateSync.colorMask(true, true, true, true);
-            // 场景与深度使用各自纹理参数，不能沿用外部阴影比较或要求 mipmap 的采样器。
-            if (state.samplerSupported) {
-                GL33.glBindSampler(0, 0); GL33.glBindSampler(1, 0);
-            }
-            // 只写调用方正在显示的第一个颜色附件，不能污染光影的其它材质缓冲。
-            GL11.glDrawBuffer(state.drawBuffers[0]);
-            for (Wave wave : waves) {
-                // 调用范围裁剪，只在球体覆盖的屏幕部分积分；尊重调用方原有剪裁区域。
-                if (!state.scissor(wave.bounds)) { continue; }
-                // 每层都读取前一层合成后的颜色，重叠爆炸不会互相擦掉，深度仍共享同一份副本。
-                copyScene(sceneColor, state.viewport);
-                shader.safeGetUniform("CenterView").set(wave.center);
-                shader.safeGetUniform("Radii").set(wave.innerRadius, wave.outerRadius);
-                shader.safeGetUniform("Brightness").set(wave.brightness);
-                shader.safeGetUniform("LifeFade").set(wave.fade);
-                shader.safeGetUniform("Refraction").set(wave.refraction);
-                shader.safeGetUniform("Dispersion").set(wave.dispersion);
-                shader.safeGetUniform("Age").set(wave.age);
-                shader.safeGetUniform("NoiseOrigin").set(wave.noiseOrigin);
-                shader.apply();
-                try {
-                    // 输出的是已包含原背景的最终颜色，关闭混合，避免把背景重复叠亮。
-                    // 调用强制同步，确保完整背景不会在残留减法混合下被减成黑色。
-                    RVP_GlStateSync.blend(false);
-                    GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 3);
-                } finally {
-                    shader.clear();
+        // 调用通用性能范围，默认关闭时不申请显卡查询；所有提前返回和异常均自动封口。
+        try (var performance = RVP_RenderPerformance.scope(RVP_RenderStage.PRESSURE)) {
+            RenderSystem.assertOnRenderThread();
+            // 调用状态作用域，在异常、窗口缩放和不同光影缓冲下都恢复调用前的 GL 状态。
+            try (State state = new State()) {
+                // 两阶段视口必须相同；窗口变化时跳过本帧，下一帧重新保存，不能临时读取已被改写的深度。
+                if (state.viewport[2] <= 0 || state.viewport[3] <= 0 || state.drawBuffers[0] == GL11.GL_NONE
+                        || !Arrays.equals(state.viewport, depthViewport)) { return; }
+                shader.setSampler("SceneColor", sceneColor);
+                shader.setSampler("SceneDepth", sceneDepth);
+                shader.safeGetUniform("InverseProjection").set(new Matrix4f(projection).invert());
+                shader.safeGetUniform("ViewToWorld").set(new Matrix3f(view).invert());
+                shader.safeGetUniform("ProjectionScale").set(projection.m00(), projection.m11());
+                shader.safeGetUniform("ScreenSize").set((float) width, (float) height);
+                GL30.glBindVertexArray(vertexArray);
+                // 调用双向状态同步，不能继承 DH 回调留下的错误引擎缓存。
+                RVP_GlStateSync.depthTest(false);
+                RVP_GlStateSync.depthMask(false);
+                RVP_GlStateSync.cull(false);
+                RVP_GlStateSync.scissor(true);
+                GL11.glDisable(GL11.GL_STENCIL_TEST);
+                RVP_GlStateSync.colorMask(true, true, true, true);
+                // 场景与深度使用各自纹理参数，不能沿用外部阴影比较或要求 mipmap 的采样器。
+                if (state.samplerSupported) {
+                    GL33.glBindSampler(0, 0); GL33.glBindSampler(1, 0);
+                }
+                // 只写调用方正在显示的第一个颜色附件，不能污染光影的其它材质缓冲。
+                GL11.glDrawBuffer(state.drawBuffers[0]);
+                for (Wave wave : waves) {
+                    // 调用范围裁剪，只在球体覆盖的屏幕部分积分；尊重调用方原有剪裁区域。
+                    if (!state.scissor(wave.bounds)) { continue; }
+                    // 每层都读取前一层合成后的颜色，重叠爆炸不会互相擦掉，深度仍共享同一份副本。
+                    copyScene(sceneColor, state.viewport);
+                    // 每个空气层都刷新RGBA16F背景，单独累计复制量。
+                    RVP_RenderPerformance.copy(width, height, 8);
+                    RVP_RenderPerformance.add(RVP_RenderMetric.ITEMS, 1);
+                    shader.safeGetUniform("CenterView").set(wave.center);
+                    shader.safeGetUniform("Radii").set(wave.innerRadius, wave.outerRadius);
+                    shader.safeGetUniform("Brightness").set(wave.brightness);
+                    shader.safeGetUniform("LifeFade").set(wave.fade);
+                    shader.safeGetUniform("Refraction").set(wave.refraction);
+                    shader.safeGetUniform("Dispersion").set(wave.dispersion);
+                    shader.safeGetUniform("Age").set(wave.age);
+                    shader.safeGetUniform("NoiseOrigin").set(wave.noiseOrigin);
+                    shader.apply();
+                    try {
+                        // 输出的是已包含原背景的最终颜色，关闭混合，避免把背景重复叠亮。
+                        // 调用强制同步，确保完整背景不会在残留减法混合下被减成黑色。
+                        RVP_GlStateSync.blend(false);
+                        // 调用实际draw及波面屏幕矩形上界，当前空气程序固定8步正面积分。
+                        RVP_RenderPerformance.draw((long) Math.ceil((wave.bounds.right() - wave.bounds.left()) * 0.5 * width)
+                                * (long) Math.ceil((wave.bounds.top() - wave.bounds.bottom()) * 0.5 * height), 8);
+                        GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 3);
+                    } finally {
+                        shader.clear();
+                    }
                 }
             }
         }

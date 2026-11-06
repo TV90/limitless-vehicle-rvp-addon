@@ -1,5 +1,8 @@
 package org.ywzj.rvp.client.gui;
 
+import org.ywzj.rvp.client.performance.RVP_RenderMetric;
+import org.ywzj.rvp.client.performance.RVP_RenderStage;
+import org.ywzj.rvp.client.performance.RVP_RenderPerformance;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraftforge.api.distmarker.Dist;
@@ -40,29 +43,37 @@ public class RVP_NvgGuiFallback {
             return;
         }
         GuiGraphics graphics = event.getGuiGraphics();
-        int width = graphics.guiWidth();
-        int height = graphics.guiHeight();
-        graphics.fill(0, 0, width, height, TINT_COLOR);
+        // 调用通用性能范围，默认关闭时不申请显卡查询；所有提前返回和异常均自动封口。
+        try (var performance = RVP_RenderPerformance.gui(RVP_RenderStage.NIGHT_VISION_FALLBACK, graphics)) {
+            int width = graphics.guiWidth();
+            int height = graphics.guiHeight();
+            RVP_RenderPerformance.guiQuad(graphics, width, height);
+            graphics.fill(0, 0, width, height, TINT_COLOR);
 
-        // 四边暗角：越靠边越黑，中心保持通透
-        int stepX = Math.max(1, width / 40);
-        int stepY = Math.max(1, height / 40);
-        for (int i = 0; i < VIGNETTE_LAYERS; i++) {
-            int alpha = 0x10 - i;
-            if (alpha <= 0) {
-                break;
+            // 四边暗角：越靠边越黑，中心保持通透
+            int stepX = Math.max(1, width / 40);
+            int stepY = Math.max(1, height / 40);
+            for (int i = 0; i < VIGNETTE_LAYERS; i++) {
+                int alpha = 0x10 - i;
+                if (alpha <= 0) {
+                    break;
+                }
+                int argb = alpha << 24;
+                int insetX = i * stepX;
+                int insetY = i * stepY;
+                int bandX = Math.max(1, stepX);
+                int bandY = Math.max(1, stepY);
+                // 上下两条横带
+                RVP_RenderPerformance.guiQuad(graphics, width, bandY);
+                graphics.fill(0, insetY, width, insetY + bandY, argb);
+                RVP_RenderPerformance.guiQuad(graphics, width, bandY);
+                graphics.fill(0, height - insetY - bandY, width, height - insetY, argb);
+                // 左右两条竖带
+                RVP_RenderPerformance.guiQuad(graphics, bandX, height);
+                graphics.fill(insetX, 0, insetX + bandX, height, argb);
+                RVP_RenderPerformance.guiQuad(graphics, bandX, height);
+                graphics.fill(width - insetX - bandX, 0, width - insetX, height, argb);
             }
-            int argb = alpha << 24;
-            int insetX = i * stepX;
-            int insetY = i * stepY;
-            int bandX = Math.max(1, stepX);
-            int bandY = Math.max(1, stepY);
-            // 上下两条横带
-            graphics.fill(0, insetY, width, insetY + bandY, argb);
-            graphics.fill(0, height - insetY - bandY, width, height - insetY, argb);
-            // 左右两条竖带
-            graphics.fill(insetX, 0, insetX + bandX, height, argb);
-            graphics.fill(width - insetX - bandX, 0, width - insetX, height, argb);
         }
     }
 }

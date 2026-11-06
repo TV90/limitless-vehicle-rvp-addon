@@ -1,5 +1,8 @@
 package org.ywzj.rvp.client.shader;
 
+import org.ywzj.rvp.client.performance.RVP_RenderMetric;
+import org.ywzj.rvp.client.performance.RVP_RenderStage;
+import org.ywzj.rvp.client.performance.RVP_RenderPerformance;
 import com.mojang.logging.LogUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.PostChain;
@@ -65,7 +68,8 @@ public class TVMissileVideoPostHandler implements ResourceManagerReloadListener 
         }
         try {
             debugState("process:start");
-            bwChain.process(partialTick);
+            // 调用通用后处理计时，原处理链和步骤顺序保持不变。
+            RVP_RenderPerformance.post(RVP_RenderStage.TV_VIDEO, bwChain, partialTick, lastWidth, lastHeight);
             debugState("process:done");
         } catch (Exception e) {
             LOGGER.error("[RVP][TVMissile][BW] process failed", e);
