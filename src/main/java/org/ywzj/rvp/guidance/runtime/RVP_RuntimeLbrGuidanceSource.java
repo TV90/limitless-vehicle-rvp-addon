@@ -33,12 +33,25 @@ public final class RVP_RuntimeLbrGuidanceSource implements RVP_RuntimeGuidanceSo
         WeaponUnit shooterUnit = context.projectile().getShooterWeaponUnit();
         // 调用本项目武器站解析，确保 parent_weapon_unit_aim 子站使用根炮塔作为驾束起点。
         WeaponUnit aimUnit = RVP_CommandGuidanceAim.resolveOperatorAimUnit(shooterUnit);
-        Vec3 beamOrigin = aimUnit != null ? aimUnit.worldPivotPosition() : Vec3.ZERO;
         // 调用本项目同步瞄准会话，以不含车体局部角瞬态的世界点建立 LBR 驾束。
         Vec3 synchronizedAimPoint = RVP_SaclosDesignation.resolveSynchronizedOperatorPoint(
                 context.projectile());
-        Vec3 beamDir = RVP_CommandGuidanceAim.operatorAimDirection(
-                shooterUnit, beamOrigin, synchronizedAimPoint);
+        // 从导弹实际出膛的炮口起束：炮口在炮管轴线上，与 worldVec() 同轴；而
+        // worldPivotPosition() 是座圈枢轴（ZTZ99B 比炮闩低约 0.35 格），从座圈沿炮轴
+        // 发出的光束会整体压低，弹体出膛后还要先下压入束。炮口不可用时才回退枢轴。
+        Vec3 beamOrigin = context.projectile().rvp$resolveBeamOrigin();
+        if (beamOrigin.lengthSqr() <= 1.0E-6) {
+            beamOrigin = aimUnit != null ? aimUnit.worldPivotPosition() : Vec3.ZERO;
+        }
+        // 无操作手同步点时用这发弹实际出膛的炮轴建束：worldVec() 不含炮管骨自带基准俯仰，
+        // ZTZ99B 的 turret_barrel 带 2.4° 基准角，沿 worldVec() 建束会比真实炮轴低 2.4°。
+        Vec3 beamDir = synchronizedAimPoint == null
+                ? context.projectile().rvp$resolveBeamDirection()
+                : null;
+        if (beamDir == null) {
+            beamDir = RVP_CommandGuidanceAim.operatorAimDirection(
+                    shooterUnit, beamOrigin, synchronizedAimPoint);
+        }
         if (beamDir == null || beamDir.lengthSqr() <= 1.0E-6) {
             return RVP_GuidanceIntent.failed(RVP_EnumGuidanceType.LBR);
         }

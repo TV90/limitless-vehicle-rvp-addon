@@ -26,8 +26,8 @@ import org.jetbrains.annotations.Nullable;
  * @param interceptRadius     拦截球半径（格），目标位置周围（默认 8）
  * @param ammoMax             弹药上限；0 = 模块未启用（默认 0）
  * @param reloadOneTick       每发装填所需 tick（默认 600）
- * @param cooldownTick        拦截后冷却 tick（默认 20）
- * @param interceptDelayTick  锁定到拦截的延迟 tick，0 = 立即（默认 0）
+ * @param cooldownTick        拦截后的拦截间隔 tick（默认 20；2026-11-06 所有 APS 统一）
+ * @param interceptDelayTick  锁定到拦截的延迟 tick，0 = 立即（默认 2；2026-11-06 所有 APS 统一）
  * @param scanIntervalTick    扫描节流间隔 tick（默认 10）
  * @param projectileSpeedMin  可拦截弹体速度下限（默认 1.0）
  * @param projectileSpeedMax  可拦截弹体速度上限（默认 80.0）
@@ -79,7 +79,8 @@ public record BoneApsConfig(
         int ammoMax = Math.max(0, GsonHelper.getAsInt(obj, "ammo_max", 0));
         int reloadOneTick = Math.max(1, GsonHelper.getAsInt(obj, "reload_one_tick", 600));
         int cooldownTick = Math.max(1, GsonHelper.getAsInt(obj, "cooldown_tick", 20));
-        int interceptDelayTick = Math.max(0, GsonHelper.getAsInt(obj, "intercept_delay_tick", 0));
+        // 2026-11-06 用户定版：所有 APS 统一 2 tick 拦截延迟（缺省值同步改为 2）
+        int interceptDelayTick = Math.max(0, GsonHelper.getAsInt(obj, "intercept_delay_tick", 2));
         int scanIntervalTick = Math.max(1, GsonHelper.getAsInt(obj, "scan_interval_tick", 10));
         double speedMin = Math.max(0.0, GsonHelper.getAsDouble(obj, "projectile_speed_min", 1.0));
         double speedMax = GsonHelper.getAsDouble(obj, "projectile_speed_max", 80.0);

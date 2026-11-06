@@ -61,11 +61,26 @@ public final class RVP_RuntimeSaclosGuidanceSource implements RVP_RuntimeGuidanc
         WeaponUnit shooterUnit = projectile.getShooterWeaponUnit();
         // 调用本项目武器站解析，保证世界瞄准点始终从真正承载操作手视轴的根炮塔发出。
         WeaponUnit aimUnit = RVP_CommandGuidanceAim.resolveOperatorAimUnit(shooterUnit);
-        Vec3 beamOrigin = aimUnit != null ? aimUnit.worldPivotPosition() : Vec3.ZERO;
         // 调用本项目同步瞄准会话，避免服务端稳定器放弃补偿时把车体 yaw 混入 SACLOS 指令。
         Vec3 synchronizedAimPoint = RVP_SaclosDesignation.resolveSynchronizedOperatorPoint(projectile);
-        Vec3 direction = RVP_CommandGuidanceAim.operatorAimDirection(
-                shooterUnit, beamOrigin, synchronizedAimPoint);
+        // 有同步瞄准点时从导弹实际出膛的炮口起束：弹体第一 tick 就落在束轴上；
+        // 无同步点仍用枢轴，保持炮轴回退光束穿过瞄准点。
+        Vec3 beamOrigin = aimUnit != null ? aimUnit.worldPivotPosition() : Vec3.ZERO;
+        if (synchronizedAimPoint != null) {
+            Vec3 muzzle = projectile.rvp$resolveBeamOrigin();
+            if (muzzle.lengthSqr() > 1.0E-6) {
+                beamOrigin = muzzle;
+            }
+        }
+        // 无操作手同步点时用这发弹实际出膛的炮轴建束：worldVec() 不含炮管骨自带基准俯仰，
+        // ZTZ99B 的 turret_barrel 带 2.4° 基准角，沿 worldVec() 建束会比真实炮轴低 2.4°。
+        Vec3 direction = synchronizedAimPoint == null
+                ? projectile.rvp$resolveBeamDirection()
+                : null;
+        if (direction == null) {
+            direction = RVP_CommandGuidanceAim.operatorAimDirection(
+                    shooterUnit, beamOrigin, synchronizedAimPoint);
+        }
         if (direction == null || direction.lengthSqr() <= 1.0E-6) {
             resetSaclosState(projectile);
             return RVP_GuidanceIntent.failed(RVP_EnumGuidanceType.SACLOS);

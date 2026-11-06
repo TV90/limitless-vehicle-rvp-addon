@@ -83,6 +83,8 @@ public final class RVP_GunnerWeaponActions {
         if (!launcher) {
             // 调用本项目 STABLE 资格与机炮求解入口，在机炮通过资格时用弹道预瞄覆盖旧目标点。
             applyStableMachinegunAim(weaponUnit, selectedWeapon, target);
+            // 架束/激光/指令线制导：炮塔瞄准目标炮管 OBB，抬高瞄准线，避免 LBR/SACLOS 压到地面。
+            aimOperatorGuidedBarrel(weaponUnit, selectedWeapon, target, profile);
         }
         boolean rvpMissile = isRvpHomingMissile(weaponUnit, selectedWeapon);
         boolean selfGuided = isSelfGuidedMissile(weaponUnit, selectedWeapon);
@@ -115,9 +117,11 @@ public final class RVP_GunnerWeaponActions {
             return RVP_GunnerActionResult.GATED;
         }
 
-        // 炮塔对准窗口：仅对非制导武器（机炮等）要求对准。RVP 制导武器发射后自行转向目标，
-        // 不受炮塔旋转角度限制（垂发车辆本就跳过该检查）。
-        if (!launcher && !rvpMissile) {
+        // 炮塔对准窗口：非制导武器与架束/激光/指令线制导都要求炮口已对准目标。
+        // 后三类沿炮塔实际轴向建立光束/视线，炮塔未转到位就发射会直接沿低指向飞向地面；
+        // IR/ARH 等发射后自主转向的导弹仍跳过该检查（垂发车辆本就跳过）。
+        boolean operatorGuided = isOperatorGuidedWeapon(weaponUnit, selectedWeapon);
+        if (!launcher && (!rvpMissile || operatorGuided)) {
             float xError = Math.abs(Mth.wrapDegrees(weaponUnit.getXRot() - weaponUnit.getXAimRot()));
             float yError = Math.abs(Mth.wrapDegrees(weaponUnit.getYRot() - weaponUnit.getYAimRot()));
             if (xError > profile.getFireWindowDeg() || yError > profile.getFireWindowDeg()) {
@@ -263,6 +267,41 @@ public final class RVP_GunnerWeaponActions {
         return true;
     }
 
+    /**
+     * 架束/激光/指令线制导武器瞄准目标炮管 OBB。
+     *
+     * <p>这三类武器由炮塔实际轴向或操作手瞄准点驾驶，目标取车体中心时炮口/光束
+     * 容易压向地面；改为瞄准炮管 OBB 中心可抬高瞄准线。非上述制导武器不做覆盖。</p>
+     */
+    private static void aimOperatorGuidedBarrel(WeaponUnit weaponUnit,
+                                                AbstractVehicleWeapon<?> rawWeapon,
+                                                Entity target,
+                                                GunnerProfile profile) {
+        if (!isOperatorGuidedWeapon(weaponUnit, rawWeapon)) {
+            return;
+        }
+        // 提前量与普通瞄准口径一致：炮管点 + 距离缩放速度提前 + profile 附加提前。
+        // 只瞄炮管当前位置会让光束/视线落后移动目标，导弹沿滞后光束扎到目标后方地面。
+        Vec3 barrelPoint = GunnerTargeting.predictBarrelAimPoint(
+                        weaponUnit.worldPivotPosition(), target)
+                .add(target.getDeltaMovement().scale(Math.max(0.0, profile.getLeadScale() - 1.0)));
+        // 调用本体武器站瞄准 API，把炮塔/发射架指向目标炮管 OBB 的预测位置。
+        weaponUnit.aim(barrelPoint);
+    }
+
+    /** 当前选弹是否属于架束/激光/指令线制导（需要炮塔/发射架持续提供瞄准线）。 */
+    private static boolean isOperatorGuidedWeapon(WeaponUnit weaponUnit,
+                                                  AbstractVehicleWeapon<?> rawWeapon) {
+        // 调用本体代理解析与本项目解包器，取得本次 Gunner 选弹对应的实际 RVP 武器。
+        AbstractVehicleWeapon<?> weapon = RVP_WeaponResolveHelper.unwrap(
+                weaponUnit.proxyWeapon(rawWeapon));
+        if (!(weapon instanceof RVP_WeaponBase rvpWeapon)) {
+            return false;
+        }
+        RVP_WeaponData data = rvpWeapon.getData();
+        return data != null && data.isOperatorGuided();
+    }
+
     /** 尝试由本体式反制武器瞄准并拦截危险弹药。 */
     public RVP_GunnerActionResult fireCountermeasure(GunnerEntity gunner,
                                                      AbstractVehicle vehicle,
@@ -364,6 +403,30 @@ public final class RVP_GunnerWeaponActions {
             }
         }
         return false;
+    }
+
+    /**
+     * 武器站是否处于"换弹窗口"（2026-11-06 用户定版）：所有仍有弹的作战武器都在装填/补弹，
+     * 没有可立即开火的武器；反制武器与无弹武器不参与判断。
+     *
+     * <p>供地面 gunner 的战术倒车使用——主战武器装填期间倒车拉开距离，保持正面装甲对敌。</p>
+     */
+    public boolean isCombatReloading(@Nullable WeaponUnit weaponUnit) {
+        if (weaponUnit == null) {
+            return false;
+        }
+        boolean reloading = false;
+        for (AbstractVehicleWeapon<?> rawWeapon : weaponUnit.getIndexedWeapons()) {
+            AbstractVehicleWeapon<?> weapon = weaponUnit.proxyWeapon(rawWeapon);
+            if (isCountermeasureWeapon(weapon) || !weapon.hasAmmo()) {
+                continue;
+            }
+            if (!weapon.isReloading()) {
+                return false;
+            }
+            reloading = true;
+        }
+        return reloading;
     }
 
     /** 供调试监控只读查询当前会选择的武器索引。 */

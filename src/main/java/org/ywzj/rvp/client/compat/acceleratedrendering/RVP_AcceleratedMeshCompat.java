@@ -26,6 +26,10 @@ public final class RVP_AcceleratedMeshCompat {
     public interface ConsumerWrapper {
         /** 保留原消费者的绘制语义，只调整达到阈值的 mesh 提交策略。 */
         VertexConsumer wrap(VertexConsumer consumer, int minVertices);
+        /** dense 仍按原阈值，共享几何可单独放开到更小的 mesh（弹药 display）。 */
+        default VertexConsumer wrap(VertexConsumer consumer, int minVertices, int sharedMinVertices) {
+            return wrap(consumer, minVertices);
+        }
         /** 只认可不增加材质/顶点语义的 AR GUI 包装，未知包装一律不旁路。 */
         default boolean isPanelSource(MultiBufferSource source, MultiBufferSource expected) { return false; }
     }
@@ -36,23 +40,32 @@ public final class RVP_AcceleratedMeshCompat {
     public static MultiBufferSource wrapOpaqueMeshSource(MultiBufferSource source,
                                                          ResourceLocation texture,
                                                          int largestMeshVertices) {
+        return wrapOpaqueMeshSource(source, texture, largestMeshVertices, false);
+    }
+
+    /** 弹药 display 传入 unconditionalShared，共享几何不再受顶点阈值限制；dense 仍用原阈值。 */
+    public static MultiBufferSource wrapOpaqueMeshSource(MultiBufferSource source,
+                                                         ResourceLocation texture,
+                                                         int largestMeshVertices,
+                                                         boolean unconditionalShared) {
         // 调用本项目客户端配置，允许用户独立关闭 dense 优化作 A/B 对照。
         if (texture == null || !RVP_ClientConfig.isAcceleratedDenseMeshEnabled()) {
             return source;
         }
         int minVertices = RVP_ClientConfig.getAcceleratedDenseMinVertices();
-        if (largestMeshVertices < minVertices) {
+        if (!unconditionalShared && largestMeshVertices < minVertices) {
             return source;
         }
         ConsumerWrapper active = getWrapper();
         if (active == null) {
             return source;
         }
+        int sharedMinVertices = unconditionalShared ? 0 : minVertices;
         // 调用现有 RenderType 获取同一材质实例，不包装透明、双面、热成像或特殊骨通道。
         RenderType cutoutMesh = RVP_RenderTypes.polyMeshCutout(texture);
         return type -> {
             VertexConsumer original = source.getBuffer(type);
-            return type == cutoutMesh ? active.wrap(original, minVertices) : original;
+            return type == cutoutMesh ? active.wrap(original, minVertices, sharedMinVertices) : original;
         };
     }
 

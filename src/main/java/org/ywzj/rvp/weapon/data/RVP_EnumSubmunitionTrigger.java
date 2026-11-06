@@ -23,7 +23,13 @@ public enum RVP_EnumSubmunitionTrigger {
     ON_ENTITY_HIT,
 
     /** Timed / proximity / airburst / life-end fuse detonation (before parent explosion). */
-    ON_FUSE;
+    ON_FUSE,
+
+    /**
+     * [RVP] APS / 弹间硬杀伤拦截后（2026-11-06 用户定版）：母弹药被拦截引爆前触发，
+     * 子体按母弹当前速度方向释放并继承其速度——拦截后子弹药仍沿原弹道继续飞行。
+     */
+    ON_APS_INTERCEPT;
 
     public static RVP_EnumSubmunitionTrigger fromString(String raw) {
         if (raw == null || raw.isBlank()) {
@@ -37,6 +43,7 @@ public enum RVP_EnumSubmunitionTrigger {
             case "on_penetrate", "penetrate", "penetration", "after_penetration" -> ON_PENETRATE;
             case "on_entity_hit", "entity", "entity_hit" -> ON_ENTITY_HIT;
             case "on_fuse", "fuse", "detonate" -> ON_FUSE;
+            case "on_aps_intercept", "aps_intercept", "on_aps" -> ON_APS_INTERCEPT;
             default -> IN_FLIGHT;
         };
     }

@@ -3,8 +3,10 @@ package org.ywzj.rvp.util;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
+import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.structure.VehicleCubeOBB;
 
 import java.util.ArrayList;
@@ -80,6 +82,58 @@ public final class RVP_AimPointResolver {
     public static Vec3 resolveLargestObbCenter(Entity target) {
         Vec3 fallback = target == null ? Vec3.ZERO : target.getBoundingBox().getCenter();
         return resolveLargestObbCenter(target, fallback);
+    }
+
+    /**
+     * [RVP] 炮管 OBB 中心（2026-11-06 用户定版）：架束 / 激光 / 指令线制导的 AI 瞄准点。
+     *
+     * <p>取目标武器站炮管组（本体约定 {@code structure_bone + "_barrel"}）中体积最大的
+     * cube，即主炮管中心；炮管通常位于炮塔高度，比车体中心更高，可避免 LBR/SACLOS 的
+     * 瞄准线压到地面。若炮管中心反而低于最大 OBB 中心（如直升机机炮位于机腹下方），
+     * 回退最大 OBB 中心，保证瞄准点只会抬高不会压低。</p>
+     *
+     * <p>非载具、广播克隆、无武器站炮管组时回退最大 OBB 中心；与
+     * {@link #resolveLargestObbCenter} 的回退口径一致。</p>
+     */
+    public static Vec3 resolveBarrelObbCenter(Entity target) {
+        Vec3 fallback = target == null ? Vec3.ZERO : target.getBoundingBox().getCenter();
+        return resolveBarrelObbCenter(target, fallback);
+    }
+
+    /** 带显式回退点的炮管 OBB 中心解析，规则见 {@link #resolveBarrelObbCenter(Entity)}。 */
+    public static Vec3 resolveBarrelObbCenter(Entity target, Vec3 fallback) {
+        if (!(target instanceof AbstractVehicle vehicle) || vehicle.isRemoved()
+                // 调用安全桥，仅为 RVP 已更新完整几何的显示代理解除 remote 回退。
+                || vehicle.remote && !org.ywzj.rvp.client.bridge.RVP_ClientActionsAccess.isRemoteVehicleTargetProxy(vehicle)) {
+            return fallback;
+        }
+        VehicleCubeOBB best = null;
+        double bestVolume = -1.0;
+        for (PartUnit<?> partUnit : vehicle.getPartUnits()) {
+            if (!(partUnit instanceof WeaponUnit weaponUnit) || partUnit.isDetached()) {
+                continue;
+            }
+            List<VehicleCubeOBB> cubes = weaponUnit.getPartCubeOBBs();
+            if (cubes == null) {
+                continue;
+            }
+            for (VehicleCubeOBB cube : cubes) {
+                // 调用命中系统的炮管组判定，与炮管命中盒共用同一组归属，避免复制骨层级逻辑。
+                if (cube == null || cube.volume() <= bestVolume
+                        || !RVP_VehicleHitboxFactorManager.isBarrelGroupCube(cube, weaponUnit)) {
+                    continue;
+                }
+                bestVolume = cube.volume();
+                best = cube;
+            }
+        }
+        if (best == null) {
+            return resolveLargestObbCenter(vehicle, fallback);
+        }
+        Vec3 barrel = centerOf(best);
+        Vec3 body = resolveLargestObbCenter(vehicle, fallback);
+        // 炮管低于车体时（直升机机炮等）退回车体中心，避免瞄准点被压低。
+        return barrel.y >= body.y ? barrel : body;
     }
 
     /**

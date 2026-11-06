@@ -43,7 +43,12 @@ public final class GunnerGuidedWeaponController {
             return;
         }
         Vec3 targetPoint = targetPoint(target);
-        updateDesignation(gunner, vehicle, weaponUnit, targetPoint, observations);
+        // 架束/激光/指令线制导的照射点改用炮管 OBB 的预测位置：抬高瞄准线避免砸地，
+        // 同时带上目标速度提前量，避免光束落后移动目标、导弹落在目标后方地面。
+        Vec3 barrelPoint = targetPoint == null || weaponUnit == null
+                ? null
+                : GunnerTargeting.predictBarrelAimPoint(weaponUnit.worldPivotPosition(), target);
+        updateDesignation(gunner, vehicle, weaponUnit, targetPoint, barrelPoint, observations);
         updateGpsTarget(gunner, vehicle, weaponUnit, targetPoint);
         updateInFlightHitl(gunner, target, targetPoint, observations);
     }
@@ -74,9 +79,13 @@ public final class GunnerGuidedWeaponController {
         // 调用本项目火控资格解析器，判断本次选中的 SACLOS 弹是否请求硬锁 PIP 辅助。
         boolean stablePipAssist = RVP_GunnerFireControlPolicy.supportsStableSaclos(weaponUnit, rawWeapon);
         if (needsDesignation(data) || stablePipAssist) {
+            // 架束/激光/指令线制导的照射点取炮管 OBB 预测位置，其余制导沿用目标中心。
+            Vec3 designationPoint = data.isOperatorGuided()
+                    ? GunnerTargeting.predictBarrelAimPoint(weaponUnit.worldPivotPosition(), target)
+                    : targetPoint;
             // 调用本项目服务端照射会话，写入 Gunner 目标点及经服务端复核的 STABLE PIP 请求。
             RVP_SaclosOperatorSession.setDesignation(
-                    gunner.getUUID(), true, targetPoint, stablePipAssist);
+                    gunner.getUUID(), true, designationPoint, stablePipAssist);
         }
     }
 
@@ -84,6 +93,7 @@ public final class GunnerGuidedWeaponController {
                                           AbstractVehicle vehicle,
                                           @Nullable WeaponUnit weaponUnit,
                                           @Nullable Vec3 targetPoint,
+                                          @Nullable Vec3 barrelPoint,
                                           RVP_GunnerObservationService observations) {
         // 调用共享观察快照，先于目标/当前武器门控检查仍在飞行的 STABLE SACLOS 弹。
         InFlightStableSaclosState inFlightStableSaclos = findInFlightStableSaclos(observations);
@@ -125,9 +135,14 @@ public final class GunnerGuidedWeaponController {
             RVP_SaclosOperatorSession.setDesignation(gunner.getUUID(), false, null);
             return;
         }
+        // 架束/激光/指令线制导：照射点取目标炮管 OBB；其余制导保持目标中心。
+        RVP_WeaponData currentData = currentWeaponData(gunner, weaponUnit);
+        Vec3 designationPoint = currentData != null && currentData.isOperatorGuided() && barrelPoint != null
+                ? barrelPoint
+                : targetPoint;
         // 调用本项目服务端会话，每 tick 刷新目标点并仅在 Gunner SACLOS 资格有效时请求 PIP。
         RVP_SaclosOperatorSession.setDesignation(
-                gunner.getUUID(), true, targetPoint, currentStableSaclos || inFlightStableSaclos.active());
+                gunner.getUUID(), true, designationPoint, currentStableSaclos || inFlightStableSaclos.active());
     }
 
     private static void updateGpsTarget(GunnerEntity gunner,
@@ -227,6 +242,13 @@ public final class GunnerGuidedWeaponController {
         }
         RVP_WeaponData data = rvpWeapon.getData();
         return data != null && data.usesGuidanceType(type);
+    }
+
+    /** 当前受控武器的 RVP 数据；非 RVP 武器或空索引返回 null。 */
+    @Nullable
+    private static RVP_WeaponData currentWeaponData(@Nullable GunnerEntity gunner, WeaponUnit weaponUnit) {
+        AbstractVehicleWeapon<?> weapon = currentRvpWeapon(gunner, weaponUnit);
+        return weapon instanceof RVP_WeaponBase rvpWeapon ? rvpWeapon.getData() : null;
     }
 
     @Nullable

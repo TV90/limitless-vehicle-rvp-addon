@@ -316,7 +316,7 @@ class RVP_GunnerBehaviorBaselineTest {
                 "阶段 D 行为不得直接应用 ControlUnit");
 
         // 数值算法迁入生产共享策略后，基线冻结真实行为的转发边界；具体时序由策略测试验证。
-        assertContainsAll(launcher, "RVP_GunnerGroundPolicy.launcher(", "hasAnyAmmo(vehicle)", "groundSettings(profile)");
+        assertContainsAll(launcher, "RVP_GunnerGroundPolicy.launcher(", "hasAnyAmmo(vehicle)", "launcherSettings(profile)");
         assertContainsAll(ground, "RVP_GunnerGroundPolicy.engage(", "groundRandom(gunner)");
         assertContainsAll(recovery, "RVP_GunnerGroundPolicy.recover(", "if (result == null) return;",
                 "RVP_GunnerBehaviorIntent.Kind.MOVEMENT", "copyGroundCommand(result, command)");
@@ -397,12 +397,13 @@ class RVP_GunnerBehaviorBaselineTest {
                 "RVP_EcmActiveManager.tryFireForVehicle(vehicle)");
 
         assertOrdered(guidance,
-                "updateDesignation(gunner, vehicle, weaponUnit, targetPoint, observations);",
+                "updateDesignation(gunner, vehicle, weaponUnit, targetPoint, barrelPoint, observations);",
                 "updateGpsTarget(gunner, vehicle, weaponUnit, targetPoint);",
                 "updateInFlightHitl(gunner, target, targetPoint, observations);");
         assertContainsAll(guidance,
                 "GPSTargetManager.set",
                 "RVP_SaclosOperatorSession.setDesignation",
+                "GunnerTargeting.predictBarrelAimPoint(",
                 "missile.rvp$setHitlDesignatedEntity(target);",
                 "missile.rvp$setHitlSteeringInput",
                 "private static final double HITL_CONTROL_SEARCH_RANGE = 4096.0D;");

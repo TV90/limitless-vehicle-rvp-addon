@@ -181,7 +181,7 @@ public final class RVP_GunnerSimulation {
         var in = new Input((long) tick - a.config.spawnTick + 1, new Point(a.position[0], a.position[2]), (float) a.yaw,
                 -Math.sin(Math.toRadians(a.yaw)), Math.cos(Math.toRadians(a.yaw)),
                 a.target == null ? null : new Point(a.target.position[0], a.target.position[2]),
-                true, a.config.mode.equals("launcher"), ammo(a, tick));
+                !ammo(a, tick), a.config.mode.equals("launcher"), ammo(a, tick));
         List<RVP_GunnerBehaviorIntent> intents = new ArrayList<>();
         Map<String, Command> commands = new LinkedHashMap<>();
         // 调用各独立行为状态推进；战术计时不会因为本刻无敌而暂停。

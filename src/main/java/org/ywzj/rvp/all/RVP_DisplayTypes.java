@@ -12,6 +12,7 @@ import org.ywzj.rvp.client.resource.vehicle.RVP_RotaryWingVehicleDisplay;
 import org.ywzj.rvp.client.resource.vehicle.RVP_SimpleVehicleDisplay;
 import org.ywzj.rvp.client.resource.vehicle.RVP_TrackedVehicleDisplay;
 import org.ywzj.rvp.client.resource.vehicle.RVP_TrackedVehicleDisplayPojo;
+import org.ywzj.rvp.client.resource.vehicle.RVP_WeaponDisplay;
 import org.ywzj.rvp.client.resource.vehicle.RVP_WheeledVehicleDisplay;
 import org.ywzj.vehicle.all.ModRegistries;
 import org.ywzj.vehicle.client.render.animation.context.AnimationContextFactory;
@@ -29,9 +30,9 @@ public final class RVP_DisplayTypes {
             AnimationContextFactory.vehicle()
     );
 
-    public static final RegistryObject<VehicleDisplayType<RVP_BaseDisplay>> WEAPON = register(
+    public static final RegistryObject<VehicleDisplayType<RVP_WeaponDisplay>> WEAPON = register(
             "weapon",
-            json -> new RVP_BaseDisplay(GsonUtil.GSON.fromJson(json, RVP_BaseDisplayPojo.class)),
+            json -> new RVP_WeaponDisplay(GsonUtil.GSON.fromJson(json, RVP_BaseDisplayPojo.class)),
             null
     );
 

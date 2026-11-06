@@ -81,7 +81,7 @@ public final class RVP_RuntimeArmGuidanceSource implements RVP_RuntimeGuidanceSo
                     ? context.active().armMemoryTick()
                     : AntiRadiationSeekerHelper.getDefaultMemoryTick(best.radarUnit());
             projectile.setAntiRadiationMemoryLeftTick(memory);
-            Vec3 aimPoint = resolveEmitterAimPoint(best);
+            Vec3 aimPoint = resolveEmitterAimPoint(projectile, best);
             projectile.setTargetPos(aimPoint);
             projectile.rememberGuidancePos(aimPoint);
             // [RVP] 目的：咬住预选雷达时刷新"预选最后已知位置"，供独占窗口内预选不可见时追踪；
@@ -138,11 +138,26 @@ public final class RVP_RuntimeArmGuidanceSource implements RVP_RuntimeGuidanceSo
      * 中心——用户明确"锁其中一块、多块雷达 OBB 不取平均点"。选块按 OBB 尺寸体积（extents
      * 为半尺寸，旋转不改变形状），同一雷达骨的块集合由结构模型决定、顺序稳定 → "最大块"
      * 是确定性结果，每 tick 重选零抖动，无需弹上锁存。
+     * <p>无近炸的 ARM（{@code proximity_radius <= 0}）改锁目标**最大机体 OBB** 中心
+     * （{@link org.ywzj.rvp.util.RVP_AimPointResolver#resolveLargestObbCenter}）：这类弹
+     * 只有直击一条命中路径，瞄雷达骨会因末段偏差从车体上方掠过；有近炸的 ARM 维持锁雷达骨。</p>
      * <p>回退：ECM 伪脉冲（radarUnit=null，radarIndex=-1）无真实雷达骨 / 目标车不可用 /
      * 雷达骨无 OBB 配置 → 维持现状雷达 pivot（{@code emitter.position()} =
      * worldRadarPosition）。</p>
      */
-    private static Vec3 resolveEmitterAimPoint(AntiRadiationSeekerHelper.AntiRadiationEmitter emitter) {
+    private static Vec3 resolveEmitterAimPoint(RVP_BaseBullet projectile,
+                                               AntiRadiationSeekerHelper.AntiRadiationEmitter emitter) {
+        if (emitter.vehicle() != null && !emitter.vehicle().isRemoved()) {
+            // [RVP] 无近炸 ARM 只有直击一条路：锁最大机体 OBB（全武器统一的 §46 瞄准点），
+            // 不再瞄雷达骨——雷达骨偏上时末段会从车体上方掠过且没有近炸兜底。
+            // 有近炸 ARM 维持锁雷达骨最大 OBB，由近炸兜住末段偏差并优先毁伤雷达。
+            boolean hasProximityFuse = projectile.getRvpData() != null
+                    && projectile.getRvpData().getProximityFuseDist() > 0f;
+            if (!hasProximityFuse) {
+                return org.ywzj.rvp.util.RVP_AimPointResolver
+                        .resolveLargestObbCenter(emitter.vehicle(), emitter.position());
+            }
+        }
         if (emitter.radarUnit() != null && emitter.vehicle() != null
                 && !emitter.vehicle().isRemoved()) {
             List<org.ywzj.vehicle.vehicle.structure.OBB> obbs =

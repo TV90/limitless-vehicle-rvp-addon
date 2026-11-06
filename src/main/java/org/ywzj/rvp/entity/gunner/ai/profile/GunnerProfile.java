@@ -37,7 +37,9 @@ public final class GunnerProfile {
     /** 两轮 burst 间歇，单位 tick。 */ private int burstRestTick = 10;
     /** 本体式反制武器搜索半径，单位格。 */ private double countermeasureRange = 36.0;
     /** 本体式反制武器释放冷却，单位 tick。 */ private int countermeasureCooldownTick = 80;
-    /** 地面接敌与发射架停车距离，单位格。 */ private double driveStopDistance = 12.0;
+    /** 地面接敌停车距离，单位格。 */ private double driveStopDistance = 60.0;
+    /** 发射架定位停车距离，单位格；与地面接敌分开，避免两行为写同一字段互相覆盖。 */
+    private double launcherStopDistance = 12.0;
     /** 卡住位移检查间隔，单位 tick。 */ private int driveStuckCheckTick = 20;
     /** 判定卡住的最大位移，单位格。 */ private double driveStuckDistance = 1.0;
     /** 倒车脱困持续时间，单位 tick。 */ private int driveRecoveryTick = 20;
@@ -131,6 +133,12 @@ public final class GunnerProfile {
         groundEvadeTickMin = evadeMin;
         groundEvadeTickMax = evadeMax;
         groundEvadeYawDeg = evadeYawDeg;
+        return this;
+    }
+
+    /** 发射架定位只使用自己的停车距离，其余机动数值沿用地面接敌参数视图。 */
+    public GunnerProfile launcherPositioning(double stopDistance) {
+        launcherStopDistance = stopDistance;
         return this;
     }
 
@@ -240,6 +248,7 @@ public final class GunnerProfile {
     public double getCountermeasureRange() { return countermeasureRange; }
     public int getCountermeasureCooldownTick() { return countermeasureCooldownTick; }
     public double getDriveStopDistance() { return driveStopDistance; }
+    public double getLauncherStopDistance() { return launcherStopDistance; }
     public int getDriveStuckCheckTick() { return driveStuckCheckTick; }
     public double getDriveStuckDistance() { return driveStuckDistance; }
     public int getDriveRecoveryTick() { return driveRecoveryTick; }

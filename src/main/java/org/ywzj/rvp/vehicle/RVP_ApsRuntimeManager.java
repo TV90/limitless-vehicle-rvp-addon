@@ -407,7 +407,10 @@ public final class RVP_ApsRuntimeManager {
             return false;
         }
 
-        Vec3 spawnPos = spawnWeaponUnit.worldCurrentBoltPosition();
+        // 本体 worldCurrentBoltPosition() 不判空 xTurnGroup；结构未就绪的发射站会 NPE，退回枢轴。
+        Vec3 spawnPos = spawnWeaponUnit.xTurnGroup != null
+                ? spawnWeaponUnit.worldCurrentBoltPosition()
+                : spawnWeaponUnit.worldPivotPosition();
         Vec3 interceptCenter = target.position();
         boolean intercepted = interceptProjectiles(vehicle, config, interceptCenter);
         if (!intercepted) {

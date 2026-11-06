@@ -106,13 +106,13 @@ public final class RVP_GunnerProfileCompiler {
                     decimal(config, "range", 36.0, 0.0, 4096.0, path),
                     integer(config, "cooldown_tick", 80, 0, 72000, path));
             case "ground_engagement_move" -> view.groundEngagement(
-                    decimal(config, "stop_distance", 12.0, 0.0, 1024.0, path),
+                    decimal(config, "stop_distance", 60.0, 0.0, 1024.0, path),
                     integer(config, "hold_tick", 100, 0, 72000, path),
                     integer(config, "evade_tick_min", 140, 0, 72000, path),
                     integer(config, "evade_tick_max", 280, 0, 72000, path),
                     (float) decimal(config, "evade_yaw_deg", 55.0, 0.0, 180.0, path));
-            case "launcher_positioning" -> view.groundEngagement(
-                    decimal(config, "stop_distance", 12.0, 0.0, 1024.0, path), 100, 140, 280, 55.0F);
+            case "launcher_positioning" -> view.launcherPositioning(
+                    decimal(config, "stop_distance", 12.0, 0.0, 1024.0, path));
             case "smoke_evasion" -> view.smoke(
                     integer(config, "scan_interval_tick", 10, 1, 1200, path),
                     integer(config, "hold_tick", 260, 1, 72000, path),

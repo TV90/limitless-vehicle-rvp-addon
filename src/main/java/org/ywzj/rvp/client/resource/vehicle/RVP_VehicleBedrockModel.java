@@ -39,6 +39,8 @@ public class RVP_VehicleBedrockModel extends VehicleBedrockModel {
     private BakedBedrockModel panelMeshModel;
     /** 与本体同规则筛出的特殊骨；主体绘制时隐藏，随后仍交给本体独立材质通道。 */
     private int[] specialBoneIndices;
+    /** 弹药/武器 display：同屏大量重复模型，共享 mesh 不再按顶点阈值筛选。 */
+    private final boolean unconditionalSharedMesh;
 
     public RVP_VehicleBedrockModel(BedrockModelPOJO pojo, List<SpecialBoneEffect> specialBoneEffects) {
         this(pojo, specialBoneEffects, null);
@@ -47,7 +49,15 @@ public class RVP_VehicleBedrockModel extends VehicleBedrockModel {
     public RVP_VehicleBedrockModel(BedrockModelPOJO pojo,
                                    List<SpecialBoneEffect> specialBoneEffects,
                                    BakerOptions bakerOptions) {
+        this(pojo, specialBoneEffects, bakerOptions, false);
+    }
+
+    public RVP_VehicleBedrockModel(BedrockModelPOJO pojo,
+                                   List<SpecialBoneEffect> specialBoneEffects,
+                                   BakerOptions bakerOptions,
+                                   boolean unconditionalSharedMesh) {
         super(pojo, specialBoneEffects, bakerOptions);
+        this.unconditionalSharedMesh = unconditionalSharedMesh;
         this.effects = specialBoneEffects == null ? List.of() : List.copyOf(specialBoneEffects);
         int largest = 0;
         // 调用本体的 baked 模型入口，只读取静态几何规模，不改骨架、可见性或缓存。
@@ -70,13 +80,14 @@ public class RVP_VehicleBedrockModel extends VehicleBedrockModel {
         // 调用显式展板窗口；不改 AR 阶段标记，非标准缓冲与其它界面保持原提交语义。
         if (panelMeshPass != null && texture != null && RVP_HitPanelMesh.accepts(source)
                 && RVP_SharedOpaqueMesh.isEnabled()
-                && largestMeshVertexCount >= RVP_ClientConfig.getAcceleratedDenseMinVertices()) {
+                && (unconditionalSharedMesh
+                || largestMeshVertexCount >= RVP_ClientConfig.getAcceleratedDenseMinVertices())) {
             renderPanelBody(instance, poseStack, source, texture, packedLight);
             return;
         }
         // 调用可选 AR 桥，仅包装主体的不透明三角形提交；骨骼遍历和动画继续由本体/SBM 执行。
         MultiBufferSource meshSource = RVP_AcceleratedMeshCompat.wrapOpaqueMeshSource(
-                source, texture, largestMeshVertexCount);
+                source, texture, largestMeshVertexCount, unconditionalSharedMesh);
         super.renderToBuffer(instance, poseStack, meshSource, texture, packedLight);
     }
 
@@ -99,7 +110,7 @@ public class RVP_VehicleBedrockModel extends VehicleBedrockModel {
                 light, OverlayTexture.NO_OVERLAY, 1, 1, 1, 1, true);
         RVP_HitPanelMesh.flush();
         RenderType material = RVP_RenderTypes.polyMeshCutout(texture);
-        int threshold = RVP_ClientConfig.getAcceleratedDenseMinVertices();
+        int threshold = unconditionalSharedMesh ? 0 : RVP_ClientConfig.getAcceleratedDenseMinVertices();
         // 调用独立骨树遍历；共享只读局部几何，每台车/回放代理仍用自己的骨骼矩阵与可见性。
         panelMeshPass.render(instance, pose, light, (chunk, stack, boneLight) -> {
             if (!RVP_SharedOpaqueMesh.tryDrawPanel(chunk, material, stack, boneLight,

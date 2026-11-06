@@ -919,16 +919,17 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
     }
 
     /**
-     * [RVP] 快修默认维修优先级序列（2026-09-29 用户定版，§40）：未在面板配置维修顺序的
-     * 设备按此序列排序——炮管最高（能还手才有维修窗口）→ 发动机（能走位）→ 雷达（能索敌）
-     * → 主动对抗类（干扰物/DIRCM/ECM/干扰机，用户点名提前）→ APS（硬拦截收尾）→ 其它
-     * 未来新增类型兜底尾位。骨的位次 = 骨上**最靠前的失效可修类型**在序列中的位置。
+     * [RVP] 快修默认维修优先级序列（2026-09-29 用户定版，§40；2026-11-06 方向机调到炮管之后）：
+     * 未在面板配置维修顺序的设备按此序列排序——炮管最高（能还手才有维修窗口）→ 方向机
+     * → 发动机（能走位）→ 雷达（能索敌）→ 主动对抗类（干扰物/DIRCM/ECM/干扰机，用户点名提前）
+     * → APS（硬拦截收尾）→ 其它未来新增类型兜底尾位。骨的位次 = 骨上**最靠前的失效可修类型**
+     * 在序列中的位置。
      */
     public static final List<BoneModuleType> DEVICE_REPAIR_PRIORITY = List.of(
-            BoneModuleType.TURRET_TRAVERSE,
-            BoneModuleType.TURRET_TRAVERSE_DAMAGED,
             BoneModuleType.BARREL,
             BoneModuleType.BARREL_DAMAGED,
+            BoneModuleType.TURRET_TRAVERSE,
+            BoneModuleType.TURRET_TRAVERSE_DAMAGED,
             BoneModuleType.ENGINE,
             BoneModuleType.ENGINE_DAMAGED,
             BoneModuleType.RADAR,

@@ -61,6 +61,11 @@ public final class RVP_AcceleratedMeshBridge implements RVP_AcceleratedMeshCompa
 
     @Override
     public VertexConsumer wrap(VertexConsumer consumer, int minVertices) {
+        return wrap(consumer, minVertices, minVertices);
+    }
+
+    @Override
+    public VertexConsumer wrap(VertexConsumer consumer, int minVertices, int sharedMinVertices) {
         // 必须与 SBM 的 canRender 保持一致；否则其 CPU 回退会被转入 raw AR builder，
         // 在命中展板中生成混合的逐顶点/mesh 批次，引发 SSBO 对齐错误和多余缓冲扩容。
         if (!accelerationAllowed.getAsBoolean()) {
@@ -78,7 +83,7 @@ public final class RVP_AcceleratedMeshBridge implements RVP_AcceleratedMeshCompa
             builder = holder.getAccelerated();
         }
         // 不拆解普通 AR 包装链：decal、outline、UV 修饰和多路消费仍由原通道处理。
-        return builder == null ? consumer : new DenseConsumer(builder, minVertices, denseViews);
+        return builder == null ? consumer : new DenseConsumer(builder, minVertices, sharedMinVertices, denseViews);
     }
 
     /** 复用 AR 公开阶段/配置查询，和 SBM 2.6 的 AcceleratedRenderer 使用同一准入条件。 */
@@ -111,14 +116,21 @@ public final class RVP_AcceleratedMeshBridge implements RVP_AcceleratedMeshCompa
     static final class DenseConsumer extends AcceleratedVertexConsumerWrapper {
         /** 当前真实 AR 消费者；其 equals/hashCode 按 RenderType 与布局定义几何身份。 */
         private final VertexConsumer delegate;
-        /** 本次调用的顶点阈值；不改变几何，故不参与缓存键。 */
+        /** dense 提交的顶点阈值；不改变几何，故不参与缓存键。 */
         private final int minVertices;
+        /** 共享静态几何的顶点阈值；弹药 display 可传 0 绕过阈值。 */
+        private final int sharedMinVertices;
         /** 共享提交视图，避免每帧为相同 mesh 重建描述。 */
         private final DenseViews denseViews;
 
         DenseConsumer(VertexConsumer delegate, int minVertices, DenseViews denseViews) {
+            this(delegate, minVertices, minVertices, denseViews);
+        }
+
+        DenseConsumer(VertexConsumer delegate, int minVertices, int sharedMinVertices, DenseViews denseViews) {
             this.delegate = delegate;
             this.minVertices = minVertices;
+            this.sharedMinVertices = sharedMinVertices;
             this.denseViews = denseViews;
         }
 
@@ -139,7 +151,7 @@ public final class RVP_AcceleratedMeshBridge implements RVP_AcceleratedMeshCompa
             // 只在世界实体阶段使用刚性 mesh；GUI、手持物与特殊材质保持原有提交边界。
             if (context instanceof BakedGeometryChunk chunk && CoreFeature.isRenderingLevel()
                     && RVP_SharedOpaqueMesh.tryDraw(chunk, getRenderType(), transform, normal,
-                    light, overlay, color, minVertices)) {
+                    light, overlay, color, sharedMinVertices)) {
                 return;
             }
             // 调用 AR 原回调，保留不支持姿势、着色或小块 mesh 的 dense/sparse 与缓存语义。

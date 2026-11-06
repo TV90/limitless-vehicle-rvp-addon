@@ -14,7 +14,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * COUNTERMEASURE，2026-09-28 起由单发直毁改为累计失效）共用。</p>
  *
  * <p>累计只增不减、中间量不持久化（停服清零；失效状态本身随失效表持久化）。清理点：
- * 快修生效结束（clearVehicle/clear）、焊枪部件修复（clear）、载具离开世界（onVehicleLeave）。</p>
+ * 快修生效结束（修复的骨 {@code clear}；其余骨按 1/3 阈值 {@code reduce}）、焊枪部件修复
+ * （{@code clear}）、载具离开世界（{@code onVehicleLeave}）。</p>
  *
  * <p>额外承载引擎重创通知武装（{@code DAMAGED_NOTIFIED}）：跨受损阈时报一次"重创发动机"，
  * 累计清零后重新武装——原 RVP_EngineDamageTable 的通知语义迁入。</p>
@@ -86,10 +87,31 @@ public final class RVP_BoneCumulativeDamageTable {
         clearNotified(vehicleId, boneName);
     }
 
-    /** 清空某载具全部累计（快修生效结束联动；失效状态在失效表中持久化，不受影响）。 */
+    /** 清空某载具全部累计（载具离开世界时调用；失效状态在失效表中持久化，不受影响）。 */
     public static void clearVehicle(UUID vehicleId) {
         ACCUMULATED.remove(vehicleId);
         DAMAGED_NOTIFIED.removeIf(key -> key.startsWith(vehicleId.toString()));
+    }
+
+    /**
+     * [RVP] 扣减某骨累计伤害（2026-11-06 快修结算）：快修未修复的骨按自身阈值的 1/3
+     * "回血"——累计减掉 {@code amount}，扣到 0 以下按清零处理（同时解除重创通知武装）。
+     */
+    public static void reduce(UUID vehicleId, String boneName, float amount) {
+        Map<String, Float> boneMap = ACCUMULATED.get(vehicleId);
+        if (boneMap == null || amount <= 0f) {
+            return;
+        }
+        Float value = boneMap.get(boneName);
+        if (value == null) {
+            return;
+        }
+        float remain = value - amount;
+        if (remain <= 0f) {
+            clear(vehicleId, boneName);
+        } else {
+            boneMap.put(boneName, remain);
+        }
     }
 
     /** 载具离开世界：清该载具全部累计与通知武装。 */

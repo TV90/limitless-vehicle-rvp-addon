@@ -323,7 +323,23 @@ public final class GunnerTargeting {
     }
 
     public static Vec3 predictAimPoint(Vec3 sourcePos, Entity target) {
-        Vec3 center = target.position().add(0, target.getBbHeight() * 0.5, 0);
+        // 载具实体类型尺寸固定 1×1，getBbHeight() 恒为 1；旧写法会瞄准脚底 +0.5 格，
+        // 架束制导沿炮塔轴走时会压到地面。这里与弹体制导共用最大 OBB 中心：
+        // 载具取实时主体 OBB 中心，玩家/生物等非载具自动回退 AABB 中心。
+        return applyLead(sourcePos, org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(target), target);
+    }
+
+    /**
+     * 炮管 OBB 中心的预测瞄准点：架束/激光/指令线制导专用。
+     *
+     * <p>必须带与 {@link #predictAimPoint} 相同的速度提前量：炮塔按当前点瞄准打移动目标时，
+     * 光束/视线会持续落后一个提前量，导弹沿滞后的光束飞行就会落在目标后方偏低处。</p>
+     */
+    public static Vec3 predictBarrelAimPoint(Vec3 sourcePos, Entity target) {
+        return applyLead(sourcePos, org.ywzj.rvp.util.RVP_AimPointResolver.resolveBarrelObbCenter(target), target);
+    }
+
+    private static Vec3 applyLead(Vec3 sourcePos, Vec3 center, Entity target) {
         double leadScale = Mth.clamp(sourcePos.distanceToSqr(center) / 256.0, 0.5, 4.0);
         return center.add(target.getDeltaMovement().scale(leadScale));
     }

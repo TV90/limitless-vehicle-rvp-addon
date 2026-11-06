@@ -25,7 +25,7 @@ public final class RVP_GunnerGroundPolicy {
             /** 本体朝向的 X 分量。 */ double lookX,
             /** 本体朝向的 Z 分量。 */ double lookZ,
             /** 目标位置，无目标时为 null。 */ Point target,
-            /** 目标是否载具，决定是否使用停车距离。 */ boolean vehicleTarget,
+            /** 主战武器是否处于换弹/再装填窗口，决定换弹期战术倒车。 */ boolean reloading,
             /** 本车是否发射架。 */ boolean launcher,
             /** 本车是否仍有作战弹药。 */ boolean combatAmmo) {}
 
@@ -58,6 +58,7 @@ public final class RVP_GunnerGroundPolicy {
         /** 停车剩余刻。 */ private int holdTicks;
         /** 侧移剩余刻；与停车计时同时递减，保留原有时序。 */ private int evadeTicks;
         /** 本轮侧移偏角。 */ private float evadeYawBias;
+        /** 是否正在换弹期战术倒车（滞回状态，避免进出倒车窗口时抖动）。 */ private boolean reversing;
         /** 行为每刻规划前调用一次，即使本刻没有目标也推进。 */
         public final void tick() {
             if (holdTicks > 0) holdTicks--;
@@ -68,7 +69,7 @@ public final class RVP_GunnerGroundPolicy {
             holdTicks = Math.max(0, hold); evadeTicks = Math.max(0, evade); evadeYawBias = bias;
         }
         /** 失去目标或离开交战距离后清空。 */
-        public final void clearTacticalEvade() { holdTicks = 0; evadeTicks = 0; evadeYawBias = 0; }
+        public final void clearTacticalEvade() { holdTicks = 0; evadeTicks = 0; evadeYawBias = 0; reversing = false; }
     }
 
     /** 地面接敌行为独立状态。 */
@@ -121,24 +122,66 @@ public final class RVP_GunnerGroundPolicy {
     private static Command tactical(Input in, Settings s, TacticalMoveState state, RandomInput random, boolean launcher) {
         double distance = distance(in);
         float yawDelta = targetYawDelta(in);
-        double stop = in.vehicleTarget() ? s.stopDistance() : 0;
+        // 2026-11-06 用户定版：停车距离对全部目标生效——原先只对载具生效，追踪步兵/来袭弹时
+        // stop 为 0，AI 会一路顶到目标身上。
+        double stop = s.stopDistance();
         boolean tacticalTarget = stop > 0;
-        if (tacticalTarget && distance <= stop) {
-            if (state.holdTicks <= 0 && state.evadeTicks <= 0) {
-                if (launcher) {
-                    state.start(100, 140 + random.nextInt(141), 55);
-                } else {
-                    float bias = random.nextBoolean() ? s.evadeYaw() : -s.evadeYaw();
-                    state.start(s.holdTick(), s.evadeMin() + random.nextInt(Math.max(1, s.evadeMax() - s.evadeMin() + 1)), bias);
+        if (launcher) {
+            // 发射架保留原策略：有弹停车由 launcher() 处理，无弹/装填时走原停车与侧移节奏。
+            if (tacticalTarget && distance <= stop) {
+                if (state.holdTicks <= 0 && state.evadeTicks <= 0) {
+                    state.start(s.holdTick(),
+                            s.evadeMin() + random.nextInt(Math.max(1, s.evadeMax() - s.evadeMin() + 1)),
+                            s.evadeYaw());
                 }
+            } else if (!tacticalTarget || distance > stop * 1.8) {
+                state.clearTacticalEvade();
             }
-        } else if (!tacticalTarget || distance > stop * 1.8) {
-            state.clearTacticalEvade();
+            if (state.holdTicks > 0) return new Command(false, false, false, false, "HOLD");
+            if (state.evadeTicks > 0) return evade(in, yawDelta, state.evadeYawBias);
+            return new Command(distance > stop * 1.2 && Math.abs(yawDelta) < 80, false,
+                    yawDelta < -8, yawDelta > 8, "APPROACH");
         }
-        if (state.holdTicks > 0) return new Command(false, false, false, false, "HOLD");
-        if (state.evadeTicks > 0) return evade(in, yawDelta, state.evadeYawBias);
+        if (!tacticalTarget) {
+            // 未配置停车距离：不接受接敌移动，避免退回"一路顶到目标"的旧行为。
+            state.reversing = false;
+            return new Command(false, false, yawDelta < -8, yawDelta > 8, "HOLD");
+        }
+        if (in.reloading()) {
+            // 换弹期战术倒车（2026-11-06 用户定版）：目标进入 1.2× 停车距离后倒车拉开，
+            // 到 1.8× 退出（滞回）；倒车而非掉头，保持正面装甲对敌。未进入倒车窗口时原地保持。
+            if (!state.reversing && distance < stop * 1.2) {
+                state.reversing = true;
+            } else if (state.reversing && distance >= stop * 1.8) {
+                state.reversing = false;
+            }
+            if (state.reversing && frontFacing(yawDelta)) {
+                // 倒车时本体履带/轮式转向符号会反转：交换左右，车头才会继续转向目标。
+                return new Command(false, true, yawDelta > 8, yawDelta < -8, "RELOAD_REVERSE");
+            }
+            // 目标不在车头前方时先原地转向；禁止倒车，否则车尾朝目标反而会倒退贴近。
+            return new Command(false, false, yawDelta < -8, yawDelta > 8, "RELOAD_HOLD");
+        }
+        // 目标主动贴脸（<0.7×停车距离）：倒车恢复到停车距离，同样保持正面装甲对敌。
+        if (state.reversing) {
+            if (distance >= stop) {
+                state.reversing = false;
+            }
+        } else if (distance < stop * 0.7) {
+            state.reversing = true;
+        }
+        if (state.reversing && frontFacing(yawDelta)) {
+            // 同上：倒车输入的左右方向与前进相反，交换后车头继续追踪目标。
+            return new Command(false, true, yawDelta > 8, yawDelta < -8, "BACK_OFF");
+        }
+        if (state.reversing) {
+            // 车头未对准目标：原地转向，等正面朝向目标后再倒车拉开。
+            return new Command(false, false, yawDelta < -8, yawDelta > 8, "HOLD");
+        }
+        // 2026-11-06 用户定版：进入停车距离后纯停车（只做对敌转向），去掉原 55° 侧移——
+        // 55° 侧向行驶会让坦克画弧绕向目标，看起来像"不停车、往脸上开"。
         return new Command(distance > stop * 1.2 && Math.abs(yawDelta) < 80, false,
-                yawDelta < -8, yawDelta > 8, "APPROACH");
+                yawDelta < -8, yawDelta > 8, distance > stop * 1.2 ? "APPROACH" : "HOLD");
     }
 
     /** 原卡住判定；返回 null 表示不提交高优先级脱困候选。 */
@@ -147,7 +190,8 @@ public final class RVP_GunnerGroundPolicy {
         boolean desireMove = false;
         if (in.target() != null && (!in.launcher() || !in.combatAmmo())) {
             yawDelta = targetYawDelta(in);
-            double stop = in.vehicleTarget() ? s.stopDistance() : 0;
+            // 与接敌策略一致：停车距离对全部目标生效。
+            double stop = s.stopDistance();
             desireMove = distance(in) > stop * 1.6 && Math.abs(yawDelta) < 25;
         }
         if (in.target() != null && in.tick() % s.stuckCheckTick() == 0 && state.cooldownTicks <= 0) {
@@ -207,6 +251,10 @@ public final class RVP_GunnerGroundPolicy {
     /** 目标相对车头的水平偏角。 */
     private static float targetYawDelta(Input in) {
         return wrap(yawTo(in.target().x() - in.position().x(), in.target().z() - in.position().z()) - in.yaw());
+    }
+    /** 目标是否位于车头前方 80° 内；与前进接敌门槛一致，倒车只在此范围内执行。 */
+    private static boolean frontFacing(float yawDelta) {
+        return Math.abs(yawDelta) < 80.0f;
     }
     /** 水平距离，不混入高度差。 */
     private static double distance(Input in) {

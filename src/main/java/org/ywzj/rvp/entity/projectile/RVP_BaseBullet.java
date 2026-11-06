@@ -123,6 +123,7 @@ import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.rvp.weapon.core.RVP_WeaponLockStateTable;
 import org.ywzj.vehicle.util.BulletHitResult;
 import org.ywzj.vehicle.util.EntityUtil;
+import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
@@ -1285,6 +1286,74 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
 
     public Vec3 getColdLaunchVelocity() {
         return coldLaunchVelocity;
+    }
+
+    /**
+     * [RVP] 当前出膛管口世界坐标（2026-11-06）：供 LBR 驾束 / SACLOS 视线的光束起点使用。
+     *
+     * <p>炮塔枢轴与炮管轴线通常有固定竖直偏移（如主炮管高于炮塔枢轴），
+     * 从枢轴沿炮管方向发出的光束会整体压低，导致导弹沿低指向飞行、命中下装甲或地面。
+     * 这里复用线导已记录的发射管口偏移（{@link #wirePivotBase} / {@link #wireBoltIndex}），
+     * 每 tick 随武器站旋转更新真实管口，使光束与出弹点重合。</p>
+     */
+    public Vec3 rvp$resolveBeamOrigin() {
+        AimContext aim = rvp$resolveFiredAimContext();
+        if (aim != null && aim.from != null) {
+            return aim.from;
+        }
+        if (launchWeaponUnit != null) {
+            // 与线导视觉线同源：枢轴 + 发射时记录的管口偏移。
+            return launchWeaponUnit.worldPivotPosition().add(wirePivotBase);
+        }
+        return shooterWeaponUnit != null ? shooterWeaponUnit.worldPivotPosition() : Vec3.ZERO;
+    }
+
+    /**
+     * [RVP] 实际出膛炮轴的世界方向（2026-11-06）：供 LBR 驾束 / SACLOS 视线建束使用。
+     *
+     * <p>{@code WeaponUnit.worldVec()} 是「已减去炮管骨基准俯仰的伺服轴」：{@code aim()}
+     * 会把炮管骨的基准角从目标角里减掉（{@code xBarrelSelfRot}），渲染/AimContext 再加回来，
+     * 而 {@code worldVec()} 不加。ZTZ99B 的 {@code turret_barrel} 骨自带 2.4° 基准俯仰
+     * （全库唯一带基准角的主炮管骨），只有它的 {@code worldVec()} 会比真实炮轴低 2.4°，
+     * 沿它建 LBR/SACLOS 光束就会整条压低、导弹拍地或弹道偏下。
+     * {@code AimContext.direction} 由炮管骨实时变换 + bolt 自转合成，与导弹出膛方向一致。</p>
+     */
+    @Nullable
+    public Vec3 rvp$resolveBeamDirection() {
+        AimContext aim = rvp$resolveFiredAimContext();
+        if (aim == null || aim.direction == null) {
+            return null;
+        }
+        Vec3 direction = VectorUtil.rotToVec(aim.direction.x, aim.direction.y);
+        return direction.lengthSqr() > 1.0E-6 ? direction.normalize() : null;
+    }
+
+    /** 本发弹实际出膛所用的管口上下文：锁定管口优先，否则取离发射偏移最近的实时管口。 */
+    @Nullable
+    private AimContext rvp$resolveFiredAimContext() {
+        if (launchWeaponUnit == null) {
+            return shooterWeaponUnit != null ? shooterWeaponUnit.aimContext() : null;
+        }
+        List<AimContext> aims = launchWeaponUnit.aimContexts();
+        if (wireBoltIndex >= 0 && wireBoltIndex < aims.size()) {
+            return aims.get(wireBoltIndex);
+        }
+        // 未锁定管口时取离发射偏移最近的实时管口：wirePivotBase 是发射瞬间的世界偏移，
+        // 炮塔转过后枢轴+旧偏移会漂移，直接用它当起点会把光束甩到弹体一侧。
+        Vec3 expected = launchWeaponUnit.worldPivotPosition().add(wirePivotBase);
+        AimContext nearest = null;
+        double nearestDist = Double.MAX_VALUE;
+        for (AimContext aim : aims) {
+            if (aim == null || aim.from == null) {
+                continue;
+            }
+            double dist = aim.from.distanceToSqr(expected);
+            if (dist < nearestDist) {
+                nearestDist = dist;
+                nearest = aim;
+            }
+        }
+        return nearest;
     }
 
     /**
@@ -3533,9 +3602,13 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         int fuseHeight = fuse.getProximityFuseHeight();
         // 反鱼雷近炸（2026-10-03）：仅鱼雷弹体可触发，且不受离地高度限制（水中/贴水底可触发）
         boolean antiTorpedo = fuse.isProximityFuseAntiTorpedo();
+        // [RVP] ARM 不适用近地保护门：反辐射弹打的就是地面雷达车，而 proximity_fuse_height: 0
+        // 只跳过向下数方块，onGround() 仍会直接判"过低"，导致停在地面的目标永远不吃近炸。
+        boolean armIgnoresGround = rvpData.isAntiRadiationMissile();
         if (targetEntity != null && targetEntity.isAlive()
                 && (antiTorpedo ? isTorpedoAmmoTarget(targetEntity)
-                        : (!isProximityFuseTargetTooLow(targetEntity, fuseHeight) || isMissileOrRocketAmmoTarget(targetEntity)))
+                        : (armIgnoresGround || !isProximityFuseTargetTooLow(targetEntity, fuseHeight)
+                            || isMissileOrRocketAmmoTarget(targetEntity)))
                 && (!rvpData.isAntiRadiationMissile() || hasActiveRadar(targetEntity))
                 && !isProximityDamageImmune(targetEntity)
                 && !(targetEntity instanceof RVP_Decoy) // 干扰物不触发近炸
@@ -3556,7 +3629,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         // [RVP] §48：巨型载具分节盲区补筛（同 findEntityOnPathForSegment）
         java.util.function.Predicate<Entity> proximityFilter = e -> canDamageEntity(e)
                 && (antiTorpedo ? isTorpedoAmmoTarget(e)
-                        : (!isProximityFuseTargetTooLow(e, fuseHeight) || isMissileOrRocketAmmoTarget(e)))
+                        : (armIgnoresGround || !isProximityFuseTargetTooLow(e, fuseHeight)
+                            || isMissileOrRocketAmmoTarget(e)))
                 && (!rvpData.isAntiRadiationMissile() || hasActiveRadar(e))
                 && !isProximityDamageImmune(e)
                 && !isAmmoIgnoredByProximityFuse(e) // 机枪弹丸不触发近炸（精确按弹种过滤）
@@ -4244,9 +4318,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         // [RVP] §48：巨型载具分节盲区补筛（同 findEntityOnPathForSegment）
         // 反鱼雷近炸：仅鱼雷弹体可触发且不受离地高度限制（开关取 fuse_data 同名参数）
         boolean antiTorpedo = rvpData != null && rvpData.getFuseData().isProximityFuseAntiTorpedo();
+        // 同 tickProximityFuse：ARM 打地面雷达，不能套近地保护门（onGround 判定无法用 height=0 关闭）
+        boolean armIgnoresGround = rvpData != null && rvpData.isAntiRadiationMissile();
         java.util.function.Predicate<Entity> proximityFilter = entity -> canDamageEntity(entity)
                 && (antiTorpedo ? isTorpedoAmmoTarget(entity)
-                        : (!isProximityFuseTargetTooLow(entity, fuseHeight) || isMissileOrRocketAmmoTarget(entity)))
+                        : (armIgnoresGround || !isProximityFuseTargetTooLow(entity, fuseHeight)
+                            || isMissileOrRocketAmmoTarget(entity)))
                 && (!rvpData.isAntiRadiationMissile() || hasActiveRadar(entity))
                 && !isProximityDamageImmune(entity)
                 && !isAmmoIgnoredByProximityFuse(entity) // 机枪弹丸不触发近炸（精确按弹种过滤）
@@ -5649,6 +5726,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
 
     public void rvp$detonateByAps() {
         Vec3 pos = position();
+        // [RVP] APS / 弹间硬杀伤拦截的子弹药释放（2026-11-06 用户定版）：母弹引爆前先触发
+        // on_aps_intercept 释放方案——子体沿用 referenceAim（母弹当前速度方向）并继承速度，
+        // 因此母弹被拦截后子弹药仍沿原弹道继续飞行；无此触发条件时行为与原逻辑一致。
+        trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_APS_INTERCEPT, pos);
         RVP_WeaponData config = resolveWeaponConfig();
         // 调用六参入口并显式标记空中起爆：APS 拦截发生在弹体飞行途中，属于空中爆炸。
         if (config == null) {

@@ -264,7 +264,7 @@ public final class RVP_CountermeasureRuntimeManager {
                 continue;
             }
             if (soundPos == null) {
-                soundPos = launcher.worldCurrentBoltPosition();
+                soundPos = currentBoltPosition(launcher);
             }
             spawnOne(vehicle, launcher, system, type, vehicleVelocity);
             // 每轮只在第一个发射装置上广播一次动画，避免刷包
@@ -292,10 +292,21 @@ public final class RVP_CountermeasureRuntimeManager {
         }
     }
 
+    /**
+     * 发射器炮口坐标：本体 {@code worldCurrentBoltPosition()} 直接解引用 {@code xTurnGroup}，
+     * 未建起炮管/炮闩组（结构模型未就绪或该部件骨缺失）的武器站会抛 NPE 打断服务端 tick。
+     * 这类发射器退回武器站枢轴（无结构时即载具坐标），干扰物仍能正常抛洒。
+     */
+    private static Vec3 currentBoltPosition(WeaponUnit launcher) {
+        return launcher.xTurnGroup != null
+                ? launcher.worldCurrentBoltPosition()
+                : launcher.worldPivotPosition();
+    }
+
     private static void spawnOne(AbstractVehicle vehicle, WeaponUnit launcher,
                                  RVP_CountermeasureSystemData system,
                                  RVP_EnumCountermeasureType type, Vec3 vehicleVelocity) {
-        Vec3 spawnPos = launcher.worldCurrentBoltPosition();
+        Vec3 spawnPos = currentBoltPosition(launcher);
         // 烟雾：生成烟雾弹实体，沿发射装置指向（含仰角）以 speed 初速弹道发射，explodeTick 后爆炸成云
         if (type == RVP_EnumCountermeasureType.SMOKE) {
             RVP_SmokeEntity smokeEntity = new RVP_SmokeEntity(RVP_Entities.RVP_SMOKE.get(), vehicle.level());

@@ -120,12 +120,11 @@ public final class RVP_MaintenanceRuntimeManager {
                         RVP_Sounds.MAINTENANCE_WRENCH.get(), net.minecraft.sounds.SoundSource.NEUTRAL, 1.0F, 1.0F);
             }
             if (state.useRemain == 0) {
-                // [RVP] 生效结束（2026-09-28 定版，三件事都在维修完毕时刻发生）：
+                // [RVP] 生效结束（2026-09-28 定版；2026-11-06 累计结算改为按修复结果）：
                 // ① 冷却从此刻才开始计时；② 骨骼模块（部件）此刻才恢复——按维修不再瞬时恢复；
-                // ③ 引擎累计此刻清空（随部件恢复语义）
+                // ③ 累计伤害此刻结算：本次修复的骨清空（回满），其余骨按 1/3 阈值回血
                 state.cooldown = config.waitTimeTicks();
                 recoverModules(vehicle, config);
-                RVP_BoneCumulativeDamageTable.clearVehicle(vehicle.getUUID());
                 // 写穿 + 立即推一次，客户端及时切出"维修中"并显示冷却倒计时
                 writeThrough(vehicle, state);
                 syncHud(vehicle, state);
@@ -193,15 +192,22 @@ public final class RVP_MaintenanceRuntimeManager {
      * 逐台掷骰，队列外保持原有遍历掷骰；② ERA 恢复数量配额不变（ceil(n × fraction)、
      * 至少 eraRecoverMin），改为从"爆反维修顺序"队列头优先占配额，队列外仍洗牌补足——
      * 即只把"修哪些"的决定权交给玩家，恢复量 / 概率公式一律不动；
-     * ③ 一次 {@code syncBoneModuleState} 广播——消费端全部查状态表，恢复即自动生效。
+     * ③ 累计伤害按修复结果结算（2026-11-06）：修复的骨清空累计（虚拟血量回满），其余骨
+     * 按自身阈值 1/3 回血；
+     * ④ 一次 {@code syncBoneModuleState} 广播——消费端全部查状态表，恢复即自动生效。
      */
     private static void recoverModules(AbstractVehicle vehicle, BoneMaintenanceConfig config) {
         BoneMaintenanceConfig.ModuleRepair cfg = config.moduleRepair() != null
                 ? config.moduleRepair()
                 : BoneMaintenanceConfig.ModuleRepair.defaults();
         UUID vehicleId = vehicle.getUUID();
+        // [RVP] 本次真正修复（命中恢复配额）的骨：累计结算时只有这些骨回满（2026-11-06 用户定版）
+        Set<String> repairedBones = new java.util.HashSet<>();
         Map<String, Set<BoneModuleType>> inactive = RVP_BoneModuleStateTable.getInactiveModules(vehicleId);
         if (inactive.isEmpty()) {
+            // 无失效模块也执行累计结算：其余受损部件按 1/3 阈值回血
+            applyResidualDamageRecovery(vehicle, repairedBones);
+            RVP_VehicleHitboxFactorManager.syncBoneModuleState(vehicle);
             return;
         }
         var random = vehicle.level().random;
@@ -242,7 +248,7 @@ public final class RVP_MaintenanceRuntimeManager {
         java.util.Collections.sort(outsideDevices);
         // [RVP] 默认维修优先级（2026-09-29 用户定版 §40，未在面板配置顺序的设备）：
         // ①主键 = 骨上最靠前的失效可修类型在 DEVICE_REPAIR_PRIORITY 序列中的位次
-        //  （炮管→发动机→雷达→干扰物/DIRCM/ECM/干扰机→APS→其它兜底）；
+        //  （炮管→方向机→发动机→雷达→干扰物/DIRCM/ECM/干扰机→APS→其它兜底）；
         // ②次键 = 载具 JSON 顺序（面板行序号同款口径：部件按 getPartUnits() 顺序、
         //  非部件骨按名兜底——moduleByBoneName 为 HashMap 不保序，必须显式排序保证确定性）
         Map<String, Integer> jsonOrderIndex = new HashMap<>();
@@ -273,6 +279,7 @@ public final class RVP_MaintenanceRuntimeManager {
             for (int i = 0; i < quota; i++) {
                 String bone = brokenDevices.get(i);
                 restoreBoneModules(vehicle, bone, inactive.get(bone), cfg, false);
+                repairedBones.add(bone);
             }
         }
         // ② ERA：恢复数量配额不变（ceil(n * fraction)，至少 eraRecoverMin 块，MCHR 手感）；
@@ -308,10 +315,38 @@ public final class RVP_MaintenanceRuntimeManager {
             for (int i = 0; i < n; i++) {
                 String bone = ordered.get(i);
                 restoreBoneModules(vehicle, bone, inactive.get(bone), cfg, true);
+                repairedBones.add(bone);
             }
         }
-        // ③ 一次广播：客户端动画恢复渲染骨、各消费端下 tick 自动重新生效
+        // ③ 累计伤害结算（2026-11-06 用户定版）：本次修复的骨清空累计（虚拟血量回满）；
+        //    其余骨按自身阈值 1/3 扣减累计（虚拟血量 +1/3），不再全车清零
+        applyResidualDamageRecovery(vehicle, repairedBones);
+        // ④ 一次广播：客户端动画恢复渲染骨、各消费端下 tick 自动重新生效（含最终累计快照）
         RVP_VehicleHitboxFactorManager.syncBoneModuleState(vehicle);
+    }
+
+    /**
+     * [RVP] 快修结束的累计伤害结算（2026-11-06 用户定版）：只有本次真正修复的骨清空累计
+     * （面板虚拟血量回满）；其余仍有累计的骨按自身阈值的 1/3 回血（累计 −= 阈值/3，封底 0）。
+     * 替代原 {@code clearVehicle} 全车清零——未修复部件不再"自动满血"。
+     */
+    private static void applyResidualDamageRecovery(AbstractVehicle vehicle, Set<String> repairedBones) {
+        UUID vehicleId = vehicle.getUUID();
+        for (Map.Entry<String, Float> entry : RVP_BoneCumulativeDamageTable.snapshotOf(vehicleId).entrySet()) {
+            String bone = entry.getKey();
+            if (repairedBones.contains(bone)) {
+                RVP_BoneCumulativeDamageTable.clear(vehicleId, bone);
+                continue;
+            }
+            if (entry.getValue() <= 0f) {
+                continue;
+            }
+            float threshold = RVP_VehicleHitboxFactorManager.INSTANCE.resolveBoneDamageThreshold(vehicle, bone);
+            if (!Float.isFinite(threshold) || threshold <= 0f) {
+                continue; // 未配置累计阈值：无虚拟血量语义，保持原累计
+            }
+            RVP_BoneCumulativeDamageTable.reduce(vehicleId, bone, threshold / 3f);
+        }
     }
 
     /** 骨上是否存在可修的非 ERA 设备模块（用于辅助设备分支按骨掷骰判定）。 */

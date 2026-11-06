@@ -512,7 +512,7 @@ public final class RVP_BuiltinGunnerBehaviors {
                     return;
                 }
                 RVP_GunnerMovementActions.Command command = new RVP_GunnerMovementActions.Command();
-                tickGroundEngagement(context.gunner(), context.vehicle(), context.target(),
+                tickGroundEngagement(context.gunner(), context.vehicle(), context.weaponUnit(), context.target(),
                         context.profile(), state, command);
                 sink.submit(intent(id(), "vehicle", 840, 500,
                         RVP_GunnerBehaviorIntent.Channel.MOVEMENT,
@@ -784,7 +784,7 @@ public final class RVP_BuiltinGunnerBehaviors {
                                                   RVP_GunnerMovementActions.Command command) {
         // 调用公共地面策略，保留有弹停车、装填走位的原行为。
         copyGroundCommand(RVP_GunnerGroundPolicy.launcher(groundInput(gunner, vehicle, target, true,
-                hasAnyAmmo(vehicle)), groundSettings(profile), state, groundRandom(gunner)), command);
+                hasAnyAmmo(vehicle), false), launcherSettings(profile), state, groundRandom(gunner)), command);
     }
 
     private static boolean hasAnyAmmo(AbstractVehicle vehicle) {
@@ -793,11 +793,14 @@ public final class RVP_BuiltinGunnerBehaviors {
     }
 
     /** 将本刻观察交给共用接敌算法，避免测试与游戏维护两套规则。 */
-    private static void tickGroundEngagement(GunnerEntity gunner, AbstractVehicle vehicle, Entity target,
+    private static void tickGroundEngagement(GunnerEntity gunner, AbstractVehicle vehicle,
+                                             @Nullable WeaponUnit weaponUnit, Entity target,
                                              GunnerProfile profile, GroundEngagementState state,
                                              RVP_GunnerMovementActions.Command command) {
+        // 调用武器动作适配器判断"只有换弹中的作战武器"，供装填期战术倒车使用。
+        boolean reloading = ACTIONS.weapons().isCombatReloading(weaponUnit);
         // 调用公共地面策略，只计算命令；本方法不直接驱动车辆。
-        copyGroundCommand(RVP_GunnerGroundPolicy.engage(groundInput(gunner, vehicle, target, false, false),
+        copyGroundCommand(RVP_GunnerGroundPolicy.engage(groundInput(gunner, vehicle, target, false, false, reloading),
                 groundSettings(profile), state, groundRandom(gunner)), command);
     }
 
@@ -808,7 +811,7 @@ public final class RVP_BuiltinGunnerBehaviors {
         // 调用公共脱困算法；只有发射架有目标时才查询弹药，维持原查询条件。
         RVP_GunnerGroundPolicy.Command result = RVP_GunnerGroundPolicy.recover(
                 groundInput(context.gunner(), context.vehicle(), context.target(), launcher,
-                        context.target() != null && launcher && hasAnyAmmo(context.vehicle())),
+                        context.target() != null && launcher && hasAnyAmmo(context.vehicle()), false),
                 groundSettings(context.profile()), state);
         if (result == null) return;
         RVP_GunnerMovementActions.Command command = new RVP_GunnerMovementActions.Command();
@@ -822,19 +825,30 @@ public final class RVP_BuiltinGunnerBehaviors {
 
     /** 复制游戏观察；策略不持有实体或世界引用。 */
     private static RVP_GunnerGroundPolicy.Input groundInput(GunnerEntity gunner, AbstractVehicle vehicle,
-                                                            @Nullable Entity target, boolean launcher, boolean ammo) {
+                                                            @Nullable Entity target, boolean launcher, boolean ammo,
+                                                            boolean reloading) {
         Vec3 look = vehicle.getLookAngle();
-        // 调用数值合同，目标类型仍由真实实体判定。
+        // 调用数值合同，目标类型不再影响停车距离，换弹状态由武器动作适配器给出。
         return new RVP_GunnerGroundPolicy.Input(gunner.tickCount,
                 new RVP_GunnerGroundPolicy.Point(vehicle.getX(), vehicle.getZ()), vehicle.getYRot(), look.x, look.z,
                 target == null ? null : new RVP_GunnerGroundPolicy.Point(target.getX(), target.getZ()),
-                target instanceof AbstractVehicle, launcher, ammo);
+                reloading, launcher, ammo);
     }
 
     /** 使用当前行为自己的编译参数视图，不读取其他行为的参数。 */
     private static RVP_GunnerGroundPolicy.Settings groundSettings(GunnerProfile profile) {
         // 调用 Profile 数值查询，将原参数逐项传入共享策略。
         return new RVP_GunnerGroundPolicy.Settings(profile.getDriveStopDistance(), profile.getGroundHoldTick(),
+                profile.getGroundEvadeTickMin(), profile.getGroundEvadeTickMax(), profile.getGroundEvadeYawDeg(),
+                profile.getDriveStuckCheckTick(), profile.getDriveStuckDistance(), profile.getDriveRecoveryTick(),
+                profile.getGroundBigTurnIntervalTickMin(), profile.getGroundBigTurnIntervalTickMax(),
+                profile.getGroundBigTurnAngleDegMin(), profile.getGroundBigTurnAngleDegMax(), profile.getGroundBigTurnDurationTick());
+    }
+
+    /** 发射架定位使用独立停车距离，其余机动数值沿用地面接敌参数。 */
+    private static RVP_GunnerGroundPolicy.Settings launcherSettings(GunnerProfile profile) {
+        // 调用 Profile 数值查询；停车距离单独取 launcher_positioning 配置，避免被地面接敌覆盖。
+        return new RVP_GunnerGroundPolicy.Settings(profile.getLauncherStopDistance(), profile.getGroundHoldTick(),
                 profile.getGroundEvadeTickMin(), profile.getGroundEvadeTickMax(), profile.getGroundEvadeYawDeg(),
                 profile.getDriveStuckCheckTick(), profile.getDriveStuckDistance(), profile.getDriveRecoveryTick(),
                 profile.getGroundBigTurnIntervalTickMin(), profile.getGroundBigTurnIntervalTickMax(),
@@ -1241,7 +1255,7 @@ public final class RVP_BuiltinGunnerBehaviors {
                                          GroundPatrolState state,
                                          RVP_GunnerMovementActions.Command command) {
         // 调用共用巡逻算法，保持原随机大转弯、停车旋转和轻左转前进规则。
-        copyGroundCommand(RVP_GunnerGroundPolicy.patrol(groundInput(gunner, vehicle, null, false, false),
+        copyGroundCommand(RVP_GunnerGroundPolicy.patrol(groundInput(gunner, vehicle, null, false, false, false),
                 groundSettings(profile), state, groundRandom(gunner)), command);
     }
 

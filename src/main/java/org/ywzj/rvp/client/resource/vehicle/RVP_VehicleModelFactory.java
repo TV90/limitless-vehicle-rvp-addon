@@ -39,6 +39,17 @@ public final class RVP_VehicleModelFactory {
         return createVehicleModel(pojo, List.of(), backend);
     }
 
+    /** 弹药/武器 display 使用同款 RVP 烘焙模型，并让所有 mesh 都进入共享静态几何通道。 */
+    public static VehicleBedrockModel createWeaponModel(BedrockModelPOJO pojo,
+                                                        List<SpecialBoneEffect> effects,
+                                                        RVP_BedrockBackend backend) {
+        BakerOptions bakerOptions = createStaticBakerOptions(pojo, effects, backend, Set.of());
+        if (backend == RVP_BedrockBackend.RVP) {
+            return new RVP_VehicleBedrockModel(pojo, effects, bakerOptions, true);
+        }
+        return new VehicleBedrockModel(pojo, effects, bakerOptions);
+    }
+
     private static BakerOptions createStaticBakerOptions(BedrockModelPOJO pojo,
                                                          List<SpecialBoneEffect> effects,
                                                          RVP_BedrockBackend backend,
