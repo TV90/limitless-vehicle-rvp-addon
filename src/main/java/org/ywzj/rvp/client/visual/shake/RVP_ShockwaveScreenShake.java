@@ -2,7 +2,7 @@ package org.ywzj.rvp.client.visual.shake;
 
 import org.ywzj.rvp.config.RVP_ClientConfig;
 
-/** 单个可见冲击波的抵达判定；每帧使用玩家实时距离，抵达后只提交一次通用震动。 */
+/** 单个冲击波的震动抵达判定；传播半径与最大衰减范围由调用方分别提供。 */
 public final class RVP_ShockwaveScreenShake {
     /** 沿用温压手感：持续 12 刻（0.6 秒），左右/上下/倾斜振幅为 0.90/0.70/0.50 度。 */
     static final RVP_ScreenShakeParameters PARAMETERS = new RVP_ScreenShakeParameters(
@@ -33,8 +33,8 @@ public final class RVP_ShockwaveScreenShake {
      *
      * @param now 当前连续世界时间，单位游戏刻，包含帧内插值
      * @param distance 此帧玩家位置到真实爆心的三维直线距离，单位格
-     * @param radius 同一绘制时钟下波面的实际外半径，单位格
-     * @param maximumRadius 波面在自身寿命内可达到的最大半径，单位格
+     * @param radius 此帧震动已经传播到的半径，单位格，不在此处缩放传播速度
+     * @param maximumRadius 震动的最大衰减半径，单位格
      * @return 是否成功创建本次震动；边界处零强度也会记录为已抵达
      */
     public boolean update(double now, double distance, double radius, double maximumRadius) {
@@ -45,7 +45,7 @@ public final class RVP_ShockwaveScreenShake {
             return false;
         }
         arrived = true;
-        // 调用通用调度器按抵达瞬间的距离线性衰减；任务独立播放完 12 刻，不随波面消失而截断。
+        // 调用通用调度器按独立的最大范围线性衰减；任务仍独立播放完 12 刻。
         return scheduler.schedule(this, now, now, seed, distance, maximumRadius, PARAMETERS);
     }
 }

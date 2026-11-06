@@ -15,9 +15,10 @@ import org.joml.Matrix4f;
 import org.joml.Vector3f;
 import org.slf4j.Logger;
 import org.ywzj.rvp.RVP_MOD;
-import org.ywzj.rvp.client.visual.shake.RVP_ShockwaveScreenShake;
+import org.ywzj.rvp.client.visual.shake.RVP_ShockwaveShakePropagation;
 import org.ywzj.rvp.weapon.visual.RVP_PressureWaveGeometry;
 import org.ywzj.rvp.weapon.visual.RVP_ShockwaveRuntimeTuning;
+import org.ywzj.rvp.weapon.visual.api.RVP_VisualEffectEvent;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -74,9 +75,19 @@ public final class RVP_ShockwaveRenderer {
         int duration = tuning.duration(sphere, baseDuration);
         if (initialAge >= duration || !Float.isFinite(radius) || radius <= 0) { return null; }
         if (ACTIVE.size() >= 8) { ACTIVE.remove(0); }
-        Shockwave wave = new Shockwave(x, y, z, Math.max(0, initialAge), duration, baseDuration, tuning, seed);
+        Shockwave wave = new Shockwave(x, y, z, Math.max(0, initialAge), duration, baseDuration, tuning);
         ACTIVE.add(wave);
         return wave;
+    }
+
+    /** 登记独立震动前先校验世界，避免首次生成或换维度的清理误删新事件。 */
+    public static void spawnScreenShake(RVP_VisualEffectEvent event, int baseDuration,
+            RVP_ShockwaveRuntimeTuning.Snapshot tuning) {
+        // 调用统一世界检查，先清理旧世界，再登记新世界的震动。
+        ensureLevel();
+        if (activeLevel == null) { return; }
+        // 调用独立传播登记，保留爆炸原时钟并允许晚于视觉寿命的外圈继续生效。
+        RVP_ShockwaveShakePropagation.spawn(event, baseDuration, tuning, activeLevel.getGameTime());
     }
 
     /** 核爆取用原折射着色器。 */
@@ -89,30 +100,28 @@ public final class RVP_ShockwaveRenderer {
     public static void tick() {
         // 调用世界检查，只在客户端逻辑 tick 推进一次年龄。
         ensureLevel();
+        // 调用独立震动传播的清理；可见空气层回收后，尚未抵达的外圈仍继续传播。
+        if (activeLevel != null) { RVP_ShockwaveShakePropagation.tick(activeLevel.getGameTime()); }
         for (int i = ACTIVE.size() - 1; i >= 0; i--) {
             if (++ACTIVE.get(i).age >= ACTIVE.get(i).duration) { ACTIVE.remove(i); }
         }
     }
 
-    /** 每帧按玩家而非第三人称相机的位置判定波面抵达；与空气层绘制共用半径和时钟。 */
+    /** 每帧按玩家位置检查独立震动传播；可见特效结束后仍能等到外圈抵达。 */
     public static void updateScreenShake(ViewportEvent.ComputeCameraAngles event) {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.level == null || minecraft.player == null || activeLevel != minecraft.level) { return; }
         float partialTick = (float) event.getPartialTick();
         Vec3 playerPosition = minecraft.player.getPosition(partialTick);
         double now = minecraft.level.getGameTime() + event.getPartialTick();
-        for (Shockwave wave : ACTIVE) {
-            // 调用同一快照的年龄换算，调慢扩张、加速或修改曲线后仍与实际波面同步。
-            float age = wave.standardAge(partialTick);
-            if (wave.tuning.age(sphere, age) >= wave.tuning.get(sphere, lifetime)) { continue; }
-            // 调用单波面抵达判定，只比较三维直线距离；墙体遮挡不影响震动。
-            wave.screenShake.update(now, playerPosition.distanceTo(new Vec3(wave.x, wave.y, wave.z)),
-                    wave.tuning.sphereRadius(age), wave.maximumRadius);
-        }
+        // 调用独立传播集合，只扩大最终距离，传播速度沿用原爆炸快照。
+        RVP_ShockwaveShakePropagation.updateAll(now, playerPosition);
     }
 
     public static void clear() {
         ACTIVE.clear();
+        // 调用独立传播清理，防止退出世界或切换维度后继续收到旧爆炸震动。
+        RVP_ShockwaveShakePropagation.clear();
         activeLevel = null;
         frameReady = false;
         // 调用合成器释放临时显存；退出世界后的清理也允许由非绘制线程转交。
@@ -148,7 +157,7 @@ public final class RVP_ShockwaveRenderer {
         // 每个爆炸最多一层宽厚雾和一层透明压力波前；活跃爆炸总量仍限制为 8 个。
         List<RVP_PressureWavePass.Wave> visible = new ArrayList<>(ACTIVE.size() * 2);
         for (Shockwave wave : ACTIVE) {
-            // 调用与抵达判定共用的年龄换算，避免绘制与震动使用不同扩张时钟。
+            // 调用原年龄换算；延长震动传播不能延长可见空气层。
             float age = wave.standardAge(event.getPartialTick());
             // 调用同一快照的扩张、淡出与厚度压缩公式，避免出现两个不同的动画时钟。
             float fade = wave.tuning.alpha(sphere, age);
@@ -201,23 +210,14 @@ public final class RVP_ShockwaveRenderer {
         private final int baseDuration;
         /** 本次爆炸的固定参数快照。 */
         private final RVP_ShockwaveRuntimeTuning.Snapshot tuning;
-        /** 波面实际寿命结束时的可达半径（格），包含扩张速度、曲线与 2048 格上限。 */
-        private final float maximumRadius;
-        /** 本波面独立的一次性抵达状态；自动追加事件无需启用旧的 shake 开关。 */
-        private final RVP_ShockwaveScreenShake screenShake;
-
         private Shockwave(double x, double y, double z, int age, int duration, int baseDuration,
-                RVP_ShockwaveRuntimeTuning.Snapshot tuning, long seed) {
+                RVP_ShockwaveRuntimeTuning.Snapshot tuning) {
             this.x = x; this.y = y; this.z = z;
             this.age = age; this.duration = duration; this.baseDuration = baseDuration;
             this.tuning = tuning;
-            // 调用精确时间换算取得寿命末端，不能用向上取整后的回收 tick 夸大最大可达范围。
-            maximumRadius = tuning.sphereRadius(tuning.get(sphere, lifetime) / tuning.age(sphere, 1));
-            // 创建本波面的一次性反馈状态，复用通用执行器和爆炸强度设置。
-            screenShake = new RVP_ShockwaveScreenShake(seed);
         }
 
-        /** 把实际年龄换算为绘制与震动共用的标准年龄，单位游戏刻。 */
+        /** 把实际年龄换算为原绘制所用的标准年龄，单位游戏刻。 */
         private float standardAge(float partialTick) { return (age + partialTick) * LIFETIME / baseDuration; }
     }
 }

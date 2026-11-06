@@ -259,6 +259,14 @@ public final class RVP_ShockwaveRuntimeTuning {
                     + radius * visualScale * expansion(Group.sphere, standardAge));
         }
 
+        /** 球体的基础扩张速度，单位格/标准游戏刻；包含原有尺寸与速度设置，不乘震动范围倍率。 */
+        public double sphereBaseExpansionSpeed() {
+            // 调用同一尺寸和时钟换算，供可见波面结束后的震动继续按原基础速度传播。
+            float radius = RVP_ShockwaveReference.sphereRadius(explosionRadius, get(Group.sphere, Parameter.radiusScale));
+            return radius * (double) visualScale * age(Group.sphere, 1)
+                    * get(Group.sphere, Parameter.expansionSpeed) / get(Group.sphere, Parameter.expansionTicks);
+        }
+
         /** 返回当前空气层厚度占外半径的比例；使用光影合成路径的压薄公式。 */
         public float sphereThickness(float standardAge) {
             float progress = clamp(age(Group.sphere, standardAge) / get(Group.sphere, Parameter.lifetime));
