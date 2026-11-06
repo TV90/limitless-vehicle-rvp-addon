@@ -1,0 +1,442 @@
+{
+  "type": "ywzj_vehicle:vessel_vehicle",
+  "ui_preset": "052d",
+  "attributes": {
+    "brake_force": 0,
+    "forward_force": 16400000,
+    "backward_force": 6570000,
+    "max_speed_forward": 0.75,
+    "max_speed_backward": 0.3,
+    "turn_step": 0.15,
+    "max_turn": 3
+  },
+  "max_health": 12500,
+  "defense_stats": {
+    "damage_threshold": 0.1
+  },
+  "armor_min_damage": 12,
+  "core_distance_scale_multiplier": 0.0,
+  "view_info": {
+    "third_person_center_offset": [0, 15, 0],
+    "third_person_distance": 80,
+    "third_person_center_offset_zoomed": [0, 15, 0],
+    "third_person_distance_zoomed": 0,
+    "sound_distance": 30
+  },
+  "energy_info": {
+    "energy_capacity": 500000,
+    "energy_consumption_per_tick": 0.87
+  },
+  "physics_info": {
+    "mass": 7000000,
+    "friction": 14000000,
+    "density": 0.5,
+    "liquid_damping": 0.0135,
+    "center": [0, 0, 0],
+    "turn_depth_scale": 0.083
+  },
+  "audio_info": {
+    "camera_relative_fire_sound_distance": 4.0
+  },
+  "with_warning_receiver": true,
+  "hide_passenger": true,
+  "structure_model": "rvp:vehicle/052d",
+  "parts": [
+    {
+      "id": "weapon0",
+      "name": "weapon0",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "weapon0",
+      "sub_part_unit_ids": ["radar"],
+      "seat_offset": [-0.8125, 9.8125, 0.3125],
+      "operator_view_offset": [-0.8125, 1.8375, 0.3125],
+      "optical_sight_offset": [-0.8125, 1.8375, 0.3125],
+      "operator_on_weapon_unit": true,
+      "optical_sight_type": "crt_ui",
+      "crosshair_style": "circle",
+      "with_focus_locker": true,
+      "with_stabilizer": true,
+      "with_thermal_imager": true,
+      "zoom_max": 6,
+      "fire_control_sensor_type": "rf",
+      "rot_info": {
+        "x_rot_speed": 4,
+        "y_rot_speed": 4,
+        "x_rot_max": 10,
+        "x_rot_min": -85,
+        "y_rot_max": 180,
+        "y_rot_min": -180
+      },
+      "weapons": [
+        {
+          "id": "rvp:052d_hpj12",
+          "part_unit_id": "weapon0"
+        },
+        {
+          "part_unit_id": "hq9",
+          "weapon_bay_unit_id": "hq9_bay"
+        },
+        {
+          "id": "rvp:052d_hq10",
+          "part_unit_id": "weapon5"
+        }
+      ]
+    },
+    {
+      "id": "weapon2",
+      "name": "weapon2",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "weapon2",
+      "sub_part_unit_ids": ["radar"],
+      "seat_offset": [0, 8.375, 21.875],
+      "operator_view_offset": [0, 2.86875, 1.65625],
+      "optical_sight_offset": [0, 2.86875, 1.65625],
+      "operator_on_weapon_unit": true,
+      "optical_sight_type": "crt_ui_operator",
+      "crosshair_style": "circle",
+      "with_focus_locker": true,
+      "with_stabilizer": true,
+      "fire_control_sensor_type": "rf",
+      "rot_info": {
+        "x_rot_speed": 3,
+        "y_rot_speed": 3,
+        "x_rot_max": 5,
+        "x_rot_min": -70,
+        "y_rot_max": 150,
+        "y_rot_min": -150
+      },
+      "weapons": [
+        {
+          "id": "rvp:052d_hpj38",
+          "part_unit_id": "weapon2"
+        },
+        {
+          "part_unit_id": "yj20",
+          "weapon_bay_unit_id": "yj20_bay"
+        },
+        {
+          "part_unit_id": "yj19",
+          "weapon_bay_unit_id": "yj19_bay"
+        }
+      ]
+    },
+    {
+      "id": "weapon3",
+      "name": "weapon3",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "weapon3",
+      "sub_part_unit_ids": ["radar"],
+      "seat_offset": [4.96875, 8.9375, -52.5625],
+      "operator_view_offset": [0.00625, 1.73125, 0.2375],
+      "optical_sight_offset": [0.00625, 1.73125, 0.2375],
+      "operator_on_weapon_unit": true,
+      "optical_sight_type": "crt_ui",
+      "crosshair_style": "cross",
+      "with_stabilizer": true,
+      "fire_control_sensor_type": "ccip",
+      "rot_info": {
+        "x_rot_speed": 3,
+        "y_rot_speed": 3,
+        "x_rot_max": 10,
+        "x_rot_min": -60,
+        "y_rot_max": 120,
+        "y_rot_min": -120
+      },
+      "weapons": [
+        {
+          "id": "rvp:052d_fqsd",
+          "part_unit_id": "weapon3"
+        }
+      ]
+    },
+    {
+      "id": "weapon4",
+      "name": "weapon4",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "weapon4",
+      "sub_part_unit_ids": ["radar"],
+      "seat_offset": [-4.96875, 8.9375, -52.5625],
+      "operator_view_offset": [-0.00625, 1.73125, 0.2375],
+      "optical_sight_offset": [-0.00625, 1.73125, 0.2375],
+      "operator_on_weapon_unit": true,
+      "optical_sight_type": "crt_ui",
+      "crosshair_style": "cross",
+      "with_stabilizer": true,
+      "fire_control_sensor_type": "ccip",
+      "rot_info": {
+        "x_rot_speed": 3,
+        "y_rot_speed": 3,
+        "x_rot_max": 10,
+        "x_rot_min": -60,
+        "y_rot_max": 120,
+        "y_rot_min": -120
+      },
+      "weapons": [
+        {
+          "id": "rvp:052d_fqsd",
+          "part_unit_id": "weapon4"
+        }
+      ]
+    },
+    {
+      "id": "weapon5",
+      "name": "weapon5",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "weapon5",
+      "is_seat": false,
+      "crosshair_style": "none",
+      "fire_control_sensor_type": "rf",
+      "parent_weapon_unit_aim": true,
+      "rot_info": {
+        "x_rot_speed": 4,
+        "y_rot_speed": 4,
+        "x_rot_max": 10,
+        "x_rot_min": -85
+      },
+      "weapons": [
+        "rvp:052d_hq10"
+      ]
+    },
+    {
+      "id": "hq9",
+      "name": "hq9",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "hq9",
+      "is_seat": false,
+      "crosshair_style": "none",
+      "fire_control_sensor_type": "rf",
+      "parent_weapon_unit_aim": true,
+      "cold_launch_time_tick": 20,
+      "cold_launch_velocity": [0, 2.0, 0],
+      "weapons": [
+        "rvp:052d_hq9b"
+      ]
+    },
+    {
+      "id": "yj20",
+      "name": "yj20",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "yj20",
+      "is_seat": false,
+      "crosshair_style": "none",
+      "fire_control_sensor_type": "rf",
+      "parent_weapon_unit_aim": true,
+      "cold_launch_time_tick": 20,
+      "cold_launch_velocity": [0, 2.0, 0],
+      "weapons": [
+        "rvp:052d_yj20"
+      ]
+    },
+    {
+      "id": "yj19",
+      "name": "yj19",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "yj19",
+      "is_seat": false,
+      "crosshair_style": "none",
+      "fire_control_sensor_type": "rf",
+      "parent_weapon_unit_aim": true,
+      "cold_launch_time_tick": 20,
+      "cold_launch_velocity": [0, 2.0, 0],
+      "weapons": [
+        "rvp:052d_yj19"
+      ]
+    },
+    {
+      "id": "hq9_bay",
+      "name": "hq9_bay",
+      "type": "ywzj_vehicle:weapon_bay",
+      "structure_bone": "hq9_barrel",
+      "is_seat": false,
+      "open_radar_rcs_multiplier": 1.5
+    },
+    {
+      "id": "yj19_bay",
+      "name": "yj19_bay",
+      "type": "ywzj_vehicle:weapon_bay",
+      "structure_bone": "yj19_barrel",
+      "is_seat": false,
+      "open_radar_rcs_multiplier": 1.2
+    },
+    {
+      "id": "yj20_bay",
+      "name": "yj20_bay",
+      "type": "ywzj_vehicle:weapon_bay",
+      "structure_bone": "yj20_barrel",
+      "is_seat": false,
+      "open_radar_rcs_multiplier": 1.2
+    },
+    {
+      "id": "radar",
+      "name": "radar",
+      "type": "ywzj_vehicle:radar",
+      "structure_bone": "radar",
+      "radar_role": "all",
+      "nctr_mode": "MODERN",
+      "is_seat": false,
+      "rot_info": {
+        "x_rot_speed": 0,
+        "y_rot_speed": 0,
+        "y_rot_min": 0,
+        "y_rot_max": 360
+      },
+      "radar_type": "052D",
+      "scan_animation_mode": "phase",
+      "scan_period_tick": 20,
+      "scan_sector_angle": 170,
+      "max_scan_distance": 4096,
+      "scan_min_height": 25,
+      "scan_max_height": 10000,
+      "scan_sea": true,
+      "scan_vehicle_only": false
+    },
+    {
+      "id": "vehicle_body",
+      "name": "vehicle_body",
+      "type": "ywzj_vehicle:generic",
+      "structure_bone": "vehicle_body",
+      "is_seat": false
+    },
+    {
+      "id": "Engine",
+      "name": "Engine",
+      "type": "ywzj_vehicle:generic",
+      "structure_bone": "Engine",
+      "is_seat": false
+    }
+  ],
+  "rvp_radar_rcs_factor": [
+    600,
+    600,
+    600
+  ],
+  "rvp_persistent_chunk_lease": true,
+  "rvp_helipads": ["helipad"],
+  "bone_modules": {
+    "Engine": {
+      "modules": [
+        "engine"
+      ],
+      "engine": {
+        "threshold_light": 1000,
+        "threshold_heavy": 1000
+      }
+    },
+    "radar": {
+      "modules": [
+        "radar"
+      ],
+      "min_damage": 1000.0
+    },
+    "weapon0_barrel": {
+      "modules": [
+        "barrel"
+      ],
+      "barrel": {
+        "threshold": 1000
+      }
+    },
+    "weapon2_barrel": {
+      "modules": [
+        "barrel"
+      ],
+      "barrel": {
+        "threshold": 1000
+      }
+    },
+    "weapon3_barrel": {
+      "modules": [
+        "barrel"
+      ],
+      "barrel": {
+        "threshold": 1000
+      }
+    },
+    "weapon4_barrel": {
+      "modules": [
+        "barrel"
+      ],
+      "barrel": {
+        "threshold": 1000
+      }
+    },
+    "hq9_barrel": {
+      "modules": [
+        "barrel"
+      ],
+      "barrel": {
+        "threshold": 1000
+      }
+    },
+    "yj19_barrel": {
+      "modules": [
+        "barrel"
+      ],
+      "barrel": {
+        "threshold": 1000
+      }
+    },
+    "yj20_barrel": {
+      "modules": [
+        "barrel"
+      ],
+      "barrel": {
+        "threshold": 1000
+      }
+    }
+  },
+  "hitbox_damage_factor": {
+    "weapon0": 1,
+    "weapon2": 1,
+    "weapon3": 1,
+    "weapon4": 1,
+    "weapon5": 1,
+    "weapon5_barrel": 1,
+    "hq9_barrel": 1,
+    "yj20_barrel": 1,
+    "yj19_barrel": 1,
+    "radar": 1,
+    "vehicle_body": 1,
+    "Engine": 1,
+    "weapon0_barrel": 1,
+    "weapon2_barrel": 1,
+    "weapon3_barrel": 1,
+    "weapon4_barrel": 1
+  },
+  "hitbox_display_name": {
+    "weapon0": "CIWS Mount",
+    "weapon2": "Main Gun Turret",
+    "weapon3": "Port Launcher",
+    "weapon4": "Starboard Launcher",
+    "weapon5": "Missile Launcher",
+    "weapon5_barrel": "Missile Launcher Mount",
+    "hq9_barrel": "VLS",
+    "yj20_barrel": "VLS",
+    "yj19_barrel": "VLS",
+    "radar": "Radar",
+    "vehicle_body": "Hull",
+    "Engine": "Engine Room",
+    "weapon0_barrel": "CIWS Barrel",
+    "weapon2_barrel": "Main Gun Barrel",
+    "weapon3_barrel": "Port Launcher Tube",
+    "weapon4_barrel": "Starboard Launcher Tube"
+  },
+  "hitbox_display_name_CN": {
+    "weapon0": "近防炮炮塔",
+    "weapon2": "主炮炮塔",
+    "weapon3": "左舷发射装置",
+    "weapon4": "右舷发射装置",
+    "weapon5": "近程防空发射器",
+    "weapon5_barrel": "近程防空发射器俯仰架",
+    "hq9_barrel": "垂发",
+    "yj20_barrel": "垂发",
+    "yj19_barrel": "垂发",
+    "radar": "雷达",
+    "vehicle_body": "舰体",
+    "Engine": "动力舱",
+    "weapon0_barrel": "近防炮管",
+    "weapon2_barrel": "主炮炮管",
+    "weapon3_barrel": "左舷发射管",
+    "weapon4_barrel": "右舷发射管"
+  }
+}

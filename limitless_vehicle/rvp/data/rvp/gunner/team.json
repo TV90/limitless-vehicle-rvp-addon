@@ -1,0 +1,190 @@
+{
+  "schema_version": 2,
+  "name": "team",
+  "faction": "team",
+  "behaviors": [
+    {
+      "id": "incoming_ammo",
+      "type": "rvp:ciws_targeting",
+      "priority": 850,
+      "config": {
+        "scan_interval_tick": 1,
+        "target_cooldown_tick": 100
+      }
+    },
+    {
+      "id": "main_target",
+      "type": "rvp:primary_targeting",
+      "priority": 500,
+      "config": {
+        "target_types": [
+          "player",
+          "vehicle:non_allied_gunner"
+        ],
+        "gps_prefer_farthest": true,
+        "search_radius": 256.0,
+        "scan_interval_tick": 8,
+        "engagement_net_cooldown_tick": 100
+      }
+    },
+    {
+      "id": "resupply",
+      "type": "rvp:driver_supply",
+      "priority": 100,
+      "config": {}
+    },
+    {
+      "id": "base_defense",
+      "type": "rvp:weapon_countermeasure",
+      "priority": 800,
+      "config": {
+        "range": 36.0,
+        "cooldown_tick": 80
+      }
+    },
+    {
+      "id": "rvp_defense",
+      "type": "rvp:rvp_countermeasure",
+      "priority": 850,
+      "config": {
+        "scan_interval_tick": 5,
+        "cooldown_tick": 100,
+        "missile_threat_range": 256.0,
+        "radar_lock_threat_range": 1024.0
+      }
+    },
+    {
+      "id": "ecm",
+      "type": "rvp:active_ecm",
+      "priority": 850,
+      "config": {
+        "threat_range": 400.0
+      }
+    },
+    {
+      "id": "smoke_cover",
+      "type": "rvp:smoke_evasion",
+      "priority": 820,
+      "config": {
+        "scan_interval_tick": 10,
+        "hold_tick": 260,
+        "look_radius": 48.0
+      }
+    },
+    {
+      "id": "own_radar",
+      "type": "rvp:ownship_radar",
+      "priority": 500,
+      "config": {}
+    },
+    {
+      "id": "external_radar",
+      "type": "rvp:external_radar",
+      "priority": 510,
+      "config": {}
+    },
+    {
+      "id": "guidance",
+      "type": "rvp:guided_weapon_support",
+      "priority": 520,
+      "config": {}
+    },
+    {
+      "id": "sead",
+      "type": "rvp:sead_revenge",
+      "priority": 950,
+      "config": {
+        "threat_scan_interval_tick": 10,
+        "radar_lock_range": 1024.0,
+        "fly_away_tick": 100,
+        "reversal_tick": 160,
+        "lock_fire_tick": 40,
+        "timeout_tick": 400,
+        "cooldown_tick": 400
+      }
+    },
+    {
+      "id": "fixed_wing_flight",
+      "type": "rvp:fixed_wing_combat_flight",
+      "priority": 500,
+      "config": {
+        "cruise_altitude_min": 150.0,
+        "cruise_altitude_max": 500.0,
+        "combat_radius_min": 40.0,
+        "combat_radius_max": 550.0,
+        "attack_phase_tick": 200,
+        "disengage_phase_tick": 200,
+        "initial_disengage_tick_min": 300,
+        "initial_disengage_tick_max": 400
+      }
+    },
+    {
+      "id": "rotary_wing_flight",
+      "type": "rvp:rotary_wing_combat_flight",
+      "priority": 500,
+      "config": {
+        "cruise_altitude_min": 28.0,
+        "cruise_altitude_max": 60.0,
+        "attack_phase_tick": 200,
+        "disengage_phase_tick": 200,
+        "initial_disengage_tick_min": 300,
+        "initial_disengage_tick_max": 400
+      }
+    },
+    {
+      "id": "launcher_move",
+      "type": "rvp:launcher_positioning",
+      "priority": 500,
+      "config": {
+        "stop_distance": 12.0
+      }
+    },
+    {
+      "id": "recover",
+      "type": "rvp:stuck_recovery",
+      "priority": 800,
+      "config": {
+        "check_interval_tick": 20,
+        "stuck_distance": 1.0,
+        "recovery_tick": 20
+      }
+    },
+    {
+      "id": "ground_combat_move",
+      "type": "rvp:ground_engagement_move",
+      "priority": 500,
+      "config": {
+        "stop_distance": 12.0,
+        "hold_tick": 100,
+        "evade_tick_min": 140,
+        "evade_tick_max": 280,
+        "evade_yaw_deg": 55.0
+      }
+    },
+    {
+      "id": "ground_idle_patrol",
+      "type": "rvp:ground_patrol",
+      "priority": 200,
+      "config": {
+        "big_turn_interval_tick_min": 300,
+        "big_turn_interval_tick_max": 600,
+        "big_turn_angle_deg_min": 120.0,
+        "big_turn_angle_deg_max": 180.0,
+        "big_turn_duration_tick": 40
+      }
+    },
+    {
+      "id": "main_combat",
+      "type": "rvp:weapon_engagement",
+      "priority": 500,
+      "config": {
+        "fire_window_deg": 5.0,
+        "lead_scale": 1.0,
+        "burst_fire_tick": 6,
+        "burst_rest_tick": 10,
+        "guided_weapon_cooldown_tick": 100,
+        "ciws_target_cooldown_tick": 100
+      }
+    }
+  ]
+}

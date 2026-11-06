@@ -1,0 +1,263 @@
+{
+  "defense_stats": {
+    "damage_threshold": 0.1
+  },
+  "armor_min_damage": 12,
+  "type": "ywzj_vehicle:wheeled_vehicle",
+  "show_skeleton": false,
+  "attributes": {
+    "brake_force": 138000.0,
+    "forward_force": 54096,
+    "backward_force": 99360.0,
+    "max_speed_forward": 0.68,
+    "max_speed_backward": 0.4,
+    "turn_step": 0.18,
+    "max_turn": 1.1
+  },
+  "max_health": 600,
+  "view_info": {
+    "third_person_center_offset": [
+      0,
+      3,
+      0
+    ],
+    "third_person_distance": 12,
+    "sound_distance": 7
+  },
+  "energy_info": {
+    "energy_capacity": 1,
+    "energy_consumption_per_tick": 1e-05
+  },
+  "physics_info": {
+    "suspension_response": 0.25,
+    "mass": 13800,
+    "friction": 27600,
+    "can_destroy_block": true
+  },
+  "hide_passenger": true,
+  "structure_model": "rvp:vehicle/m142",
+  "core_distance_scale_multiplier": 0.0,
+  "deployable_uav_enabled": true,
+  "deployable_uav_vehicle_id": "rvp:suav",
+  "deployable_uav_role": "uav",
+  "deployable_uav_spawn_offset": [
+    0.0,
+    100.0,
+    0.0
+  ],
+  "deployable_uav_spawn_yaw_mode": "parent",
+  "deployable_uav_single_instance": true,
+  "deployable_uav_allow_control_switch": true,
+  "deployable_uav_auto_link_datalink": true,
+  "deployable_uav_redeploy_cooldown_tick": 60,
+  "deployable_uav_auto_loiter_on_switch_back": true,
+  "deployable_uav_initial_speed": 1,
+  "rvp_loiter_enabled": true,
+  "rvp_loiter_radius": 100.0,
+  "rvp_loiter_altitude_offset": 35.0,
+  "rvp_loiter_auto_on_takeoff": true,
+  "parts": [
+    {
+      "id": "suspension_wheel1",
+      "name": "suspension_wheel1",
+      "type": "ywzj_vehicle:suspension",
+      "render_bone": "xuangua1",
+      "max_health": 900,
+      "defense_stats": {
+        "damage_threshold": 0.1
+      },
+      "structure_bone": "whell1",
+      "is_seat": false,
+      "spring_stiffness": 153600,
+      "damping": 7900,
+      "rest_length": 0.4,
+      "max_compression": 0.4,
+      "max_extension": 0.22,
+      "max_droop": 0.1
+    },
+    {
+      "id": "suspension_wheel2",
+      "name": "suspension_wheel2",
+      "type": "ywzj_vehicle:suspension",
+      "render_bone": "xuangua2",
+      "max_health": 900,
+      "defense_stats": {
+        "damage_threshold": 0.1
+      },
+      "structure_bone": "whell2",
+      "is_seat": false,
+      "spring_stiffness": 153600,
+      "damping": 7900,
+      "rest_length": 0.4,
+      "max_compression": 0.4,
+      "max_extension": 0.22,
+      "max_droop": 0.1
+    },
+    {
+      "id": "suspension_wheel3",
+      "name": "suspension_wheel3",
+      "type": "ywzj_vehicle:suspension",
+      "render_bone": "xuangua3",
+      "max_health": 900,
+      "defense_stats": {
+        "damage_threshold": 0.1
+      },
+      "structure_bone": "whell3",
+      "is_seat": false,
+      "spring_stiffness": 153600,
+      "damping": 7900,
+      "rest_length": 0.4,
+      "max_compression": 0.4,
+      "max_extension": 0.22,
+      "max_droop": 0.1
+    },
+    {
+      "id": "suspension_wheel4",
+      "name": "suspension_wheel4",
+      "type": "ywzj_vehicle:suspension",
+      "render_bone": "xuangua4",
+      "max_health": 900,
+      "defense_stats": {
+        "damage_threshold": 0.1
+      },
+      "structure_bone": "whell4",
+      "is_seat": false,
+      "spring_stiffness": 153600,
+      "damping": 7900,
+      "rest_length": 0.4,
+      "max_compression": 0.4,
+      "max_extension": 0.22,
+      "max_droop": 0.1
+    },
+    {
+      "id": "suspension_wheel5",
+      "name": "suspension_wheel5",
+      "type": "ywzj_vehicle:suspension",
+      "render_bone": "xuangua5",
+      "max_health": 900,
+      "defense_stats": {
+        "damage_threshold": 0.1
+      },
+      "structure_bone": "whell5",
+      "is_seat": false,
+      "spring_stiffness": 153600,
+      "damping": 7900,
+      "rest_length": 0.4,
+      "max_compression": 0.4,
+      "max_extension": 0.22,
+      "max_droop": 0.1
+    },
+    {
+      "id": "suspension_wheel6",
+      "name": "suspension_wheel6",
+      "type": "ywzj_vehicle:suspension",
+      "render_bone": "xuangua6",
+      "max_health": 900,
+      "defense_stats": {
+        "damage_threshold": 0.1
+      },
+      "structure_bone": "whell6",
+      "is_seat": false,
+      "spring_stiffness": 153600,
+      "damping": 7900,
+      "rest_length": 0.4,
+      "max_compression": 0.4,
+      "max_extension": 0.22,
+      "max_droop": 0.1
+    },
+    {
+      "id": "launcher",
+      "name": "launcher",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "turret",
+      "ammo_capacity": -1,
+      "is_seat": false,
+      "base": "seat",
+      "parent_weapon_unit_aim": true,
+      "fire_control_sensor_type": "ccip",
+      "crosshair_style": "cross",
+      "weapons": [
+        "rvp:m142_rocket",
+        "rvp:m142_m30",
+        "rvp:m142_m30_wp",
+        "rvp:m142_atacms"
+      ],
+      "rot_info": {
+        "x_rot_speed": 1.25,
+        "y_rot_speed": 0,
+        "x_rot_max": 5,
+        "x_rot_min": -85,
+        "y_rot_max": 0,
+        "y_rot_min": 0
+      }
+    },
+    {
+      "id": "seat",
+      "name": "seat",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "turret",
+      "is_seat": true,
+      "seat_offset": [
+        -0.0001,
+        2.9644,
+        1.617
+      ],
+      "operator_view_offset": [
+        0,
+        1.5484625,
+        -1.6826625
+      ],
+      "optical_sight_offset": [
+        0,
+        1.5484625,
+        -1.6826625
+      ],
+      "operator_on_weapon_unit": false,
+      "optical_sight_type": "operator",
+      "zoom_min": 1,
+      "zoom_max": 2,
+      "crosshair_style": "circle",
+      "weapons": [
+        {
+          "part_unit_id": "launcher"
+        }
+      ],
+      "rot_info": {
+        "x_rot_speed": 1.5,
+        "y_rot_speed": 1.5,
+        "x_rot_max": 5,
+        "x_rot_min": -85,
+        "need_power": false
+      }
+    }
+  ],
+  "bone_modules": {
+    "vehicle_body": {
+      "modules": [
+        "engine"
+      ],
+      "engine": {
+        "threshold_light": 450,
+        "threshold_heavy": 700
+      }
+    },
+    "ecm_bone": {
+      "modules": [
+        "ecm_active"
+      ],
+      "ecm_active": {
+        "ammo_jam_radius": 250,
+        "vehicle_jam_radius": 0
+      },
+      "min_damage": 20
+    },
+    "__vehicle__": {
+      "modules": [
+        "MAINTENANCE"
+      ]
+    }
+  },
+  "hitbox_max_incidence_angle": {
+    "turret_barrel": 20
+  }
+}

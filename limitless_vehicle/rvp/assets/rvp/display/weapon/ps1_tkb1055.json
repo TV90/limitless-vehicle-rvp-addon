@@ -1,0 +1,10 @@
+{
+  "type": "ywzj_rvp:weapon",
+  "bedrock_backend": "rvp",
+  "model": "ywzj_vehicle:entity/missile_akd10",
+  "texture": "ywzj_vehicle:textures/entity/missile_akd10.png",
+  "sounds": {
+    "fire": "ywzj_vehicle:missile_launch",
+    "reload": "ywzj_vehicle:common_reload"
+  }
+}

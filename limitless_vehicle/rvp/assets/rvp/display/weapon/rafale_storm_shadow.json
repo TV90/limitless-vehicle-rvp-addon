@@ -1,0 +1,11 @@
+{
+  "type": "ywzj_rvp:weapon",
+  "bedrock_backend": "rvp",
+  "model": "rvp:entity/ammo/missile_stormshadow",
+  "texture": "rvp:textures/entity/ammo/missile_stormshadow.png",
+  "animations": "rvp:entity/missile_stormshadow.animation",
+  "sounds": {
+    "fire": "ywzj_vehicle:missile_launch",
+    "reload": "ywzj_vehicle:common_reload"
+  }
+}

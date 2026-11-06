@@ -1,0 +1,95 @@
+{
+  "gsh_30_1_shot": {
+    "sounds": [
+      "rvp:weapon/auto_cannon/gsh_30_1_001",
+      "rvp:weapon/auto_cannon/gsh_30_1_002",
+      "rvp:weapon/auto_cannon/gsh_30_1_003"
+    ],
+    "subtitle": "rvp.sounds.gsh_30_1_shot"
+  },
+  "missile_start_med": {
+    "sounds": [
+      "rvp:weapon/missile/missile_start_med_001",
+      "rvp:weapon/missile/missile_start_med_002",
+      "rvp:weapon/missile/missile_start_med_003"
+    ],
+    "subtitle": "rvp.sounds.missile_start_med"
+  },
+  "railgun_charge": {
+    "sounds": [
+      "rvp:weapon/railgun_snd"
+    ],
+    "subtitle": "rvp.sounds.railgun_charge"
+  },
+  "railgun_fire": {
+    "sounds": [
+      "rvp:weapon/railgun_f_snd"
+    ],
+    "subtitle": "rvp.sounds.railgun_fire"
+  },
+  "m61a1_snd": {
+    "sounds": [
+      "rvp:weapon/auto_cannon/m61a1_snd"
+    ],
+    "subtitle": "rvp.sounds.gsh_30_1_shot"
+  },
+  "zbl08a_ru_30_shot": {
+    "sounds": [
+      "rvp:weapon/auto_cannon/ru_30_snd"
+    ],
+    "subtitle": "rvp.sounds.zbl08a_ru_30_shot"
+  },
+  "nato_25_snd": {
+    "sounds": [
+      "rvp:weapon/auto_cannon/nato_25_snd"
+    ],
+    "subtitle": "rvp.sounds.nato_25_snd"
+  },
+  "kda_35_snd": {
+    "sounds": [
+      "rvp:weapon/kda_35_snd_2"
+    ],
+    "subtitle": "rvp.sounds.kda_35_snd"
+  },
+  "laser_shot": {
+    "sounds": [
+      "rvp:weapon/laser/laser_shot_snd"
+    ],
+    "subtitle": "rvp.sounds.laser_shot"
+  },
+  "114514": {
+    "sounds": [
+      "rvp:weapon/114514"
+    ]
+  },
+  "2s38_snd": {
+    "sounds": [
+      "rvp:weapon/2s38_snd"
+    ],
+    "subtitle": "rvp.sounds.2s38_snd"
+  },
+  "ru_125_fire_snd": {
+    "sounds": [
+      "rvp:weapon/ru_125_fire_snd"
+    ],
+    "subtitle": "rvp.sounds.ru_125_fire_snd"
+  },
+  "tank_atgm_fire_snd": {
+    "sounds": [
+      "rvp:weapon/tank_atgm_fire_snd"
+    ],
+    "subtitle": "rvp.sounds.tank_atgm_fire_snd"
+  },
+  "nato_120_snd": {
+    "sounds": [
+      "rvp:weapon/nato_120_snd"
+    ],
+    "subtitle": "rvp.sounds.nato_120_snd"
+  },
+  "tank_120_atgm_snd": {
+    "sounds": [
+      "rvp:weapon/tank_120_atgm_snd"
+    ],
+    "subtitle": "rvp.sounds.tank_120_atgm_snd"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "type": "ywzj_rvp:weapon",
+  "bedrock_backend": "rvp",
+  "sounds": {
+    "charge": "rvp:railgun_charge",
+    "fire": "rvp:railgun_fire",
+    "reload": "ywzj_vehicle:artillery_reload"
+  }
+}

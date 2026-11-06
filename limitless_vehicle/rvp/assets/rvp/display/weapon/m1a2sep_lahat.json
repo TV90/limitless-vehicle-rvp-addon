@@ -1,0 +1,7 @@
+{
+  "type": "ywzj_vehicle:weapon",
+  "sounds": {
+    "fire": "rvp:tank_120_atgm_snd",
+    "reload": "ywzj_vehicle:gun_reload"
+  }
+}

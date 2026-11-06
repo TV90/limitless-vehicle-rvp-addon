@@ -1,0 +1,90 @@
+{
+  "schema_version": 2,
+  "name": "air",
+  "faction": "friendly",
+  "behaviors": [
+    {
+      "id": "incoming_ammo",
+      "type": "rvp:ciws_targeting",
+      "priority": 850,
+      "config": {
+        "scan_interval_tick": 1,
+        "target_cooldown_tick": 100
+      }
+    },
+    {
+      "id": "main_target",
+      "type": "rvp:primary_targeting",
+      "priority": 500,
+      "config": {
+        "target_types": [
+          "vehicle",
+          "player"
+        ],
+        "gps_prefer_farthest": true,
+        "search_radius": 320.0,
+        "scan_interval_tick": 6,
+        "engagement_net_cooldown_tick": 100
+      }
+    },
+    {
+      "id": "base_defense",
+      "type": "rvp:weapon_countermeasure",
+      "priority": 800,
+      "config": {
+        "range": 52.0,
+        "cooldown_tick": 60
+      }
+    },
+    {
+      "id": "rvp_defense",
+      "type": "rvp:rvp_countermeasure",
+      "priority": 850,
+      "config": {
+        "scan_interval_tick": 5,
+        "cooldown_tick": 100,
+        "missile_threat_range": 256.0,
+        "radar_lock_threat_range": 1024.0
+      }
+    },
+    {
+      "id": "ecm",
+      "type": "rvp:active_ecm",
+      "priority": 850,
+      "config": {
+        "threat_range": 400.0
+      }
+    },
+    {
+      "id": "own_radar",
+      "type": "rvp:ownship_radar",
+      "priority": 500,
+      "config": {}
+    },
+    {
+      "id": "external_radar",
+      "type": "rvp:external_radar",
+      "priority": 510,
+      "config": {}
+    },
+    {
+      "id": "guidance",
+      "type": "rvp:guided_weapon_support",
+      "priority": 520,
+      "config": {}
+    },
+    {
+      "id": "main_combat",
+      "type": "rvp:weapon_engagement",
+      "priority": 500,
+      "config": {
+        "fire_window_deg": 4.0,
+        "lead_scale": 1.5,
+        "burst_fire_tick": 4,
+        "burst_rest_tick": 8,
+        "guided_weapon_cooldown_tick": 100,
+        "ciws_target_cooldown_tick": 100
+      }
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "type": "ywzj_rvp:weapon",
+  "bedrock_backend": "rvp",
+  "model": "ywzj_vehicle:entity/rocket_57mm",
+  "texture": "ywzj_vehicle:textures/entity/rocket_57mm.png",
+  "sounds": {
+    "fire": "ywzj_vehicle:rocket_launch",
+    "reload": "ywzj_vehicle:common_reload"
+  }
+}

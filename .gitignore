@@ -49,8 +49,8 @@ eclipse
 forge*changelog.txt
 webeditor/node_modules/
 webeditor/dist/
-# 载具包（数据资产）不进 git，走安装目录分发；仅放行 RVP 武器配置
-# 载具包唯一权威副本（2026-10-08 迁移）：794MB 不进 git，开发/修改一律在此；limitless_vehicle/ 降为同步包
+# 载具包唯一权威副本为 limitless_vehicle/；仅将下列白名单纳入 git，其余资产继续忽略
+# 旧权威目录已废止，继续忽略
 limitless_vehicle_authoritative/
 limitless_vehicle/*
 !limitless_vehicle/rvp/
@@ -61,6 +61,23 @@ limitless_vehicle/rvp/data/*
 limitless_vehicle/rvp/data/rvp/*
 !limitless_vehicle/rvp/data/rvp/weapons/
 !limitless_vehicle/rvp/data/rvp/weapons/**
+!limitless_vehicle/rvp/data/rvp/vehicles/
+!limitless_vehicle/rvp/data/rvp/vehicles/**
+!limitless_vehicle/rvp/data/rvp/gunner/
+!limitless_vehicle/rvp/data/rvp/gunner/**
+!limitless_vehicle/rvp/data/rvp/fire_support_profiles/
+!limitless_vehicle/rvp/data/rvp/fire_support_profiles/**
+!limitless_vehicle/rvp/assets/
+limitless_vehicle/rvp/assets/*
+!limitless_vehicle/rvp/assets/rvp/
+limitless_vehicle/rvp/assets/rvp/*
+!limitless_vehicle/rvp/assets/rvp/sounds.json
+!limitless_vehicle/rvp/assets/rvp/sounds/
+!limitless_vehicle/rvp/assets/rvp/sounds/**
+!limitless_vehicle/rvp/assets/rvp/display/
+limitless_vehicle/rvp/assets/rvp/display/*
+!limitless_vehicle/rvp/assets/rvp/display/weapon/
+!limitless_vehicle/rvp/assets/rvp/display/weapon/**
 RVP-I18N迁移备份_20260928/
 CM命中别名补全备份_20260929/
 坦克烟雾弹补全备份_20260929/

@@ -1,0 +1,487 @@
+{
+  "defense_stats": {
+    "damage_threshold": 0.1
+  },
+  "armor_min_damage": 12,
+  "rvp_armor_type": "ywzj_vehicle:wheeled_vehicle",
+  "type": "ywzj_vehicle:tracked_vehicle",
+  "show_skeleton": false,
+  "attributes": {
+    "brake_acceleration": 0.025,
+    "forward_acceleration": 0.0098,
+    "backward_acceleration": 0.01,
+    "max_speed_forward": 0.6944,
+    "max_speed_backward": 0.3472,
+    "turn_acceleration": 1,
+    "max_turn": 2
+  },
+  "max_health": 800,
+  "view_info": {
+    "third_person_center_offset": [
+      0,
+      3,
+      0
+    ],
+    "third_person_distance": 12,
+    "sound_distance": 7,
+    "third_person_lock_to_operator_aim": true
+  },
+  "energy_info": {
+    "energy_capacity": 1,
+    "energy_consumption_per_tick": 1e-05
+  },
+  "physics_info": {
+    "suspension_response": 0.25,
+    "mass": 35000,
+    "friction": 70000,
+    "can_destroy_block": true
+  },
+  "hide_passenger": true,
+  "structure_model": "rvp:vehicle/bukm3",
+  "core_distance_scale_multiplier": 0.0,
+  "hitbox_damage_factor_default": 1.0,
+  "hitbox_max_incidence_angle": {
+    "Upper_front": 20,
+    "smoke_barrel": 20
+  },
+  "hitbox_damage_factor": {
+    "vehicle_body": 1.0,
+    "Upper_front": 0.8,
+    "Lower_front": 0.9,
+    "turret": 0.9,
+    "missile_barrel": 1.2,
+    "Engine": 1.2,
+    "track_roller1": 0.4,
+    "track_roller2": 0.4,
+    "track_roller3": 0.4,
+    "track_roller4": 0.4,
+    "track_roller5": 0.4,
+    "track_roller6": 0.4,
+    "track_roller7": 0.4,
+    "track_roller10": 0.4,
+    "track_roller11": 0.4,
+    "track_roller12": 0.4,
+    "track_roller13": 0.4,
+    "track_roller14": 0.4,
+    "track_roller15": 0.4,
+    "track_roller16": 0.4
+  },
+  "deployable_uav_enabled": true,
+  "deployable_uav_vehicle_id": "rvp:96l6",
+  "deployable_uav_role": "radar_relay",
+  "deployable_uav_spawn_offset": {
+    "x": 0.0,
+    "y": 0.5,
+    "z": -10.0
+  },
+  "deployable_uav_spawn_yaw_mode": "parent",
+  "deployable_uav_single_instance": true,
+  "deployable_uav_allow_control_switch": true,
+  "deployable_uav_auto_link_datalink": true,
+  "deployable_uav_redeploy_cooldown_tick": 1200,
+  "parts": [
+    {
+      "id": "turret",
+      "name": "turret",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "turret",
+      "seat_offset": [
+        0,
+        2.2,
+        0
+      ],
+      "operator_view_offset": [
+        0,
+        2.6,
+        0
+      ],
+      "optical_sight_offset": [
+        0.0,
+        3.8125,
+        3.25
+      ],
+      "with_stabilizer": true,
+      "with_thermal_imager": true,
+      "fire_control_sensor_type": "rf",
+      "rvp_fire_control_mode": "rvp_rf",
+      "optical_sight_type": "crt_ui",
+      "zoom_max": 8,
+      "crosshair_style": "circle",
+      "sub_part_unit_ids": [
+        "scan_radar"
+      ],
+      "rot_info": {
+        "x_rot_speed": 4,
+        "y_rot_speed": 4,
+        "x_rot_max": 5,
+        "x_rot_min": -75
+      },
+      "bolts": [
+        {
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "barrel_length": 0,
+          "x_rot": 0,
+          "y_rot": 0
+        }
+      ],
+      "weapons": [
+        {
+          "part_unit_id": "missile_barrel"
+        }
+      ]
+    },
+    {
+      "id": "missile_barrel",
+      "name": "missile_barrel",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "missile_barrel",
+      "fire_control_sensor_type": "rf",
+      "ammo_capacity": 6,
+      "is_seat": false,
+      "base": "turret",
+      "parent_weapon_unit_aim": true,
+      "crosshair_style": "none",
+      "rot_info": {
+        "x_rot_speed": 4,
+        "y_rot_speed": 0,
+        "x_rot_max": 5,
+        "x_rot_min": -75
+      },
+      "weapons": [
+        {
+          "ids": [
+            "rvp:bukm3_9m317m",
+            "rvp:bukm3_9m317ma"
+          ],
+          "save_id": "missile_barrel",
+          "modding_only_multi": true
+        }
+      ]
+    },
+    {
+      "id": "scan_radar",
+      "name": "scan_radar",
+      "type": "ywzj_vehicle:radar",
+      "structure_bone": "scan_radar",
+      "radar_role": "fire_control",
+      "radar_type": "BUK",
+      "nctr_mode": "MODERN",
+      "is_seat": false,
+      "base": "turret",
+      "rot_info": {
+        "x_rot_speed": 0,
+        "y_rot_speed": 0,
+        "x_rot_max": 85,
+        "x_rot_min": 0,
+        "y_rot_max": 45,
+        "y_rot_min": -45
+      },
+      "scan_sector_angle": 180,
+      "scan_animation_mode": "phase",
+      "scan_period_tick": 20,
+      "max_scan_distance": 1500
+    },
+    {
+      "id": "track",
+      "name": "track",
+      "type": "ywzj_vehicle:track",
+      "structure_bone": "track_link",
+      "suspensions": {
+        "track_link_r": [
+          "track_roller1",
+          "track_roller2",
+          "track_roller3",
+          "track_roller4",
+          "track_roller5",
+          "track_roller6",
+          "track_roller7"
+        ],
+        "track_link_l": [
+          "track_roller10",
+          "track_roller11",
+          "track_roller12",
+          "track_roller13",
+          "track_roller14",
+          "track_roller15",
+          "track_roller16"
+        ]
+      }
+    },
+    {
+      "id": "track_roller1",
+      "name": "track_roller1",
+      "type": "ywzj_vehicle:suspension",
+      "is_seat": false,
+      "render_bone": "xuangua1",
+      "structure_bone": "track_roller1",
+      "spring_stiffness": 475911.458334,
+      "damping": 34040.0,
+      "rest_length": 0.2,
+      "max_compression": 0.2,
+      "max_extension": 0.15,
+      "max_droop": 0.1
+    },
+    {
+      "id": "track_roller2",
+      "name": "track_roller2",
+      "type": "ywzj_vehicle:suspension",
+      "is_seat": false,
+      "render_bone": "xuangua2",
+      "structure_bone": "track_roller2",
+      "spring_stiffness": 475911.458334,
+      "damping": 34040.0,
+      "rest_length": 0.2,
+      "max_compression": 0.2,
+      "max_extension": 0.15,
+      "max_droop": 0.1
+    },
+    {
+      "id": "track_roller3",
+      "name": "track_roller3",
+      "type": "ywzj_vehicle:suspension",
+      "is_seat": false,
+      "render_bone": "xuangua3",
+      "structure_bone": "track_roller3",
+      "spring_stiffness": 475911.458334,
+      "damping": 34040.0,
+      "rest_length": 0.2,
+      "max_compression": 0.2,
+      "max_extension": 0.15,
+      "max_droop": 0.1
+    },
+    {
+      "id": "track_roller4",
+      "name": "track_roller4",
+      "type": "ywzj_vehicle:suspension",
+      "is_seat": false,
+      "render_bone": "xuangua4",
+      "structure_bone": "track_roller4",
+      "spring_stiffness": 475911.458334,
+      "damping": 34040.0,
+      "rest_length": 0.2,
+      "max_compression": 0.2,
+      "max_extension": 0.15,
+      "max_droop": 0.1
+    },
+    {
+      "id": "track_roller5",
+      "name": "track_roller5",
+      "type": "ywzj_vehicle:suspension",
+      "is_seat": false,
+      "render_bone": "xuangua5",
+      "structure_bone": "track_roller5",
+      "spring_stiffness": 475911.458334,
+      "damping": 34040.0,
+      "rest_length": 0.2,
+      "max_compression": 0.2,
+      "max_extension": 0.15,
+      "max_droop": 0.1
+    },
+    {
+      "id": "track_roller6",
+      "name": "track_roller6",
+      "type": "ywzj_vehicle:suspension",
+      "is_seat": false,
+      "render_bone": "xuangua6",
+      "structure_bone": "track_roller6",
+      "spring_stiffness": 475911.458334,
+      "damping": 34040.0,
+      "rest_length": 0.2,
+      "max_compression": 0.2,
+      "max_extension": 0.15,
+      "max_droop": 0.1
+    },
+    {
+      "id": "track_roller7",
+      "name": "track_roller7",
+      "type": "ywzj_vehicle:suspension",
+      "is_seat": false,
+      "render_bone": "xuangua7",
+      "structure_bone": "track_roller7",
+      "spring_stiffness": 475911.458334,
+      "damping": 34040.0,
+      "rest_length": 0.2,
+      "max_compression": 0.2,
+      "max_extension": 0.15,
+      "max_droop": 0.1
+    },
+    {
+      "id": "track_roller10",
+      "name": "track_roller10",
+      "type": "ywzj_vehicle:suspension",
+      "is_seat": false,
+      "render_bone": "xuangua10",
+      "structure_bone": "track_roller10",
+      "spring_stiffness": 475911.458334,
+      "damping": 34040.0,
+      "rest_length": 0.2,
+      "max_compression": 0.2,
+      "max_extension": 0.15,
+      "max_droop": 0.1
+    },
+    {
+      "id": "track_roller11",
+      "name": "track_roller11",
+      "type": "ywzj_vehicle:suspension",
+      "is_seat": false,
+      "render_bone": "xuangua11",
+      "structure_bone": "track_roller11",
+      "spring_stiffness": 475911.458334,
+      "damping": 34040.0,
+      "rest_length": 0.2,
+      "max_compression": 0.2,
+      "max_extension": 0.15,
+      "max_droop": 0.1
+    },
+    {
+      "id": "track_roller12",
+      "name": "track_roller12",
+      "type": "ywzj_vehicle:suspension",
+      "is_seat": false,
+      "render_bone": "xuangua12",
+      "structure_bone": "track_roller12",
+      "spring_stiffness": 475911.458334,
+      "damping": 34040.0,
+      "rest_length": 0.2,
+      "max_compression": 0.2,
+      "max_extension": 0.15,
+      "max_droop": 0.1
+    },
+    {
+      "id": "track_roller13",
+      "name": "track_roller13",
+      "type": "ywzj_vehicle:suspension",
+      "is_seat": false,
+      "render_bone": "xuangua13",
+      "structure_bone": "track_roller13",
+      "spring_stiffness": 475911.458334,
+      "damping": 34040.0,
+      "rest_length": 0.2,
+      "max_compression": 0.2,
+      "max_extension": 0.15,
+      "max_droop": 0.1
+    },
+    {
+      "id": "track_roller14",
+      "name": "track_roller14",
+      "type": "ywzj_vehicle:suspension",
+      "is_seat": false,
+      "render_bone": "xuangua14",
+      "structure_bone": "track_roller14",
+      "spring_stiffness": 475911.458334,
+      "damping": 34040.0,
+      "rest_length": 0.2,
+      "max_compression": 0.2,
+      "max_extension": 0.15,
+      "max_droop": 0.1
+    },
+    {
+      "id": "track_roller15",
+      "name": "track_roller15",
+      "type": "ywzj_vehicle:suspension",
+      "is_seat": false,
+      "render_bone": "xuangua15",
+      "structure_bone": "track_roller15",
+      "spring_stiffness": 475911.458334,
+      "damping": 34040.0,
+      "rest_length": 0.2,
+      "max_compression": 0.2,
+      "max_extension": 0.15,
+      "max_droop": 0.1
+    },
+    {
+      "id": "track_roller16",
+      "name": "track_roller16",
+      "type": "ywzj_vehicle:suspension",
+      "is_seat": false,
+      "render_bone": "xuangua16",
+      "structure_bone": "track_roller16",
+      "spring_stiffness": 475911.458334,
+      "damping": 34040.0,
+      "rest_length": 0.2,
+      "max_compression": 0.2,
+      "max_extension": 0.15,
+      "max_droop": 0.1
+    }
+  ],
+  "bone_modules": {
+    "Engine": {
+      "modules": [
+        "engine"
+      ],
+      "engine": {
+        "threshold_light": 450,
+        "threshold_heavy": 700
+      }
+    },
+    "scan_radar": {
+      "modules": [
+        "radar"
+      ],
+      "min_damage": 20.0
+    },
+    "ecm_bone": {
+      "modules": [
+        "ecm_active"
+      ],
+      "ecm_active": {
+        "ammo_jam_radius": 250,
+        "vehicle_jam_radius": 0
+      },
+      "min_damage": 20
+    },
+    "missile_barrel": {
+      "modules": [
+        "barrel"
+      ]
+    }
+  },
+  "hitbox_display_name": {
+    "vehicle_body": "Hull",
+    "Upper_front": "Upper Glacis",
+    "Lower_front": "Lower Glacis",
+    "turret": "Turret",
+    "missile_barrel": "Missile Tube",
+    "Engine": "Engine Bay",
+    "track_roller1": "Right Road Wheel 1",
+    "track_roller2": "Right Road Wheel 2",
+    "track_roller3": "Right Road Wheel 3",
+    "track_roller4": "Right Road Wheel 4",
+    "track_roller5": "Right Road Wheel 5",
+    "track_roller6": "Right Road Wheel 6",
+    "track_roller7": "Right Road Wheel 7",
+    "track_roller10": "Left Road Wheel 1",
+    "track_roller11": "Left Road Wheel 2",
+    "track_roller12": "Left Road Wheel 3",
+    "track_roller13": "Left Road Wheel 4",
+    "track_roller14": "Left Road Wheel 5",
+    "track_roller15": "Left Road Wheel 6",
+    "track_roller16": "Left Road Wheel 7"
+  },
+  "hitbox_display_name_CN": {
+    "vehicle_body": "车体",
+    "Upper_front": "首上",
+    "Lower_front": "首下",
+    "turret": "炮塔",
+    "missile_barrel": "导弹发射管",
+    "Engine": "发动机舱",
+    "track_roller1": "右一负重轮",
+    "track_roller2": "右二负重轮",
+    "track_roller3": "右三负重轮",
+    "track_roller4": "右四负重轮",
+    "track_roller5": "右五负重轮",
+    "track_roller6": "右六负重轮",
+    "track_roller7": "右七负重轮",
+    "track_roller10": "左一负重轮",
+    "track_roller11": "左二负重轮",
+    "track_roller12": "左三负重轮",
+    "track_roller13": "左四负重轮",
+    "track_roller14": "左五负重轮",
+    "track_roller15": "左六负重轮",
+    "track_roller16": "左七负重轮"
+  }
+}

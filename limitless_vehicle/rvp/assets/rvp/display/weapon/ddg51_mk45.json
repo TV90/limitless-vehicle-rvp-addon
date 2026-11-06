@@ -1,0 +1,8 @@
+{
+  "type": "ywzj_rvp:weapon",
+  "bedrock_backend": "rvp",
+  "sounds": {
+    "fire": "ywzj_vehicle:cannon_125mm_shot",
+    "reload": "ywzj_vehicle:artillery_reload"
+  }
+}

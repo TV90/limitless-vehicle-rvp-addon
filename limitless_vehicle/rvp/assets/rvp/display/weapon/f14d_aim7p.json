@@ -1,0 +1,10 @@
+{
+  "type": "ywzj_rvp:weapon",
+  "bedrock_backend": "rvp",
+  "model": "ywzj_vehicle:entity/missile_pl_12",
+  "texture": "rvp:textures/entity/ammo/missile_aam_aim54c.png",
+  "sounds": {
+    "fire": "ywzj_vehicle:missile_launch",
+    "reload": "ywzj_vehicle:common_reload"
+  }
+}

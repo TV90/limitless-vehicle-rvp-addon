@@ -1,0 +1,123 @@
+{
+  "type": "ywzj_vehicle:fixed_wing_vehicle",
+  "hitbox_max_incidence_angle_default": 20,
+  "show_skeleton": false,
+  "attributes": {
+		"thrust": 24444,
+		"thrust_k": 1.3,
+		"ceiling": 512,
+		"x_rot_input_step": 0.2,
+		"y_rot_input_step": 0.5,
+		"z_rot_input_step": 0.2,
+		"air_drag_k_min": 16.296,
+		"air_drag_k_max": 24.444,
+		"lift_to_drag_k": 3,
+		"x_rot_input_drag_k": 1.0,
+		"y_rot_input_drag_k": 0.25,
+		"z_rot_input_drag_k": 0.125,
+		"landing_gear_drag_k": 0.5,
+		"turn_rate_by_speed": 0.4,
+		"x_turn_rate": 2,
+		"y_turn_rate": 3,
+		"z_turn_rate": 4,
+		"vortex_offsets": [
+		]
+  },
+  "landing_gear_part_id": "landing_gear",
+  "max_health": 80,
+  "view_info": {
+    "third_person_center_offset": [
+      0,
+      4,
+      0
+    ],
+    "third_person_distance": 16,
+    "third_person_center_offset_zoomed": [
+      0,
+      5,
+      0
+    ],
+    "third_person_distance_zoomed": 4,
+    "sound_distance": 6
+  },
+  "energy_info": {
+    "energy_capacity": 1.0,
+    "energy_consumption_per_tick": 1e-05
+  },
+  "defense_stats": {
+    "damage_threshold": 0.1,
+    "impact_multiplier": 3
+  },
+  "armor_min_damage": 5,
+  "center_offset": [
+    0,
+    1.5,
+    0
+  ],
+  "structure_model": "rvp:vehicle/suav",
+  "core_distance_scale_multiplier": 0.0,
+  "hide_passenger": true,
+  "rvp_loiter_enabled": true,
+  "rvp_loiter_radius": 100.0,
+  "rvp_loiter_altitude_offset": 35.0,
+  "rvp_loiter_auto_on_takeoff": true,
+  "rvp_persistent_chunk_lease": true,
+  "rvp_auto_landing_gear": true,
+  "parts": [
+    {
+      "id": "seat",
+      "name": "seat",
+      "type": "ywzj_rvp:optical_weapon",
+      "structure_bone": "sighting_system",
+      "is_seat": true,
+      "seat_offset": [
+        0,
+        2.0,
+        4.0
+      ],
+      "operator_view_offset": [
+        0,
+        2.7,
+        2.0
+      ],
+      "operator_on_weapon_unit": false,
+      "disable_scope_auto_level": true,
+      "optical_sight_offset": [
+        0,
+        0,
+        1
+      ],
+      "optical_sight_type": "crt_ui",
+      "with_stabilizer": true,
+      "with_focus_locker": true,
+      "with_thermal_imager": true,
+      "zoom_min": 1,
+      "zoom_max": 16,
+      "crosshair_style": "circle",
+      "fire_control_sensor_type": "eo",
+      "weapons": [
+        "rvp:suav_targeting_pod_entity",
+        "rvp:suav_targeting_pod_block"
+      ],
+      "rot_info": {
+        "x_rot_speed": 7,
+        "y_rot_speed": 7,
+        "x_rot_min": -40,
+        "x_rot_max": 120,
+        "y_rot_min": -120,
+        "y_rot_max": 120
+      }
+    },
+    {
+      "id": "landing_gear",
+      "name": "landing_gear",
+      "type": "ywzj_vehicle:landing_gear",
+      "structure_bone": "landing_gear",
+      "is_seat": false
+    }
+  ],
+  "physics_info": {
+		"mass": 4074,
+		"friction": 8148
+  }
+}

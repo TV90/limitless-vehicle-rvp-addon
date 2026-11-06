@@ -42,7 +42,15 @@
 - Mixin 及任何共享/公共代码中**禁止直接引用 `@OnlyIn(CLIENT)` 类型**；必须经 `org.ywzj.rvp.client.bridge.RVP_ClientActionsAccess` 桥接（服务端 NOOP、客户端真实现），新增桥接方法见 `RVP_IClientActions`。
 - 公共数组 Mixin 的目标类必须是双端安全的；纯客户端行为放 `client` 数组。
 
-**Git 提交策略（2026-09-09 订立）**：只提交**代码**（`src/` 下 Java 源码及必要的构建配置）；**载具包**（`limitless_vehicle/` 资产，含 models/textures/display/vehicles/weapons 等）**一律不提交 gitee**。提交前核对 `git status` 暂存清单，禁止 `git add .` 误带载具包资产。
+**Git 提交策略（2026-11-06 订立）**：只提交**代码**（`src/` 下 Java 源码及必要的构建配置）；**载具包**（`limitless_vehicle/` 资产，仅
+limitless_vehicle/rvp/assets/rvp/sounds.json
+limitless_vehicle/rvp/assets/rvp/sounds
+limitless_vehicle/rvp/assets/rvp/display/weapon
+limitless_vehicle/rvp/data/rvp/vehicles
+limitless_vehicle/rvp/data/rvp/gunner
+limitless_vehicle/rvp/data/rvp/fire_support_profiles
+limitless_vehicle/rvp/data/rvp/weapons
+纳入git管理）其他的一律不纳入git管理。提交前核对 `git status` 暂存清单，禁止 `git add .` 误带载具包其他资产。
 
 **载具包权威副本铁律（2026-09-29 订立，run 目录误诊事故后；2026-10-08 迁移修订；2026-10-12 再修订：权威包/同步包合并）**：载具包**唯一权威副本 = 项目根 `limitless_vehicle/`**（**开发/修改/新增载具与武器配置一律在此进行**；git 仅跟踪其 `data/rvp/weapons/` 白名单，其余资产不进 git；用户游戏目录由用户自行同步、保持最新）。原 `limitless_vehicle_authoritative/` **自 2026-10-12 起废止**——不再是权威副本、内容停更，其磁盘目录的处置（删除/归档）由用户决定，排查与开发一律不再参考它。`run/**`（run/server、run/client_1 等）下的副本是**冒烟测试沙盒**，全是陈年旧包——**排查、对比、诊断、修复一律只看项目根 `limitless_vehicle/`**，禁止把 run 目录当部署现状、禁止从它取载具数据下结论、也不需要"同步 run 目录"。"数据过期"类结论必须先核对权威副本本身。
 

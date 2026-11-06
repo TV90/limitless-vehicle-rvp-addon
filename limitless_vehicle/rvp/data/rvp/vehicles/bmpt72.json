@@ -1,0 +1,503 @@
+{
+  "defense_stats": {
+    "damage_threshold": 0.1
+  },
+  "armor_min_damage": 15,
+  "type": "ywzj_vehicle:tracked_vehicle",
+  "attributes": {
+    "brake_acceleration": 0.025,
+    "forward_acceleration": 0.00784,
+    "backward_acceleration": 0.01,
+    "max_speed_forward": 0.6944,
+    "max_speed_backward": 0.0556,
+    "turn_acceleration": 1,
+    "max_turn": 2
+  },
+  "max_health": 1000,
+  "view_info": {
+    "third_person_center_offset": [
+      0,
+      3,
+      0
+    ],
+    "third_person_distance": 10,
+    "sound_distance": 7
+  },
+  "energy_info": {
+    "energy_capacity": 1,
+    "energy_consumption_per_tick": 1e-05
+  },
+  "physics_info": {
+    "suspension_response": 0.25,
+    "mass": 50000,
+    "friction": 100000,
+    "can_destroy_block": true,
+    "physics_only_bone": "virtual"
+  },
+  "hide_passenger": true,
+  "structure_model": "rvp:vehicle/bmpt72",
+  "core_distance_scale_multiplier": 0.0,
+  "hitbox_damage_factor_default": 1.0,
+  "hitbox_max_incidence_angle": {
+    "Upper_front": 20,
+    "ERA6": 20,
+    "ERA7": 20,
+    "ERA8": 20,
+    "ERA9": 20,
+    "turret_barrel": 20
+  },
+  "hitbox_damage_factor": {
+    "ERA9": 0.25,
+    "ERA8": 0.25,
+    "ERA7": 0.25,
+    "ERA6": 0.25,
+    "ERA5": 0.5,
+    "ERA4": 0.5,
+    "ERA3": 0.5,
+    "ERA2": 0.5,
+    "ERA1": 0.5,
+    "ERA0": 0.5,
+    "vehicle_body": 1.0,
+    "Upper_front": 0.6,
+    "Lower_front": 0.8,
+    "Engine": 1.2,
+    "turret": 0.6,
+    "turret_barrel": 0.6,
+    "missile_barrel": 1.3,
+    "track_roller1": 0.4,
+    "track_roller2": 0.4,
+    "track_roller3": 0.4,
+    "track_roller4": 0.4,
+    "track_roller5": 0.4,
+    "track_roller6": 0.4,
+    "track_roller7": 0.4,
+    "track_roller8": 0.4,
+    "track_roller9": 0.4,
+    "track_roller10": 0.4,
+    "track_roller11": 0.4,
+    "track_roller12": 0.4
+  },
+  "bone_modules": {
+    "Engine": {
+      "modules": [
+        "engine"
+      ],
+      "engine": {
+        "threshold_light": 450,
+        "threshold_heavy": 700
+      }
+    },
+    "ERA0": {
+      "min_damage": 20.0,
+      "explosion": 2,
+      "modules": [
+        "era"
+      ]
+    },
+    "ERA1": {
+      "min_damage": 20.0,
+      "explosion": 2,
+      "modules": [
+        "era"
+      ]
+    },
+    "ERA2": {
+      "min_damage": 20.0,
+      "explosion": 2,
+      "modules": [
+        "era"
+      ]
+    },
+    "ERA3": {
+      "min_damage": 20.0,
+      "explosion": 2,
+      "modules": [
+        "era"
+      ]
+    },
+    "ERA4": {
+      "min_damage": 20.0,
+      "explosion": 2,
+      "modules": [
+        "era"
+      ]
+    },
+    "ERA5": {
+      "min_damage": 20.0,
+      "explosion": 2,
+      "modules": [
+        "era"
+      ]
+    },
+    "ERA6": {
+      "min_damage": 120.0,
+      "explosion": 2,
+      "modules": [
+        "era"
+      ]
+    },
+    "ERA7": {
+      "min_damage": 120.0,
+      "explosion": 2,
+      "modules": [
+        "era"
+      ]
+    },
+    "ERA8": {
+      "min_damage": 120.0,
+      "explosion": 2,
+      "modules": [
+        "era"
+      ]
+    },
+    "ERA9": {
+      "min_damage": 120.0,
+      "explosion": 2,
+      "modules": [
+        "era"
+      ]
+    },
+    "ecm_bone": {
+      "modules": [
+        "ecm_active"
+      ],
+      "ecm_active": {
+        "ammo_jam_radius": 250,
+        "vehicle_jam_radius": 0
+      },
+      "min_damage": 20
+    },
+    "turret_barrel": {
+      "modules": [
+        "barrel"
+      ],
+      "barrel": {
+        "threshold_light": 150
+      }
+    },
+    "missile_barrel": {
+      "modules": [
+        "barrel"
+      ]
+    }
+  },
+  "parts": [
+    {
+      "id": "turret",
+      "name": "turret",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "turret",
+      "seat_offset": [
+        0,
+        1.35,
+        0
+      ],
+      "rot_info": {
+        "x_rot_speed": 3,
+        "y_rot_speed": 2,
+        "x_rot_max": 5,
+        "x_rot_min": -30
+      },
+      "optical_sight_type": "crt_ui",
+      "optical_sight_offset": [
+        -0.625,
+        1.375,
+        -1.25
+      ],
+      "operator_view_offset": [
+        0,
+        1.75,
+        0
+      ],
+      "with_stabilizer": true,
+      "with_thermal_imager": true,
+      "zoom_max": 8,
+      "weapons": [
+        "rvp:bmpt_2a42",
+        {
+          "id": "rvp:bmpt_9m120_1",
+          "part_unit_id": "missile"
+        },
+        {
+          "id": "rvp:bmpt_9m120_f",
+          "part_unit_id": "missile"
+        }
+      ],
+      "fire_control_sensor_type": "eo",
+      "rvp_fire_control_mode": "rvp_ballistic_lead",
+      "rvp_fire_control_modes": [
+        "manual"
+      ]
+    },
+    {
+      "id": "missile",
+      "name": "missile",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "missile",
+      "ammo_capacity": 2,
+      "is_seat": false,
+      "base": "turret",
+      "parent_weapon_unit_aim": true,
+      "rot_info": {
+        "x_rot_speed": 3,
+        "y_rot_speed": 0,
+        "x_rot_max": 5,
+        "x_rot_min": -30
+      }
+    },
+    {
+      "id": "track",
+      "name": "track",
+      "type": "ywzj_vehicle:track",
+      "structure_bone": "track_link",
+      "suspensions": {
+        "track_link_r": [
+          "track_roller1",
+          "track_roller2",
+          "track_roller3",
+          "track_roller4",
+          "track_roller5",
+          "track_roller6"
+        ],
+        "track_link_l": [
+          "track_roller7",
+          "track_roller8",
+          "track_roller9",
+          "track_roller10",
+          "track_roller11",
+          "track_roller12"
+        ]
+      }
+    },
+    {
+      "id": "track_roller1",
+      "name": "track_roller1",
+      "type": "ywzj_vehicle:suspension",
+      "is_seat": false,
+      "render_bone": "xuangua1",
+      "structure_bone": "track_roller1",
+      "spring_stiffness": 475911.458334,
+      "damping": 34040.0,
+      "rest_length": 0.2,
+      "max_compression": 0.2,
+      "max_extension": 0.15,
+      "max_droop": 0.15
+    },
+    {
+      "id": "track_roller2",
+      "name": "track_roller2",
+      "type": "ywzj_vehicle:suspension",
+      "is_seat": false,
+      "render_bone": "xuangua2",
+      "structure_bone": "track_roller2",
+      "spring_stiffness": 475911.458334,
+      "damping": 34040.0,
+      "rest_length": 0.2,
+      "max_compression": 0.2,
+      "max_extension": 0.15,
+      "max_droop": 0.15
+    },
+    {
+      "id": "track_roller3",
+      "name": "track_roller3",
+      "type": "ywzj_vehicle:suspension",
+      "is_seat": false,
+      "render_bone": "xuangua3",
+      "structure_bone": "track_roller3",
+      "spring_stiffness": 475911.458334,
+      "damping": 34040.0,
+      "rest_length": 0.2,
+      "max_compression": 0.2,
+      "max_extension": 0.15,
+      "max_droop": 0.15
+    },
+    {
+      "id": "track_roller4",
+      "name": "track_roller4",
+      "type": "ywzj_vehicle:suspension",
+      "is_seat": false,
+      "render_bone": "xuangua4",
+      "structure_bone": "track_roller4",
+      "spring_stiffness": 475911.458334,
+      "damping": 34040.0,
+      "rest_length": 0.2,
+      "max_compression": 0.2,
+      "max_extension": 0.15,
+      "max_droop": 0.15
+    },
+    {
+      "id": "track_roller5",
+      "name": "track_roller5",
+      "type": "ywzj_vehicle:suspension",
+      "is_seat": false,
+      "render_bone": "xuangua5",
+      "structure_bone": "track_roller5",
+      "spring_stiffness": 475911.458334,
+      "damping": 34040.0,
+      "rest_length": 0.2,
+      "max_compression": 0.2,
+      "max_extension": 0.15,
+      "max_droop": 0.15
+    },
+    {
+      "id": "track_roller6",
+      "name": "track_roller6",
+      "type": "ywzj_vehicle:suspension",
+      "is_seat": false,
+      "render_bone": "xuangua6",
+      "structure_bone": "track_roller6",
+      "spring_stiffness": 475911.458334,
+      "damping": 34040.0,
+      "rest_length": 0.2,
+      "max_compression": 0.2,
+      "max_extension": 0.15,
+      "max_droop": 0.15
+    },
+    {
+      "id": "track_roller7",
+      "name": "track_roller7",
+      "type": "ywzj_vehicle:suspension",
+      "is_seat": false,
+      "render_bone": "xuangua7",
+      "structure_bone": "track_roller7",
+      "spring_stiffness": 475911.458334,
+      "damping": 34040.0,
+      "rest_length": 0.2,
+      "max_compression": 0.2,
+      "max_extension": 0.15,
+      "max_droop": 0.15
+    },
+    {
+      "id": "track_roller8",
+      "name": "track_roller8",
+      "type": "ywzj_vehicle:suspension",
+      "is_seat": false,
+      "render_bone": "xuangua8",
+      "structure_bone": "track_roller8",
+      "spring_stiffness": 475911.458334,
+      "damping": 34040.0,
+      "rest_length": 0.2,
+      "max_compression": 0.2,
+      "max_extension": 0.15,
+      "max_droop": 0.15
+    },
+    {
+      "id": "track_roller9",
+      "name": "track_roller9",
+      "type": "ywzj_vehicle:suspension",
+      "is_seat": false,
+      "render_bone": "xuangua9",
+      "structure_bone": "track_roller9",
+      "spring_stiffness": 475911.458334,
+      "damping": 34040.0,
+      "rest_length": 0.2,
+      "max_compression": 0.2,
+      "max_extension": 0.15,
+      "max_droop": 0.15
+    },
+    {
+      "id": "track_roller10",
+      "name": "track_roller10",
+      "type": "ywzj_vehicle:suspension",
+      "is_seat": false,
+      "render_bone": "xuangua10",
+      "structure_bone": "track_roller10",
+      "spring_stiffness": 475911.458334,
+      "damping": 34040.0,
+      "rest_length": 0.2,
+      "max_compression": 0.2,
+      "max_extension": 0.15,
+      "max_droop": 0.15
+    },
+    {
+      "id": "track_roller11",
+      "name": "track_roller11",
+      "type": "ywzj_vehicle:suspension",
+      "is_seat": false,
+      "render_bone": "xuangua11",
+      "structure_bone": "track_roller11",
+      "spring_stiffness": 475911.458334,
+      "damping": 34040.0,
+      "rest_length": 0.2,
+      "max_compression": 0.2,
+      "max_extension": 0.15,
+      "max_droop": 0.15
+    },
+    {
+      "id": "track_roller12",
+      "name": "track_roller12",
+      "type": "ywzj_vehicle:suspension",
+      "is_seat": false,
+      "render_bone": "xuangua12",
+      "structure_bone": "track_roller12",
+      "spring_stiffness": 475911.458334,
+      "damping": 34040.0,
+      "rest_length": 0.2,
+      "max_compression": 0.2,
+      "max_extension": 0.15,
+      "max_droop": 0.15
+    }
+  ],
+  "hitbox_display_name": {
+    "vehicle_body": "Hull",
+    "Upper_front": "Upper Glacis",
+    "Lower_front": "Lower Glacis",
+    "Engine": "Engine Bay",
+    "turret": "Turret",
+    "turret_barrel": "Cannon",
+    "missile_barrel": "Missile Tube",
+    "ERA0": "Side ERA",
+    "ERA1": "Side ERA",
+    "ERA2": "Side ERA",
+    "ERA3": "Side ERA",
+    "ERA4": "Side ERA",
+    "ERA5": "Side ERA",
+    "ERA6": "Upper Front ERA",
+    "ERA7": "Upper Front ERA",
+    "ERA8": "Upper Front ERA",
+    "ERA9": "Upper Front ERA",
+    "track_roller1": "Right Road Wheel 1",
+    "track_roller2": "Right Road Wheel 2",
+    "track_roller3": "Right Road Wheel 3",
+    "track_roller4": "Right Road Wheel 4",
+    "track_roller5": "Right Road Wheel 5",
+    "track_roller6": "Right Road Wheel 6",
+    "track_roller7": "Left Road Wheel 1",
+    "track_roller8": "Left Road Wheel 2",
+    "track_roller9": "Left Road Wheel 3",
+    "track_roller10": "Left Road Wheel 4",
+    "track_roller11": "Left Road Wheel 5",
+    "track_roller12": "Left Road Wheel 6"
+  },
+  "hitbox_display_name_CN": {
+    "vehicle_body": "车体",
+    "Upper_front": "首上",
+    "Lower_front": "首下",
+    "Engine": "发动机舱",
+    "turret": "炮塔",
+    "turret_barrel": "机炮",
+    "missile_barrel": "导弹发射管",
+    "ERA0": "侧面爆反",
+    "ERA1": "侧面爆反",
+    "ERA2": "侧面爆反",
+    "ERA3": "侧面爆反",
+    "ERA4": "侧面爆反",
+    "ERA5": "侧面爆反",
+    "ERA6": "首上爆反",
+    "ERA7": "首上爆反",
+    "ERA8": "首上爆反",
+    "ERA9": "首上爆反",
+    "track_roller1": "右一负重轮",
+    "track_roller2": "右二负重轮",
+    "track_roller3": "右三负重轮",
+    "track_roller4": "右四负重轮",
+    "track_roller5": "右五负重轮",
+    "track_roller6": "右六负重轮",
+    "track_roller7": "左一负重轮",
+    "track_roller8": "左二负重轮",
+    "track_roller9": "左三负重轮",
+    "track_roller10": "左四负重轮",
+    "track_roller11": "左五负重轮",
+    "track_roller12": "左六负重轮"
+  }
+}
