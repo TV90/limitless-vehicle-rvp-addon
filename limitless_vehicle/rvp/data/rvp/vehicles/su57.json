@@ -212,6 +212,7 @@
       "id": "auto_cannon",
       "name": "auto_cannon",
       "type": "ywzj_vehicle:weapon",
+      "fire_control_sensor_type": "rf",
       "structure_bone": "auto_cannon",
       "ammo_capacity": -1,
       "is_seat": false,

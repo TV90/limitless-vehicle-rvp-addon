@@ -149,7 +149,7 @@
         }
       ],
       "rvp_fire_control_mode": "rvp_rf",
-      "rvp_rf_off_axis_deg": 10
+      "rvp_rf_off_axis_deg": 40
     },
     {
       "id": "missile",
