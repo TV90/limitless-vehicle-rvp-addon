@@ -10,6 +10,11 @@
     "rootEnv": "RVP_PROJECTILE_REPLAY_DIR",
     "hint": "请在项目根运行 ./gradlew projectileSimulation；武器来自 limitless_vehicle/rvp/data/rvp/weapons"
   }, {
+    "id": "directions",
+    "root": "build/projectile-direction-diagnostics",
+    "index": "index.json",
+    "hint": "三方向箭头对照：在工作台目录运行 node scripts/report-projectile-directions.mjs"
+  }, {
     "id": "editor",
     "root": "build/projectile-simulation-editor",
     "index": "index.json",

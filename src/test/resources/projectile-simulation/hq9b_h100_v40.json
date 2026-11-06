@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "hq9b_h100_v40",
+  "name": "052D HQ-9B：水平100格、高40格的静止目标",
+  "description": "真实PPN与攻角方向诊断：发射口Y=70、水平静止舰体、向上2格每刻冷弹射20刻；三箭头比较速度、真实机头与固定FPS显示平滑估算。",
+  "weapon": "rvp:052d_hq9b",
+  "ticks": 600,
+  "position": [0, 70, 0],
+  "yaw": -90,
+  "pitch": 90,
+  "vehicleVelocity": [0, 0, 0],
+  "carrierRotation": [0, 0, 0],
+  "coldLaunchTicks": 20,
+  "coldLaunchVelocity": [0, 40, 0],
+  "groundY": 64,
+  "target": [100, 110, 0],
+  "targetVelocity": [0, 0, 0],
+  "targetAcceleration": [0, 0, 0],
+  "targetRadius": 0.01,
+  "guidance": true,
+  "seed": 721
+}

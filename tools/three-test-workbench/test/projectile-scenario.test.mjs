@@ -95,7 +95,7 @@ test('任意时刻插点保留原点和终点，排序后可无损导出；拒�
 
 test('当前 Java 数据字段完整对应，全部已有场景可无损填默认值后导出', async () => {
   const java = await readFile(fileURLToPath(new URL('../../../src/test/java/org/ywzj/rvp/projectile/simulation/RVP_ProjectileSimulationScenario.java', import.meta.url)), 'utf8');
-  const keys = [...java.matchAll(/public (?:int|float|long|boolean|double(?:\[\])?|Double|String|TargetPoint\[\]) (\w+)\s*[=;]/g)].map(match => match[1]);
+  const keys = [...java.matchAll(/public (?:int|float|long|boolean|double(?:\[\])?|Double|String|TargetPoint\[\]|TargetManeuver\[\]) (\w+)\s*[=;]/g)].map(match => match[1]);
   assert.deepEqual(Object.keys(DEFAULT_SCENARIO).sort(), keys.sort(), 'Java 增加输入字段时编辑器也须显式支持');
   const root = fileURLToPath(new URL('../../../src/test/resources/projectile-simulation/', import.meta.url));
   const files = (await readdir(root)).filter(file => file.endsWith('.json'));
@@ -120,6 +120,8 @@ test('拒绝坏版本、未知键、非有限三元组、角度/水面/时长边
     assert.equal(validWeaponId(id), false, id); assert.throws(() => scene({ weapon: id }));
   }
   assert.equal(scene({ ticks: 20000, coldLaunchTicks: 20000, pitch: -90 }).ticks, 20000);
+  assert.deepEqual(scene({ targetManeuvers: [] }).targetManeuvers, []);
+  assert.throws(() => scene({ targetManeuvers: [{ durationTicks: 20, endSpeed: 30, turnDeg: 90 }] }), /连续机动段/);
 });
 
 test('场景插件独立识别，几何预览可拖到首尾且不伪造导弹飞行或命中结果', async () => {

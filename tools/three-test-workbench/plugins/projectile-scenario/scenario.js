@@ -23,6 +23,7 @@ export const DEFAULT_SCENARIO = {
   targetVelocity: [0, 0, 0], // 目标脚本初速度。
   targetAcceleration: [0, 0, 0], // 目标恒定加速度，格/秒²。
   targetPath: [], // 可选到达点 {tick, position}；起点由 target 提供，非空时替代速度/加速度脚本。
+  targetManeuvers: [], // Java当前连续机动字段；编辑器保留空数组，非空段须直接使用Java仿真，避免生成错误预览。
   targetRadius: 2, // 几何停止球半径，格；不是引信半径。
   groundY: 64, // 平地或海底的世界高度。
   waterY: null, // 可选水平水面，必须高于地面。
@@ -62,6 +63,7 @@ export function normalizeScenario(input) {
   if (!finite(scene.targetRadius) || scene.targetRadius <= 0) throw new Error('目标停止球半径必须大于 0');
   if (!Number.isSafeInteger(scene.seed)) throw new Error('随机种子须为 JavaScript 可无损表达的整数（绝对值不超过 9007199254740991）');
   if (typeof scene.guidance !== 'boolean') throw new Error('guidance 必须是 true 或 false');
+  if (!Array.isArray(scene.targetManeuvers) || scene.targetManeuvers.length) throw new Error('用例编辑器仅支持空 targetManeuvers；连续机动段请直接使用Java仿真');
   if (!Array.isArray(scene.targetPath) || scene.targetPath.length > 256) throw new Error('目标轨迹 targetPath 须为数组，最多 256 个到达点');
   if (scene.targetPath.length && !scene.target) throw new Error('使用目标轨迹前须启用目标起点');
   let previousTick = 0;

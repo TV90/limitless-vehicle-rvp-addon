@@ -1,4 +1,5 @@
 import { createProjectile } from './body.js';
+import { withDirectionDiagnostics, DIRECTION_ARROWS } from './directions.js';
 
 /** 展示值保留四位小数，原始帧仍保留 Java 输出精度。 */
 const displayNumber = value => typeof value === 'number' ? Number(value.toFixed(4))
@@ -17,7 +18,8 @@ export default {
       || typeof data.weapon?.id !== 'string'
       || !/^[a-f0-9]{64}$/.test(data.weapon?.sha256) || !data.weapon.json
       || !data.scene || data.scene.weapon !== data.weapon.id) throw new Error('需要第 2 版真实实体回放、计算入口与武器来源摘要；请重新运行 projectileSimulation');
-    return { ...data, format: 'rvp-test-replay', schemaVersion: 1,
+    // 调用独立方向观察层；数据仅用于箭头和显示平滑估算，不改变实体轨迹。
+    return { ...withDirectionDiagnostics(data), format: 'rvp-test-replay', schemaVersion: 1,
       summary: data.summary.map(row => ({ ...row, value: displayNumber(row.value) })) };
   },
   /** 几何图形用于观察方向，不冒充载具包真实模型或碰撞箱。 */
@@ -35,9 +37,19 @@ export default {
     };
     const priority = ['status', 'motorStage', 'phase', 'speed', 'height', 'aeroLoadFactor', 'pitchRate', 'yawRate',
       'inWater', 'distance', 'life', 'mass', 'thrust', 'targetDistance', 'entityYaw', 'entityPitch', 'velocity', 'weaponId', 'directMotion'];
-    const rows = Object.entries(sample.values).sort(([a], [b]) => (priority.indexOf(a) < 0 ? 99 : priority.indexOf(a))
+    const rows = Object.entries(sample.values).filter(([key]) => key !== 'directionDiagnostics').sort(([a], [b]) => (priority.indexOf(a) < 0 ? 99 : priority.indexOf(a))
       - (priority.indexOf(b) < 0 ? 99 : priority.indexOf(b))).map(([key, value]) => ({ label: labels[key] ?? key, value: displayNumber(value) }));
     if (object?.attributes?.guidanceModel) rows.unshift({ label: '制导计算范围', value: object.attributes.guidanceModel });
+    const directions = sample.values.directionDiagnostics;
+    if (directions) rows.unshift(
+      { label: '方向箭头', value: '青＝实际速度（12格）；金＝真实机头（10格）；紫＝模型显示估算（8格）' },
+      { label: '显示估算条件', value: `${directions.fps} FPS，每显示帧追赶35%；同一显示时间线，未包含网络抖动。` },
+      { label: '估算最近显示帧（游戏刻）', value: displayNumber(directions.displayTick) },
+      { label: '真实机头与速度夹角（度）', value: displayNumber(directions.bodyAttackDeg) },
+      { label: '显示模型与速度夹角（度）', value: displayNumber(directions.displayAttackDeg) },
+      { label: '显示模型落后真实机头的夹角（度）', value: displayNumber(directions.modelLagDeg) },
+      ...DIRECTION_ARROWS.map(definition => ({ label: `${definition.name}单位方向 X/Y/Z`, value: displayNumber(directions[definition.key]) })),
+    );
     return rows;
   },
 };
