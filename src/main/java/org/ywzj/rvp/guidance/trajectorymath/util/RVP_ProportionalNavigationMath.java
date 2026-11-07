@@ -96,24 +96,24 @@ public final class RVP_ProportionalNavigationMath {
     }
 
     /**
-     * 按原高抛退坡权重衔接路线请求与 PPN 请求，只混合指令，不提前执行任何一次姿态积分。
+     * 按权重衔接两个单 Tick 航迹请求，只混合指令，不提前执行任何一次姿态积分。
      *
      * @param velocity 当前实际速度，格/Tick
-     * @param navigationRequest 对真实目标计算的 PPN 请求
-     * @param routeRequest 原 PIP 高抛路线已经形成的航迹请求
-     * @param routeWeight 原高抛 smoothstep 权重；1 完全沿用路线，0 完全使用 PPN
+     * @param navigationRequest 本刻 PPN 请求（或其混合基准）
+     * @param leadRequest 本刻前置/路线请求，与 navigationRequest 同量纲
+     * @param leadWeight 前置请求权重；1 完全使用前置请求，0 完全使用 PPN 请求
      * @return 保持当前速率的一刻请求
      */
-    public static Vec3 blendRouteRequest(Vec3 velocity, Vec3 navigationRequest,
-                                         Vec3 routeRequest, double routeWeight) {
+    public static Vec3 blendDirectionRequest(Vec3 velocity, Vec3 navigationRequest,
+                                             Vec3 leadRequest, double leadWeight) {
         // 调用本项目有限值与确定性球面插值，跨竖直方向和反向请求也不通过欧拉角相减。
         if (!finite(velocity) || velocity.lengthSqr() <= EPSILON * EPSILON) return Vec3.ZERO;
         if (!finite(navigationRequest) || navigationRequest.lengthSqr() <= EPSILON * EPSILON) return velocity;
-        if (!finite(routeRequest) || routeRequest.lengthSqr() <= EPSILON * EPSILON) return navigationRequest;
-        double weight = Double.isFinite(routeWeight) ? Mth.clamp(routeWeight, 0.0, 1.0) : 0.0;
+        if (!finite(leadRequest) || leadRequest.lengthSqr() <= EPSILON * EPSILON) return navigationRequest;
+        double weight = Double.isFinite(leadWeight) ? Mth.clamp(leadWeight, 0.0, 1.0) : 0.0;
         if (weight <= 0.0) return navigationRequest.normalize().scale(velocity.length());
-        if (weight >= 1.0) return routeRequest.normalize().scale(velocity.length());
-        return RVP_BallisticTrajectoryMath.slerpDirection(navigationRequest.normalize(), routeRequest.normalize(), weight)
+        if (weight >= 1.0) return leadRequest.normalize().scale(velocity.length());
+        return RVP_BallisticTrajectoryMath.slerpDirection(navigationRequest.normalize(), leadRequest.normalize(), weight)
                 .scale(velocity.length());
     }
 

@@ -120,6 +120,7 @@ public final class RVP_ProjectileLifecycleDebug {
             {"losRate", "世界视线角速度"}, {"closingSpeed", "径向接近速度"},
             {"requestedNormalAcceleration", "PPN请求侧向加速度"},
             {"ppnRequestedVelocity", "PPN原始航迹请求"}, {"loftRouteWeight", "高抛路线权重"},
+            {"leadBlendWeight", "前置前馈权重"},
             {"bodyCommand", "机头指令"}, {"requestedVelocity", "请求速度"},
             {"predictedVelocity", "含推力预测速度"}, {"requestedTurnDeg", "请求转角度"},
             {"aeroTurnDeg", "气动实际转角度"}, {"attackAngleDeg", "施力前攻角度"},

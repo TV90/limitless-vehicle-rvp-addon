@@ -1353,6 +1353,7 @@ velocity = worldDown × cos(theta) × launch_speed
 | `predict_target_pos` | 是否启用比例制导/预测拦截。 | `boolean` | `false` |
 | `predict_target_pos_gain` | 比例制导增益系数（收敛速度）。 | `float` | `3.0` |
 | `predict_target_pos_start_tick` | 预测制导生效的起始 tick（发射后多久才开始预测）。 | `int` | `10` |
+| `ppn_lead_feedforward_ticks` | 实体 PPN 前置前馈的退坡时间窗（Tick）。相遇解剩余时间大于本值时前馈保持全额，降到 1/3 时归零；`0` 关闭前馈、退回纯 PPN。仅 IR/AIR/ARH/SARH 的实体 PPN 分支生效，不提高 G/攻角/机头转速预算。 | `float` | `10` |
 | `max_lateral_accel` | 最大横向加速度限制（度/秒² 量级）；`0` 表示不限制。 | `float` | `0` |
 | `top_attack_height` | 攻顶最大高度；`null` 为不启用，可填负数（如潜射武器）。 | `Float` | `null` |
 | `loft_height_above_target` | 空空高抛（loft）高度 = **目标高度 + 本值**（格）；`> 0` 启用，默认 `0` 禁用。瞄准点垂直塑形叠加在现有比例引导（预测拦截）之上：远距满偏置爬向目标上方并跟随目标升降（动对动），水平距离进入退坡区间后按 smoothstep 平滑归零、末端原生比例引导无缝接管。与 `top_attack_height` 互斥建议同时只配一个，同配时 loft 优先（恢复预测拦截可用性）。ARH/AIR 截获后（自主导引头接管）不施加。适用所有制导类型（SARH/ARH/AIR/GPS/IR），现役弹未配零变化。 | `float` | `0` |

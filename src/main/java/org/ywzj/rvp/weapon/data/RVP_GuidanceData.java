@@ -94,6 +94,16 @@ public class RVP_GuidanceData {
     @SerializedName("predict_target_pos_start_tick")
     private int predictTargetPosStartTick = 10;
 
+    /**
+     * 实体 PPN 前置前馈的退坡时间窗，单位 Tick，默认 10（约 0.5 秒）。
+     * 相遇解剩余时间大于本值时前馈保持全额，降到本值的 1/3 时归零；0 关闭前馈、退回纯 PPN。
+     * 只作用于实体 PPN 分支（IR/AIR/ARH/SARH），不提高 G/攻角/机头转速预算；末段沿用主段值。
+     * 默认取 10 而不是 45：HQ-10/HQ-9B 对照显示 45 Tick 会在末段过早交回 PPN，恒定横穿的脱靶反而变差；
+     * 10 Tick 保留远距前置、只用最后约 0.5 秒交给 PPN，既不丢前置，也不把 PPN 的末段误差带回来。
+     */
+    @SerializedName("ppn_lead_feedforward_ticks")
+    private float ppnLeadFeedforwardTicks = 10f;
+
     @SerializedName("top_attack_height")
     private Float topAttackHeight;
 
@@ -278,6 +288,11 @@ public class RVP_GuidanceData {
 
     public int getPredictTargetPosStartTick() {
         return Math.max(predictTargetPosStartTick, 0);
+    }
+
+    /** @return 实体 PPN 前置前馈退坡时间窗，单位 Tick；0 表示关闭前馈、退回纯 PPN。 */
+    public float getPpnLeadFeedforwardTicks() {
+        return Float.isFinite(ppnLeadFeedforwardTicks) ? Math.max(ppnLeadFeedforwardTicks, 0f) : 0f;
     }
 
     public Float getTopAttackHeight() {

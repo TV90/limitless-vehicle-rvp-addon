@@ -98,15 +98,15 @@ class RVP_ProportionalNavigationMathTest {
     }
 
     @Test
-    void loftHandoffHasExactEndpointsAndContinuousUnitDirectionAtEveryWeight() {
+    void directionBlendHasExactEndpointsAndContinuousUnitDirectionAtEveryWeight() {
         Vec3 velocity = new Vec3(0, 0, 5);
         Vec3 navigation = new Vec3(1, 0, 5).normalize().scale(5);
-        Vec3 route = new Vec3(0, 2, 5).normalize().scale(5);
-        assertVector(navigation, RVP_ProportionalNavigationMath.blendRouteRequest(velocity, navigation, route, 0));
-        assertVector(route, RVP_ProportionalNavigationMath.blendRouteRequest(velocity, navigation, route, 1));
+        Vec3 lead = new Vec3(0, 2, 5).normalize().scale(5);
+        assertVector(navigation, RVP_ProportionalNavigationMath.blendDirectionRequest(velocity, navigation, lead, 0));
+        assertVector(lead, RVP_ProportionalNavigationMath.blendDirectionRequest(velocity, navigation, lead, 1));
         Vec3 previous = navigation;
         for (int sample = 1; sample <= 100; sample++) {
-            var next = RVP_ProportionalNavigationMath.blendRouteRequest(velocity, navigation, route, sample / 100.0);
+            var next = RVP_ProportionalNavigationMath.blendDirectionRequest(velocity, navigation, lead, sample / 100.0);
             assertEquals(5, next.length(), EPSILON);
             // 调用共用夹角工具；若忘记把速度归一化，球面插值会在这里退化为不动或错误速率。
             assertTrue(RVP_BallisticTrajectoryMath.angleBetween(previous, next) < 0.01);

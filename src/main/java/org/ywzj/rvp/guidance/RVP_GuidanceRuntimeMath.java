@@ -177,6 +177,7 @@ public final class RVP_GuidanceRuntimeMath {
         RVP_PredictiveInterceptMath.Solution intercept = null;
         RVP_PIPAttackAngleController.Result pipControl = null;
         RVP_ProportionalNavigationMath.Solution ppn = null;
+        double leadWeight = 0.0;
         String branch = "PURSUIT";
         // 调用严格资格入口：只替换有实体观测的 IR/AIR/ARH/SARH 导弹，其他路径继续原分派。
         if (!isTopAttack && usesEntityPPN(context, intent)) {
@@ -192,27 +193,45 @@ public final class RVP_GuidanceRuntimeMath {
                 next = blendDirection(current, next, current.length(), factor);
             }
             branch = "PPN";
-            if (loftWeight > 0.0) {
-                RVP_TargetMotionState routeMotion = targetMotion.withPosition(loftedTarget);
-                // 调用原 PIP 只规划高抛路线；权重归零后完全不执行相遇点计算。
-                intercept = RVP_PredictiveInterceptMath.solve(projectile.position(), current,
-                        routeMotion.position(), routeMotion.velocity(), routeMotion.effectiveAcceleration());
-                Vec3 routeRequest = intercept.usable() ? blendDirection(current,
-                        intercept.point().subtract(projectile.position()), speed, steeringFactor)
-                        : steerPursuit(current, steeringTarget.subtract(projectile.position()), speed, steeringFactor);
-                if (attackAngle && intercept.usable()) {
-                    // 调用原 PIP 姿态反解取得路线请求，试算不提交状态，保留原受限响应补偿。
-                    var route = solvePIPControl(context, current, routeRequest, routeMotion, intercept, limits);
-                    intercept = route.intercept();
-                    pipControl = route.control();
-                    routeRequest = pipControl.requestedVelocity();
+            // 前置前馈：求旧 PIP 分支对同一 steeringTarget 生成的单 Tick 请求，再按剩余相遇时间退坡到纯 PPN。
+            // 目标取 steeringTarget（高抛时为辅助点），与旧 PIP/高抛路线同源，避免边界跳变。
+            RVP_TargetMotionState leadMotion = targetMotion.withPosition(steeringTarget);
+            intercept = RVP_PredictiveInterceptMath.solve(projectile.position(), current,
+                    leadMotion.position(), leadMotion.velocity(), leadMotion.effectiveAcceleration());
+            leadWeight = intercept.usable() && ppn.status() == RVP_ProportionalNavigationMath.Status.ACTIVE
+                    ? resolveLeadWeight(intercept.timeTicks(),
+                        context.data().getGuidanceData().getPpnLeadFeedforwardTicks())
+                    : 0.0;
+            Vec3 pipRequest = null;
+            if (intercept.usable() && (leadWeight > 0.0 || loftWeight > 0.0)) {
+                // 调用旧 PIP 分支同一方向插值；攻角路径再走同一单步反解，保持原受限响应补偿。
+                Vec3 pipDirection = blendDirection(current,
+                        intercept.point().subtract(projectile.position()), speed, steeringFactor);
+                if (attackAngle) {
+                    var pip = solvePIPControl(context, current, pipDirection, leadMotion, intercept, limits);
+                    intercept = pip.intercept();
+                    pipControl = pip.control();
+                    pipRequest = pipControl.requestedVelocity();
+                } else {
+                    pipRequest = pipDirection;
                 }
-                // 调用球面请求衔接，仍只在下方提交一次实际姿态和气动载荷。
-                next = RVP_ProportionalNavigationMath.blendRouteRequest(current, next, routeRequest, loftWeight);
+            }
+            if (leadWeight > 0.0 && pipRequest != null) {
+                // 调用球面请求衔接，只混合指令，不提前执行姿态；末段交给纯 PPN。
+                next = RVP_ProportionalNavigationMath.blendDirectionRequest(current, next, pipRequest, leadWeight);
+            }
+            if (loftWeight > 0.0) {
+                Vec3 routeRequest = pipRequest != null ? pipRequest
+                        : steerPursuit(current, steeringTarget.subtract(projectile.position()), speed, steeringFactor);
+                // 调用球面请求衔接；高抛权重仍按原曲线退坡，前馈只塑形其中的 PPN 分量。
+                next = RVP_ProportionalNavigationMath.blendDirectionRequest(current, next, routeRequest, loftWeight);
                 branch = loftWeight >= 1.0 ? "LOFT_PIP" : "LOFT_PIP_PPN_BLEND";
             }
             if (attackAngle) {
-                if (loftWeight < 1.0 || pipControl == null) {
+                // 纯 PIP/纯高抛请求可以直接复用上一段已算好的姿态；混合请求需要重新反解一次。
+                boolean reusePipControl = pipControl != null
+                        && (loftWeight >= 1.0 || (loftWeight <= 0.0 && leadWeight >= 1.0));
+                if (!reusePipControl) {
                     // 调用已生成航迹请求入口，禁止再乘一次 turning_factor 或叠加一次 PIP 提前量。
                     pipControl = RVP_PIPAttackAngleController.solveVelocityRequest(current,
                             projectile.getAttackAngleState(), next, limits,
@@ -297,7 +316,7 @@ public final class RVP_GuidanceRuntimeMath {
         // 调用本项目惰性诊断，记录真实执行分支与 PIP 暂停原因。
         noteGuidanceDecision(context, branch, isTopAttack ? "TOP_ATTACK"
                         : entity == null ? "NO_ENTITY_TARGET" : predictiveInterceptBlockReason(context),
-                steeringTarget, intercept, pipControl, ppn, loftWeight);
+                steeringTarget, intercept, pipControl, ppn, loftWeight, leadWeight);
         return true;
     }
 
@@ -313,6 +332,23 @@ public final class RVP_GuidanceRuntimeMath {
         return context.projectile().isMissile() && intent.aimEntity() != null && intent.aimEntity().isAlive()
                 && !intent.directMotion() && isEntityPPNSource(context.active().guidanceType())
                 && intent.sourceType() == context.active().guidanceType() && canUsePredictiveIntercept(context);
+    }
+
+    /**
+     * 前置前馈的退坡权重：剩余相遇时间大于 fullTicks 时保持 1，降到 fullTicks/3 时归零。
+     *
+     * @param timeTicks 相遇解剩余时间，单位 Tick
+     * @param fullTicks 前馈保持全额的剩余时间，单位 Tick；0 表示关闭
+     * @return 0～1 的 smoothstep 权重
+     */
+    private static double resolveLeadWeight(double timeTicks, float fullTicks) {
+        if (!Double.isFinite(timeTicks) || !Float.isFinite(fullTicks) || fullTicks <= 0f) {
+            return 0.0;
+        }
+        double full = fullTicks;
+        double near = full / 3.0;
+        double normalized = Mth.clamp((timeTicks - near) / (full - near), 0.0, 1.0);
+        return normalized * normalized * (3.0 - 2.0 * normalized);
     }
 
     /**
@@ -768,14 +804,14 @@ public final class RVP_GuidanceRuntimeMath {
             String reason, Vec3 target, RVP_PredictiveInterceptMath.Solution intercept,
             RVP_PIPAttackAngleController.Result control) {
         // 调用统一诊断出口，原有拒绝分支不伪造 PPN 观测。
-        noteGuidanceDecision(context, branch, reason, target, intercept, control, null, 0.0);
+        noteGuidanceDecision(context, branch, reason, target, intercept, control, null, 0.0, 0.0);
     }
 
-    /** PPN 与高抛衔接的诊断扩展；关闭诊断时不格式化原始观测或执行额外试算。 */
+    /** PPN、前置前馈与高抛衔接的诊断扩展；关闭诊断时不格式化原始观测或执行额外试算。 */
     private static void noteGuidanceDecision(RVP_GuidanceRuntimeContext context, String branch,
             String reason, Vec3 target, RVP_PredictiveInterceptMath.Solution intercept,
             RVP_PIPAttackAngleController.Result control, RVP_ProportionalNavigationMath.Solution ppn,
-            double loftWeight) {
+            double loftWeight, double leadWeight) {
         // 调用本项目诊断开关与事件入口；详情仅在被追踪时构造，服务端无需客户端类型。
         if (!RVP_ProjectileLifecycleDebug.isEnabled()) return;
         RVP_BaseBullet projectile = context.projectile();
@@ -790,7 +826,8 @@ public final class RVP_GuidanceRuntimeMath {
                             + " closingSpeed=" + ppn.closingSpeed()
                             + " requestedNormalAcceleration=" + RVP_ProjectileLifecycleDebug.formatVec(ppn.acceleration())
                             + " ppnRequestedVelocity=" + RVP_ProjectileLifecycleDebug.formatVec(ppn.requestedVelocity())
-                            + " loftRouteWeight=" + loftWeight)
+                            + " loftRouteWeight=" + loftWeight
+                            + " leadBlendWeight=" + leadWeight)
                         + " pipStatus=" + (intercept == null ? "NOT_EVALUATED" : intercept.status())
                         + " pipTimeTicks=" + (intercept == null ? "<null>" : intercept.timeTicks())
                         + " pipPoint=" + (intercept == null || intercept.point() == null ? "<null>"

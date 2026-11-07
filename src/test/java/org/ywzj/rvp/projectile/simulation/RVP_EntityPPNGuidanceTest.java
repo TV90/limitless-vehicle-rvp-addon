@@ -11,6 +11,8 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.rvp.entity.projectile.RVP_ProjectileEntitySimulation;
 import org.ywzj.rvp.guidance.*;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_PredictiveInterceptMath;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_ProportionalNavigationMath;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -158,9 +160,16 @@ class RVP_EntityPPNGuidanceTest {
     /** 从当前 schema 构造真实实体，保留生产配置默认值，避免测试依赖硬编码武器 ID。 */
     private static Sample sample(String kind, RVP_EnumGuidanceType type, String physical, String extra,
                                  RVP_GuidancePhase phase) {
+        return sample(kind, type, physical, extra, phase, false);
+    }
+
+    /** 带前置前馈开关的构造入口；默认关闭时保持既有纯 PPN 断言。 */
+    private static Sample sample(String kind, RVP_EnumGuidanceType type, String physical, String extra,
+                                 RVP_GuidancePhase phase, boolean feedForward) {
         var json = JsonParser.parseString("{\"type\":\"" + kind + "\",\"projectile_data\":{" + physical
                 + "},\"guidance_data\":{\"guidance_type\":\"" + type + "\",\"predict_target_pos\":true,"
                 + "\"predict_target_pos_start_tick\":0,\"max_guidance_angle\":180"
+                + (feedForward ? "" : ",\"ppn_lead_feedforward_ticks\":0")
                 + (phase == RVP_GuidancePhase.TERMINAL ? ",\"terminal_guidance\":{\"guidance_type\":\"IR\","
                     + "\"predict_target_pos\":true,\"max_guidance_angle\":180}" : "")
                 + (extra.isEmpty() ? "" : "," + extra) + "}}").getAsJsonObject();
@@ -177,6 +186,40 @@ class RVP_EntityPPNGuidanceTest {
         var context = new RVP_GuidanceRuntimeContext(flight.entity(), weapon.data(),
                 RVP_GuidanceModelResolver.resolveActive(weapon.data(), phase));
         return new Sample(flight, target, context);
+    }
+
+    /** 把测试目标搬到指定位置与速度；Marker 的包围盒必须同步，否则瞄准点仍留在旧位置。 */
+    private static void moveTarget(Sample sample, Vec3 position, Vec3 velocity) {
+        sample.target.setPos(position.x, position.y, position.z);
+        sample.target.setBoundingBox(new AABB(position, position));
+        sample.target.setDeltaMovement(velocity);
+    }
+
+    /** 远距横穿时前馈请求应等于旧 PIP 的 lead 方向；窗口设为 0 时必须退回纯 PPN。 */
+    @Test
+    void longRangeCrossingUsesThePipLeadRequestUntilTheTerminalHandover() {
+        Vec3 targetPosition = new Vec3(0, 164, 600);
+        Vec3 targetVelocity = new Vec3(3.25, 0, 0);
+        Sample enabled = sample("rvp:missile", RVP_EnumGuidanceType.IR, PROJECTILE, "",
+                RVP_GuidancePhase.MAIN, true);
+        moveTarget(enabled, targetPosition, targetVelocity);
+        assertTrue(apply(enabled, RVP_GuidanceIntent.entity(enabled.target, false, 1, RVP_EnumGuidanceType.IR)));
+        Vec3 current = enabled.flight.entity().getDeltaMovement();
+        var intercept = RVP_PredictiveInterceptMath.solve(enabled.flight.entity().position(),
+                new Vec3(0, 0, 5), targetPosition, targetVelocity);
+        assertTrue(intercept.usable());
+        // 测试弹 turning_factor=1，方向插值为全量；w=1 时请求应直接指向相遇点。
+        Vec3 expectedLead = intercept.point().subtract(enabled.flight.entity().position())
+                .normalize().scale(5);
+        assertVector(expectedLead, current);
+        // 同一几何关闭前馈，必须回到解析 PPN 请求。
+        Sample disabled = sample("rvp:missile", RVP_EnumGuidanceType.IR, PROJECTILE, "",
+                RVP_GuidancePhase.MAIN, false);
+        moveTarget(disabled, targetPosition, targetVelocity);
+        assertTrue(apply(disabled, RVP_GuidanceIntent.entity(disabled.target, false, 1, RVP_EnumGuidanceType.IR)));
+        var ppn = RVP_ProportionalNavigationMath.solve(disabled.flight.entity().position(),
+                new Vec3(0, 0, 5), targetPosition, targetVelocity, 3);
+        assertVector(ppn.requestedVelocity(), disabled.flight.entity().getDeltaMovement());
     }
 
     /** 逐分量比较实体已提交速度，不能只检查理想数学结果。 */
