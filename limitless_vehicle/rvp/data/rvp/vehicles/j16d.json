@@ -1,4 +1,5 @@
 {
+  "tactical_map_icon": "atkjet",
   "type": "ywzj_vehicle:fixed_wing_vehicle",
   "hitbox_max_incidence_angle_default": 20,
   "attributes": {
@@ -674,6 +675,23 @@
         "countermeasure"
       ],
       "min_damage": 20
+    },
+    "__vehicle__": {
+      "modules": [
+        "MAINTENANCE"
+      ],
+      "maintenance": {
+        "use_time_ticks": 80,
+        "wait_time_ticks": 300,
+        "heal_per_tick_percent": 0.25,
+        "heal_parts": false,
+        "require_max_altitude": -1,
+        "module_repair": {
+          "era_recover_fraction": 0.25,
+          "era_recover_min": 1,
+          "device_recover_chance": 0.25
+        }
+      }
     }
   },
   "physics_info": {

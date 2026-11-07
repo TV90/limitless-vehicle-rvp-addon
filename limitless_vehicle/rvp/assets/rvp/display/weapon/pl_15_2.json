@@ -1,8 +1,8 @@
 {
   "type": "ywzj_rvp:weapon",
   "bedrock_backend": "rvp",
-  "model": "ywzj_vehicle:entity/missile_pl_12",
-  "texture": "ywzj_vehicle:textures/entity/j15t.png",
+  "model": "rvp:entity/ammo/missile_pl15",
+  "texture": "rvp:textures/entity/weapon_mount/pylon_pl15.png",
   "sounds": {
     "fire": "ywzj_vehicle:missile_launch",
     "reload": "ywzj_vehicle:common_reload"

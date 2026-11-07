@@ -53,11 +53,12 @@
     "turret_smoke_grenade_r_barrel": 20
   },
   "hitbox_damage_factor": {
+    "turretring": 0.9,
     "Engine": 1.3,
     "Upper_front": 0.6,
     "Lower_front": 0.5,
     "Periscope": 0.8,
-    "turret": 0.4,
+    "turret": 0.43,
     "turret_r": 1.0,
     "turret_l": 1.0,
     "turret_barrel": 0.6,
@@ -83,7 +84,21 @@
     "track_roller13": 0.4,
     "track_roller14": 0.4
   },
+  "hitbox_explosion_damage_factor": {
+    "Periscope": 1.5,
+    "turret_top": 1.5
+  },
   "bone_modules": {
+    "turretring": {
+      "modules": [
+        "turret_traverse"
+      ],
+      "turret_traverse": {
+        "part_id": "turret",
+        "threshold_light": 200,
+        "threshold_heavy": 600
+      }
+    },
     "Engine": {
       "modules": [
         "engine"
@@ -107,7 +122,7 @@
         "ammo_max": 4,
         "reload_one_tick": 600,
         "cooldown_tick": 20,
-        "intercept_delay_tick": 6,
+        "intercept_delay_tick": 2,
         "scan_interval_tick": 1,
         "projectile_speed_min": 1.0,
         "projectile_speed_max": 8.0,
@@ -129,7 +144,7 @@
         "ammo_max": 4,
         "reload_one_tick": 600,
         "cooldown_tick": 20,
-        "intercept_delay_tick": 6,
+        "intercept_delay_tick": 2,
         "scan_interval_tick": 1,
         "projectile_speed_min": 1.0,
         "projectile_speed_max": 8.0,
@@ -151,7 +166,7 @@
         "ammo_max": 4,
         "reload_one_tick": 600,
         "cooldown_tick": 20,
-        "intercept_delay_tick": 6,
+        "intercept_delay_tick": 2,
         "scan_interval_tick": 1,
         "projectile_speed_min": 1.0,
         "projectile_speed_max": 8.0,
@@ -173,7 +188,7 @@
         "ammo_max": 4,
         "reload_one_tick": 600,
         "cooldown_tick": 20,
-        "intercept_delay_tick": 6,
+        "intercept_delay_tick": 2,
         "scan_interval_tick": 1,
         "projectile_speed_min": 1.0,
         "projectile_speed_max": 8.0,
@@ -211,6 +226,23 @@
         "countermeasure"
       ],
       "min_damage": 20
+    },
+    "__vehicle__": {
+      "modules": [
+        "MAINTENANCE"
+      ],
+      "maintenance": {
+        "use_time_ticks": 80,
+        "wait_time_ticks": 300,
+        "heal_per_tick_percent": 0.25,
+        "heal_parts": false,
+        "require_max_altitude": -1,
+        "module_repair": {
+          "era_recover_fraction": 0.25,
+          "era_recover_min": 1,
+          "device_recover_chance": 0.25
+        }
+      }
     }
   },
   "parts": [
@@ -277,6 +309,14 @@
       "name": "turret_machine_gun",
       "type": "ywzj_vehicle:weapon",
       "structure_bone": "turret_machine_gun_barrel",
+      "bolts": [
+        {
+          "offset": [-0.20625, 0.06875, 0.1578125],
+          "barrel_length": 0.959375,
+          "x_rot": 0,
+          "y_rot": 0
+        }
+      ],
       "is_seat": false,
       "base": "turret",
       "rot_info": {
@@ -745,9 +785,17 @@
       "max_compression": 0.2,
       "max_extension": 0.15,
       "max_droop": 0.15
+    },
+    {
+      "id": "turretring",
+      "name": "Turret Ring",
+      "type": "ywzj_vehicle:generic",
+      "structure_bone": "turretring",
+      "is_seat": false
     }
   ],
   "hitbox_display_name": {
+    "turretring": "Turret Ring",
     "Engine": "Engine Bay",
     "Upper_front": "Upper Glacis",
     "Lower_front": "Lower Glacis",
@@ -778,6 +826,7 @@
     "track_roller14": "Left Road Wheel 7"
   },
   "hitbox_display_name_CN": {
+    "turretring": "炮塔座圈",
     "Engine": "发动机舱",
     "Upper_front": "首上",
     "Lower_front": "首下",

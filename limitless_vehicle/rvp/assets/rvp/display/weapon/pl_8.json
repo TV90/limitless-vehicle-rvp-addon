@@ -2,7 +2,7 @@
   "type": "ywzj_rvp:weapon",
   "bedrock_backend": "rvp",
   "model": "ywzj_vehicle:entity/missile_pl_8",
-  "texture": "ywzj_vehicle:textures/entity/j8.png",
+  "texture": "rvp:textures/entity/ammo/missile_pl_8.png",
   "sounds": {
     "fire": "ywzj_vehicle:missile_launch",
     "reload": "ywzj_vehicle:common_reload"

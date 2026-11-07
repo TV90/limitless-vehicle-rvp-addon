@@ -22,6 +22,7 @@ import net.minecraftforge.server.ServerLifecycleHooks;
 import org.slf4j.Logger;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.config.RVP_CommonConfig;
+import org.ywzj.rvp.uav.RVP_DeployableSupplyService;
 import org.ywzj.rvp.uav.RVP_DeployableUavService;
 import org.ywzj.rvp.uav.RVP_DeployableUavHoverService;
 import org.ywzj.rvp.uav.RVP_LinkedUavStateTable;
@@ -125,6 +126,8 @@ public class RVP_LinkedUavEventHandler {
                 RVP_DeployableUavService.checkSignalRange(vehicle);
                 // 读取完成本 tick 上下车后的真实驾驶关系，覆盖回传、离线和重载后的旋翼悬停。
                 RVP_DeployableUavHoverService.tick(vehicle);
+                // 部署子载具自动回满燃油并维持无限弹药（保留原装填节奏）
+                RVP_DeployableSupplyService.tick(vehicle);
             }
         }
     }

@@ -1,6 +1,6 @@
 {
   "type": "rvp:missile",
-  "name": "HQ-13 AIR-SAM",
+  "name": "HQ-13 Active IR SAM [Data Link]",
   "show_msl_indicator": true,
   "shoot_interval": 1000,
   "max_capacity": 8,
@@ -28,7 +28,7 @@
     "drag_coefficient": 0.0765,
     "rvp_induced_drag": 0.003,
     "rotate_to_motion": true,
-    "max_speed": 5.5,
+    "max_speed": 5.0,
     "altitude_max_speed_factor": {
       "[[512,inf]]": 1.3,
       "[[256,512]]": 1.15,
@@ -61,10 +61,13 @@
     },
     "guidance_type": "AIR",
     "lock_target_distance_range": "[[0,1800]]",
+    "lock_altitude_range": "[[5,inf]]",
     "enable_inertial_guidance": true,
     "max_lock_angle": 30,
     "max_off_axis_lock_angle": 60,
     "guidance_target_distance_range": "[[0,1800]]",
+    "seeker_search_distance_range": "[[0,384]]",
+    "guidance_altitude_range": "[[5,inf]]",
     "max_guidance_angle": 50,
     "scan_interval_tick": 2,
     "predict_target_pos": true,
@@ -137,5 +140,5 @@
       }
     ]
   },
-  "name_CN": "红旗13 主动红外弹"
+  "name_CN": "红旗13主动红外弹[数据链模式]"
 }

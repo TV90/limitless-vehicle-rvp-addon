@@ -4,7 +4,12 @@
   "model": "rvp:entity/ammo/tow",
   "texture": "rvp:textures/entity/ammo/tow.png",
   "sounds": {
-    "fire": "ywzj_vehicle:missile_launch",
+    "fire": "rvp:launch_surface",
     "reload": "ywzj_vehicle:gun_reload"
+  },
+  "fire_sound": {
+    "max_distance": 2048,
+    "volume": 1,
+    "pitch": 1
   }
 }

@@ -19,7 +19,7 @@
   "fire_data": {
     "spread": 0,
     "fire_mode": "FULL_AUTO",
-    "require_lock": true
+    "require_lock": false
   },
   "projectile_data": {
     "velocity": 0.1,
@@ -47,7 +47,7 @@
       "chaff_resistance": 0.5
     },
     "guidance_type": "IR",
-    "guidance_tick_range": "[[5,inf]]",
+    "guidance_tick_range": "[[20,inf]]",
     "guidance_target_distance_range": "[[0,512]]",
     "lock_target_distance_range": "[[0,512]]",
     "seeker_lock_dwell_tick": 30,

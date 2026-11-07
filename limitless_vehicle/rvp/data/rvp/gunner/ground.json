@@ -155,7 +155,7 @@
       "type": "rvp:ground_engagement_move",
       "priority": 500,
       "config": {
-        "stop_distance": 10.0,
+        "stop_distance": 60.0,
         "hold_tick": 100,
         "evade_tick_min": 140,
         "evade_tick_max": 280,

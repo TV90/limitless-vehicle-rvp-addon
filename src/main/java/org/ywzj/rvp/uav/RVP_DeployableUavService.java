@@ -580,6 +580,8 @@ public final class RVP_DeployableUavService {
      * 部署旋翼机启动悬停；固定翼按 LoiterConfig 起飞并盘旋；地面子车不接管飞控。
      */
     private static void applyTakeoffBehavior(AbstractVehicle child, AbstractVehicle parent) {
+        // 新部署辅助载具立即回满燃油和弹药（不依赖本体无限燃料/RVP 生成补给开关）
+        RVP_DeployableSupplyService.initialize(child);
         if (child instanceof RotaryWingVehicle rotaryWing) {
             // addFreshEntity 已完成本体 initData，按当前质量/旋翼参数初始化部署悬停。
             RVP_DeployableUavHoverService.initializeDeployment(rotaryWing);

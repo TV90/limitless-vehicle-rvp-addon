@@ -41,7 +41,7 @@
   },
   "guidance_data": {
     "guidance_type": "SALH",
-    "guidance_tick_range": "[[6,inf]]",
+    "guidance_tick_range": "[[20,inf]]",
     "max_guidance_angle": 100,
     "predict_target_pos": true,
     "enable_inertial_guidance": true,

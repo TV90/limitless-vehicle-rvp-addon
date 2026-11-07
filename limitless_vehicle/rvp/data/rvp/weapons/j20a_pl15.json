@@ -43,7 +43,8 @@
       "[[-inf,-64]]": 0.8
     },
     "turning_factor": {
-      "[[1,inf]]": 0.1
+      "[[1,99]]": 0.1,
+      "[[100,inf]]": 0.12
     },
     "rvp_aero_steering": true,
     "rvp_attack_angle_limit_deg": 60
@@ -64,6 +65,8 @@
     },
     "guidance_type": "ARH",
     "lock_target_distance_range": "[[0,1500]]",
+    "lock_altitude_range": "[[25,inf]]",
+    "guidance_altitude_range": "[[25,inf]]",
     "enable_inertial_guidance": true,
     "max_lock_angle": 12,
     "max_off_axis_lock_angle": 60,

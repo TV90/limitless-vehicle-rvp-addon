@@ -1058,6 +1058,7 @@ RVP 武器（机枪/火箭/导弹/炸弹）爆炸的**默认视觉**，不需要
 | `on_block_hit` | 仅方块撞击。 |
 | `on_entity_hit` | 仅实体撞击。 |
 | `on_fuse` | 定时/近炸/空爆等引信引爆前（在爆炸链之前）。 |
+| `on_aps_intercept` | 母弹被 APS/弹间硬杀伤拦截引爆前触发：子体按母弹被拦截瞬间的速度方向释放并继承该速度，因此母弹被拦截后子弹药仍沿原弹道继续飞行。释放数量与其它触发一致，遵循本 release 的 `release_events` / `per_tick` / `interval_tick`。 |
 
 #### `releases[].payloads[]` 单种载荷
 
@@ -1438,6 +1439,26 @@ SACLOS 采用“射手瞄准线 + 半自动修正”模型，可选启用弹性�
 | `hitl_video_modes` | 可用画面模式（可写多个，玩家可循环切换）：`COLOR` / `MONO`（或 `BW`、`BLACK_WHITE`、`BLACKWHITE`、`MONOCHROME`）/ `THERMAL`（或 `IR`）。列表第一个有效模式为初始画面；无法识别的值被忽略，全部无效时回退为彩色画面。 | `List<String>` | `["MONO"]` |
 | `hitl_right_click_detonate` | 开启后人在回路视角下鼠标右键从“退出视角”变为“**提前引爆导弹**”。 | `boolean` | `false` |
 
+#### `guidance_data.hitl_remote_view`（2026-11-02，显式开启的远程相机）
+
+仅 `HITL_TV` / `HITL_CLOS_TV` 可配置此对象；`TV` 等其他制导类型配置它会报错。缺少对象、对象为 `null`、缺少 `enabled` 或 `enabled=false` 都维持原行为。仅扩大 `hitl_max_control_dist` 不会开启此能力。
+
+| 字段 | 单位、作用与边界 | 默认值 |
+| --- | --- | --- |
+| `enabled` | 必须显式 `true`，才申请导弹相机周围的区块与真实实体同步 | `false` |
+| `radius_chunks` | 水平区块半径，2～32；最终取服务器专用 `max_radius_chunks` 上限。普通身体视距不再限制远程窗口，客户端实际绘制仍受本地渲染距离限制。方形区块数 `(2r+1)^2` | `6`（169 区块） |
+| `load_chunks_per_tick` | 单会话每 tick 新申请的实体 ticking 票据中心数，1～32，服从全服预算 | `1` |
+| `send_chunks_per_tick` | 单会话每 tick 首次发送的完整区块包数，1～32，服从全服预算 | `2` |
+| `prefetch_chunks` | 沿水平运动方向额外请求 0～2 区块的预取，不扩大发送窗口 | `1` |
+| `link_check_interval_ticks` | `RADIO` 无线电遮挡检查间隔，1～20 tick；只读已加载地形 | `5` |
+| `require_loaded_radio_path` | `RADIO` 射线经过未知地形时是否阻断；`true` 要求整条路径已加载，`false` 跳过未知段，但仍检查已加载地形障碍 | `false` |
+
+启用后，`hitl_max_control_dist` 是操作者到导弹的直线硬上限，受服务器 `max_control_distance_blocks` 限制；超过就结束观察。会话采用客户端每 10 tick 心跳、100 tick 失联清理，替代原来无输入就消耗 `hitl_max_control_tick` 的机制；这不会延长弹体 `life`、燃料或物理射程。`RADIO` 原有 ECM、遮挡连续 40 tick 断链仍保留，`FIBER` 仅跳过无线电遮挡。
+
+全服预算在 `config/ywzj_rvp-hitl-remote.toml`：默认最多 4 会话，半径上限 8，距离上限 4096 格，每 tick 新票据中心 4、首发区块包 8、未就绪中心 64、每会话额外实体 256。中心票据带有 Minecraft 邻域依赖，不能把中心数当作实际生成区块数。退出、销毁、死亡、离车、跨维度、超距、断线都会撤销会话并释放票据。
+
+2048 格（128 区块）控制距离片段见 `docs/examples/hitl_remote_view/`。半径32的大窗口测试使用 `docs/examples/hitl_remote_view/radius32/ywzj_rvp-hitl-remote.toml`，七种已启用HITL根武器的窗口为32、加载24/发送32；需同步该测试TOML，已有全服默认8/4/8不会被升级自动改写。会话以原版视距通知允许客户端绘制远程地形，结束后恢复普通视距；身体区块订阅不扩大。测试版本0.1.0o、协议37，双端同版。
+
 #### `RVP_GuidanceDataGPS`（`GPS`）
 
 | 字段 | 说明 | 类型 | 默认值 |
@@ -1720,6 +1741,7 @@ SACLOS 反坦克导弹（半自动修正）：
 | `ui_preset` | UI 预设 ID（字符串），指向 UI 预设文件里的预设名；决定载具 HUD 布局与样式。详见 §4。 | 空 |
 | `nctr_name` | NCTR（敌我识别）显示名称字符串。 | `?` |
 | `show_skeleton` | 观瞄时是否显示骨骼俯视图。 | `true` |
+| `tactical_map_icon` | 战术地图与轻量炮兵地图的载具图标名，对应 `assets/ywzj_rvp/textures/gui/map_icon/<name>.png`（可写裸名如 `aa_h`，也可写 `ywzj_rvp:textures/...`）；留空按载具类型默认（履带/轮式 = `mbt`、旋翼 = `atkheli`、固定翼 = `jet`、舰船 = `ship`）。由 `RVP_VehicleSupplementListener` 解析、`RVP_TacticalMapScreen#resolveVehicleIcon` 读取。 | 空 |
 | `hide_passenger` | 是否隐藏乘客渲染（由 `RVP_VehicleHitboxFactorManager` 读取）。 | `false` |
 | `rvp_hide_in_creative` | 是否从创造模式物品栏隐藏该载具的生成物（载具页与搜索页一并生效）。用于仅由母车部署的辅助载具（雷达车 / 随车无人机）：载具实体、数据与母车放飞链路完全不变。由 `RVP_VehicleSupplementListener` 解析、`RVP_CreativeTabEvents` 在客户端移除。 | `false` |
 
@@ -1816,7 +1838,7 @@ ERA 与全部骨骼模块统一写在 `bone_modules.<骨>` 条目（详见各模
 | `ammo_max` | 拦截弹药上限（`0` = 通道不启用）。 | `0` |
 | `reload_one_tick` | 每发拦截弹药补充耗时（tick，≥1）。 | `600` |
 | `cooldown_tick` | 相邻两次拦截的通道冷却（tick，≥1）。 | `20` |
-| `intercept_delay_tick` | 探测到目标到实际拦截的延迟（tick，≥0）。 | `0` |
+| `intercept_delay_tick` | 探测到目标到实际拦截的延迟（tick，≥0）。 | `2` |
 | `scan_interval_tick` | 探测扫描间隔（tick，≥1）。 | `10` |
 | `projectile_speed_min` | 可拦截射弹最小速度。 | `1.0` |
 | `projectile_speed_max` | 可拦截射弹最大速度（< min 时取 min）。 | `80.0` |
@@ -1836,7 +1858,7 @@ ERA 与全部骨骼模块统一写在 `bone_modules.<骨>` 条目（详见各模
       "ammo_max": 4,
       "reload_one_tick": 600,
       "cooldown_tick": 20,
-      "intercept_delay_tick": 0,
+      "intercept_delay_tick": 2,
       "scan_interval_tick": 1,
       "projectile_speed_min": 1.0,
       "projectile_speed_max": 80.0,
@@ -1850,7 +1872,7 @@ ERA 与全部骨骼模块统一写在 `bone_modules.<骨>` 条目（详见各模
 
 ### 2.5 自动盘旋（`rvp_loiter_*`）
 
-通用载具自动盘旋配置（任何飞行器可用，独立于可部署 UAV 系统）。`rvp_loiter_enabled: true` 即启用，其余全部可选：
+固定翼自动盘旋配置（独立于可部署 UAV 系统）。`rvp_loiter_enabled: true` 即启用，其余全部可选。旋翼与地面载具不参与盘旋；部署旋翼机无人驾驶时使用本体悬停，重新接管后恢复手动飞行：
 
 | 字段 | 说明 | 默认值 |
 | --- | --- | --- |
@@ -1873,11 +1895,13 @@ ERA 与全部骨骼模块统一写在 `bone_modules.<骨>` 条目（详见各模
 | `deployable_uav_allow_control_switch` | 公共策略：是否允许真人切入辅助载具。 | `true` |
 | `deployable_uav_auto_link_datalink` | 公共策略：自动建立数据链。 | `true` |
 | `deployable_uav_redeploy_cooldown_tick` | 公共策略：终结起点开始计时的冷却，单位 tick。未确认回传仍锁定部署。 | `0` |
-| `deployable_uav_auto_loiter_on_switch_back` | 公共策略：切回本车时辅助载具自动进入盘旋。 | `true` |
+| `deployable_uav_auto_loiter_on_switch_back` | 公共策略：切回本车时固定翼辅助载具自动进入盘旋。旋翼/地面载具忽略。 | `true` |
 | `deployable_uav_signal_range` | 公共策略：水平信号距离，单位格；非正数无限。 | `2048` |
 | `deployable_uav_allowed_seat_indexes` | 公共策略：允许操纵部署功能的母车座位索引。 | 空列表，仅驾驶位 0 |
 
 2026-11-02 起，原平铺的载具 ID、角色、偏移、朝向、初速改放到每个候选内；Java 不兼容旧键。一次性转换脚本为 `scripts/migrate_deployable_uav_options.ps1`，转换前必须备份。单实例已是固定规则，旧 `deployable_uav_single_instance` 不再控制行为。
+
+部署旋翼机在放出时启动旋翼并按本体静态升力设置总距初值；切回母车、主动离机或重载后无人驾驶时进入本体悬停。重新接管只退出本服务自动设置的悬停，之后仍可按 Z 使用常规→自动总距→悬停循环。悬停沿用本体回平和垂直速度阻尼，消耗燃油，不是锁定世界坐标；地形障碍及极限飞行状态仍需实机验证。候选的 `auto_loiter_on_switch_back: false` 不关闭该旋翼安全悬停。
 
 ### 2.7 起落架自动收放（`rvp_auto_landing_gear*`）
 
@@ -2410,7 +2434,7 @@ ERA 与全部骨骼模块统一写在 `bone_modules.<骨>` 条目（详见各模
 | --- | --- | --- |
 | `rvp_fire_control_mode` | 火控模式标记：空（默认，不覆盖本体默认）；`rvp_rf` 要求当前传感器为RF，为RVP机炮启用弹道预瞄，为RVP导弹启用雷达硬锁目标三态跟踪，其他武器保留原软火控；`rvp_ballistic_lead` 为RVP机炮启用与传感器解耦的通用弹道提前量火控，可复用本体IR/EO/RF实体锁定链。 | `""` |
 | `rvp_fire_control_modes` | 预瞄圈火控三态**开放子集**（字符串数组，6 键循环只在此子集内轮转）：合法值仅 `auto`（自动锁预瞄圈）、`semi`（半自动叠加鼠标偏置）、`manual`（手动）三个，大小写不敏感、重复项自动去重，其余值一律视为非法。未配置或全非法值 = 三种全有（存量载具零变化）；子集不含半自动时，初始模式取数组首个合法项。写法对齐 `guidance_data.hitl_video_modes`。 | 未配置（三种全有） |
-| `rvp_rf_off_axis_deg` | `rvp_rf` 火控离轴限制（度），读取后限制在 `0°–89°`。机炮半自动偏置、RVP导弹的 `SEMI_AUTO` 双轴锁存及其他非机炮软修正均直接使用配置原值，配置 `40` 即 `40°`。 | `10.0` |
+| `rvp_rf_off_axis_deg` | `rvp_rf` 火控离轴限制（度）。机炮获得有效提前量解时按历史规则使用该值的 `0.1` 倍；RVP导弹的 `SEMI_AUTO` 双轴锁存及其他非机炮软修正使用原值。 | `10.0` |
 | `rvp_fire_control_off_axis_deg` | `rvp_ballistic_lead` 通用弹道提前量火控离轴限制（度），仅当前武器为RVP `machinegun` 且IR/EO/RF锁定链有效时生效；执行器按配置原值使用。 | `10.0` |
 | `rvp_disable_crt_effect` | 是否禁用 CRT 显示器特效。 | `false` |
 | `rvp_follow_parent_only_part_unit_ids` | 仅跟随父级部件旋转的部件 id 列表。 | `[]` |
@@ -2584,8 +2608,8 @@ Gunner（炮手 AI）配置文件，**v2 行为式 schema**（字段以源码 `R
 | `smoke_evasion` | 烟雾规避驶入 | `scan_interval_tick`(10)、`hold_tick`(260)、`look_radius`(48.0) |
 | `sead_revenge` | SEAD 复仇（被雷达锁定后飞离→回旋→打雷达） | `threat_scan_interval_tick`(10)、`radar_lock_range`(1024.0)、`fly_away_tick`(100)、`reversal_tick`(160)、`lock_fire_tick`(40)、`timeout_tick`(400)、`cooldown_tick`(400) |
 | `stuck_recovery` | 卡住脱困（移动控制） | `check_interval_tick`(20)、`stuck_distance`(1.0)、`recovery_tick`(20) |
-| `ground_engagement_move` | 地面接敌机动（停车/观察/侧移） | `stop_distance`(12.0)、`hold_tick`(100)、`evade_tick_min`(140)、`evade_tick_max`(280)、`evade_yaw_deg`(55.0) |
-| `launcher_positioning` | 发射架定位（复用接敌机动逻辑，固定默认值） | 无可调键 |
+| `ground_engagement_move` | 地面接敌机动（接近→停车保持；目标贴脸或换弹时倒车） | `stop_distance`(60.0，车心距，对全部目标生效)、`hold_tick`(100)、`evade_tick_min`(140)、`evade_tick_max`(280)、`evade_yaw_deg`(55.0)。后四项自 2026-11-06 起仅 `launcher_positioning` 使用，地面接敌已改为纯停车 |
+| `launcher_positioning` | 发射架定位（复用接敌机动逻辑，独立停车距离） | `stop_distance`(12.0) |
 | `ground_patrol` | 地面巡逻大转弯（移动控制） | `big_turn_interval_tick_min`(300)、`big_turn_interval_tick_max`(600)、`big_turn_angle_deg_min`(120.0)、`big_turn_angle_deg_max`(180.0)、`big_turn_duration_tick`(40) |
 | `fixed_wing_combat_flight` | 固定翼战斗飞行（移动控制） | `cruise_altitude_min`(150.0)、`cruise_altitude_max`(500.0)、`combat_radius_min`(40.0)、`combat_radius_max`(550.0)、`attack_phase_tick`(200)、`disengage_phase_tick`(200)、`initial_disengage_tick_min`(300)、`initial_disengage_tick_max`(400) |
 | `rotary_wing_combat_flight` | 旋翼战斗飞行（移动控制） | `cruise_altitude_min`(28.0)、`cruise_altitude_max`(60.0)、`attack_phase_tick`(200)、`disengage_phase_tick`(200)、`initial_disengage_tick_min`(300)、`initial_disengage_tick_max`(400) |
@@ -2893,7 +2917,7 @@ RVP 的 Forge 配置分三个文件：`ywzj_rvp-server.toml`、`ywzj_rvp-common.
 
 选择只在没有部署实例、没有回传/终结事务且冷却结束时应用；冷却持久化，子机卸载不等于终结。已部署实例保存放飞时的有效配置，配置重载不改变其策略。
 
-完整片段与迁移/验证记录见 [载具自爆与辅助载具自定义实施记录](../RVP载具自爆与辅助载具自定义_实施记录_20261102.md)。本批只提供通用功能与示例，不创建 FPV 载具资产。
+通用 schema 首批片段与迁移记录见 [载具自爆与辅助载具自定义实施记录](../RVP载具自爆与辅助载具自定义_实施记录_20261102.md)。五台母车接入既有 RAWR/无人直升机及悬停行为见 [无人车与旋翼候选接入交接](../RVP会话交接_无人车与旋翼候选及悬停_20261102.md)。
 
 ## 9 参考
 

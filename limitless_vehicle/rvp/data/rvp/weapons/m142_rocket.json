@@ -35,7 +35,7 @@
     "missile_native_trail_particle_scale": 0.85,
     "missile_native_trail_step": 1.0,
     "missile_native_trail_offset": 3.0,
-    "missile_native_trail_density_scale": 0.45,
+    "missile_native_trail_density_scale": 0.315,
     "missile_native_trail_hold_min_ticks": 100,
     "missile_native_trail_fade_ticks": 35,
     "missile_native_trail_fade_random_ticks": 10,
@@ -50,7 +50,8 @@
       "spawn_frag": false,
       "white_phosphorus": false,
       "chlorine_yield": 1,
-      "visual_scale": 0.3,
+      "visual_scale": 0.15,
+      "visual_density": 0.5,
       "destroy_block": false
     },
     "explosion_data": {

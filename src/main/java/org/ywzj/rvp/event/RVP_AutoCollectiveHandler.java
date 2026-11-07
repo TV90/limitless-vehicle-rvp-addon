@@ -6,11 +6,16 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraftforge.event.entity.EntityLeaveLevelEvent;
+import net.minecraftforge.event.entity.EntityMountEvent;
+import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.server.ServerStoppedEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.network.PacketDistributor;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.config.RVP_VehicleExtendedConfigManager;
+import org.ywzj.rvp.network.RVP_Network;
+import org.ywzj.rvp.network.S2CRotaryFlightModeSync;
 import org.ywzj.vehicle.api.event.VehicleMoveEvent;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.entity.vehicle.RotaryWingVehicle;
@@ -55,6 +60,48 @@ public final class RVP_AutoCollectiveHandler {
     public static void setHoverMode(RotaryWingVehicle vehicle, boolean enabled) {
         vehicle.hoverMode = enabled;
         FLIGHT_MODES.put(vehicle.getUUID(), enabled ? RVP_RotaryFlightMode.HOVER : RVP_RotaryFlightMode.NORMAL);
+        // 调用同步入口，让同车玩家的动作条立即切到悬停/常规图标
+        syncModeToTracking(vehicle);
+    }
+
+    /** 把当前三态发给追踪该载具的客户端；无追踪者时为空操作。 */
+    private static void syncModeToTracking(RotaryWingVehicle vehicle) {
+        if (vehicle.level().isClientSide()) {
+            return;
+        }
+        RVP_RotaryFlightMode mode = FLIGHT_MODES.getOrDefault(vehicle.getUUID(),
+                vehicle.hoverMode ? RVP_RotaryFlightMode.HOVER : RVP_RotaryFlightMode.NORMAL);
+        RVP_Network.CHANNEL.send(PacketDistributor.TRACKING_ENTITY.with(() -> vehicle),
+                new S2CRotaryFlightModeSync(vehicle.getId(), mode.ordinal()));
+    }
+
+    /** 玩家开始追踪载具时补发当前模式，覆盖中途上车/重连后的初始 HUD。 */
+    @SubscribeEvent
+    public static void onStartTracking(PlayerEvent.StartTracking event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)
+                || !(event.getTarget() instanceof RotaryWingVehicle vehicle)
+                || vehicle.level().isClientSide()) {
+            return;
+        }
+        sendModeToPlayer(player, vehicle);
+    }
+
+    /** 上车瞬间再补发一次，避免载具早已在视野内、状态又未变化时 HUD 初始值滞后。 */
+    @SubscribeEvent
+    public static void onMount(EntityMountEvent event) {
+        if (event.getLevel().isClientSide() || !event.isMounting()
+                || !(event.getEntityMounting() instanceof ServerPlayer player)
+                || !(event.getEntityBeingMounted() instanceof RotaryWingVehicle vehicle)) {
+            return;
+        }
+        sendModeToPlayer(player, vehicle);
+    }
+
+    private static void sendModeToPlayer(ServerPlayer player, RotaryWingVehicle vehicle) {
+        RVP_RotaryFlightMode mode = FLIGHT_MODES.getOrDefault(vehicle.getUUID(),
+                vehicle.hoverMode ? RVP_RotaryFlightMode.HOVER : RVP_RotaryFlightMode.NORMAL);
+        RVP_Network.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player),
+                new S2CRotaryFlightModeSync(vehicle.getId(), mode.ordinal()));
     }
 
     /**
@@ -86,6 +133,8 @@ public final class RVP_AutoCollectiveHandler {
         if (next != mode) {
             FLIGHT_MODES.put(uuid, next);
             vehicle.hoverMode = next == RVP_RotaryFlightMode.HOVER;
+            // 调用同步入口，把 Z 键切换后的三态推给同车玩家
+            syncModeToTracking(vehicle);
             // 调用现有提示入口，保留玩家 Z 键循环的三种反馈。
             notifyMode(vehicle, switch (next) {
                 case NORMAL -> "rvp.flight_mode.normal";

@@ -30,7 +30,13 @@
   },
   "detonate_data": {},
   "collision_data": {
-    "direct_damage": 55
+    "direct_damage": 55,
+    "direct_damage_factor": {
+      "vehicle_default": 1.0,
+      "vehicles": {
+        "ywzj_vehicle:wheeled_vehicle": 1.3
+      }
+    }
   },
   "fuse_data": {},
   "name_CN": "TOW-2B 自锻破片"

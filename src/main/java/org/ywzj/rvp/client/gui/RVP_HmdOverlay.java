@@ -5,6 +5,7 @@ import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
@@ -20,8 +21,12 @@ public class RVP_HmdOverlay {
     private static final int COLOR_GREEN = Color.GREEN;
     private static final int COLOR_RED = 0xFFFF2B2B;
     private static final int COLOR_WHITE = 0xFFFFFFFF;
-    private static final float GROUND_IR_HALF_FOV_DEG = 2.4f;
     private static final int CROSS_HALF = 8;
+    /** 锁定十字相对原尺寸的缩放。 */
+    private static final float LOCKED_CROSS_SCALE = 0.7f;
+    /** 对地四角框整框边长：伺服前 22px，锁定后 12px（固定像素，不随视场投影放大）。 */
+    private static final int GROUND_BRACKET_MAX_SIDE = 22;
+    private static final int GROUND_BRACKET_LOCKED_SIDE = 12;
     private static final Component IR_ACQUIRING =
             Component.translatable("message.ywzj_rvp.hmd.ir_acquiring");
 
@@ -120,8 +125,6 @@ public class RVP_HmdOverlay {
     // ==================== IR HMD（对地）====================
 
     private static void renderGroundIr(GuiGraphics guiGraphics, Minecraft mc, RVP_ClientHmdState state) {
-        double tan = getTanFov(mc);
-        if (tan <= 0) return;
         WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
         if (weaponUnit == null) return;
         // 调用本项目 HMD 状态读取 IR 通道自己的目标，避免雷达硬锁写入共享 WeaponUnit
@@ -179,10 +182,11 @@ public class RVP_HmdOverlay {
                     org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(locked));
             if (screen.z > 0) {
                 int tx = (int) screen.x, ty = (int) screen.y;
-                int boxHalf = calcBoxHalf(mc, tan, locked);
+                int boxHalf = bracketHalf(state.getIrBracketScale());
                 drawCornerBox(guiGraphics, tx - boxHalf, tx + boxHalf, ty - boxHalf, ty + boxHalf, frameColor);
-                guiGraphics.fill(tx - CROSS_HALF, ty, tx + CROSS_HALF + 1, ty + 1, frameColor);
-                guiGraphics.fill(tx, ty - CROSS_HALF, tx + 1, ty + CROSS_HALF + 1, frameColor);
+                int crossHalf = Math.max(2, Math.round(CROSS_HALF * LOCKED_CROSS_SCALE));
+                guiGraphics.fill(tx - crossHalf, ty, tx + crossHalf + 1, ty + 1, frameColor);
+                guiGraphics.fill(tx, ty - crossHalf, tx + 1, ty + crossHalf + 1, frameColor);
             }
         } else {
             // 未锁定：观瞄在屏幕中心，非观瞄跟随 HMD 方向（钳制后）
@@ -197,8 +201,7 @@ public class RVP_HmdOverlay {
                 hy = (int) finalPos.y;
             }
 
-            int boxHalf = (int) (Math.tan(Math.toRadians(GROUND_IR_HALF_FOV_DEG)) / tan * hy * 1.1);
-            if (boxHalf < 10) boxHalf = 10;
+            int boxHalf = bracketHalf(state.getIrBracketScale());
             int color = outOfLimit
                     ? (visible ? COLOR_RED : (COLOR_RED & 0x00FFFFFF) | 0x02000000)
                     : (visible ? COLOR_WHITE : (COLOR_WHITE & 0x00FFFFFF) | 0x02000000);
@@ -297,15 +300,12 @@ public class RVP_HmdOverlay {
         guiGraphics.drawString(mc.font, IR_ACQUIRING, cx - width / 2, bottomY + 3, COLOR_WHITE, true);
     }
 
-    /** 根据目标和视角计算框半宽（×1.2）。 */
-    private static int calcBoxHalf(Minecraft mc, double tan, Entity target) {
-        // [RVP] §46：框尺寸基准与框中心同源（最大 OBB 中心）
-        Vec3 s = VectorUtil.worldToScreen(
-                org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(target));
-        if (s.z <= 0) return 10;
-        int cy = (int) s.y;
-        int boxHalf = (int) (Math.tan(Math.toRadians(GROUND_IR_HALF_FOV_DEG)) / tan * cy * 1.1);
-        return Math.max(10, boxHalf);
+    /** 四角框半宽：把平滑缩放映射到固定整框边长 22px → 12px。 */
+    private static int bracketHalf(float bracketScale) {
+        float t = Mth.clamp((bracketScale - RVP_ClientHmdState.IR_BRACKET_LOCKED_SCALE)
+                / (RVP_ClientHmdState.IR_BRACKET_MAX_SCALE - RVP_ClientHmdState.IR_BRACKET_LOCKED_SCALE),
+                0f, 1f);
+        return Math.round(Mth.lerp(t, GROUND_BRACKET_LOCKED_SIDE, GROUND_BRACKET_MAX_SIDE) / 2f);
     }
 
     private static double getTanFov(Minecraft mc) {

@@ -24,8 +24,8 @@
     "sound_distance": 30
   },
   "energy_info": {
-    "energy_capacity": 500000,
-    "energy_consumption_per_tick": 0.87
+    "energy_capacity": 250,
+    "energy_consumption_per_tick": 0.000435
   },
   "physics_info": {
     "mass": 7000000,
@@ -46,13 +46,11 @@
       "id": "weapon0",
       "name": "weapon0",
       "type": "ywzj_vehicle:weapon",
-      "rvp_fire_control_mode": "rvp_rf",
-      "rvp_rf_off_axis_deg": 40,
       "structure_bone": "weapon0",
       "sub_part_unit_ids": ["radar"],
       "seat_offset": [-0.8125, 9.8125, 0.3125],
-      "operator_view_offset": [-0.8125, 1.8375, 0.3125],
-      "optical_sight_offset": [-0.8125, 1.8375, 0.3125],
+      "operator_view_offset": [-0.8125, 2.0875, 0.5625],
+      "optical_sight_offset": [-0.8125, 2.0875, 0.5625],
       "operator_on_weapon_unit": true,
       "optical_sight_type": "crt_ui",
       "crosshair_style": "circle",
@@ -88,13 +86,11 @@
       "id": "weapon2",
       "name": "weapon2",
       "type": "ywzj_vehicle:weapon",
-      "rvp_fire_control_mode": "rvp_rf",
-      "rvp_rf_off_axis_deg": 40,
       "structure_bone": "weapon2",
       "sub_part_unit_ids": ["radar"],
       "seat_offset": [0, 8.375, 21.875],
-      "operator_view_offset": [0, 2.86875, 1.65625],
-      "optical_sight_offset": [0, 2.86875, 1.65625],
+      "operator_view_offset": [0, 3.61875, 1.90625],
+      "optical_sight_offset": [0, 3.61875, 1.90625],
       "operator_on_weapon_unit": true,
       "optical_sight_type": "crt_ui_operator",
       "crosshair_style": "circle",
@@ -131,8 +127,8 @@
       "structure_bone": "weapon3",
       "sub_part_unit_ids": ["radar"],
       "seat_offset": [4.96875, 8.9375, -52.5625],
-      "operator_view_offset": [0.00625, 1.73125, 0.2375],
-      "optical_sight_offset": [0.00625, 1.73125, 0.2375],
+      "operator_view_offset": [0.00625, 2.48125, 0.4875],
+      "optical_sight_offset": [0.00625, 2.48125, 0.4875],
       "operator_on_weapon_unit": true,
       "optical_sight_type": "crt_ui",
       "crosshair_style": "cross",
@@ -160,8 +156,8 @@
       "structure_bone": "weapon4",
       "sub_part_unit_ids": ["radar"],
       "seat_offset": [-4.96875, 8.9375, -52.5625],
-      "operator_view_offset": [-0.00625, 1.73125, 0.2375],
-      "optical_sight_offset": [-0.00625, 1.73125, 0.2375],
+      "operator_view_offset": [-0.00625, 2.48125, 0.4875],
+      "optical_sight_offset": [-0.00625, 2.48125, 0.4875],
       "operator_on_weapon_unit": true,
       "optical_sight_type": "crt_ui",
       "crosshair_style": "cross",
@@ -386,6 +382,23 @@
       ],
       "barrel": {
         "threshold": 1000
+      }
+    },
+    "__vehicle__": {
+      "modules": [
+        "MAINTENANCE"
+      ],
+      "maintenance": {
+        "use_time_ticks": 80,
+        "wait_time_ticks": 300,
+        "heal_per_tick_percent": 0.25,
+        "heal_parts": false,
+        "require_max_altitude": -1,
+        "module_repair": {
+          "era_recover_fraction": 0.25,
+          "era_recover_min": 1,
+          "device_recover_chance": 0.25
+        }
       }
     }
   },

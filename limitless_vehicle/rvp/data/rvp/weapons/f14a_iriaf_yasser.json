@@ -31,15 +31,20 @@
     "impact_particle": "minecraft:block",
     "explosion_particle": "minecraft:explosion_emitter",
     "missile_native_trail_particle_style": "rvp_rocket_flame",
-    "missile_native_trail_particle_scale": 1.0,
-    "missile_native_trail_step": 0.7,
-    "missile_native_trail_offset": 3.0
+    "missile_native_trail_particle_scale": 0.85,
+    "missile_native_trail_step": 1.0,
+    "missile_native_trail_offset": 3.0,
+    "missile_native_trail_density_scale": 0.315,
+    "missile_native_trail_hold_min_ticks": 100,
+    "missile_native_trail_fade_ticks": 35,
+    "missile_native_trail_fade_random_ticks": 10,
+    "missile_native_trail_alpha_hold_ratio": 0.18
   },
   "detonate_data": {
     "explosion_data": {
       "explode": true,
-      "damage": 400,
-      "radius": 12,
+      "damage": 700,
+      "radius": 14,
       "destroy_block": true,
       "explosion_damage_factor": {
         "player": 0.125,
@@ -109,7 +114,6 @@
         "start_factor": 0.2,
         "end_factor": 0.1
       }
-    
     ]
   },
   "name_CN": "亚西尔 重型火箭弹"

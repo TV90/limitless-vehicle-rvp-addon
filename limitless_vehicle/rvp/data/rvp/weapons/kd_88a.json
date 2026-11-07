@@ -30,7 +30,7 @@
     "second_pulse_trigger_speed": 10,
     "second_pulse_thrust": 0.688876,
     "second_pulse_burn_time": 1800,
-"inherit_vehicle_velocity": true,
+    "inherit_vehicle_velocity": true,
     "turning_factor": {
       "[[1,inf]]": 0.12
     },
@@ -53,7 +53,7 @@
     "guidance_tick_range": "[[5,inf]]",
     "guidance_target_distance_range": "[[0,512]]",
     "lock_target_distance_range": "[[0,512]]",
-    "seeker_lock_dwell_tick": 20,
+    "seeker_lock_dwell_tick": 15,
     "seeker_dwell_grace_tick": 5,
     "max_lock_angle": 4,
     "max_off_axis_lock_angle": 45,
@@ -69,10 +69,7 @@
     "trajectory_particle": "none",
     "impact_particle": "minecraft:block",
     "explosion_particle": "minecraft:explosion_emitter",
-    "missile_native_trail_particle_style": "rvp_rocket_flame",
-    "missile_native_trail_particle_scale": 0.5,
-    "missile_native_trail_step": 0.7,
-    "missile_native_trail_offset": 3.0
+    "missile_native_trail_enabled": false
   },
   "detonate_data": {
     "explosion_data": {

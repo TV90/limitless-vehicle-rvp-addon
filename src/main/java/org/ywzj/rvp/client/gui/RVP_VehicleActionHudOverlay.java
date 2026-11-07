@@ -12,15 +12,25 @@ import org.ywzj.rvp.client.RVP_Keys;
 import org.ywzj.rvp.client.lead.RVP_MachinegunLeadSolver;
 import org.ywzj.rvp.client.state.RVP_ClientHitlState;
 import org.ywzj.rvp.client.state.RVP_ClientAuxiliaryHudState;
+import org.ywzj.rvp.client.state.RVP_ClientGPSState;
 import org.ywzj.rvp.client.state.RVP_ClientGPSUtil;
 import org.ywzj.rvp.client.state.RVP_ClientHmdState;
+import org.ywzj.rvp.client.state.RVP_ClientLoiterState;
+import org.ywzj.rvp.client.state.RVP_ClientLoiterSupport;
+import org.ywzj.rvp.client.state.RVP_ClientRotaryFlightModeState;
 import org.ywzj.rvp.client.state.RVP_FireControlStabilizerState;
+import org.ywzj.rvp.config.RVP_VehicleExtendedConfigManager;
+import org.ywzj.rvp.event.RVP_RotaryFlightMode;
 import org.ywzj.rvp.util.RVP_WeaponResolveHelper;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
+import org.ywzj.rvp.weapon.fuse.RVP_AirburstRangeStore;
+import org.ywzj.rvp.weapon.util.RVP_WeaponLeafResolver;
 import org.ywzj.vehicle.all.AllKeys;
 import org.ywzj.vehicle.custom.weapon.data.VehicleMissileWeaponData;
+import org.ywzj.vehicle.entity.vehicle.RotaryWingVehicle;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
+import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 import org.ywzj.vehicle.vehicle.weapon.VehicleMissile;
 import java.util.List;
 import static org.ywzj.rvp.client.gui.RVP_VehicleActionHudModel.*;
@@ -29,13 +39,24 @@ import static org.ywzj.rvp.client.gui.RVP_VehicleActionHudModel.*;
 public final class RVP_VehicleActionHudOverlay implements IGuiOverlay {
     private static final ResourceLocation[] TEXTURES = {
             texture("deploy_auxiliary"), texture("switch_auxiliary"), texture("tactical_map"), texture("vehicle_status"),
-            texture("seeker"), texture("fire_control"), texture("quick_lock")};
+            texture("seeker"), texture("fire_control_stable"), texture("fire_control_semi_auto"), texture("fire_control_off"),
+            texture("quick_lock"), texture("loiter"),
+            texture("rotary_normal"), texture("rotary_auto_collective"), texture("rotary_hover"),
+            texture("gps_mark"), texture("gps_single"), texture("gps_multi"), texture("gps_fast"), texture("gps_radar"),
+            texture("airburst")};
     private static final ResourceLocation DEPLOYED_TEXTURE = texture("deployed_auxiliary");
     private static final String[] LABELS = {"deploy_auxiliary", "switch_auxiliary", "tactical_map", "vehicle_status",
-            "seeker", "fire_control", "quick_lock"};
+            "seeker", "fire_control_stable", "fire_control_semi_auto", "fire_control_off", "quick_lock",
+            "loiter", "rotary_normal", "rotary_auto_collective", "rotary_hover",
+            "gps_mark", "gps_single", "gps_multi", "gps_fast", "gps_radar", "airburst"};
     private static final KeyMapping[] BINDINGS = {RVP_Keys.DEPLOY_DEPLOYABLE_UAV, RVP_Keys.SWITCH_DEPLOYABLE_UAV,
             RVP_Keys.OPEN_GPS_PANEL, RVP_Keys.OPEN_EQUIP_PANEL, AllKeys.TOGGLE_SEEKER,
-            RVP_Keys.FIRE_CONTROL_STABILIZER, RVP_Keys.HMD_TOGGLE};
+            RVP_Keys.FIRE_CONTROL_STABILIZER, RVP_Keys.FIRE_CONTROL_STABILIZER, RVP_Keys.FIRE_CONTROL_STABILIZER,
+            RVP_Keys.HMD_TOGGLE, RVP_Keys.TOGGLE_UAV_LOITER,
+            AllKeys.TOGGLE_HOVER_MODE, AllKeys.TOGGLE_HOVER_MODE, AllKeys.TOGGLE_HOVER_MODE,
+            // GPS 标点与定距装订都走本体锁定键（R），GPS 模式切换沿用火控稳定器键（6）
+            AllKeys.FIRE_CONTROL_LOCK, RVP_Keys.FIRE_CONTROL_STABILIZER, RVP_Keys.FIRE_CONTROL_STABILIZER,
+            RVP_Keys.FIRE_CONTROL_STABILIZER, RVP_Keys.FIRE_CONTROL_STABILIZER, AllKeys.FIRE_CONTROL_LOCK};
     private static ResourceLocation texture(String name) {
         return new ResourceLocation("ywzj_rvp", "textures/gui/actions/" + name + ".png");
     }
@@ -48,11 +69,59 @@ public final class RVP_VehicleActionHudOverlay implements IGuiOverlay {
         var state = RVP_ClientAuxiliaryHudState.get(vehicle.getUUID(), mc.level.getGameTime());
         var operator = LocalVehiclePlayer.instance;
         WeaponUnit unit = operator.onVehicle() && operator.vehicle == vehicle ? operator.getWeaponUnit() : null;
+        // 开关类动作读取实际状态：开启时常亮，关闭时不亮（不再只靠按键瞬间的高亮）
         boolean seeker = unit != null && supportsSeeker(unit);
-        boolean fireControl = unit != null && RVP_MachinegunLeadSolver.isCurrentRvpMachinegun(unit)
-                && RVP_FireControlStabilizerState.canToggleMode(unit) && !RVP_ClientGPSUtil.isGPSBombSelected();
+        boolean seekerActive = seeker && unit.isSeekerOn();
+        // 火控三态只占一张卡：图标/文案按当前模式切换，稳定/半自动视为火控开启（常亮），关闭不亮
+        Action fireControlAction = null;
+        boolean fireControlActive = false;
+        if (unit != null && RVP_MachinegunLeadSolver.isCurrentRvpMachinegun(unit)
+                && RVP_FireControlStabilizerState.canToggleMode(unit) && !RVP_ClientGPSUtil.isGPSBombSelected()) {
+            RVP_FireControlStabilizerState.Mode mode = RVP_FireControlStabilizerState.getMode(unit);
+            fireControlAction = switch (mode) {
+                case STABLE -> Action.FIRE_CONTROL_STABLE;
+                case SEMI_AUTO -> Action.FIRE_CONTROL_SEMI_AUTO;
+                case OFF -> Action.FIRE_CONTROL_OFF;
+            };
+            fireControlActive = mode != RVP_FireControlStabilizerState.Mode.OFF;
+        }
         boolean quickLock = unit != null && RVP_ClientHmdState.supportsQuickLock(unit);
-        List<Card> cards = cards(state, seeker, fireControl, quickLock);
+        RVP_ClientHmdState quickLockHmd = RVP_ClientHmdState.getInstance();
+        // 快速锁定图标只代表雷达/光电头瞄；IR 头瞄开启不能点亮它。
+        boolean quickLockActive = quickLock && (quickLockHmd.isRadarHmd() || quickLockHmd.isEoHmd());
+        // GPS 标点在 FAST 模式下由开火键直接取点，R 键被禁用，因此不显示标点卡
+        boolean gpsSelected = unit != null && RVP_ClientGPSUtil.isGPSBombSelected();
+        RVP_ClientGPSState.Mode gpsMode = RVP_ClientGPSState.getMode();
+        boolean gpsMark = gpsSelected && gpsMode != RVP_ClientGPSState.Mode.FAST;
+        boolean gpsMarkActive = gpsMark && RVP_ClientGPSState.isActive();
+        Action gpsModeAction = !gpsSelected ? null : switch (gpsMode) {
+            case SINGLE -> Action.GPS_SINGLE;
+            case MULTI -> Action.GPS_MULTI;
+            case FAST -> Action.GPS_FAST;
+            case RADAR -> Action.GPS_RADAR;
+        };
+        // 定距空爆卡：按引信数据通用判定（3OF82/3OF26EDKV/XM914 等），AHEAD 自动装订不显示
+        boolean airburst = false;
+        boolean airburstActive = false;
+        if (unit != null) {
+            AbstractVehicleWeapon<?> leaf = RVP_WeaponLeafResolver.resolveLeaf(unit).orElse(null);
+            if (leaf instanceof RVP_WeaponBase rvpWeapon
+                    && rvpWeapon.getData().getFuseData().isProgrammableAirburst()
+                    && !rvpWeapon.getData().getFuseData().isAheadEnabled()) {
+                airburst = true;
+                airburstActive = RVP_AirburstRangeStore.get(vehicle, unit, rvpWeapon.getIndex()) > 0;
+            }
+        }
+        // 盘旋卡片只在当前载具自身可盘旋时出现；直升机三态卡片只给配置了自动总距的 RVP 旋翼机
+        boolean loiterApplicable = RVP_ClientLoiterSupport.applicable(vehicle);
+        boolean loitering = RVP_ClientLoiterState.isVehicleLoitering(vehicle.getId());
+        RVP_RotaryFlightMode rotaryMode = vehicle instanceof RotaryWingVehicle
+                && RVP_VehicleExtendedConfigManager.hasAutoCollectiveConfig(vehicle.getVehicleId())
+                ? RVP_ClientRotaryFlightModeState.get(vehicle.getId()) : null;
+        List<Card> cards = cards(state,
+                new WeaponPrompts(seeker, seekerActive, fireControlAction, fireControlActive,
+                        quickLock, quickLockActive, gpsMark, gpsMarkActive, gpsModeAction, airburst, airburstActive),
+                new FlightPrompts(loiterApplicable, loitering, rotaryMode));
         String[] keys = new String[BINDINGS.length];
         boolean[] pressed = new boolean[BINDINGS.length];
         for (Card card : cards) {
@@ -107,9 +176,11 @@ public final class RVP_VehicleActionHudOverlay implements IGuiOverlay {
     /** 参考画布上的单卡：部署完成换成无箭头/确认勾图标，冷却时压暗并显示红色秒数。 */
     private static void drawCard(GuiGraphics graphics, Card card, String key, boolean pressed) {
         boolean deployed = card.phase() == Phase.DEPLOYED;
-        boolean bright = card.enabled() || deployed;
-        int border = pressed && card.enabled() ? 0xFFE2C774 : deployed ? 0xC477A68A : 0xA0526068;
-        graphics.fill(0, 0, CARD_WIDTH, CARD_HEIGHT, 0xB3172127);
+        boolean active = card.phase() == Phase.ACTIVE;
+        boolean bright = card.enabled() || deployed || active;
+        int border = pressed && card.enabled() ? 0xFFE2C774
+                : deployed ? 0xC477A68A : active ? 0xC400E5FF : 0xA0526068;
+        graphics.fill(0, 0, CARD_WIDTH, CARD_HEIGHT, active ? 0xB3122A30 : 0xB3172127);
         graphics.renderOutline(0, 0, CARD_WIDTH, CARD_HEIGHT, border);
         graphics.fill(1, 1, CARD_WIDTH - 1, 22, pressed && card.enabled() ? 0xDC5C563C : 0xD734424B);
         text(graphics, key, CARD_WIDTH / 2F, 3, 1.6F, card.enabled() ? 0xFFE0C66D : 0xFF727A80, CARD_WIDTH - 6);
@@ -121,9 +192,11 @@ public final class RVP_VehicleActionHudOverlay implements IGuiOverlay {
         if (card.phase() == Phase.COOLING)
             text(graphics, card.cooldownSeconds() + "s", CARD_WIDTH / 2F, 49, 2F, 0xFFFF6060, CARD_WIDTH - 6);
         String label = Component.translatable("hud.ywzj_rvp.action." +
-                (deployed ? "deployed_auxiliary" : LABELS[card.action().ordinal()])).getString();
+                (deployed ? "deployed_auxiliary"
+                        : active && card.action() == Action.LOITER ? "loiter_active"
+                        : LABELS[card.action().ordinal()])).getString();
         text(graphics, label, CARD_WIDTH / 2F, 83, 1.75F,
-                deployed ? 0xFFA2D5AF : bright ? 0xFFE4E8E8 : 0xFF727A80, CARD_WIDTH - 4);
+                deployed ? 0xFFA2D5AF : active ? 0xFF7FF2FF : bright ? 0xFFE4E8E8 : 0xFF7A8080, CARD_WIDTH - 4);
     }
 
     /** 长按键名和标签在卡内缩放，保留完整文字。 */

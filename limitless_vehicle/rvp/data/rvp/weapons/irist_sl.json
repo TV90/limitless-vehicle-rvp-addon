@@ -56,6 +56,8 @@
     },
     "guidance_type": "AIR",
     "lock_target_distance_range": "[[0,1800]]",
+    "lock_altitude_range": "[[5,inf]]",
+    "guidance_altitude_range": "[[5,inf]]",
     "enable_inertial_guidance": true,
     "max_lock_angle": 50,
     "max_off_axis_lock_angle": 140,

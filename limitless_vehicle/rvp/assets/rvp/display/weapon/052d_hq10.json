@@ -4,7 +4,12 @@
   "model": "rvp:entity/ammo/missile_aam_pl10",
   "texture": "rvp:textures/entity/ammo/missile_aam_pl10.png",
   "sounds": {
-    "fire": "ywzj_vehicle:missile_launch",
+    "fire": "rvp:launch_surface",
     "reload": "ywzj_vehicle:common_reload"
+  },
+  "fire_sound": {
+    "max_distance": 2048,
+    "volume": 1,
+    "pitch": 1
   }
 }

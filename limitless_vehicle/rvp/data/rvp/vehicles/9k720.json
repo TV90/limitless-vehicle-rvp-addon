@@ -1,4 +1,5 @@
 {
+  "tactical_map_icon": "mrap",
   "hit_indicator_rvp": true,
   "defense_stats": {
     "damage_threshold": 0.1
@@ -43,21 +44,73 @@
     "vehicle_body": 1.0,
     "launcher_pitch_barrel": 0.9
   },
+  "hitbox_explosion_damage_factor": {
+    "launcher_pitch_barrel": 1.5
+  },
   "deployable_uav_enabled": true,
-  "deployable_uav_vehicle_id": "rvp:suav",
-  "deployable_uav_role": "uav",
-  "deployable_uav_spawn_offset": [
-    0.0,
-    100.0,
-    0.0
+  "deployable_uav_default_option": "suav",
+  "deployable_uav_options": [
+    {
+      "id": "suav",
+      "name": "SUAV",
+      "vehicle_id": "rvp:suav",
+      "role": "uav",
+      "spawn_offset": [
+        0.0,
+        100.0,
+        0.0
+      ],
+      "spawn_yaw_mode": "parent",
+      "initial_speed": 1
+    },
+    {
+      "id": "uav_c4",
+      "name": "C4 自爆无人直升机",
+      "vehicle_id": "rvp:uav_c4_deployed",
+      "role": "uav",
+      "spawn_offset": [
+        4.0,
+        4.0,
+        0.0
+      ],
+      "spawn_yaw_mode": "parent",
+      "initial_speed": 0.0,
+      "auto_loiter_on_switch_back": false
+    },
+    {
+      "id": "uav_recon",
+      "name": "侦察无人直升机",
+      "vehicle_id": "rvp:uav_recon_deployed",
+      "role": "uav",
+      "spawn_offset": [
+        4.0,
+        4.0,
+        0.0
+      ],
+      "spawn_yaw_mode": "parent",
+      "initial_speed": 0.0,
+      "auto_loiter_on_switch_back": false
+    },
+    {
+      "id": "uav_rpg",
+      "name": "RPG 武装无人直升机",
+      "vehicle_id": "rvp:uav_rpg_deployed",
+      "role": "uav",
+      "spawn_offset": [
+        4.0,
+        4.0,
+        0.0
+      ],
+      "spawn_yaw_mode": "parent",
+      "initial_speed": 0.0,
+      "auto_loiter_on_switch_back": false
+    }
   ],
-  "deployable_uav_spawn_yaw_mode": "parent",
   "deployable_uav_single_instance": true,
   "deployable_uav_allow_control_switch": true,
   "deployable_uav_auto_link_datalink": true,
   "deployable_uav_redeploy_cooldown_tick": 60,
   "deployable_uav_auto_loiter_on_switch_back": true,
-  "deployable_uav_initial_speed": 1,
   "rvp_loiter_enabled": true,
   "rvp_loiter_radius": 100.0,
   "rvp_loiter_altitude_offset": 35.0,
@@ -184,6 +237,23 @@
       "modules": [
         "barrel"
       ]
+    },
+    "__vehicle__": {
+      "modules": [
+        "MAINTENANCE"
+      ],
+      "maintenance": {
+        "use_time_ticks": 80,
+        "wait_time_ticks": 300,
+        "heal_per_tick_percent": 0.25,
+        "heal_parts": false,
+        "require_max_altitude": -1,
+        "module_repair": {
+          "era_recover_fraction": 0.25,
+          "era_recover_min": 1,
+          "device_recover_chance": 0.25
+        }
+      }
     }
   },
   "hitbox_display_name": {

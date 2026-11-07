@@ -40,7 +40,7 @@
       "MULTI",
       "FAST"
     ],
-    "guidance_tick_range": "[[0,inf]]",
+    "guidance_tick_range": "[[20,inf]]",
     "max_guidance_angle": 180,
     "predict_target_pos": true,
     "enable_inertial_guidance": true,

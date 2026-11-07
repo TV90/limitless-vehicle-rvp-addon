@@ -2,10 +2,17 @@
   "type": "ywzj_rvp:weapon",
   "bedrock_backend": "rvp",
   "sounds": {
-    "fire": "ywzj_vehicle:large_missile_launch",
-    "reload": "ywzj_vehicle:common_reload"
+    "fire": "rvp:launch_cold",
+    "reload": "ywzj_vehicle:common_reload",
+    "fire_far": "rvp:launch_cold_far"
   },
   "model": "rvp:entity/ammo/missile_rim161",
   "texture": "rvp:textures/entity/ammo/missile_rim161.png",
-  "animations": "rvp:entity/rim161.animation"
+  "animations": "rvp:entity/rim161.animation",
+  "fire_sound": {
+    "far_distance": 512,
+    "max_distance": 2048,
+    "volume": 1,
+    "pitch": 1
+  }
 }

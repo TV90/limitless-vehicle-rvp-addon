@@ -1,7 +1,10 @@
 {
-  "type": "ywzj_vehicle:weapon",
+  "type": "ywzj_rvp:weapon",
   "sounds": {
     "fire": "rvp:tank_120_atgm_snd",
     "reload": "ywzj_vehicle:gun_reload"
-  }
+  },
+  "bedrock_backend": "rvp",
+  "model": "rvp:entity/ammo/missile_9m119",
+  "texture": "rvp:textures/entity/ammo/missile_9m119.png"
 }

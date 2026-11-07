@@ -14,7 +14,7 @@
   "projectile_data": {
     "velocity": 16,
     "gravity": -0.005,
-    "drag": 0.01,
+    "drag": 1,
     "rotate_to_motion": true
   },
   "effects_data": {
@@ -42,7 +42,7 @@
     "direct_damage_factor": {
       "vehicle_default": 1.0,
       "vehicles": {
-        "ywzj_vehicle:wheeled_vehicle": 0.8,
+        "ywzj_vehicle:wheeled_vehicle": 1.0,
         "ywzj_vehicle:rotary_wing_vehicle": 0.8,
         "ywzj_vehicle:fixed_wing_vehicle": 0.8
       }

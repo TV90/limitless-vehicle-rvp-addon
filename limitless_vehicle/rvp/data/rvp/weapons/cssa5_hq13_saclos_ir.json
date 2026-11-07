@@ -1,0 +1,154 @@
+{
+  "type": "rvp:missile",
+  "name": "HQ-13 Active IR SAM [Command Line]",
+  "show_msl_indicator": true,
+  "shoot_interval": 1000,
+  "max_capacity": 8,
+  "reload": {
+    "time": 300,
+    "ammo": "ywzj_vehicle:ammo_missile"
+  },
+  "fire_data": {
+    "spread": 0,
+    "fire_mode": "FULL_AUTO",
+    "require_lock": false
+  },
+  "projectile_data": {
+    "collision_box_size": 0.7,
+    "velocity": 0.2,
+    "second_pulse": true,
+    "second_pulse_thrust": 19.848626,
+    "second_pulse_burn_time": 100,
+    "second_pulse_trigger_speed": 10,
+    "has_rocket_engine": true,
+    "mass": 400,
+    "fuel_mass": 130,
+    "thrust": 109.16744,
+    "motor_burn_time": 60,
+    "drag_coefficient": 0.0765,
+    "rvp_induced_drag": 0.003,
+    "rotate_to_motion": true,
+    "max_speed": 4.5,
+    "altitude_max_speed_factor": {
+      "[[512,inf]]": 1.3,
+      "[[256,512]]": 1.15,
+      "[[128,256]]": 1.05,
+      "[[-64,128]]": 0.9,
+      "[[-inf,-64]]": 0.8
+    },
+    "turning_factor": {
+      "[[1,inf]]": 0.1
+    },
+    "rvp_aero_steering": true,
+    "rvp_maxg": 32,
+    "rvp_turn_rate_limit": 2.0,
+    "rvp_attack_angle_limit_deg": 60
+  },
+  "fuse_data": {
+    "entity_collision_safe_tick": 0,
+    "proximity_fuse_height": 5,
+    "proximity_fuse_tick": 20,
+    "delay_tick": 0,
+    "proximity_radius": 5.0,
+    "detonate_on_life_end": false
+  },
+  "guidance_data": {
+    "guidance_type": "SACLOS",
+    "guidance_tick_range": "[[11,inf]]",
+    "max_guidance_angle": 80,
+    "predict_target_pos": true,
+    "enable_inertial_guidance": true,
+    "guidance_target_distance_range": "[[0,4500]]",
+    "semi_correction_enabled": true,
+    "semi_correction_stiffness": 0.25,
+    "semi_correction_damping": 1.5,
+    "semi_correction_wobble": 0.01,
+    "interference_data": {
+      "seeker_jam_limit": 4,
+      "seeker_fov_shrink_factor": 1.0,
+      "seeker_shut_off_time": 60,
+      "chaff_resistance": 0.5
+    },
+    "terminal_guidance": {
+      "guidance_type": "IR",
+      "retain_main_guidance_until_capture": true,
+      "guidance_start_tick": 40,
+      "max_lock_angle": 30,
+      "seeker_search_distance_range": "[[0,256]]",
+      "guidance_altitude_range": "[[5,inf]]",
+      "guidance_target_distance_range": "[[0,1800]]",
+      "max_guidance_angle": 50,
+      "scan_interval_tick": 2,
+      "predict_target_pos": true,
+      "active_radar_activation_range": 384,
+      "enable_inertial_guidance": true
+    }
+  },
+  "effects_data": {
+    "trajectory_particle": "none"
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": true,
+      "damage": 200,
+      "radius": 6,
+      "proximity_fuze": true,
+      "proximity_radius": 3,
+      "destroy_block": true
+    }
+  },
+  "collision_data": {
+    "direct_damage": 80,
+    "damage_decay": [
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 30,
+        "end_distance": 45,
+        "start_factor": 0.9,
+        "end_factor": 0.8
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 45,
+        "end_distance": 60,
+        "start_factor": 0.8,
+        "end_factor": 0.6
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 60,
+        "end_distance": 65,
+        "start_factor": 0.6,
+        "end_factor": 0.5
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 65,
+        "end_distance": 70,
+        "start_factor": 0.5,
+        "end_factor": 0.35
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 70,
+        "end_distance": 75,
+        "start_factor": 0.35,
+        "end_factor": 0.2
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 75,
+        "end_distance": 81,
+        "start_factor": 0.2,
+        "end_factor": 0.1
+      }
+    ]
+  },
+  "name_CN": "红旗13主动红外弹[指令线模式]"
+}

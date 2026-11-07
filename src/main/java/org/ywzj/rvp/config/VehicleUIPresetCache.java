@@ -57,6 +57,23 @@ public final class VehicleUIPresetCache {
         return value == null || value.isBlank() ? "?" : value;
     }
 
+    /** 战术地图图标名（对应 textures/gui/map_icon/<name>.png），按载具 ID 索引；不存在返回 null 走类型默认。 */
+    private static final Map<ResourceLocation, String> TACTICAL_MAP_ICON = new HashMap<>();
+
+    /** 存入载具 ID 对应的战术地图图标名；空值表示清除，恢复类型默认图标。 */
+    public static void putTacticalMapIcon(ResourceLocation vehicleId, String iconName) {
+        if (iconName == null || iconName.isBlank()) {
+            TACTICAL_MAP_ICON.remove(vehicleId);
+            return;
+        }
+        TACTICAL_MAP_ICON.put(vehicleId, iconName.trim());
+    }
+
+    /** 读取载具 ID 对应的战术地图图标名，不存在返回 null。 */
+    public static String getTacticalMapIcon(ResourceLocation vehicleId) {
+        return TACTICAL_MAP_ICON.get(vehicleId);
+    }
+
     public static Set<ResourceLocation> keys() {
         return CACHE.keySet();
     }

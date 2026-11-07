@@ -4,12 +4,14 @@ import com.mojang.math.Axis;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.client.gui.overlay.ForgeGui;
 import net.minecraftforge.client.gui.overlay.IGuiOverlay;
 import org.jetbrains.annotations.Nullable;
+import org.ywzj.rvp.client.RVP_Keys;
 import org.ywzj.rvp.client.map.RVP_TacticalMapCache;
 import org.ywzj.rvp.client.render.RVP_MapIconTexture;
 import org.ywzj.rvp.client.screen.RVP_TacticalMapScreen;
@@ -83,8 +85,10 @@ public final class RVP_MiniArtilleryMapOverlay implements IGuiOverlay {
     private static final float ELEMENT_SCALE = 0.40F;
     /** 载具 icon：全屏地图 drawVehicleMarker 用 12px。 */
     private static final float VEHICLE_ICON_SIZE = 12F * ELEMENT_SCALE;
-    /** 步兵/生物 icon：全屏地图 drawContactMarker 用 10px。 */
+    /** 步兵/其它实体 icon：全屏地图 drawContactMarker 非生物分支用 10px。 */
     private static final float CONTACT_ICON_SIZE = 10F * ELEMENT_SCALE;
+    /** 生物/怪物 icon：与全屏地图 CREATURE_ICON_SIZE 同步，比普通触点更小。 */
+    private static final float CREATURE_ICON_SIZE = 7F * ELEMENT_SCALE;
     /** 飞行弹药 icon：全屏地图 drawMissileMarker 用 10px。 */
     private static final float AMMO_ICON_SIZE = 10F * ELEMENT_SCALE;
     /** GPS 航点 / TGT 标记 icon：全屏地图用 12px 的 gps.png。 */
@@ -316,6 +320,10 @@ public final class RVP_MiniArtilleryMapOverlay implements IGuiOverlay {
         } finally {
             gg.disableScissor();
         }
+        Component hint = Component.translatable("hud.ywzj_rvp.mini_artillery.open_map",
+                RVP_VehicleActionHudOverlay.keyHint(RVP_Keys.OPEN_GPS_PANEL));
+        gg.drawString(mc.font, hint, x0 + (panelW - mc.font.width(hint)) / 2, y1 + 2,
+                0xFFE6E6E6, true);
     }
 
     /** 地形瓦片：整块按 1 纹理像素 = 1 世界格，用 pose 缩放到 1/blocksPerPixel，避免整数取整接缝。 */
@@ -389,10 +397,10 @@ public final class RVP_MiniArtilleryMapOverlay implements IGuiOverlay {
             } else if (RVP_RadarContactHelper.usesMonsterIcon(entity)) {
                 // 怪物/中性生物：全屏地图同款固定白色 icon，不染色。
                 RVP_MapIconTexture.blitIcon(gg, RVP_TacticalMapScreen.MONSTER_ICON,
-                        x, y, CONTACT_ICON_SIZE, 0xFFFFFFFF, false, 0.0F, false);
+                        x, y, CREATURE_ICON_SIZE, 0xFFFFFFFF, false, 0.0F, false);
             } else if (RVP_RadarContactHelper.usesNeutralIcon(entity)) {
                 RVP_MapIconTexture.blitIcon(gg, RVP_TacticalMapScreen.NORMAL_ICON,
-                        x, y, CONTACT_ICON_SIZE, 0xFFFFFFFF, false, 0.0F, false);
+                        x, y, CREATURE_ICON_SIZE, 0xFFFFFFFF, false, 0.0F, false);
             } else {
                 RVP_MapIconTexture.blitIcon(gg, RVP_TacticalMapScreen.resolveFallbackEntityIcon(entity),
                         x, y, CONTACT_ICON_SIZE, color, true,

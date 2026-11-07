@@ -91,5 +91,77 @@
       "rvp:weapon/tank_120_atgm_snd"
     ],
     "subtitle": "rvp.sounds.tank_120_atgm_snd"
+  },
+  "launch_air": {
+    "sounds": [
+      {
+        "name": "rvp:weapon/launch/missile_launch/air2air/air2air_missile_launch_1",
+        "attenuation_distance": 150
+      },
+      {
+        "name": "rvp:weapon/launch/missile_launch/air2air/air2air_missile_launch_2",
+        "attenuation_distance": 150
+      },
+      {
+        "name": "rvp:weapon/launch/missile_launch/air2air/air2air_missile_launch_3",
+        "attenuation_distance": 150
+      }
+    ]
+  },
+  "launch_surface": {
+    "sounds": [
+      {
+        "name": "rvp:weapon/launch/missile_launch/surface_to_air/surface_to_air_missile_launch_1",
+        "attenuation_distance": 2048
+      },
+      {
+        "name": "rvp:weapon/launch/missile_launch/surface_to_air/surface_to_air_missile_launch_2",
+        "attenuation_distance": 2048
+      },
+      {
+        "name": "rvp:weapon/launch/missile_launch/surface_to_air/surface_to_air_missile_launch_3",
+        "attenuation_distance": 2048
+      }
+    ]
+  },
+  "launch_cold": {
+    "sounds": [
+      {
+        "name": "rvp:weapon/launch/missile_launch/cold_launch/near/cold_launch-001",
+        "attenuation_distance": 2048
+      },
+      {
+        "name": "rvp:weapon/launch/missile_launch/cold_launch/near/cold_launch-002",
+        "attenuation_distance": 2048
+      },
+      {
+        "name": "rvp:weapon/launch/missile_launch/cold_launch/near/cold_launch-003",
+        "attenuation_distance": 2048
+      }
+    ]
+  },
+  "launch_cold_far": {
+    "sounds": [
+      {
+        "name": "rvp:weapon/launch/missile_launch/cold_launch/far/cold_launch_far-001",
+        "attenuation_distance": 2048
+      },
+      {
+        "name": "rvp:weapon/launch/missile_launch/cold_launch/far/cold_launch_far-002",
+        "attenuation_distance": 2048
+      },
+      {
+        "name": "rvp:weapon/launch/missile_launch/cold_launch/far/cold_launch_far-003",
+        "attenuation_distance": 2048
+      }
+    ]
+  },
+  "launch_large_rocket": {
+    "sounds": [
+      {
+        "name": "rvp:weapon/launch/rocket_launch/large/large_rocket_launch",
+        "attenuation_distance": 16
+      }
+    ]
   }
 }

@@ -26,7 +26,7 @@
     "drag_coefficient": 0.041472,
     "rvp_induced_drag": 0.002,
     "rotate_to_motion": true,
-    "max_speed": 5.5,
+    "max_speed": 5.2,
     "altitude_max_speed_factor": {
       "[[512,inf]]": 1.3,
       "[[256,512]]": 1.15,
@@ -56,6 +56,8 @@
     },
     "guidance_type": "ARH",
     "lock_target_distance_range": "[[0,1500]]",
+    "lock_altitude_range": "[[50,inf]]",
+    "guidance_altitude_range": "[[50,inf]]",
     "enable_inertial_guidance": true,
     "max_lock_angle": 12,
     "max_off_axis_lock_angle": 60,
@@ -70,17 +72,10 @@
     "loft_blend_distance": 700
   },
   "effects_data": {
-    "trajectory_particle": "minecraft:campfire_signal_smoke",
-    "missile_native_trail_enabled": true,
-    "missile_native_trail_particle": "minecraft:cloud",
-    "missile_native_trail_step": 0.75,
-    "missile_native_trail_spawn_interval_tick": 2,
-    "missile_native_trail_density_scale": 0.65,
-    "missile_native_trail_offset": 3.0,
-    "missile_native_trail_extra_flame": true,
-    "missile_native_trail_extra_smoke": false,
+    "trajectory_particle": "none",
     "impact_particle": "minecraft:block",
-    "explosion_particle": "minecraft:explosion_emitter"
+    "explosion_particle": "minecraft:explosion_emitter",
+    "missile_native_trail_enabled": false
   },
   "detonate_data": {
     "explosion_data": {

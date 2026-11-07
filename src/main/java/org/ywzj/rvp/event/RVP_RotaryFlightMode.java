@@ -1,7 +1,7 @@
 package org.ywzj.rvp.event;
 
 /** 直升机三态：记录已接受的模式，使程序设置与本体 Z 键翻转使用同一个状态基准。 */
-enum RVP_RotaryFlightMode {
+public enum RVP_RotaryFlightMode {
     NORMAL,
     AUTO_COLLECTIVE,
     HOVER;

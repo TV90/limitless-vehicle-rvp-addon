@@ -20,7 +20,7 @@
   },
   "fuse_data": {},
   "effects_data": {
-    "trajectory_particle": "minecraft:campfire_signal_smoke",
+    "trajectory_particle": "minecraft:flame",
     "impact_particle": "minecraft:block",
     "explosion_particle": "minecraft:explosion_emitter"
   },
@@ -36,17 +36,27 @@
         "living": 0.6,
         "vehicle_default": 1.0,
         "vehicles": {
-          "ywzj_vehicle:wheeled_vehicle": 1.2
+          "ywzj_vehicle:wheeled_vehicle": 3.0
         }
       }
     }
   },
   "collision_data": {
+    "damage_decay": [
+      {
+        "domain": "distance",
+        "type": "linear",
+        "start_distance": 0,
+        "end_distance": 10,
+        "start_factor": 1.0,
+        "end_factor": 0.4
+      }
+    ],
     "direct_damage": 550.0,
     "direct_damage_factor": {
       "vehicle_default": 1.0,
       "vehicles": {
-        "ywzj_vehicle:wheeled_vehicle": 1.1,
+        "ywzj_vehicle:wheeled_vehicle": 1.3,
         "ywzj_vehicle:rotary_wing_vehicle": 1.1,
         "ywzj_vehicle:fixed_wing_vehicle": 1.1
       }

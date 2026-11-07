@@ -2,10 +2,15 @@
   "type": "ywzj_rvp:weapon",
   "bedrock_backend": "rvp",
   "sounds": {
-    "fire": "ywzj_vehicle:missile_launch",
+    "fire": "rvp:launch_surface",
     "reload": "ywzj_vehicle:common_reload"
   },
   "model": "rvp:entity/ammo/missile_rgm84",
   "texture": "rvp:textures/entity/ammo/missile_rgm84.png",
-  "animations": "rvp:entity/rgm84.animation"
+  "animations": "rvp:entity/rgm84.animation",
+  "fire_sound": {
+    "max_distance": 2048,
+    "volume": 1,
+    "pitch": 1
+  }
 }

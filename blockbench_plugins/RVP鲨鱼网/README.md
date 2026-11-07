@@ -34,7 +34,7 @@
 | v_ref 回退链：rvp_ref_speed(0=关) → max_speed → 武器初速 → 3.0 | `RVP_ProjectileData.resolveAeroReferenceSpeed` |
 | 旧转向分支（未启用攻角）：速度方向按 tf 插值 | `RVP_TrajectorySteeringMath.applyTurningFactor` 口径 |
 | 变质量推进：mass(t)=干+燃料×(1−t/burn)，a=thrust/mass 沿机头 | `RVP_PropulsionMath.resolveMotorState/applyThrust`、`RVP_ProjectileData.resolveMassAt` |
-| 二脉冲：主燃尽后 v≤trigger_speed 或 目标距离≤trigger_distance 触发；推力用主燃尽干质量 | `RVP_ProjectileMotion.shouldStartSecondPulse`（16 弹配置，7 弹距离触发照搬） |
+| 二脉冲：主燃尽后四项触发取并集——v≤trigger_speed、目标距离≤trigger_distance、v≤trigger_speed_ratio×当前生效极速（`max_speed×altitude_max_speed_factor`，与速度钳制同口径）、弹道顶点（上 Tick 起始 vy>0 且本 Tick 起始 vy≤trigger_apex_tolerance）；推力用主燃尽干质量 | `RVP_ProjectileMotion.shouldStartSecondPulse`（16 弹配置，7 弹距离触发照搬） |
 | 速度平方阻力：Δv=cd·v²/dragMass×高度因子，dragMass=mass<1?×1000:mass | `RVP_QuadraticAirDrag` |
 | 高度阻力/密度因子：JSON 显式 `altitude_drag_factor` 区间表优先，缺省内置默认大气表 | `RVP_ProjectileData.resolveAltitudeDragFactor` + 当前默认表（-64/2.0、64/1.5、320/0.5、550/0.25、1000/0.014） |
 | 重力：projectile_data.gravity（矢量施加） | `RVP_ProjectileMotion.applyPropulsionGravity` |

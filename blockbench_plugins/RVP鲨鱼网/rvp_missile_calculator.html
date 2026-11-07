@@ -381,7 +381,9 @@ function parseMissile(text,filename){
     altMap,
     msfMap,
     sp:{on:p.second_pulse===true, thrust:num(p.second_pulse_thrust,0), burn:num(p.second_pulse_burn_time,0),
-        speed:num(p.second_pulse_trigger_speed,0), dist:num(p.second_pulse_trigger_distance,0)},
+        speed:num(p.second_pulse_trigger_speed,0), dist:num(p.second_pulse_trigger_distance,0),
+        ratio:num(p.second_pulse_trigger_speed_ratio,0), apex:p.second_pulse_trigger_apex===true,
+        apexTol:num(p.second_pulse_trigger_apex_tolerance,0.05)},
     ivv:p.inherit_vehicle_velocity===true,
     cbs:num(p.collision_box_size,0.0625),
     pfh:num(fuse.proximity_fuse_height,0),
@@ -398,7 +400,9 @@ function summary(prof){
   if(prof.thrust>0)
     L.push("主发动机: 推力 "+prof.thrust+" × "+prof.burn+"t，点火延迟 "+prof.ign+"t");
   if(prof.sp.on)
-    L.push("二脉冲: 推力 "+prof.sp.thrust+" × "+prof.sp.burn+"t（速度触发 "+prof.sp.speed+" / 距离触发 "+prof.sp.dist+"）");
+    L.push("二脉冲: 推力 "+prof.sp.thrust+" × "+prof.sp.burn+"t（触发：速度"+prof.sp.speed
+          +" / 距离"+prof.sp.dist+" / 极速×"+prof.sp.ratio
+          +(prof.sp.apex?" / 弹道顶点±"+prof.sp.apexTol:"")+"）");
   if(prof.preset)
     L.push("PRESET 弹道: 巡航高 "+prof.preset.cruiseAltitude+"m，顶点≤0.5×射程，蛇形 ±"+prof.preset.maneuver+"m（瞄准目标初始位置=GPS 固定点）");
   if(prof.loft)
@@ -581,6 +585,8 @@ function simulate(prof,prm){
   const frames=[];
   let spStarted=-1,minMiss=Infinity,hitTick=-1,impactTick=-1,traveled=0,seekerCatch=false;
   let prevSpeed=vel.len();
+  // 上一 Tick 起始竖直速度：二脉冲顶端点火按"上 Tick 仍在爬升、本 Tick 降到容差内"判定
+  let prevVyStart=null;
   for(let tick=0;tick<=maxTicks;tick++){
     /* --- 制导（攻角求解/旧转向） --- */
     let nG=0,alpha=0,load=0;
@@ -627,6 +633,8 @@ function simulate(prof,prm){
       body=vel.norm();
     }
     /* --- 运动（tickMissileMove 同序） --- */
+    // 本 Tick 起始竖直速度（制导转向后、推力/重力前），对应游戏侧 shouldStartSecondPulse 收到的 velocity.y
+    const vyStart=vel.y;
     const ign=Math.max(prof.ign,0);
     let curMass=prof.mass,curThrust=0,curDrag=0;
     if(tick>=ign){
@@ -634,11 +642,20 @@ function simulate(prof,prm){
       let mass=dryEnd,thrust=0,burning=false;
       if(prof.engine&&motorTick<=prof.burn&&prof.thrust>0){
         burning=true; thrust=prof.thrust; mass=massAt(Math.max(motorTick,0));
-      } else if(prof.engine&&prof.sp.on&&prof.sp.thrust>0&&prof.sp.burn>0&&(prof.sp.speed>0||prof.sp.dist>0)){
+      } else if(prof.engine&&prof.sp.on&&prof.sp.thrust>0&&prof.sp.burn>0
+                &&(prof.sp.speed>0||prof.sp.dist>0||prof.sp.ratio>0||prof.sp.apex)){
         if(spStarted<0&&motorTick>prof.burn){
           const speedOk=prof.sp.speed>0&&vel.len()<=prof.sp.speed;
           const distOk=prof.sp.dist>0&&tgt!=null&&pos.sub(tgt.pos).len()<=prof.sp.dist;
-          if(speedOk||distOk) spStarted=tick;
+          // 极速比例：基准 = max_speed × 当前高度倍率，与速度钳制同一口径
+          let ratioOk=false;
+          if(prof.sp.ratio>0&&prof.maxSpeed>0){
+            const effMax=prof.maxSpeed*maxSpeedFactorAt(pos.y,prof.msfMap);
+            ratioOk=effMax>0&&vel.len()<=prof.sp.ratio*effMax;
+          }
+          // 弹道顶点：上一 Tick 起始 vy>0，本 Tick 起始 vy≤容差
+          const apexOk=prof.sp.apex&&prevVyStart!=null&&prevVyStart>0&&vyStart<=prof.sp.apexTol;
+          if(speedOk||distOk||ratioOk||apexOk) spStarted=tick;
         }
         if(spStarted>=0){
           const t2=tick-spStarted;
@@ -714,6 +731,7 @@ function simulate(prof,prm){
       tge:(tgt&&tgt.evading)?1:0,
       tFwd,tLat,tY});
     prevSpeed=vel.len();
+    prevVyStart=vyStart;
     if(tgt&&sweptD<=hitR){ hitTick=tick; break; }
     if(pos.y<=prm.groundY&&tick>0){ impactTick=tick; break; }
   }
@@ -729,13 +747,13 @@ const DEMO_PROF={file:"内置示例A.json",name:"示例弹A·基准（AIM-120D �
  rvpMaxG:null,tfConst:0.075,tfMap:null,refSpeedExplicit:null,turnRateLimit:0,
  inducedDragExplicit:null,altMap:null,
  msfMap:(()=>{const m={"[[-64,100]]":0.8,"[[100,inf]]":1.15};return parseRangeMap(m)||[];})(),
- sp:{on:false,thrust:0,burn:0,speed:0,dist:0},ivv:true,cbs:0.7,pfh:30};
+ sp:{on:false,thrust:0,burn:0,speed:0,dist:0,ratio:0,apex:false,apexTol:0.05},ivv:true,cbs:0.7,pfh:30};
 /* 示例弹家族：无工作目录也能多弹互比（三种典型构型的行为演示） */
 const DEMO_FAMILY=[
   DEMO_PROF,
   Object.assign({},DEMO_PROF,{file:"内置示例B.json",name:"示例弹B·双脉冲（PL-15 型）",enName:"DEMO-B",gtype:"ARH",
     cd:0.09,mass:190,fuel:70,thrust:6.7,burn:100,
-    sp:{on:true,thrust:4.0,burn:100,speed:3.6,dist:0}}),
+    sp:{on:true,thrust:4.0,burn:100,speed:3.6,dist:0,ratio:0,apex:false,apexTol:0.05}}),
   Object.assign({},DEMO_PROF,{file:"内置示例C.json",name:"示例弹C·高机动（MICA 型）",enName:"DEMO-C",gtype:"IR",
     cd:0.16,mass:112,fuel:35,thrust:16,burn:50,maxSpeed:6.0,tfConst:0.15}),
 ];

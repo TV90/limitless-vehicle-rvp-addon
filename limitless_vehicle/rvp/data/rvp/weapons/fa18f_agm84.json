@@ -49,6 +49,7 @@
     "proximity_radius": 0,
     "detonate_on_life_end": false
   },
+  "parent_weapon_unit_aim_override": false,
   "guidance_data": {
     "interference_data": {
       "seeker_jam_limit": 4,

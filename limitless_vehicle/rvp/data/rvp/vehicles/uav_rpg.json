@@ -1,0 +1,127 @@
+{
+  "tactical_map_icon": "fpv",
+  "type": "ywzj_vehicle:rotary_wing_vehicle",
+  "attributes": {
+    "main_rotor_force": 216,
+    "x_rot_speed_acceleration": 3.0,
+    "x_rot_speed_max": 6.0,
+    "y_rot_speed_acceleration": 3.0,
+    "y_rot_speed_max": 6.0,
+    "z_rot_speed_acceleration": 3.0,
+    "z_rot_speed_max": 6.0,
+    "max_air_speed": 1.5
+  },
+  "physics_info": {
+    "mass": 8,
+    "friction": 16
+  },
+  "max_health": 50,
+  "view_info": {
+    "third_person_center_offset": [
+      0,
+      3,
+      0
+    ],
+    "third_person_distance": 7,
+    "sound_distance": 8
+  },
+  "energy_info": {
+    "energy_capacity": 1,
+    "energy_consumption_per_tick": 2.7778e-05
+  },
+  "defense_stats": {
+    "damage_threshold": 10,
+    "impact_multiplier": 32
+  },
+  "uav": true,
+  "structure_model": "rvp:vehicle/uav",
+  "rvp_auto_collective": {
+    "enabled": true,
+    "threshold_climb": 0.3,
+    "threshold_descent": 0.3,
+    "rate_per_tick": 1.0
+  },
+  "parts": [
+    {
+      "id": "sighting_system",
+      "name": "sighting_system",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "sighting_system",
+      "seat_offset": [
+        0,
+        0,
+        0.35
+      ],
+      "operator_on_weapon_unit": false,
+      "rot_info": {
+        "x_rot_speed": 9,
+        "y_rot_speed": 9,
+        "x_rot_max": 90,
+        "x_rot_min": -13,
+        "y_rot_max": 120,
+        "y_rot_min": -120
+      },
+      "operator_view_offset": [
+        0,
+        0,
+        0.35
+      ],
+      "optical_sight_offset": [
+        0,
+        0,
+        0.35
+      ],
+      "optical_sight_type": "crt",
+      "with_night_vision": true,
+      "zoom_max": 8,
+      "weapons": [
+        {
+          "part_unit_id": "rocket"
+        }
+      ]
+    },
+    {
+      "id": "rocket",
+      "name": "rocket",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "shoot_barrel",
+      "bolts": [
+        {
+          "offset": [0, 0.0625, -0.0625],
+          "barrel_length": 0.125,
+          "x_rot": 0,
+          "y_rot": 0
+        }
+      ],
+      "is_seat": false,
+      "rot_info": {
+        "x_rot_speed": 0,
+        "y_rot_speed": 0
+      },
+      "weapons": [
+        "rvp:drone_pg7v"
+      ]
+    }
+  ],
+  "rvp_hide_in_creative": false,
+  "hide_passenger": true,
+  "bone_modules": {
+    "__vehicle__": {
+      "modules": [
+        "MAINTENANCE"
+      ],
+      "maintenance": {
+        "use_time_ticks": 80,
+        "wait_time_ticks": 300,
+        "heal_per_tick_percent": 0.25,
+        "heal_parts": false,
+        "require_max_altitude": -1,
+        "module_repair": {
+          "era_recover_fraction": 0.25,
+          "era_recover_min": 1,
+          "device_recover_chance": 0.25
+        }
+      }
+    }
+  }
+}

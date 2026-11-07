@@ -52,6 +52,7 @@ import org.ywzj.rvp.client.state.RVP_ClientTacticalRevealState;
 import org.ywzj.rvp.client.state.RVP_ArtilleryFireControlState;
 import org.ywzj.rvp.guidance.RVP_IrLockHelper;
 import org.ywzj.rvp.client.state.RVP_ClientRemoteAmmoState;
+import org.ywzj.rvp.client.RVP_ClientEvents;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
 import org.ywzj.rvp.network.S2CExternalRadarSnapshot;
 import org.ywzj.rvp.network.S2CMarkedBlockSync;
@@ -124,6 +125,8 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
     private static final ResourceLocation CRUISE_MISSILE_ICON = mapIcon("cruise_msl.png");
     private static final ResourceLocation BOMB_ICON = mapIcon("jdam.png");
     public static final ResourceLocation GPS_ICON = mapIcon("gps.png");
+    /** 生物/怪物 icon 尺寸：比玩家（11）和载具（12）小，作为战场次要目标。 */
+    private static final int CREATURE_ICON_SIZE = 7;
     private static final float TOOLBAR_BUTTON_TEXT_SCALE = 0.78f;
     private static final long DOUBLE_CLICK_WINDOW_MS = 350L;
     private static final int RADAR_LOCK_ASSIST_TICKS = 80;
@@ -864,6 +867,8 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
                 return super.mouseClicked(mouseX, mouseY, button);
             }
             if (isOverMap(mouseX, mouseY) && button == 0) {
+                // 炮兵地图恢复左键开火（工具栏按钮已在上方分流，普通战术地图走另一分支）。
+                fireArtilleryWeapon();
                 draggingMap = false;
                 closeTransientMenus();
                 return true;
@@ -945,6 +950,11 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
             }
         }
         return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    /** 炮兵地图左键开火：与空格键同一条客户端开火路径。 */
+    private void fireArtilleryWeapon() {
+        RVP_ClientEvents.fireCurrentWeaponClient();
     }
 
     @Override
@@ -3361,11 +3371,11 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
         // 调用本帧位置缓存，让普通雷达目标也逐帧移动。
         Vec3 position = mapRenderPosition(entity);
         if (RVP_RadarContactHelper.usesMonsterIcon(entity)) {
-            drawMarkerIcon(guiGraphics, MONSTER_ICON, position.x, position.z, entity.getViewYRot(renderPartialTick), 10, 0xFFFFFFFF, false, false);
+            drawMarkerIcon(guiGraphics, MONSTER_ICON, position.x, position.z, entity.getViewYRot(renderPartialTick), CREATURE_ICON_SIZE, 0xFFFFFFFF, false, false);
             return;
         }
         if (RVP_RadarContactHelper.usesNeutralIcon(entity)) {
-            drawMarkerIcon(guiGraphics, NORMAL_ICON, position.x, position.z, entity.getViewYRot(renderPartialTick), 10, 0xFFFFFFFF, false, false);
+            drawMarkerIcon(guiGraphics, NORMAL_ICON, position.x, position.z, entity.getViewYRot(renderPartialTick), CREATURE_ICON_SIZE, 0xFFFFFFFF, false, false);
             return;
         }
         drawMarkerIcon(guiGraphics, resolveFallbackEntityIcon(entity), position.x, position.z, entity.getViewYRot(renderPartialTick), 10, color, true, true);
@@ -3576,6 +3586,12 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
     }
 
     public static ResourceLocation resolveVehicleIcon(AbstractVehicle vehicle) {
+        // 调用本项目载具 JSON 扩展缓存：tactical_map_icon 优先于类型默认图标
+        ResourceLocation packConfigured = resolveConfiguredIcon(
+                VehicleUIPresetCache.getTacticalMapIcon(vehicle.getVehicleId()));
+        if (packConfigured != null) {
+            return packConfigured;
+        }
         BaseVehicleData<?> data = CommonAssetsManager.vehicleDataManager().getVehicleData(vehicle.getVehicleId()).orElse(null);
         if (data != null) {
             ResourceLocation configured = resolveConfiguredIcon(readVehicleIconOverride(data));

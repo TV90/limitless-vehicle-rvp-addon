@@ -10,7 +10,7 @@
       "per_round": 4,
       "burst_rounds": 8,
       "launch_interval_tick": 4,
-      "reload_tick": 200,
+      "reload_tick": 400,
       "decoy": {
         "lifetime_tick": 160,
         "speed": 1.0,
@@ -155,8 +155,6 @@
       "id": "sighting_2_system",
       "name": "sighting_2_system",
       "type": "ywzj_vehicle:weapon",
-      "rvp_fire_control_mode": "rvp_ballistic_lead",
-      "rvp_fire_control_off_axis_deg": 40,
       "structure_bone": "sighting_2_system",
       "seat_offset": [
         0,
@@ -202,7 +200,7 @@
       "name": "auto_cannon",
       "type": "ywzj_vehicle:weapon",
       "structure_bone": "auto_cannon",
-      "fire_control_sensor_type": "eo",
+      "fire_control_sensor_type": "rf",
       "is_seat": false,
       "crosshair_style": "square",
       "rot_info": {
@@ -219,6 +217,14 @@
       "name": "missile_1",
       "type": "ywzj_vehicle:weapon",
       "structure_bone": "missile_1_barrel",
+      "bolts": [
+        {
+          "offset": [0.05, 0.18515625, 0],
+          "barrel_length": 2.05,
+          "x_rot": 0,
+          "y_rot": 0
+        }
+      ],
       "ammo_capacity": -1,
       "fire_control_sensor_type": "rf",
       "is_seat": false,
@@ -243,6 +249,14 @@
       "name": "missile_2",
       "type": "ywzj_vehicle:weapon",
       "structure_bone": "missile_2_barrel",
+      "bolts": [
+        {
+          "offset": [0.0515625, 0.18515625, 0],
+          "barrel_length": 2.05,
+          "x_rot": 0,
+          "y_rot": 0
+        }
+      ],
       "ammo_capacity": -1,
       "fire_control_sensor_type": "eo",
       "is_seat": false,
@@ -459,6 +473,23 @@
         "countermeasure"
       ],
       "min_damage": 20
+    },
+    "__vehicle__": {
+      "modules": [
+        "MAINTENANCE"
+      ],
+      "maintenance": {
+        "use_time_ticks": 80,
+        "wait_time_ticks": 300,
+        "heal_per_tick_percent": 0.25,
+        "heal_parts": false,
+        "require_max_altitude": -1,
+        "module_repair": {
+          "era_recover_fraction": 0.25,
+          "era_recover_min": 1,
+          "device_recover_chance": 0.25
+        }
+      }
     }
   },
   "physics_info": {

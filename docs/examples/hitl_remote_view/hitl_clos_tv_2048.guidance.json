@@ -1,0 +1,14 @@
+{
+  "guidance_type": "HITL_CLOS_TV",
+  "signal_source": "FIBER",
+  "hitl_max_control_dist": 2048,
+  "hitl_remote_view": {
+    "enabled": true,
+    "radius_chunks": 6,
+    "load_chunks_per_tick": 1,
+    "send_chunks_per_tick": 2,
+    "prefetch_chunks": 1,
+    "link_check_interval_ticks": 5,
+    "require_loaded_radio_path": false
+  }
+}

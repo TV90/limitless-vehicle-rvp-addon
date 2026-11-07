@@ -45,7 +45,8 @@ public class RVP_Network {
     /** 协议 46：合并虚拟弹/动态视距消息与权威电视锁定状态，双端须一同更新。 */
     /** 协议 47：视距上报附带客户端扩展请求，载具快照下发服务端实际视距与许可。 */
     /** 协议 48：新版吊舱绝对请求、实际轨迹与预测确认；双端须一同更新。 */
-    private static final String PROTOCOL = "48";
+    /** 协议 49：新增 S2CRotaryFlightModeSync（直升机三态同步，动作条状态图标）；双端须一同更新。 */
+    private static final String PROTOCOL = "49";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "main"))
@@ -271,6 +272,11 @@ public class RVP_Network {
                 .encoder(S2CLoiterStateSync::encode)
                 .decoder(S2CLoiterStateSync::decode)
                 .consumerMainThread(S2CLoiterStateSync::handle)
+                .add();
+        CHANNEL.messageBuilder(S2CRotaryFlightModeSync.class, id++)
+                .encoder(S2CRotaryFlightModeSync::encode)
+                .decoder(S2CRotaryFlightModeSync::decode)
+                .consumerMainThread(S2CRotaryFlightModeSync::handle)
                 .add();
         CHANNEL.messageBuilder(C2SHeliDockToggle.class, id++)
                 .encoder(C2SHeliDockToggle::encode)

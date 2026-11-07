@@ -108,6 +108,23 @@ public class RVP_ClientEvents {
     private static int ywzj_rvp$markerRefreshTick;
     private static final List<VehicleMarker> ywzj_rvp$vehicleMarkers = new ArrayList<>();
     private static boolean ywzj_rvp$artilleryFireKeyDown;
+
+    /** 当前操作站主武器客户端开火（炮兵地图左键与空格共用）。 */
+    public static void fireCurrentWeaponClient() {
+        if (LocalVehiclePlayer.instance == null) {
+            return;
+        }
+        WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
+        if (weaponUnit == null) {
+            return;
+        }
+        weaponUnit.getCurrentWeapon().ifPresent(currentWeapon -> {
+            if (currentWeapon instanceof RVP_WeaponBase rvpWeapon) {
+                rvpWeapon.queueProgrammaticShot();
+            }
+            currentWeapon.doClientShoot();
+        });
+    }
     /** [RVP] 待校平的雷达主控翻转（实体id 集合）：InputEvent.Key 同源边沿置位（§41），
      *  ClientTickEvent.END 下一 tick 把全车完好雷达校平到期望方向。 */
     private static final java.util.Set<Integer> ywzj_rvp$radarPendingFlip = new java.util.HashSet<>();
@@ -507,15 +524,7 @@ public class RVP_ClientEvents {
                 && InputConstants.isKeyDown(mc.getWindow().getWindow(), GLFW.GLFW_KEY_SPACE);
         if (artilleryFireKeyDown && !ywzj_rvp$artilleryFireKeyDown
                 && LocalVehiclePlayer.instance != null) {
-            WeaponUnit artilleryUnit = LocalVehiclePlayer.instance.getWeaponUnit();
-            if (artilleryUnit != null) {
-                artilleryUnit.getCurrentWeapon().ifPresent(currentWeapon -> {
-                    if (currentWeapon instanceof RVP_WeaponBase rvpWeapon) {
-                        rvpWeapon.queueProgrammaticShot();
-                    }
-                    currentWeapon.doClientShoot();
-                });
-            }
+            fireCurrentWeaponClient();
         }
         ywzj_rvp$artilleryFireKeyDown = artilleryFireKeyDown;
 

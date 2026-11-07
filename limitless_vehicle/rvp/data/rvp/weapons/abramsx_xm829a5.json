@@ -25,7 +25,8 @@
     "impact_particle": "minecraft:block",
     "explosion_particle": "minecraft:explosion",
     "caliber": 120,
-    "tracer_caliber": 24.765,
+    "tracer_caliber": 12.3825,
+    "tracer_length_scale": 1.5,
     "tracer_r": 0.6,
     "tracer_g": 0.85,
     "tracer_b": 1.0
@@ -42,7 +43,7 @@
     "bounce": 1,
     "bounce_incidence_angle": 80,
     "bounce_on_vehicle": true,
-    "direct_damage": 740,
+    "direct_damage": 430,
     "damage_decay": [
       {
         "domain": "distance",
@@ -107,12 +108,40 @@
     "direct_damage_factor": {
       "vehicle_default": 1.0,
       "vehicles": {
-        "ywzj_vehicle:wheeled_vehicle": 0.8,
+        "ywzj_vehicle:wheeled_vehicle": 1.0,
         "ywzj_vehicle:rotary_wing_vehicle": 0.8,
         "ywzj_vehicle:fixed_wing_vehicle": 0.8
       }
     }
   },
   "fuse_data": {},
-  "name_CN": "XM829A5尾翼稳定脱壳穿甲弹"
+  "name_CN": "XM829A5尾翼稳定脱壳穿甲弹",
+  "submunition_data": {
+    "releases": [
+      {
+        "triggers": [
+          "on_entity_hit"
+        ],
+        "release_events": 1,
+        "spawn_forward_offset": 0.0,
+        "parent_action": "discard_after_release",
+        "payloads": [
+          {
+            "kind": "rvp_weapon",
+            "weapon_id": "rvp:abramsx_xm829a5_warhead",
+            "count": 1,
+            "inherit_parent_velocity": true,
+            "inherit_parent_horizontal_velocity": false,
+            "inherit_vehicle_velocity": false,
+            "launch_speed": 0.0,
+            "spread": {
+              "mode": "canister",
+              "canister_type": 1,
+              "canister_diff": 0.0
+            }
+          }
+        ]
+      }
+    ]
+  }
 }

@@ -30,7 +30,8 @@
     "impact_particle": "minecraft:block",
     "explosion_particle": "none",
     "caliber": 120,
-    "tracer_caliber": 12.0,
+    "tracer_caliber": 6.0,
+    "tracer_length_scale": 1.5,
     "tracer_r": 0.6,
     "tracer_g": 0.85,
     "tracer_b": 1.0

@@ -1,0 +1,9 @@
+# 半径32的单相机测试配置。复制到实际运行环境的config目录，替换前备份旧文件。
+max_sessions = 1
+max_radius_chunks = 32
+max_control_distance_blocks = 4096
+# 扩大补图预算，仍按tick分批申请，不在一刻同步生成整个窗口。
+new_chunk_tickets_per_tick = 24
+chunk_packets_per_tick = 32
+max_pending_chunks = 64
+max_entities_per_session = 256

@@ -20,7 +20,7 @@
   "fuse_data": {},
   "effects_data": {
     "wire_link_enabled": true,
-    "trajectory_particle": "minecraft:campfire_signal_smoke",
+    "trajectory_particle": "minecraft:flame",
     "missile_native_trail_enabled": true,
     "missile_native_trail_particle": "minecraft:cloud",
     "missile_native_trail_step": 0.9,
@@ -45,7 +45,7 @@
         "living": 0.5,
         "vehicle_default": 1.0,
         "vehicles": {
-          "ywzj_vehicle:wheeled_vehicle": 1.2
+          "ywzj_vehicle:wheeled_vehicle": 3.0
         }
       }
     }
@@ -55,12 +55,20 @@
     "direct_damage_factor": {
       "vehicle_default": 1.0,
       "vehicles": {
-        "ywzj_vehicle:wheeled_vehicle": 1.1,
+        "ywzj_vehicle:wheeled_vehicle": 1.3,
         "ywzj_vehicle:rotary_wing_vehicle": 1.1,
         "ywzj_vehicle:fixed_wing_vehicle": 1.1
       }
     },
     "damage_decay": [
+      {
+        "domain": "distance",
+        "type": "linear",
+        "start_distance": 0,
+        "end_distance": 10,
+        "start_factor": 1.0,
+        "end_factor": 0.4
+      },
       {
         "domain": "angle",
         "type": "linear",

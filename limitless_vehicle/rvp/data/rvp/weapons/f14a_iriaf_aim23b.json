@@ -61,6 +61,8 @@
     },
     "guidance_type": "ARH",
     "lock_target_distance_range": "[[0,1500]]",
+    "lock_altitude_range": "[[50,inf]]",
+    "guidance_altitude_range": "[[50,inf]]",
     "enable_inertial_guidance": true,
     "max_lock_angle": 12,
     "max_off_axis_lock_angle": 30,

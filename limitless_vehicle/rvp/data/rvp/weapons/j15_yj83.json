@@ -78,10 +78,7 @@
     "trajectory_particle": "none",
     "impact_particle": "minecraft:block",
     "explosion_particle": "none",
-    "missile_native_trail_particle_style": "rvp_rocket_flame",
-    "missile_native_trail_particle_scale": 0.5,
-    "missile_native_trail_step": 0.7,
-    "missile_native_trail_offset": 3.0
+    "missile_native_trail_enabled": false
   },
   "detonate_data": {
     "explosion_data": {

@@ -76,6 +76,7 @@
     "WeaponUnitSoftRfMixin",
     "WeaponUnitTickFireControlMixin",
     "WeaponUnitFireControlLockMixin",
+    "WeaponUnitSeekerToggleLockMixin",
     "WeaponUnitToggleCurrentWeaponBayMixin",
     "WeaponUnitCustomMountSuppressMixin",
     "VehicleBedrockModelCockpitRenderMixin",

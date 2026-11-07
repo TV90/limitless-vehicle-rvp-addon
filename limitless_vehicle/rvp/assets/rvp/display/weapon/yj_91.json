@@ -1,8 +1,8 @@
 {
   "type": "ywzj_rvp:weapon",
   "bedrock_backend": "rvp",
-  "model": "rvp:entity/ammo/missile_yj_15",
-  "texture": "rvp:textures/entity/j15.png",
+  "model": "rvp:entity/ammo/missile_yj91",
+  "texture": "rvp:textures/entity/ammo/missile_yj91.png",
   "sounds": {
     "fire": "ywzj_vehicle:missile_launch",
     "reload": "ywzj_vehicle:common_reload"

@@ -16,8 +16,11 @@ import org.ywzj.rvp.guidance.RVP_HmdTargetingMath;
 import org.ywzj.rvp.guidance.RVP_IrLockHelper;
 import org.ywzj.rvp.mixin.PartUnitAccessorMixin;
 import org.ywzj.rvp.radar.RVP_RadarHmsMode;
+import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.rvp.util.RVP_WeaponResolveHelper;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
+import org.ywzj.rvp.weapon.core.RVP_WeaponSensorHelper;
+import org.ywzj.rvp.weapon.data.RVP_GuidanceDataIR;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -52,6 +55,14 @@ public class RVP_ClientHmdState {
     private static final int OUT_OF_BOUNDS_TIMEOUT = 20;
     /** HUD 头瞄方向每 Tick 的插值比例。 */
     private static final float SMOOTH_FACTOR = 0.4f;
+    /** 光电/RF 锁定自动引导时，IR 头瞄方向每 Tick 的插值比例。 */
+    private static final float IR_CUE_SMOOTH_FACTOR = 0.35f;
+    /** 对地 IR 四角框最大缩放（未伺服时）。 */
+    public static final float IR_BRACKET_MAX_SCALE = 1.1f;
+    /** 对地 IR 四角框锁定缩放（伺服完成时）。 */
+    public static final float IR_BRACKET_LOCKED_SCALE = 0.5f;
+    /** 四角框随伺服进度变化的每 Tick 平滑比例。 */
+    private static final float IR_BRACKET_SMOOTH_FACTOR = 0.45f;
     /** EO 头瞄最大捕获/保锁距离（格）：光电无探测表，视距内轮廓直接捕获，超过即脱锁。 */
     public static final float EO_HMD_MAX_RANGE = 512f;
     /** EO HMD 捕获扫描周期（Tick），对齐雷达 HMD。 */
@@ -86,6 +97,8 @@ public class RVP_ClientHmdState {
     private float irSmoothYaw;
     /** 共享头瞄平滑值是否已初始化。 */
     private boolean smoothInitialized;
+    /** 对地 IR 四角框当前缩放，随导引头伺服进度平滑收缩。 */
+    private float irBracketScale = IR_BRACKET_MAX_SCALE;
 
     /** 当前 IR 弹发射前捕获完整视场角，单位度。 */
     private float irSeekerFov = 0f;
@@ -267,6 +280,35 @@ public class RVP_ClientHmdState {
         return irSmoothYaw;
     }
 
+    /** @return 对地 IR 四角框当前缩放（伺服进度 0 → 1.1，锁定 → 0.75）。 */
+    public float getIrBracketScale() {
+        return irBracketScale;
+    }
+
+    /** @return 当前 IR 弹的伺服/锁定进度（0..1，dwell 满或 armed 为 1）。 */
+    public float getIrLockProgress() {
+        WeaponUnit unit = LocalVehiclePlayer.instance.onVehicle()
+                ? LocalVehiclePlayer.instance.getWeaponUnit()
+                : null;
+        if (unit == null) {
+            return 0f;
+        }
+        RVP_WeaponBase weapon = RVP_WeaponResolveHelper.currentPrimaryRvp(unit);
+        if (weapon == null || !RVP_IrLockHelper.supportsInfraredLaunchSearch(weapon.getData())) {
+            return 0f;
+        }
+        RVP_IrSeekerStateTable.State state = RVP_IrSeekerStateTable.find(
+                unit, weapon.getData().getWeaponId());
+        if (state == null) {
+            return 0f;
+        }
+        if (state.armedId != -1) {
+            return 1f;
+        }
+        int dwell = RVP_GuidanceDataIR.resolveLockDwellTick(weapon.getData().getGuidanceData());
+        return dwell <= 0 ? 1f : Mth.clamp(state.dwellTicks / (float) dwell, 0f, 1f);
+    }
+
     public float getIrSeekerFov() {
         return irSeekerFov;
     }
@@ -430,6 +472,7 @@ public class RVP_ClientHmdState {
         radarWarningTicks = 0;
         irLockedEntityId = -1;
         eoLockedEntityId = -1;
+        irBracketScale = IR_BRACKET_MAX_SCALE;
         clearIrLockState();
     }
 
@@ -509,6 +552,7 @@ public class RVP_ClientHmdState {
         channels.setIrActive(false);
         irScanCounter = 0;
         irLockedEntityId = -1;
+        irBracketScale = IR_BRACKET_MAX_SCALE;
         groundIr = false;
         irOffAxisStacksWithStationRotation = false;
         irUsesNewLaunchData = false;
@@ -547,8 +591,16 @@ public class RVP_ClientHmdState {
         smoothPitch += (aimPitch - smoothPitch) * SMOOTH_FACTOR;
         smoothYaw += (aimYaw - smoothYaw) * SMOOTH_FACTOR;
 
-        irSmoothPitch = smoothPitch;
-        irSmoothYaw = smoothYaw;
+        // 光电/RF 已锁目标时，IR 头瞄自动套向目标；解除后立即回到鼠标平滑方向。
+        Vec3 irCueDir = channels.isIrActive() ? resolveIrCueAimDir(mc, weaponUnit) : null;
+        if (irCueDir == null) {
+            irSmoothPitch = smoothPitch;
+            irSmoothYaw = smoothYaw;
+        } else {
+            Vec2 cueRot = VectorUtil.vecToRot(irCueDir);
+            irSmoothPitch += (cueRot.x - irSmoothPitch) * IR_CUE_SMOOTH_FACTOR;
+            irSmoothYaw += Mth.wrapDegrees(cueRot.y - irSmoothYaw) * IR_CUE_SMOOTH_FACTOR;
+        }
 
         Vec3 rawHeadLook = VectorUtil.rotToVec(aimPitch, aimYaw).normalize();
         if (channels.isIrActive() && irGuideHeadMaxAngle > 0f) {
@@ -571,13 +623,73 @@ public class RVP_ClientHmdState {
         }
         if (channels.isIrActive()) {
             // 捕获使用本 Tick 原始头瞄方向，避免 HUD 平滑方向滞后造成快速扫过目标时漏锁；
-            // HUD 仍读取 smoothPitch/smoothYaw，故显示动画和平滑手感保持不变。
-            tickIrHmd(mc, vehicle, weaponUnit, clampIrScanDirection(weaponUnit, rawHeadLook));
+            // 自动引导时直接把伺服方向当扫描方向，HUD 仍读取 irSmoothPitch/Yaw 的平滑值。
+            Vec3 irScanLook = irCueDir != null ? irCueDir : rawHeadLook;
+            tickIrHmd(mc, vehicle, weaponUnit, clampIrScanDirection(weaponUnit, irScanLook));
+            updateIrBracketScale();
         }
         if (channels.isEoActive()) {
             // EO 捕获同雷达 HMD 语义：使用本 Tick 原始头瞄方向（观瞄为武器轴线）。
             tickEoHmd(mc, vehicle, weaponUnit, rawHeadLook);
         }
+    }
+
+    /** 四角框缩放随导引头伺服进度平滑收缩（1.1 → 0.5，前段收缩更快）。 */
+    private void updateIrBracketScale() {
+        float progress = getIrLockProgress();
+        // 前段加速：进度 25% 时已完成约 44% 的收缩幅度，避免"看着像没动"。
+        float eased = 1f - (1f - progress) * (1f - progress);
+        float target = IR_BRACKET_MAX_SCALE
+                - (IR_BRACKET_MAX_SCALE - IR_BRACKET_LOCKED_SCALE) * eased;
+        irBracketScale += (target - irBracketScale) * IR_BRACKET_SMOOTH_FACTOR;
+    }
+
+    /**
+     * 光电/RF 已锁目标 → IR 头瞄自动引导方向。
+     *
+     * <p>只在目标仍处于当前 IR 弹离轴/发射包线内时返回方向；否则返回 null，
+     * 头瞄保持鼠标操控。EO 站级锁与雷达硬锁/外置雷达锁都算 cue。</p>
+     */
+    @Nullable
+    private Vec3 resolveIrCueAimDir(Minecraft mc, WeaponUnit weaponUnit) {
+        if (mc.level == null) {
+            return null;
+        }
+        Entity cue = resolveSensorCueTarget(weaponUnit);
+        if (cue == null || !isCueTargetWithinIrLimits(weaponUnit, cue)) {
+            return null;
+        }
+        Vec3 target = org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(cue);
+        Vec3 dir = target.subtract(mc.gameRenderer.getMainCamera().getPosition());
+        return dir.lengthSqr() > 1.0E-6 ? dir.normalize() : null;
+    }
+
+    /** 当前可用的光电/RF 锁定目标；锁定解除后站级锁被清除，头瞄随之回到鼠标。 */
+    @Nullable
+    private Entity resolveSensorCueTarget(WeaponUnit weaponUnit) {
+        Entity stationLock = weaponUnit.getLockedEntity();
+        if (stationLock != null && stationLock.isAlive()
+                && RVP_WeaponSensorHelper.effectiveSensorType(weaponUnit)
+                == WeaponUnitData.FireControlSensorType.EO) {
+            return stationLock;
+        }
+        Entity rfLock = RVP_RadarRoleHelper.getConfirmedRFHardLockedEntity(weaponUnit);
+        return rfLock != null && rfLock.isAlive() ? rfLock : null;
+    }
+
+    private boolean isCueTargetWithinIrLimits(WeaponUnit weaponUnit, Entity target) {
+        if (irUsesNewLaunchData && irLaunchWeapon != null) {
+            return RVP_IrLockHelper.isLaunchTargetWithinOffAxis(
+                    weaponUnit, target, irLaunchWeapon, 0f);
+        }
+        return RVP_IrLockHelper.isTargetWithinLimits(
+                weaponUnit,
+                target,
+                RVP_IrLockHelper.resolveIrBoresightDir(weaponUnit, irOffAxisStacksWithStationRotation),
+                Math.max(1f, irGuideHeadMaxAngle),
+                Math.max(0f, irSeekerRange),
+                irLockMinHeight
+        );
     }
 
     /**

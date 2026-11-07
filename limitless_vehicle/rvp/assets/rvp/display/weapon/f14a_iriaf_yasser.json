@@ -4,5 +4,7 @@
   "sounds": {
     "fire": "ywzj_vehicle:missile_launch",
     "reload": "ywzj_vehicle:common_reload"
-  }
+  },
+  "model": "rvp:entity/ammo/rocket_yasser",
+  "texture": "rvp:textures/entity/ammo/rocket_yasser.png"
 }

@@ -32,8 +32,8 @@
     "sound_distance": 30
   },
   "energy_info": {
-    "energy_capacity": 500000,
-    "energy_consumption_per_tick": 1.0
+    "energy_capacity": 250,
+    "energy_consumption_per_tick": 0.0005
   },
   "physics_info": {
     "mass": 8700000,
@@ -58,8 +58,6 @@
       "id": "weapon0",
       "name": "weapon0",
       "type": "ywzj_vehicle:weapon",
-      "rvp_fire_control_mode": "rvp_rf",
-      "rvp_rf_off_axis_deg": 40,
       "structure_bone": "weapon0",
       "sub_part_unit_ids": [
         "radar"
@@ -71,13 +69,13 @@
       ],
       "operator_view_offset": [
         -0.75,
-        2.3392,
-        0.5625
+        2.5892,
+        0.8125
       ],
       "optical_sight_offset": [
         -0.75,
-        2.3392,
-        0.5625
+        2.5892,
+        0.8125
       ],
       "operator_on_weapon_unit": true,
       "optical_sight_type": "crt_ui",
@@ -114,8 +112,6 @@
       "id": "weapon4",
       "name": "weapon4",
       "type": "ywzj_vehicle:weapon",
-      "rvp_fire_control_mode": "rvp_rf",
-      "rvp_rf_off_axis_deg": 40,
       "structure_bone": "weapon4",
       "sub_part_unit_ids": [
         "radar"
@@ -127,13 +123,13 @@
       ],
       "operator_view_offset": [
         0,
-        3.5541,
-        1.2777
+        3.8041,
+        1.5277
       ],
       "optical_sight_offset": [
         0,
-        3.5541,
-        1.2777
+        3.8041,
+        1.5277
       ],
       "operator_on_weapon_unit": true,
       "optical_sight_type": "crt_ui_operator",
@@ -175,8 +171,6 @@
       "id": "weapon7",
       "name": "weapon7",
       "type": "ywzj_vehicle:weapon",
-      "rvp_fire_control_mode": "rvp_rf",
-      "rvp_rf_off_axis_deg": 40,
       "structure_bone": "weapon7",
       "sub_part_unit_ids": [
         "radar"
@@ -188,13 +182,13 @@
       ],
       "operator_view_offset": [
         0.4966,
-        1.3935,
-        0.2388
+        1.6435,
+        0.4888
       ],
       "optical_sight_offset": [
         0.4966,
-        1.3935,
-        0.2388
+        1.6435,
+        0.4888
       ],
       "operator_on_weapon_unit": true,
       "optical_sight_type": "crt_ui",
@@ -225,8 +219,6 @@
       "id": "weapon8",
       "name": "weapon8",
       "type": "ywzj_vehicle:weapon",
-      "rvp_fire_control_mode": "rvp_rf",
-      "rvp_rf_off_axis_deg": 40,
       "structure_bone": "weapon8",
       "sub_part_unit_ids": [
         "radar"
@@ -238,13 +230,13 @@
       ],
       "operator_view_offset": [
         -0.4966,
-        1.3935,
-        0.2388
+        1.6435,
+        0.4888
       ],
       "optical_sight_offset": [
         -0.4966,
-        1.3935,
-        0.2388
+        1.6435,
+        0.4888
       ],
       "operator_on_weapon_unit": true,
       "optical_sight_type": "crt_ui",
@@ -275,8 +267,6 @@
       "id": "weapon2",
       "name": "weapon2",
       "type": "ywzj_vehicle:weapon",
-      "rvp_fire_control_mode": "rvp_rf",
-      "rvp_rf_off_axis_deg": 40,
       "structure_bone": "weapon2",
       "sub_part_unit_ids": [
         "radar"
@@ -288,13 +278,13 @@
       ],
       "operator_view_offset": [
         -0.75,
-        2.3392,
-        0.5625
+        2.5892,
+        0.8125
       ],
       "optical_sight_offset": [
         -0.75,
-        2.3392,
-        0.5625
+        2.5892,
+        0.8125
       ],
       "operator_on_weapon_unit": true,
       "optical_sight_type": "crt_ui",
@@ -645,6 +635,23 @@
       ],
       "barrel": {
         "threshold": 1000
+      }
+    },
+    "__vehicle__": {
+      "modules": [
+        "MAINTENANCE"
+      ],
+      "maintenance": {
+        "use_time_ticks": 80,
+        "wait_time_ticks": 300,
+        "heal_per_tick_percent": 0.25,
+        "heal_parts": false,
+        "require_max_altitude": -1,
+        "module_repair": {
+          "era_recover_fraction": 0.25,
+          "era_recover_min": 1,
+          "device_recover_chance": 0.25
+        }
       }
     }
   },

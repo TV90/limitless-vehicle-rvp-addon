@@ -299,26 +299,27 @@
         {
           "part_unit_id": "variable_agm"
         }
+      ],
+      "rvp_fire_control_mode": "rvp_ballistic_lead",
+      "rvp_fire_control_modes": [
+        "manual"
       ]
     },
     {
       "id": "auto_cannon",
       "name": "auto_cannon",
       "type": "ywzj_vehicle:weapon",
-      "fire_control_sensor_type": "rf",
       "structure_bone": "auto_cannon",
       "ammo_capacity": -1,
       "is_seat": false,
-      "crosshair_style": "circle"
+      "crosshair_style": "circle",
+      "fire_control_sensor_type": "rf"
     },
     {
       "id": "variable_aam",
       "name": "variable_aam",
       "type": "ywzj_vehicle:weapon",
       "structure_bone": "mica",
-      "rvp_structure_bolt_bones": [
-        "mica"
-      ],
       "ammo_capacity": 4,
       "fire_control_sensor_type": "rf",
       "is_seat": false,
@@ -432,6 +433,23 @@
         "countermeasure"
       ],
       "min_damage": 20
+    },
+    "__vehicle__": {
+      "modules": [
+        "MAINTENANCE"
+      ],
+      "maintenance": {
+        "use_time_ticks": 80,
+        "wait_time_ticks": 300,
+        "heal_per_tick_percent": 0.25,
+        "heal_parts": false,
+        "require_max_altitude": -1,
+        "module_repair": {
+          "era_recover_fraction": 0.25,
+          "era_recover_min": 1,
+          "device_recover_chance": 0.25
+        }
+      }
     }
   },
   "hitbox_damage_factor": {},

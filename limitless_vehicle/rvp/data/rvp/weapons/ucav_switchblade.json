@@ -1,5 +1,6 @@
 {
   "type": "rvp:missile",
+  "life": 2400,
   "name": "Switchblade LM [AB]",
   "show_msl_indicator": false,
   "shoot_interval": 60,
@@ -40,13 +41,22 @@
     "guidance_type": "HITL_CLOS_TV",
     "signal_source": "FIBER",
     "guidance_tick_range": "[[10,inf]]",
-    "guidance_target_distance_range": "[[0,2000]]",
-    "lock_target_distance_range": "[[0,2000]]",
+    "guidance_target_distance_range": "[[0,2048]]",
+    "lock_target_distance_range": "[[0,2048]]",
     "max_guidance_angle": 45,
     "max_lock_angle": 12,
     "max_off_axis_lock_angle": 35,
     "hitl_max_turn_deg_per_tick": 2.5,
-    "hitl_max_control_dist": 2000,
+    "hitl_max_control_dist": 2048,
+    "hitl_remote_view": {
+      "enabled": true,
+      "radius_chunks": 32,
+      "load_chunks_per_tick": 24,
+      "send_chunks_per_tick": 32,
+      "prefetch_chunks": 1,
+      "link_check_interval_ticks": 5,
+      "require_loaded_radio_path": false
+    },
     "hitl_max_control_tick": 600,
     "hitl_video_modes": [
       "BW"
@@ -128,7 +138,6 @@
         "start_factor": 0.2,
         "end_factor": 0.1
       }
-    
     ]
   },
   "name_CN": "弹簧刀巡飞弹[空爆弹头]"

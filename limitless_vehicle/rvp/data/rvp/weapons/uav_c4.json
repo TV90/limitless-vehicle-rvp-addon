@@ -30,8 +30,8 @@
   "detonate_data": {
     "explosion_data": {
       "explode": true,
-      "damage": 700,
-      "radius": 12,
+      "damage": 1000,
+      "radius": 18,
       "destroy_block": true,
       "explosion_damage_factor": {
         "player": 0.0857,

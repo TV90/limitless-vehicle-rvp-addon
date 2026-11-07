@@ -2,7 +2,14 @@
   "type": "ywzj_rvp:weapon",
   "bedrock_backend": "rvp",
   "sounds": {
-    "fire": "ywzj_vehicle:missile_launch",
+    "fire": "rvp:launch_air",
     "reload": "ywzj_vehicle:common_reload"
-  }
+  },
+  "fire_sound": {
+    "max_distance": 150,
+    "volume": 1,
+    "pitch": 1
+  },
+  "model": "rvp:entity/ammo/missile_r27r",
+  "texture": "rvp:textures/entity/ammo/missile_r27r.png"
 }

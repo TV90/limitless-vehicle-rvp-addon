@@ -73,7 +73,7 @@
         "living": 0.25,
         "vehicle_default": 1.0,
         "vehicles": {
-          "ywzj_vehicle:wheeled_vehicle": 1.2
+          "ywzj_vehicle:wheeled_vehicle": 3.0
         }
       }
     }
@@ -83,7 +83,7 @@
     "direct_damage_factor": {
       "vehicle_default": 1.0,
       "vehicles": {
-        "ywzj_vehicle:wheeled_vehicle": 1.1,
+        "ywzj_vehicle:wheeled_vehicle": 1.3,
         "ywzj_vehicle:rotary_wing_vehicle": 1.1,
         "ywzj_vehicle:fixed_wing_vehicle": 1.1
       }

@@ -1,4 +1,5 @@
 {
+  "tactical_map_icon": "aa_l",
   "defense_stats": {
     "damage_threshold": 0.1
   },
@@ -42,15 +43,26 @@
     "vehicle_body": 1.0,
     "launcher_pitch_barrel": 0.9
   },
-  "deployable_uav_enabled": true,
-  "deployable_uav_vehicle_id": "rvp:irist_slm_tads",
-  "deployable_uav_role": "radar_relay",
-  "deployable_uav_spawn_offset": {
-    "x": 0.0,
-    "y": 0.5,
-    "z": -12.0
+  "hitbox_explosion_damage_factor": {
+    "launcher_pitch_barrel": 1.5
   },
-  "deployable_uav_spawn_yaw_mode": "parent",
+  "deployable_uav_enabled": true,
+  "deployable_uav_default_option": "radar_irist_slm_tads",
+  "deployable_uav_options": [
+    {
+      "id": "radar_irist_slm_tads",
+      "name": "IRIS-T SLM TADS",
+      "vehicle_id": "rvp:irist_slm_tads",
+      "role": "radar_relay",
+      "spawn_offset": {
+        "x": 0.0,
+        "y": 0.5,
+        "z": -12.0
+      },
+      "spawn_yaw_mode": "parent",
+      "initial_speed": null
+    }
+  ],
   "deployable_uav_single_instance": true,
   "deployable_uav_allow_control_switch": true,
   "deployable_uav_auto_link_datalink": true,
@@ -164,20 +176,27 @@
         "threshold_heavy": 700
       }
     },
-    "ecm_bone": {
-      "modules": [
-        "ecm_active"
-      ],
-      "ecm_active": {
-        "ammo_jam_radius": 250,
-        "vehicle_jam_radius": 0
-      },
-      "min_damage": 20
-    },
     "launcher_pitch_barrel": {
       "modules": [
         "barrel"
       ]
+    },
+    "__vehicle__": {
+      "modules": [
+        "MAINTENANCE"
+      ],
+      "maintenance": {
+        "use_time_ticks": 80,
+        "wait_time_ticks": 300,
+        "heal_per_tick_percent": 0.25,
+        "heal_parts": false,
+        "require_max_altitude": -1,
+        "module_repair": {
+          "era_recover_fraction": 0.25,
+          "era_recover_min": 1,
+          "device_recover_chance": 0.25
+        }
+      }
     }
   },
   "hitbox_display_name": {

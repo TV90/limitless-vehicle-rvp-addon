@@ -1,0 +1,90 @@
+{
+  "type": "rvp:machinegun",
+  "name": "DTC-251 105mm APFSDS Warhead",
+  "name_CN": "DTC-251 105毫米 尾翼稳定脱壳穿甲弹 二级战斗部",
+  "shoot_interval": 0,
+  "max_capacity": 0,
+  "reload": {
+    "time": 120,
+    "ammo": "ywzj_vehicle:ammo_artillery"
+  },
+  "projectile_data": {
+    "velocity": 40,
+    "gravity": -0.001,
+    "drag": 0.0,
+    "rotate_to_motion": true
+  },
+  "collision_data": {
+    "direct_damage": 320,
+    "direct_damage_factor": {
+      "vehicle_default": 1.0,
+      "vehicles": {
+        "ywzj_vehicle:wheeled_vehicle": 1.0,
+        "ywzj_vehicle:rotary_wing_vehicle": 0.8,
+        "ywzj_vehicle:fixed_wing_vehicle": 0.8
+      }
+    },
+    "damage_decay": [
+      {
+        "domain": "distance",
+        "type": "linear",
+        "start_distance": 0,
+        "end_distance": 512,
+        "start_factor": 1.0,
+        "end_factor": 0.7
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 30,
+        "end_distance": 45,
+        "start_factor": 0.9,
+        "end_factor": 0.8
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 45,
+        "end_distance": 60,
+        "start_factor": 0.8,
+        "end_factor": 0.6
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 60,
+        "end_distance": 65,
+        "start_factor": 0.6,
+        "end_factor": 0.5
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 65,
+        "end_distance": 70,
+        "start_factor": 0.5,
+        "end_factor": 0.35
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 70,
+        "end_distance": 75,
+        "start_factor": 0.35,
+        "end_factor": 0.2
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 75,
+        "end_distance": 81,
+        "start_factor": 0.2,
+        "end_factor": 0.1
+      }
+    ]
+  },
+  "effects_data": {
+    "trajectory_particle": "none"
+  },
+  "life": 2
+}

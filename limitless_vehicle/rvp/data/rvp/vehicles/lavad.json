@@ -1,4 +1,5 @@
 {
+  "tactical_map_icon": "aa_l",
   "defense_stats": {
     "damage_threshold": 0.1
   },
@@ -82,6 +83,11 @@
     "turret_smoke_grenade_l_barrel": 0.4,
     "turret_smoke_grenade_r_barrel": 0.4
   },
+  "hitbox_explosion_damage_factor": {
+    "missile_barrel": 1.5,
+    "rocket_barrel": 1.5,
+    "turret": 1.5
+  },
   "hitbox_display_name": {
     "vehicle_body": "Hull",
     "lower_front": "Lower Glacis",
@@ -139,7 +145,7 @@
       "crosshair_style": "circle",
       "fire_control_sensor_type": "eo",
       "rvp_fire_control_mode": "rvp_ballistic_lead",
-      "rvp_fire_control_off_axis_deg": 40,
+      "rvp_fire_control_off_axis_deg": 10,
       "weapons": [
         "rvp:lavad_gau12",
         {
@@ -423,16 +429,6 @@
         "threshold_heavy": 700
       }
     },
-    "ecm_bone": {
-      "modules": [
-        "ecm_active"
-      ],
-      "ecm_active": {
-        "ammo_jam_radius": 250,
-        "vehicle_jam_radius": 0
-      },
-      "min_damage": 20
-    },
     "turret_barrel": {
       "modules": [
         "barrel"
@@ -462,6 +458,23 @@
         "countermeasure"
       ],
       "min_damage": 20
+    },
+    "__vehicle__": {
+      "modules": [
+        "MAINTENANCE"
+      ],
+      "maintenance": {
+        "use_time_ticks": 80,
+        "wait_time_ticks": 300,
+        "heal_per_tick_percent": 0.25,
+        "heal_parts": false,
+        "require_max_altitude": -1,
+        "module_repair": {
+          "era_recover_fraction": 0.25,
+          "era_recover_min": 1,
+          "device_recover_chance": 0.25
+        }
+      }
     }
   },
   "hitbox_display_name_CN": {

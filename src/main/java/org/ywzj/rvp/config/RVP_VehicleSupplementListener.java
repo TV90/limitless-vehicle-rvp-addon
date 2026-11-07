@@ -26,8 +26,8 @@ import java.util.Map;
  * [RVP] 载具 JSON 里的 RVP 扩展字段解析器（2026-10-30 替代 {@code VehicleDataManagerMixin}）。
  *
  * <p>本类只做一件事：扫描 {@code data/<ns>/vehicles/*.json} 的**原始 JSON 字面量**，
- * 把 RVP 自定义字段（{@code ui_preset} / {@code rvp_part_hidden_bones} / {@code deployable_uav_*} /
- * {@code rvp_loiter_*} / {@code launcher_deploy} / {@code rvp_auto_landing_gear*} /
+ * 把 RVP 自定义字段（{@code ui_preset} / {@code tactical_map_icon} / {@code rvp_part_hidden_bones} /
+ * {@code deployable_uav_*} / {@code rvp_loiter_*} / {@code launcher_deploy} / {@code rvp_auto_landing_gear*} /
  * {@code rvp_radar_rcs_factor} / {@code rvp_custom_mounts} / 武器过热 / {@code rvp_hide_in_creative}）
  * 解析进各自的静态缓存。</p>
  *
@@ -104,6 +104,11 @@ public final class RVP_VehicleSupplementListener
                     VehicleUIPresetCache.put(vehicleId, uiPreset);
                 }
                 VehicleUIPresetCache.putNctrName(vehicleId, GsonHelper.getAsString(obj, "nctr_name", "?"));
+
+                // tactical_map_icon：战术地图/轻量炮兵地图的载具图标名（不带扩展名时按 map_icon 目录解析）；
+                // 留空则清除，回落到载具类型默认图标
+                VehicleUIPresetCache.putTacticalMapIcon(vehicleId,
+                        GsonHelper.getAsString(obj, "tactical_map_icon", ""));
 
                 // show_skeleton（观瞄时骨骼俯视图，默认 true）
                 VehicleUIPresetCache.putShowSkeleton(vehicleId,
