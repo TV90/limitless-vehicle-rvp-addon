@@ -47,7 +47,7 @@
       "name": "weapon0",
       "type": "ywzj_vehicle:weapon",
       "rvp_fire_control_mode": "rvp_rf",
-      "rvp_rf_off_axis_deg": 40,
+      "rvp_rf_off_axis_deg": 20,
       "structure_bone": "weapon0",
       "sub_part_unit_ids": ["radar"],
       "seat_offset": [-0.8125, 9.8125, 0.3125],
@@ -89,7 +89,7 @@
       "name": "weapon2",
       "type": "ywzj_vehicle:weapon",
       "rvp_fire_control_mode": "rvp_rf",
-      "rvp_rf_off_axis_deg": 40,
+      "rvp_rf_off_axis_deg": 20,
       "structure_bone": "weapon2",
       "sub_part_unit_ids": ["radar"],
       "seat_offset": [0, 8.375, 21.875],
@@ -150,6 +150,12 @@
         {
           "id": "rvp:052d_fqsd",
           "part_unit_id": "weapon3"
+        },
+        {
+          "id": "rvp:052d_yu7",
+          "part_unit_id": "weapon6",
+          "save_id": "052d_yu7_r",
+          "weapon_bay_unit_id": "yu7_r_bay"
         }
       ]
     },
@@ -179,8 +185,62 @@
         {
           "id": "rvp:052d_fqsd",
           "part_unit_id": "weapon4"
+        },
+        {
+          "id": "rvp:052d_yu7",
+          "part_unit_id": "weapon7",
+          "save_id": "052d_yu7_l",
+          "weapon_bay_unit_id": "yu7_l_bay"
         }
       ]
+    },
+    {
+      "id": "weapon6",
+      "name": "weapon6",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "yu7_r",
+      "is_seat": false,
+      "crosshair_style": "none",
+      "fire_control_sensor_type": "rf",
+      "parent_weapon_unit_aim": true,
+      "rot_info": {
+        "x_rot_speed": 3,
+        "y_rot_speed": 3,
+        "x_rot_max": 3,
+        "x_rot_min": -3,
+        "y_rot_max": 180,
+        "y_rot_min": -180
+      }
+    },
+    {
+      "id": "weapon7",
+      "name": "weapon7",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "yu7_l",
+      "is_seat": false,
+      "crosshair_style": "none",
+      "fire_control_sensor_type": "rf",
+      "parent_weapon_unit_aim": true,
+      "rot_info": {
+        "x_rot_speed": 3,
+        "y_rot_speed": 3,
+        "x_rot_max": 3,
+        "x_rot_min": -3,
+        "y_rot_max": 180,
+        "y_rot_min": -180
+      }
+    },
+    {
+      "id": "yu7_r_bay",
+      "name": "yu7_r_bay",
+      "type": "ywzj_vehicle:weapon_bay",
+      "is_seat": false
+    },
+    {
+      "id": "yu7_l_bay",
+      "name": "yu7_l_bay",
+      "type": "ywzj_vehicle:weapon_bay",
+      "is_seat": false
     },
     {
       "id": "weapon5",
@@ -364,6 +424,22 @@
         "threshold": 1000
       }
     },
+    "yu7_r_barrel": {
+      "modules": [
+        "barrel"
+      ],
+      "barrel": {
+        "threshold": 1000
+      }
+    },
+    "yu7_l_barrel": {
+      "modules": [
+        "barrel"
+      ],
+      "barrel": {
+        "threshold": 1000
+      }
+    },
     "hq9_barrel": {
       "modules": [
         "barrel"
@@ -422,7 +498,11 @@
     "weapon0_barrel": 1,
     "weapon2_barrel": 1,
     "weapon3_barrel": 1,
-    "weapon4_barrel": 1
+    "weapon4_barrel": 1,
+    "yu7_r": 1,
+    "yu7_r_barrel": 1,
+    "yu7_l": 1,
+    "yu7_l_barrel": 1
   },
   "hitbox_display_name": {
     "weapon0": "CIWS Mount",
@@ -440,7 +520,11 @@
     "weapon0_barrel": "CIWS Barrel",
     "weapon2_barrel": "Main Gun Barrel",
     "weapon3_barrel": "Port Launcher Tube",
-    "weapon4_barrel": "Starboard Launcher Tube"
+    "weapon4_barrel": "Starboard Launcher Tube",
+    "yu7_r": "Yu-7 Torpedo Launcher",
+    "yu7_r_barrel": "Yu-7 Torpedo Tube",
+    "yu7_l": "Yu-7 Torpedo Launcher",
+    "yu7_l_barrel": "Yu-7 Torpedo Tube"
   },
   "hitbox_display_name_CN": {
     "weapon0": "近防炮炮塔",
@@ -458,6 +542,10 @@
     "weapon0_barrel": "近防炮管",
     "weapon2_barrel": "主炮炮管",
     "weapon3_barrel": "左舷发射管",
-    "weapon4_barrel": "右舷发射管"
+    "weapon4_barrel": "右舷发射管",
+    "yu7_r": "鱼-7鱼雷发射装置",
+    "yu7_r_barrel": "鱼-7鱼雷发射管",
+    "yu7_l": "鱼-7鱼雷发射装置",
+    "yu7_l_barrel": "鱼-7鱼雷发射管"
   }
 }

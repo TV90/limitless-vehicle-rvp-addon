@@ -6,7 +6,7 @@
   "velocity": 2.0,
   "life": 3600,
   "shoot_interval": 30,
-  "max_capacity": 6,
+  "max_capacity": 3,
   "reload": {
     "time": 200,
     "ammo": "ywzj_vehicle:ammo_missile"
