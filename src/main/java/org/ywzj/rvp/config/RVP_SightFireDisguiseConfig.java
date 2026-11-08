@@ -28,6 +28,18 @@ public class RVP_SightFireDisguiseConfig {
     @SerializedName("max_distance")
     private float maxDistance = 32.0f;
 
+    /**
+     * 摄像机射弹俯角补偿（度，正数 = 额外下压，0 = 关闭）。
+     *
+     * <p>本体坐标约定：xRot 负值 = 仰角（向上），正值 = 俯角（向下），
+     * {@code x_rot_max} 是俯角上限。观瞄相机普遍高于炮闩，原版观瞄视角下火炮只能压到
+     * 配置的 x_rot_max，凭高视角看不到更近的地面；本参数在观瞄视角期间临时把本站
+     * {@code x_rot_max} 增加该角度，让准星与火炮都能多压一点。仅观瞄（SCOPE）期间
+     * 生效，退出即恢复配置值。</p>
+     */
+    @SerializedName("camera_depression_compensation_deg")
+    private float cameraDepressionCompensationDeg = 0.0f;
+
     public int disguiseTicks() {
         return Math.max(0, disguiseTicks);
     }
@@ -38,5 +50,10 @@ public class RVP_SightFireDisguiseConfig {
 
     public float maxDistance() {
         return Math.max(1.0f, maxDistance);
+    }
+
+    /** 额外下压角（度）；正数才生效，负数/0 视为关闭。 */
+    public float cameraDepressionCompensationDeg() {
+        return Math.max(0.0f, cameraDepressionCompensationDeg);
     }
 }

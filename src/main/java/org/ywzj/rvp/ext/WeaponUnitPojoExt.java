@@ -1,6 +1,7 @@
 package org.ywzj.rvp.ext;
 
 import net.minecraft.world.phys.Vec3;
+import org.ywzj.rvp.config.RVP_RearDepressionBlockConfig;
 import org.ywzj.rvp.config.RVP_SightFireDisguiseConfig;
 
 import java.util.List;
@@ -33,6 +34,9 @@ public interface WeaponUnitPojoExt {
     Vec3 ywzj_rvp$getOpticalSightPivot();
     /** 观瞄视角射弹原点分离配置；为 null（JSON 未配置）时功能关闭。 */
     RVP_SightFireDisguiseConfig ywzj_rvp$getSightFireDisguise();
+
+    /** 车尾分段无俯角配置；null（JSON 未配置）时功能关闭。 */
+    RVP_RearDepressionBlockConfig ywzj_rvp$getRearDepressionBlock();
 
     /** 夜视仪选配（weapon unit 级，与本体 with_thermal_imager 同级）；默认 false。 */
     boolean ywzj_rvp$withNightVision();

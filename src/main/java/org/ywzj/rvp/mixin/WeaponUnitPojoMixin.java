@@ -4,6 +4,7 @@ import com.google.gson.annotations.SerializedName;
 import net.minecraft.world.phys.Vec3;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
+import org.ywzj.rvp.config.RVP_RearDepressionBlockConfig;
 import org.ywzj.rvp.config.RVP_SightFireDisguiseConfig;
 import org.ywzj.rvp.ext.WeaponUnitPojoExt;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitPojo;
@@ -68,6 +69,11 @@ public class WeaponUnitPojoMixin implements WeaponUnitPojoExt {
     @Unique
     private RVP_SightFireDisguiseConfig ywzj_rvp$sightFireDisguise;
 
+    /** 车尾分段无俯角配置（null = 未配置 = 功能关闭）。 */
+    @SerializedName("rvp_rear_depression_block")
+    @Unique
+    private RVP_RearDepressionBlockConfig ywzj_rvp$rearDepressionBlock;
+
     /** 夜视仪选配（与本体 with_thermal_imager 同层级写法）；默认 false。
      *  <p>主键沿用本体风格不加 rvp_ 前缀；alternate 兼容带前缀写法，避免和本体将来撞名。
      *  <p>用原始类型 boolean：Gson Unsafe 分配下未配置落 false，正好是默认关闭语义。 */
@@ -125,6 +131,11 @@ public class WeaponUnitPojoMixin implements WeaponUnitPojoExt {
     @Override
     public RVP_SightFireDisguiseConfig ywzj_rvp$getSightFireDisguise() {
         return ywzj_rvp$sightFireDisguise;
+    }
+
+    @Override
+    public RVP_RearDepressionBlockConfig ywzj_rvp$getRearDepressionBlock() {
+        return ywzj_rvp$rearDepressionBlock;
     }
 
     @Override

@@ -12,6 +12,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.ywzj.rvp.debug.RVP_HitboxDebug;
+import org.ywzj.rvp.config.RVP_RearDepressionBlockConfig;
 import org.ywzj.rvp.config.RVP_SightFireDisguiseConfig;
 import org.ywzj.rvp.ext.WeaponUnitDataExt;
 import org.ywzj.rvp.ext.WeaponUnitPojoExt;
@@ -75,6 +76,10 @@ public class WeaponUnitDataMixin implements WeaponUnitDataExt {
     @Unique
     private RVP_SightFireDisguiseConfig ywzj_rvp$sightFireDisguise;
 
+    /** 车尾分段无俯角配置；未配置时为null并关闭该功能。 */
+    @Unique
+    private RVP_RearDepressionBlockConfig ywzj_rvp$rearDepressionBlock;
+
     /** 夜视仪选配（从 pojo 透传，与本体 withThermalImager 同级）；默认 false。 */
     @Unique
     private boolean ywzj_rvp$withNightVision;
@@ -92,6 +97,7 @@ public class WeaponUnitDataMixin implements WeaponUnitDataExt {
             this.ywzj_rvp$structureBoltBones = ywzj_rvp$safeCopy(ext.ywzj_rvp$getStructureBoltBones());
             this.ywzj_rvp$opticalSightPivot = ext.ywzj_rvp$getOpticalSightPivot();
             this.ywzj_rvp$sightFireDisguise = ext.ywzj_rvp$getSightFireDisguise();
+            this.ywzj_rvp$rearDepressionBlock = ext.ywzj_rvp$getRearDepressionBlock();
             this.ywzj_rvp$withNightVision = ext.ywzj_rvp$withNightVision();
             RVP_HitboxDebug.noteConfigLoaded(this.ywzj_rvp$followParentOnlyPartUnitIds);
         }
@@ -222,6 +228,11 @@ public class WeaponUnitDataMixin implements WeaponUnitDataExt {
     @Override
     public RVP_SightFireDisguiseConfig ywzj_rvp$getSightFireDisguise() {
         return ywzj_rvp$sightFireDisguise;
+    }
+
+    @Override
+    public RVP_RearDepressionBlockConfig ywzj_rvp$getRearDepressionBlock() {
+        return ywzj_rvp$rearDepressionBlock;
     }
 
     @Override
