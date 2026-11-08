@@ -35,7 +35,7 @@
   "fuse_data": {
     "delay_tick": 0,
     "proximity_radius": 0.0,
-    "detonate_on_life_end": false
+    "detonate_on_life_end": true
   },
   "parent_weapon_unit_aim_override": false,
   "guidance_data": {

@@ -146,7 +146,15 @@
             "rvp:ebrc_ahead",
             "rvp:ebrc_afpsds"
           ],
+          "save_id": "main_gun_ahead",
           "modding_only_multi": true
+        },
+        {
+          "ids": [
+            "rvp:ebrc_he_vt"
+          ],
+          "save_id": "main_gun_he_vt",
+          "merge_into_previous_slot": true
         },
         {
           "id": "rvp:ebrc_mica_ng",

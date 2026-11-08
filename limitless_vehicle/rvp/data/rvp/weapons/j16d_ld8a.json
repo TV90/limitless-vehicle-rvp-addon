@@ -44,7 +44,7 @@
     "proximity_fuse_tick": 10,
     "delay_tick": 0,
     "proximity_radius": 5.0,
-    "detonate_on_life_end": false
+    "detonate_on_life_end": true
   },
   "guidance_data": {
     "interference_data": {

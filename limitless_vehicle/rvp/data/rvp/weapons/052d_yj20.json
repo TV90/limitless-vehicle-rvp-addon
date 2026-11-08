@@ -89,7 +89,7 @@
   "fuse_data": {
     "delay_tick": 0,
     "proximity_radius": 0,
-    "detonate_on_life_end": false
+    "detonate_on_life_end": true
   },
   "effects_data": {
     "trajectory_particle": "none",

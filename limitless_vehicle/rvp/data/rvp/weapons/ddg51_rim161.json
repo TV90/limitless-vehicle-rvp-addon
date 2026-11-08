@@ -46,7 +46,7 @@
     "delay_tick": 0,
     "proximity_radius": 5,
     "proximity_radius_ammo_factor": 2.0,
-    "detonate_on_life_end": false
+    "detonate_on_life_end": true
   },
   "guidance_data": {
     "interference_data": {

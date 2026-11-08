@@ -73,7 +73,8 @@
   "fuse_data": {
     "proximity_radius": 5.0,
     "proximity_fuse_tick": 10,
-    "proximity_fuse_height": 0
+    "proximity_fuse_height": 0,
+    "detonate_on_life_end": true
   },
   "effects_data": {
     "missile_native_trail_particle_style": "rvp_rocket_flame",
