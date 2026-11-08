@@ -36,6 +36,9 @@ public class RVP_MissileOverlay implements IGuiOverlay {
     /** 无头瞄 IR 弹（AIM-9M / FIM-92 / 天燕-90）追踪期的「截获中」，与 HMD 通道同源。 */
     private static final Component IR_ACQUIRING =
             Component.translatable("message.ywzj_rvp.hmd.ir_acquiring");
+    /** 无头瞄 IR 导引头小圈：未捕获 15px → dwell 满 8px，与头瞄四角框同一进度与平滑系数。 */
+    private static final float IR_SEEKER_CIRCLE_MAX_RADIUS = 15f;
+    private static final float IR_SEEKER_CIRCLE_LOCKED_RADIUS = 8f;
 
     @Override
     public void render(ForgeGui gui, GuiGraphics guiGraphics, float partialTick, int screenWidth, int screenHeight) {
@@ -63,19 +66,21 @@ public class RVP_MissileOverlay implements IGuiOverlay {
 
         double x = screenWidth * 0.5D;
         double y = screenHeight * 0.5D;
+        boolean aimPointVisible = false;
         Vec3 weaponHitPosO = weaponUnit.weaponHitPosO;
         Vec3 weaponHitPos = weaponUnit.weaponHitPos;
         if (weaponHitPos != null) {
             Vec3 screenHitPos = VectorUtil.worldToScreen(weaponHitPos);
             if (screenHitPos != null && screenHitPos.z >= 0) {
                 Vec3 screenHitPosO = weaponHitPosO != null ? VectorUtil.worldToScreen(weaponHitPosO) : null;
-                if (screenHitPosO != null) {
+                if (screenHitPosO != null && screenHitPosO.z >= 0) {
                     x = Mth.lerp(partialTick, screenHitPosO.x, screenHitPos.x);
                     y = Mth.lerp(partialTick, screenHitPosO.y, screenHitPos.y);
                 } else {
                     x = screenHitPos.x;
                     y = screenHitPos.y;
                 }
+                aimPointVisible = true;
             }
         }
 
@@ -86,18 +91,27 @@ public class RVP_MissileOverlay implements IGuiOverlay {
         float alpha = 0.4f + (float) Math.sin((double) weaponUnit.getLockCoolingTick() / 5 * Math.PI) * 0.2f;
         int aimCircleColor = (Color.WHITE & 0x00FFFFFF) | ((int) (alpha * 255) << 24);
 
-        // 导引头大圈 — 精确复刻 VehicleAimAtOverlay
-        if (weaponUnit.isSeekerOn() && weaponUnit.getLockedEntity() == null && !data.isEnableIrHmd()) {
-            GuiHelper.drawCircle(poseStack, 0, 0, 15, aimCircleColor, 0.03f, 0, 0);
+        // 导引头小圈：圈半径随 IR 锁定进度收缩；瞄准点在相机背后时不画（否则会钉在屏幕中心）。
+        if (aimPointVisible && weaponUnit.isSeekerOn()
+                && weaponUnit.getLockedEntity() == null && !data.isEnableIrHmd()) {
+            float bracketScale = RVP_ClientHmdState.getInstance().getIrBracketScale();
+            float shrink = Mth.clamp((bracketScale - RVP_ClientHmdState.IR_BRACKET_LOCKED_SCALE)
+                    / (RVP_ClientHmdState.IR_BRACKET_MAX_SCALE - RVP_ClientHmdState.IR_BRACKET_LOCKED_SCALE),
+                    0f, 1f);
+            float seekerRadius = Mth.lerp(shrink, IR_SEEKER_CIRCLE_LOCKED_RADIUS, IR_SEEKER_CIRCLE_MAX_RADIUS);
+            GuiHelper.drawCircle(poseStack, 0, 0, seekerRadius, aimCircleColor, 0.03f, 0, 0);
         }
         // 目的：离轴圈绘制基准与锁定保持判定一致（2026-09-15 修复大离轴"圈内却脱锁"）——
         // 判定按 off_axis_stacks_with_station_rotation 选基准：true=武器站当前指向，
         // false=中立安装轴（PL-10 等缺省，离轴圈锚定机头轴）；此前圈恒画在站指向、
         // 判定锥钉在中立轴，站被伺服转走后圈内目标实际已在锥外 → 脱锁 → 锁定音消失。
-        // 非 HMD 武器的保持判定以武器站当前指向为基准，维持原绘制。
+        // 非 HMD 武器的保持判定走 isTargetWithinHoldLimits，基准由弹种配置
+        // off_axis_stacks_with_station_rotation 决定；绘制必须同源，否则判定跟炮塔转、
+        // 圈却钉在中立安装轴（LAVAD 等把该开关设为 true 的非 HMD 红外弹会圈内脱锁）。
         boolean irHmdActive = RVP_ClientHmdState.getInstance().isIrHmd();
         boolean stackWithStation = irHmdActive
-                && RVP_ClientHmdState.getInstance().isIrOffAxisStacksWithStationRotation();
+                ? RVP_ClientHmdState.getInstance().isIrOffAxisStacksWithStationRotation()
+                : data.resolveLaunchOffAxisStacksWithStationRotation();
         Vec2 rot = weaponUnit.worldRot();
         Vec3 centerDir;
         Vec3 upDir;
@@ -119,7 +133,10 @@ public class RVP_MissileOverlay implements IGuiOverlay {
         Vec3 screenPosCenter = VectorUtil.worldToScreen(weaponUnit.worldPivotPosition()
                 .add(centerDir.scale(256)));
 
-        if (screenPosUp != null && screenPosDown != null && screenPosCenter != null) {
+        // 深度门：worldToScreen 对相机背后的点会除以负 w，把坐标镜像到屏幕另一侧；
+        // 炮塔指向后半球时这会把离轴圈"拽"到屏幕中心附近。三个采样点都必须在相机前方。
+        if (screenPosUp != null && screenPosDown != null && screenPosCenter != null
+                && screenPosUp.z >= 0 && screenPosDown.z >= 0 && screenPosCenter.z >= 0) {
             double px = screenPosDown.x - screenPosUp.x;
             double py = screenPosDown.y - screenPosUp.y;
             float r = (float) Math.sqrt(px * px + py * py) / 2;
@@ -200,7 +217,8 @@ public class RVP_MissileOverlay implements IGuiOverlay {
                 .add(VectorUtil.rotToVec(baseRot.x + fov, baseRot.y).normalize().scale(256)));
         Vec3 screenPosCenter = VectorUtil.worldToScreen(basePos
                 .add(baseDir.scale(256)));
-        if (screenPosUp != null && screenPosDown != null && screenPosCenter != null) {
+        if (screenPosUp != null && screenPosDown != null && screenPosCenter != null
+                && screenPosUp.z >= 0 && screenPosDown.z >= 0 && screenPosCenter.z >= 0) {
             double px = screenPosDown.x - screenPosUp.x;
             double py = screenPosDown.y - screenPosUp.y;
             float r = (float) Math.sqrt(px * px + py * py) / 2;

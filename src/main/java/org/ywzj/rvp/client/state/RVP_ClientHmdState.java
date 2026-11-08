@@ -565,6 +565,8 @@ public class RVP_ClientHmdState {
         tickCount++;
         // EO 锁维持独立于 HMD 通道：捕获即关通道后，脱锁检查（距离/视场/遮挡）仍需每 Tick 执行。
         tickEoLockMaintenance();
+        // 无头瞄 IR 弹也复用同一把缩圈标尺（小圈 15→8px）；IR 头瞄激活时由其自己的分支驱动。
+        updateNonHmdIrBracketScale();
         if (!channels.isAnyActive()) {
             return;
         }
@@ -632,6 +634,29 @@ public class RVP_ClientHmdState {
             // EO 捕获同雷达 HMD 语义：使用本 Tick 原始头瞄方向（观瞄为武器轴线）。
             tickEoHmd(mc, vehicle, weaponUnit, rawHeadLook);
         }
+    }
+
+    /**
+     * 无头瞄 IR 弹的小圈缩放：与 HMD 四角框共用同一 {@link #irBracketScale} 与平滑系数。
+     *
+     * <p>IR 头瞄激活时不在这里驱动（HMD 分支每 Tick 自己更新），否则会把 HMD 的
+     * 缩圈值每 Tick 重置回最大值。雷达/EO 头瞄与 IR 无头瞄并存时仍要更新。</p>
+     */
+    private void updateNonHmdIrBracketScale() {
+        if (channels.isIrActive()) {
+            return;
+        }
+        WeaponUnit unit = LocalVehiclePlayer.instance.onVehicle()
+                ? LocalVehiclePlayer.instance.getWeaponUnit()
+                : null;
+        RVP_WeaponBase weapon = unit == null ? null : RVP_WeaponResolveHelper.currentPrimaryRvp(unit);
+        if (weapon == null
+                || weapon.getData().isEnableIrHmd()
+                || !RVP_IrLockHelper.supportsInfraredLaunchSearch(weapon.getData())) {
+            irBracketScale = IR_BRACKET_MAX_SCALE;
+            return;
+        }
+        updateIrBracketScale();
     }
 
     /** 四角框缩放随导引头伺服进度平滑收缩（1.1 → 0.5，前段收缩更快）。 */
@@ -970,6 +995,8 @@ public class RVP_ClientHmdState {
             if (irUsesNewLaunchData && irLaunchWeapon != null
                     && !RVP_IrLockHelper.isTargetWithinHoldEnvelope(weaponUnit, tracked, irLaunchWeapon)) {
                 RVP_DebugStateLogs.logIrHms("drop new-launch-envelope target=" + tracked.getId());
+                // 通知 dwell 状态机目标已不可用：宽限到期后清零，避免移开后进度冻结。
+                RVP_IrSeekerTracker.feedHmdCandidate(weaponUnit, irLaunchWeapon, null, 0);
                 clearIrLockState(weaponUnit);
                 return;
             }
@@ -979,6 +1006,8 @@ public class RVP_ClientHmdState {
             double dist = toTarget.length();
             if (dist > maxRange || dist < 1.0) {
                 RVP_DebugStateLogs.logIrHms("drop range target=" + tracked.getId() + " dist=" + formatAngle(dist));
+                // 超距同样属于目标离开包线，交给同一宽限逻辑清零 dwell。
+                RVP_IrSeekerTracker.feedHmdCandidate(weaponUnit, irLaunchWeapon, null, 0);
                 clearIrLockState(weaponUnit);
                 return;
             }
@@ -994,6 +1023,8 @@ public class RVP_ClientHmdState {
                     irLockMinHeight
             )) {
                 RVP_DebugStateLogs.logIrHms("drop alt-filter target=" + tracked.getId());
+                // 高度过滤掉目标也要让 dwell 进入宽限，否则进度会停在移开前。
+                RVP_IrSeekerTracker.feedHmdCandidate(weaponUnit, irLaunchWeapon, null, 0);
                 clearIrLockState(weaponUnit);
                 return;
             }
@@ -1072,6 +1103,10 @@ public class RVP_ClientHmdState {
                 mc.player.displayClientMessage(
                         Component.translatable("message.ywzj_rvp.hmd.ir_locked"), true);
             }
+        } else {
+            // 扫描周期内没有可用目标：必须向 dwell 状态机喂空候选，
+            // 否则 tracker 收不到"目标已丢失"，dwell 冻结、缩圈停在移开前的大小。
+            RVP_IrSeekerTracker.feedHmdCandidate(weaponUnit, irLaunchWeapon, null, 0);
         }
     }
 

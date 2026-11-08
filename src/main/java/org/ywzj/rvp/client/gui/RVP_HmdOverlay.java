@@ -27,6 +27,9 @@ public class RVP_HmdOverlay {
     /** 对地四角框整框边长：伺服前 22px，锁定后 12px（固定像素，不随视场投影放大）。 */
     private static final int GROUND_BRACKET_MAX_SIDE = 22;
     private static final int GROUND_BRACKET_LOCKED_SIDE = 12;
+    /** 对空 IR 捕获弧半径：伺服前 15px，dwell 满时 11px（初始半径维持旧固定值 15，不放大）。 */
+    private static final int AIR_ARC_MAX_RADIUS = 15;
+    private static final int AIR_ARC_LOCKED_RADIUS = 11;
     private static final Component IR_ACQUIRING =
             Component.translatable("message.ywzj_rvp.hmd.ir_acquiring");
 
@@ -264,13 +267,14 @@ public class RVP_HmdOverlay {
         }
         boolean visible = (System.currentTimeMillis() % 700) < 350;
         int color = visible ? COLOR_WHITE : (COLOR_WHITE & 0x00FFFFFF) | 0x02000000;
+        int arcRadius = airArcRadius(state.getIrBracketScale());
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
-        GuiHelper.drawArc(guiGraphics, hx, hy, 15, 0.5f, 0f, 1f, color);
+        GuiHelper.drawArc(guiGraphics, hx, hy, arcRadius, 0.5f, 0f, 1f, color);
         RenderSystem.disableBlend();
         if (state.getIrTrackingEntity() != null) {
-            // 追踪期（已捕获、未锁定）：捕获弧下显示「截获中」。
-            drawAcquiringLabel(guiGraphics, hx, hy + 16);
+            // 追踪期（已捕获、未锁定）：捕获弧下显示「截获中」；标签随弧半径收缩上移。
+            drawAcquiringLabel(guiGraphics, hx, hy + arcRadius + 1);
         }
     }
 
@@ -306,6 +310,14 @@ public class RVP_HmdOverlay {
                 / (RVP_ClientHmdState.IR_BRACKET_MAX_SCALE - RVP_ClientHmdState.IR_BRACKET_LOCKED_SCALE),
                 0f, 1f);
         return Math.round(Mth.lerp(t, GROUND_BRACKET_LOCKED_SIDE, GROUND_BRACKET_MAX_SIDE) / 2f);
+    }
+
+    /** 对空捕获弧半径：与地面四角框共用同一 dwell 平滑进度，锁上过程中从 15px 收缩到 11px。 */
+    private static int airArcRadius(float bracketScale) {
+        float t = Mth.clamp((bracketScale - RVP_ClientHmdState.IR_BRACKET_LOCKED_SCALE)
+                / (RVP_ClientHmdState.IR_BRACKET_MAX_SCALE - RVP_ClientHmdState.IR_BRACKET_LOCKED_SCALE),
+                0f, 1f);
+        return Math.round(Mth.lerp(t, AIR_ARC_LOCKED_RADIUS, AIR_ARC_MAX_RADIUS));
     }
 
     private static double getTanFov(Minecraft mc) {
