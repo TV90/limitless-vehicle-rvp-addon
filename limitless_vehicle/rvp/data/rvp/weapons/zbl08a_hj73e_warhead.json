@@ -67,7 +67,7 @@
         "start_distance": 0,
         "end_distance": 10,
         "start_factor": 1.0,
-        "end_factor": 0.4
+        "end_factor": 0.2
       },
       {
         "domain": "angle",
