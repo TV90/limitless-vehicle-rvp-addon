@@ -32,6 +32,7 @@
     "energy_consumption_per_tick": 1e-05
   },
   "physics_info": {
+    "destroy_explosion_velocity": 0.8,
     "suspension_response": 0.25,
     "mass": 35000,
     "friction": 70000,
@@ -83,6 +84,11 @@
       "name": "turret",
       "type": "ywzj_vehicle:weapon",
       "structure_bone": "turret",
+      "render_bone": "$weapon0",
+      "max_health": 800,
+      "defense_stats": {
+        "damage_threshold": 0.1
+      },
       "seat_offset": [
         0,
         2.0,
@@ -108,7 +114,7 @@
       "with_thermal_imager": true,
       "fire_control_sensor_type": "rf",
       "rvp_fire_control_mode": "rvp_rf",
-      "rvp_rf_off_axis_deg": 40,
+      "rvp_rf_off_axis_deg": 20,
       "optical_sight_type": "crt_ui",
       "zoom_max": 8,
       "crosshair_style": "circle",
@@ -135,6 +141,7 @@
             "rvp:ps1_95ya6m",
             "rvp:ps1_hermes"
           ],
+          "part_unit_id": "missile",
           "modding_only_multi": true
         }
       ]

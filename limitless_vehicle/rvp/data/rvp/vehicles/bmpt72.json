@@ -29,6 +29,7 @@
     "energy_consumption_per_tick": 1e-05
   },
   "physics_info": {
+    "destroy_explosion_velocity": 0.8,
     "suspension_response": 0.25,
     "mass": 50000,
     "friction": 100000,
@@ -209,6 +210,11 @@
       "name": "turret",
       "type": "ywzj_vehicle:weapon",
       "structure_bone": "turret",
+      "render_bone": "$weapon0",
+      "max_health": 1000,
+      "defense_stats": {
+        "damage_threshold": 0.1
+      },
       "seat_offset": [
         0,
         1.35,

@@ -295,7 +295,8 @@
       "rvp_sight_fire_disguise": {
         "disguise_ticks": 1,
         "blend_ticks": 3,
-        "max_distance": 32
+        "max_distance": 32,
+        "camera_depression_compensation_deg": 1.0
       },
       "weapons": [
         {
@@ -417,7 +418,8 @@
       "rvp_sight_fire_disguise": {
         "disguise_ticks": 1,
         "blend_ticks": 3,
-        "max_distance": 32
+        "max_distance": 32,
+        "camera_depression_compensation_deg": 1.0
       },
       "weapons": [
         "rvp:mbt_minigun"

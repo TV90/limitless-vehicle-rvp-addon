@@ -30,6 +30,7 @@
     "energy_consumption_per_tick": 1e-05
   },
   "physics_info": {
+    "destroy_explosion_velocity": 0.8,
     "suspension_response": 0.25,
     "mass": 25000,
     "friction": 50000,
@@ -104,12 +105,22 @@
     "turret_smoke_grenade_l_barrel": "烟幕发射器（左）",
     "turret_smoke_grenade_r_barrel": "烟幕发射器（右）"
   },
+  "rvp_part_hidden_bones": {
+    "turret": [
+      "turret_muzzle_flash"
+    ]
+  },
   "parts": [
     {
       "id": "turret",
       "name": "turret",
       "type": "ywzj_vehicle:weapon",
       "structure_bone": "turret",
+      "render_bone": "$weapon0",
+      "max_health": 800,
+      "defense_stats": {
+        "damage_threshold": 0.1
+      },
       "seat_offset": [
         0.0,
         1.6,
@@ -144,17 +155,11 @@
         {
           "ids": [
             "rvp:ebrc_ahead",
-            "rvp:ebrc_afpsds"
+            "rvp:ebrc_afpsds",
+            "rvp:ebrc_he_vt"
           ],
           "save_id": "main_gun_ahead",
           "modding_only_multi": true
-        },
-        {
-          "ids": [
-            "rvp:ebrc_he_vt"
-          ],
-          "save_id": "main_gun_he_vt",
-          "merge_into_previous_slot": true
         },
         {
           "id": "rvp:ebrc_mica_ng",
@@ -162,7 +167,7 @@
         }
       ],
       "rvp_fire_control_mode": "rvp_rf",
-      "rvp_rf_off_axis_deg": 40
+      "rvp_rf_off_axis_deg": 20
     },
     {
       "id": "missile",
@@ -206,7 +211,7 @@
       "scan_period_tick": 60,
       "scan_min_height": 15,
       "scan_max_height": 10000,
-      "enable_hms": false,
+      "enable_hms": true,
       "max_scan_distance": 1500
     },
     {

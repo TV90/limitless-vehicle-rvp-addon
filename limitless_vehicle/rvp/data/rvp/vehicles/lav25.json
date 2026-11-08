@@ -37,6 +37,7 @@
     ]
   },
   "physics_info": {
+    "destroy_explosion_velocity": 0.8,
     "mass": 12800,
     "friction": 25600,
     "can_destroy_block": true,
@@ -191,12 +192,22 @@
   "rvp_loiter_radius": 100.0,
   "rvp_loiter_altitude_offset": 35.0,
   "rvp_loiter_auto_on_takeoff": true,
+  "rvp_part_hidden_bones": {
+    "turret": [
+      "turret_muzzle_flash"
+    ]
+  },
   "parts": [
     {
       "id": "turret",
       "name": "turret",
       "type": "ywzj_vehicle:weapon",
       "structure_bone": "turret",
+      "render_bone": "$weapon0",
+      "max_health": 900,
+      "defense_stats": {
+        "damage_threshold": 0.1
+      },
       "seat_offset": [
         0,
         2.27,
@@ -225,7 +236,8 @@
       "rvp_sight_fire_disguise": {
         "disguise_ticks": 4,
         "blend_ticks": 3,
-        "max_distance": 32
+        "max_distance": 32,
+        "camera_depression_compensation_deg": 1.0
       },
       "crosshair_style": "circle",
       "weapons": [
