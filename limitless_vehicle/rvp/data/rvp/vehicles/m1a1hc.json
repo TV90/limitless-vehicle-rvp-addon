@@ -272,8 +272,8 @@
       "rot_info": {
         "x_rot_speed": 1.5,
         "y_rot_speed": 2,
-        "x_rot_max": 5,
-        "x_rot_min": -13
+        "x_rot_max": 10,
+        "x_rot_min": -20
       },
       "optical_sight_offset": [
         -0.8125,
@@ -294,7 +294,12 @@
       "rvp_sight_fire_disguise": {
         "disguise_ticks": 1,
         "blend_ticks": 3,
-        "max_distance": 32
+        "max_distance": 32,
+        "camera_depression_compensation_deg": 1.0
+      },
+      "rvp_rear_depression_block": {
+        "half_angle_deg": 28,
+        "blend_deg": 8
       },
       "weapons": [
         {
@@ -394,7 +399,8 @@
       "rvp_sight_fire_disguise": {
         "disguise_ticks": 1,
         "blend_ticks": 3,
-        "max_distance": 32
+        "max_distance": 32,
+        "camera_depression_compensation_deg": 1.0
       },
       "weapons": [
         "rvp:mbt_127"
