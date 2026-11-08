@@ -19,8 +19,10 @@ import org.ywzj.rvp.client.state.RVP_ClientLoiterState;
 import org.ywzj.rvp.client.state.RVP_ClientLoiterSupport;
 import org.ywzj.rvp.client.state.RVP_ClientRotaryFlightModeState;
 import org.ywzj.rvp.client.state.RVP_FireControlStabilizerState;
+import org.ywzj.rvp.client.state.RVP_NvgState;
 import org.ywzj.rvp.config.RVP_VehicleExtendedConfigManager;
 import org.ywzj.rvp.event.RVP_RotaryFlightMode;
+import org.ywzj.rvp.ext.WeaponUnitDataExt;
 import org.ywzj.rvp.util.RVP_WeaponResolveHelper;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.rvp.weapon.fuse.RVP_AirburstRangeStore;
@@ -43,12 +45,14 @@ public final class RVP_VehicleActionHudOverlay implements IGuiOverlay {
             texture("quick_lock"), texture("loiter"),
             texture("rotary_normal"), texture("rotary_auto_collective"), texture("rotary_hover"),
             texture("gps_mark"), texture("gps_single"), texture("gps_multi"), texture("gps_fast"), texture("gps_radar"),
-            texture("airburst")};
+            texture("airburst"),
+            texture("vision_white"), texture("vision_night"), texture("vision_thermal")};
     private static final ResourceLocation DEPLOYED_TEXTURE = texture("deployed_auxiliary");
     private static final String[] LABELS = {"deploy_auxiliary", "switch_auxiliary", "tactical_map", "vehicle_status",
             "seeker", "fire_control_stable", "fire_control_semi_auto", "fire_control_off", "quick_lock",
             "loiter", "rotary_normal", "rotary_auto_collective", "rotary_hover",
-            "gps_mark", "gps_single", "gps_multi", "gps_fast", "gps_radar", "airburst"};
+            "gps_mark", "gps_single", "gps_multi", "gps_fast", "gps_radar", "airburst",
+            "vision_white", "vision_night", "vision_thermal"};
     private static final KeyMapping[] BINDINGS = {RVP_Keys.DEPLOY_DEPLOYABLE_UAV, RVP_Keys.SWITCH_DEPLOYABLE_UAV,
             RVP_Keys.OPEN_GPS_PANEL, RVP_Keys.OPEN_EQUIP_PANEL, AllKeys.TOGGLE_SEEKER,
             RVP_Keys.FIRE_CONTROL_STABILIZER, RVP_Keys.FIRE_CONTROL_STABILIZER, RVP_Keys.FIRE_CONTROL_STABILIZER,
@@ -56,7 +60,9 @@ public final class RVP_VehicleActionHudOverlay implements IGuiOverlay {
             AllKeys.TOGGLE_HOVER_MODE, AllKeys.TOGGLE_HOVER_MODE, AllKeys.TOGGLE_HOVER_MODE,
             // GPS 标点与定距装订都走本体锁定键（R），GPS 模式切换沿用火控稳定器键（6）
             AllKeys.FIRE_CONTROL_LOCK, RVP_Keys.FIRE_CONTROL_STABILIZER, RVP_Keys.FIRE_CONTROL_STABILIZER,
-            RVP_Keys.FIRE_CONTROL_STABILIZER, RVP_Keys.FIRE_CONTROL_STABILIZER, AllKeys.FIRE_CONTROL_LOCK};
+            RVP_Keys.FIRE_CONTROL_STABILIZER, RVP_Keys.FIRE_CONTROL_STABILIZER, AllKeys.FIRE_CONTROL_LOCK,
+            // 白光/夜视/热成像三态共用本体热成像键
+            AllKeys.TOGGLE_THERMAL_IMAGING, AllKeys.TOGGLE_THERMAL_IMAGING, AllKeys.TOGGLE_THERMAL_IMAGING};
     private static ResourceLocation texture(String name) {
         return new ResourceLocation("ywzj_rvp", "textures/gui/actions/" + name + ".png");
     }
@@ -112,6 +118,32 @@ public final class RVP_VehicleActionHudOverlay implements IGuiOverlay {
                 airburstActive = RVP_AirburstRangeStore.get(vehicle, unit, rvpWeapon.getIndex()) > 0;
             }
         }
+        // 通道三态卡：同一按键循环白光/夜视/热成像，状态判定与 RVP_ClientEvents 的按键语义一致。
+        Action visionAction = null;
+        boolean visionActive = false;
+        if (unit != null) {
+            boolean hasThermal = unit.withThermalImager();
+            boolean hasNightVision = unit.getData() instanceof WeaponUnitDataExt ext
+                    && ext.ywzj_rvp$withNightVision();
+            if (hasThermal || hasNightVision) {
+                boolean scope = LocalVehiclePlayer.instance.viewType == LocalVehiclePlayer.ViewType.SCOPE;
+                if (scope && hasThermal) {
+                    // 观瞄态有热成像：开关归本体 thermalImaging，夜视让位。
+                    boolean thermal = LocalVehiclePlayer.instance.thermalImaging;
+                    visionAction = thermal ? Action.VISION_THERMAL : Action.VISION_WHITE;
+                    visionActive = thermal;
+                } else if (scope && hasNightVision) {
+                    boolean nvg = RVP_NvgState.isScopeEnabled();
+                    visionAction = nvg ? Action.VISION_NIGHT : Action.VISION_WHITE;
+                    visionActive = nvg;
+                } else {
+                    // 第三人称热成像不存在，该键控制的是夜视位。
+                    boolean nvg = RVP_NvgState.isThirdPersonEnabled() && (hasNightVision || hasThermal);
+                    visionAction = nvg ? Action.VISION_NIGHT : Action.VISION_WHITE;
+                    visionActive = nvg;
+                }
+            }
+        }
         // 盘旋卡片只在当前载具自身可盘旋时出现；直升机三态卡片只给配置了自动总距的 RVP 旋翼机
         boolean loiterApplicable = RVP_ClientLoiterSupport.applicable(vehicle);
         boolean loitering = RVP_ClientLoiterState.isVehicleLoitering(vehicle.getId());
@@ -120,7 +152,8 @@ public final class RVP_VehicleActionHudOverlay implements IGuiOverlay {
                 ? RVP_ClientRotaryFlightModeState.get(vehicle.getId()) : null;
         List<Card> cards = cards(state,
                 new WeaponPrompts(seeker, seekerActive, fireControlAction, fireControlActive,
-                        quickLock, quickLockActive, gpsMark, gpsMarkActive, gpsModeAction, airburst, airburstActive),
+                        quickLock, quickLockActive, gpsMark, gpsMarkActive, gpsModeAction, airburst, airburstActive,
+                        visionAction, visionActive),
                 new FlightPrompts(loiterApplicable, loitering, rotaryMode));
         String[] keys = new String[BINDINGS.length];
         boolean[] pressed = new boolean[BINDINGS.length];
@@ -183,10 +216,15 @@ public final class RVP_VehicleActionHudOverlay implements IGuiOverlay {
         graphics.fill(0, 0, CARD_WIDTH, CARD_HEIGHT, active ? 0xB3122A30 : 0xB3172127);
         graphics.renderOutline(0, 0, CARD_WIDTH, CARD_HEIGHT, border);
         graphics.fill(1, 1, CARD_WIDTH - 1, 22, pressed && card.enabled() ? 0xDC5C563C : 0xD734424B);
-        text(graphics, key, CARD_WIDTH / 2F, 3, 1.6F, card.enabled() ? 0xFFE0C66D : 0xFF727A80, CARD_WIDTH - 6);
+        text(graphics, key, CARD_WIDTH / 2F, 3, 1.9F,
+                card.enabled() ? 0xFFE0C66D : 0xFF727A80, CARD_WIDTH - 6);
         RenderSystem.enableBlend(); RenderSystem.defaultBlendFunc();
         graphics.setColor(bright ? 1F : .38F, bright ? 1F : .41F, bright ? 1F : .43F, 1F);
-        var pose = graphics.pose(); pose.pushPose(); pose.translate(18, 25, 0); pose.scale(52F / 32, 52F / 32, 1);
+        // 图标统一 62px；键名与标签所有卡片同一字号，不再对通道卡单独放大。
+        float iconSize = 62F;
+        var pose = graphics.pose(); pose.pushPose();
+        pose.translate((CARD_WIDTH - iconSize) / 2F, 22F, 0);
+        pose.scale(iconSize / 32F, iconSize / 32F, 1);
         graphics.blit(deployed ? DEPLOYED_TEXTURE : TEXTURES[card.action().ordinal()], 0, 0, 0, 0, 32, 32, 32, 32);
         pose.popPose(); graphics.setColor(1F, 1F, 1F, 1F);
         if (card.phase() == Phase.COOLING)
@@ -195,7 +233,7 @@ public final class RVP_VehicleActionHudOverlay implements IGuiOverlay {
                 (deployed ? "deployed_auxiliary"
                         : active && card.action() == Action.LOITER ? "loiter_active"
                         : LABELS[card.action().ordinal()])).getString();
-        text(graphics, label, CARD_WIDTH / 2F, 83, 1.75F,
+        text(graphics, label, CARD_WIDTH / 2F, 84F, 2.1F,
                 deployed ? 0xFFA2D5AF : active ? 0xFF7FF2FF : bright ? 0xFFE4E8E8 : 0xFF7A8080, CARD_WIDTH - 4);
     }
 

@@ -597,5 +597,8 @@
   "hud.ywzj_rvp.action.gps_multi": "GPS 多点",
   "hud.ywzj_rvp.action.gps_fast": "GPS 快速",
   "hud.ywzj_rvp.action.gps_radar": "GPS 雷达",
-  "hud.ywzj_rvp.action.airburst": "定距引信"
+  "hud.ywzj_rvp.action.airburst": "定距引信",
+  "hud.ywzj_rvp.action.vision_white": "白光",
+  "hud.ywzj_rvp.action.vision_night": "夜视",
+  "hud.ywzj_rvp.action.vision_thermal": "热成像"
 }

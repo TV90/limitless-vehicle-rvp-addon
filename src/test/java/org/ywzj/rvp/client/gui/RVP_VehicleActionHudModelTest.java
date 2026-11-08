@@ -63,7 +63,7 @@ class RVP_VehicleActionHudModelTest {
                                        Action fireControlAction, boolean fireControlActive,
                                        boolean quickLock, boolean quickLockActive) {
         return new WeaponPrompts(seeker, seekerActive, fireControlAction, fireControlActive,
-                quickLock, quickLockActive, false, false, null, false, false);
+                quickLock, quickLockActive, false, false, null, false, false, null, false);
     }
 
     @Test void weaponHintsDoNotInheritAuxiliaryCooldownOrLeaveEmptySlots() {
@@ -129,7 +129,7 @@ class RVP_VehicleActionHudModelTest {
 
     @Test void gpsMarkerAndModeCardFollowSelectedMode() {
         var marked = cards(null, new WeaponPrompts(false, false, null, false, false,
-                false, true, true, Action.GPS_MULTI, false, false), FlightPrompts.NONE);
+                false, true, true, Action.GPS_MULTI, false, false, null, false), FlightPrompts.NONE);
         assertEquals(List.of(Action.MAP, Action.STATUS, Action.GPS_MARK, Action.GPS_MULTI),
                 marked.stream().map(Card::action).toList());
         assertEquals(Phase.ACTIVE, marked.get(2).phase());
@@ -137,19 +137,36 @@ class RVP_VehicleActionHudModelTest {
 
         // FAST 模式由开火键取点，R 键不可用 → 不显示标点卡，只显示当前模式卡
         var fast = cards(null, new WeaponPrompts(false, false, null, false, false,
-                false, false, false, Action.GPS_FAST, false, false), FlightPrompts.NONE);
+                false, false, false, Action.GPS_FAST, false, false, null, false), FlightPrompts.NONE);
         assertEquals(List.of(Action.MAP, Action.STATUS, Action.GPS_FAST),
                 fast.stream().map(Card::action).toList());
     }
 
+    @Test void visionCardShowsOneOfThreeChannelsAndLightsWhenNotWhite() {
+        var white = cards(null, new WeaponPrompts(false, false, null, false, false,
+                false, false, false, null, false, false, Action.VISION_WHITE, false), FlightPrompts.NONE);
+        assertEquals(List.of(Action.MAP, Action.STATUS, Action.VISION_WHITE),
+                white.stream().map(Card::action).toList());
+        assertEquals(Phase.READY, white.get(2).phase());
+        var night = cards(null, new WeaponPrompts(false, false, null, false, false,
+                false, false, false, null, false, false, Action.VISION_NIGHT, true), FlightPrompts.NONE);
+        assertEquals(List.of(Action.MAP, Action.STATUS, Action.VISION_NIGHT),
+                night.stream().map(Card::action).toList());
+        assertEquals(Phase.ACTIVE, night.get(2).phase());
+        var thermal = cards(null, new WeaponPrompts(false, false, null, false, false,
+                false, false, false, null, false, false, Action.VISION_THERMAL, true), FlightPrompts.NONE);
+        assertEquals(Action.VISION_THERMAL, thermal.get(2).action());
+        assertEquals(Phase.ACTIVE, thermal.get(2).phase());
+    }
+
     @Test void airburstCardLightsUpOnlyAfterRangeProgramming() {
         var pending = cards(null, new WeaponPrompts(false, false, null, false, false,
-                false, false, false, null, true, false), FlightPrompts.NONE);
+                false, false, false, null, true, false, null, false), FlightPrompts.NONE);
         assertEquals(List.of(Action.MAP, Action.STATUS, Action.AIRBURST),
                 pending.stream().map(Card::action).toList());
         assertEquals(Phase.READY, pending.get(2).phase());
         var programmed = cards(null, new WeaponPrompts(false, false, null, false, false,
-                false, false, false, null, true, true), FlightPrompts.NONE);
+                false, false, false, null, true, true, null, false), FlightPrompts.NONE);
         assertEquals(Phase.ACTIVE, programmed.get(2).phase());
     }
 }

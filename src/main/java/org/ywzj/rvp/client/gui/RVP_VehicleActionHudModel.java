@@ -36,7 +36,13 @@ public final class RVP_VehicleActionHudModel {
         /** GPS 雷达模式。 */
         GPS_RADAR,
         /** 定距空爆引信装订（R 键测距）。 */
-        AIRBURST
+        AIRBURST,
+        /** 白光通道（未开启夜视/热成像）。 */
+        VISION_WHITE,
+        /** 夜视通道。 */
+        VISION_NIGHT,
+        /** 热成像通道。 */
+        VISION_THERMAL
     }
     public enum Phase { READY, DISABLED, COOLING, DEPLOYED, ACTIVE }
     public record Card(Action action, Phase phase, boolean enabled, int cooldownSeconds) {}
@@ -50,9 +56,11 @@ public final class RVP_VehicleActionHudModel {
                                 boolean quickLock, boolean quickLockActive,
                                 boolean gpsMark, boolean gpsMarkActive,
                                 @Nullable Action gpsModeAction,
-                                boolean airburst, boolean airburstActive) {
+                                boolean airburst, boolean airburstActive,
+                                @Nullable Action visionAction, boolean visionActive) {
         public static final WeaponPrompts NONE =
-                new WeaponPrompts(false, false, null, false, false, false, false, false, null, false, false);
+                new WeaponPrompts(false, false, null, false, false, false, false, false, null,
+                        false, false, null, false);
     }
 
     /** 飞行类提示：盘旋是否可用/进行中，以及直升机三态（非旋翼传 null）。 */
@@ -89,6 +97,9 @@ public final class RVP_VehicleActionHudModel {
         if (weapon.gpsMark()) cards.add(toggle(Action.GPS_MARK, weapon.gpsMarkActive()));
         if (weapon.gpsModeAction() != null) cards.add(ready(weapon.gpsModeAction()));
         if (weapon.airburst()) cards.add(toggle(Action.AIRBURST, weapon.airburstActive()));
+        if (weapon.visionAction() != null) {
+            cards.add(toggle(weapon.visionAction(), weapon.visionActive()));
+        }
         return cards;
     }
 

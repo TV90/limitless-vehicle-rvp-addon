@@ -256,9 +256,11 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
             if (top + lineH > rect[3]) {
                 break; // 超出展板底：更早的不再画
             }
+            float lineScale = Math.min(textScale,
+                    (float) (rect[2] - rect[0] - 4) / Math.max(1, mc.font.width(n.text())));
             gg.pose().pushPose();
             gg.pose().translate(centerX, top, 0);
-            gg.pose().scale(textScale, textScale, 1.0F);
+            gg.pose().scale(lineScale, lineScale, 1.0F);
             gg.drawCenteredString(mc.font, Component.literal(n.text()), 0, 0, n.color());
             gg.pose().popPose();
             top += lineH + lineGap;
@@ -362,10 +364,12 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
                 ? I18n.get("gui.ywzj_rvp.hit_panel.title_hit", boneText, String.format("%.1f", damagePercent))
                 : I18n.get("gui.ywzj_rvp.hit_panel.title_explode", String.format("%.1f", damagePercent));
         float textScale = (float) (TEXT_HEIGHT_PX / 9.0 / guiScale);
+        // 骨名/载具名的英文长名可能超出展板宽度：仅在超宽时等比缩小，避免被裁剪框切掉。
+        float titleScale = Math.min(textScale, (float) (panelW - 4) / Math.max(1, font.width(title)));
         gg.pose().pushPose();
         // 文案：展板顶部水平居中（参考本体：文案在模型上方居中）
         gg.pose().translate(x0 + (float) panelW / 2, y0 + (int) (3 / guiScale), 0);
-        gg.pose().scale(textScale, textScale, 1.0F);
+        gg.pose().scale(titleScale, titleScale, 1.0F);
         int lineY = 0;
         gg.drawCenteredString(font, Component.literal(title), 0, lineY, damageColor);
         gg.pose().popPose();
