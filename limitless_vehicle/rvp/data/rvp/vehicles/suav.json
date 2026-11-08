@@ -70,7 +70,7 @@
     {
       "id": "seat",
       "name": "seat",
-      "type": "ywzj_rvp:optical_weapon",
+      "type": "ywzj_vehicle:weapon",
       "structure_bone": "sighting_system",
       "is_seat": true,
       "seat_offset": [

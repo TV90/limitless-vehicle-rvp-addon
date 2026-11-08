@@ -273,7 +273,7 @@
     {
       "id": "sighting_system",
       "name": "sighting_system",
-      "type": "ywzj_rvp:optical_weapon",
+      "type": "ywzj_vehicle:weapon",
       "structure_bone": "sighting_system",
       "seat_offset": [
         0,
