@@ -240,6 +240,8 @@
       "id": "sighting_system",
       "name": "sighting_system",
       "type": "ywzj_vehicle:weapon",
+      "rvp_fire_control_mode": "rvp_ballistic_lead",
+      "rvp_fire_control_off_axis_deg": 40,
       "structure_bone": "sighting_system",
       "seat_offset": [
         0,
@@ -288,7 +290,7 @@
       "name": "auto_cannon",
       "type": "ywzj_vehicle:weapon",
       "structure_bone": "auto_cannon",
-      "fire_control_sensor_type": "rf",
+      "fire_control_sensor_type": "eo",
       "is_seat": false,
       "crosshair_style": "square",
       "rot_info": {
