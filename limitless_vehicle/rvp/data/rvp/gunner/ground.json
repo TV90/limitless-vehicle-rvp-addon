@@ -156,10 +156,15 @@
       "priority": 500,
       "config": {
         "stop_distance": 60.0,
+        "creature_stop_distance": 12.0,
         "hold_tick": 100,
         "evade_tick_min": 140,
         "evade_tick_max": 280,
-        "evade_yaw_deg": 55.0
+        "evade_yaw_deg": 55.0,
+        "standoff_jitter": 0.2,
+        "reload_reverse_ratio": 1.35,
+        "reposition_chance": 0.35,
+        "reposition_cooldown_tick": 300
       }
     },
     {
@@ -184,7 +189,9 @@
         "burst_fire_tick": 10,
         "burst_rest_tick": 14,
         "guided_weapon_cooldown_tick": 100,
-        "ciws_target_cooldown_tick": 100
+        "ciws_target_cooldown_tick": 100,
+        "post_reload_delay_tick_min": 20,
+        "post_reload_delay_tick_max": 60
       }
     }
   ]

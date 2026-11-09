@@ -488,7 +488,7 @@
   "ui.rvp.barrel_burst": "炮管炸膛！",
   "gui.ywzj_rvp.equipment.barrel_damaged": "受损",
   "rvp.flight_mode.normal": "飞行模式：常规",
-  "rvp.flight_mode.auto_collective": "飞行模式：自动总距（爬升/下坠率自动配平，姿态机动不受限）",
+  "rvp.flight_mode.auto_collective": "飞行模式：自动总距",
   "rvp.flight_mode.hover": "飞行模式：悬停",
   "ui.rvp.target_rcs_below_sea_threshold": "目标 RCS 低于反舰导引头截获门限，无法锁定/发射",
   "key.ywzj_rvp.toggle_heli_dock": "直升机着舰/起飞",
@@ -600,5 +600,7 @@
   "hud.ywzj_rvp.action.airburst": "定距引信",
   "hud.ywzj_rvp.action.vision_white": "白光",
   "hud.ywzj_rvp.action.vision_night": "夜视",
-  "hud.ywzj_rvp.action.vision_thermal": "热成像"
+  "hud.ywzj_rvp.action.vision_thermal": "热成像",
+  "hud.ywzj_rvp.action.fire_support_bind": "火力装订",
+  "hud.ywzj_rvp.action.artillery_map": "炮兵地图"
 }

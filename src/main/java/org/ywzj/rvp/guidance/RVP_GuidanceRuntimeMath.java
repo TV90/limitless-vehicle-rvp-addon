@@ -680,7 +680,9 @@ public final class RVP_GuidanceRuntimeMath {
         Vec3 desired = horizontal.scale(desiredHorizontalSpeed / horizontalDistance);
         float factor = Math.max(0f, Math.min(1f, turningFactor));
         double nextY = resetVertical ? 0.0 : current.y;
-        if (!resetVertical && nextY > 0.0) {
+        if (!resetVertical) {
+            // 巡航段双向改平：爬升和下降都向 0 收敛。攻角气动开启后，进入巡航的
+            // reset 只改期望方向、不能瞬时清零速度；若负 vy 只拷贝不衰减会被整段巡航锁死。
             nextY += (0.0 - nextY) * Math.max(0f, Math.min(1f, levelingFactor));
         }
         return new Vec3(

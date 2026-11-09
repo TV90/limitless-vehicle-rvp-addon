@@ -53,7 +53,8 @@ public final class RVP_GunnerSimulationScenario {
         /** 固定翼巡航最高离地高度，格。 */ public double altitudeMax = 350;
         /** 固定翼任务半径，格。 */ public double combatRadius = 550;
         /** 当前 ground_engagement_move 等行为参数的测试数值。 */
-        public Settings ground = new Settings(12, 100, 140, 280, 55, 20, 1, 20, 300, 600, 120, 180, 40);
+        public Settings ground = new Settings(12, 100, 140, 280, 55, 20, 1, 20, 300, 600, 120, 180, 40,
+                0.2, 1.35, 0.35, 300, 12);
     }
 
     /** 在创建运行态前拒绝无意义或非有限参数，避免导出不可回放的数据。 */

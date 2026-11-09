@@ -64,6 +64,12 @@
     "turret_barrel": 0.6,
     "turret_back": 1.3,
     "turret_top": 1.0,
+    "aps_right": 0.5,
+    "aps_left": 0.5,
+    "aps_radar_ne": 0.55,
+    "aps_radar_nw": 0.55,
+    "aps_radar_se": 0.8,
+    "aps_radar_sw": 0.8,
     "commander_machine_gun": 0.4,
     "commander_machine_gun_barrel": 0.4,
     "turret_smoke_grenade_l_barrel": 0.4,
@@ -108,14 +114,14 @@
         "threshold_heavy": 800
       }
     },
-    "aps_sensor_right": {
+    "aps_radar_ne": {
       "modules": [
         "aps"
       ],
       "aps": {
         "launcher_part": "aps_right",
         "facing_part": "turret",
-        "facing_yaw": -90.0,
+        "facing_yaw": 45.0,
         "scan_fov": 120,
         "detect_radius": 32.0,
         "intercept_radius": 8.0,
@@ -130,14 +136,14 @@
       },
       "min_damage": 30
     },
-    "aps_sensor_left": {
+    "aps_radar_nw": {
       "modules": [
         "aps"
       ],
       "aps": {
         "launcher_part": "aps_left",
         "facing_part": "turret",
-        "facing_yaw": 90.0,
+        "facing_yaw": -45.0,
         "scan_fov": 120,
         "detect_radius": 32.0,
         "intercept_radius": 8.0,
@@ -152,14 +158,14 @@
       },
       "min_damage": 30
     },
-    "aps_sensor_right2": {
+    "aps_radar_se": {
       "modules": [
         "aps"
       ],
       "aps": {
-        "launcher_part": "aps_right2",
+        "launcher_part": "aps_right",
         "facing_part": "turret",
-        "facing_yaw": -90.0,
+        "facing_yaw": 135.0,
         "scan_fov": 120,
         "detect_radius": 32.0,
         "intercept_radius": 8.0,
@@ -174,14 +180,14 @@
       },
       "min_damage": 30
     },
-    "aps_sensor_left2": {
+    "aps_radar_sw": {
       "modules": [
         "aps"
       ],
       "aps": {
-        "launcher_part": "aps_left2",
+        "launcher_part": "aps_left",
         "facing_part": "turret",
-        "facing_yaw": 90.0,
+        "facing_yaw": -135.0,
         "scan_fov": 120,
         "detect_radius": 32.0,
         "intercept_radius": 8.0,
@@ -264,7 +270,7 @@
       },
       "optical_sight_offset": [
         0.6878375,
-        0.9474125,
+        1.0974125,
         0.74795625
       ],
       "operator_view_offset": [
@@ -371,7 +377,8 @@
         "camera_depression_compensation_deg": 1.0
       },
       "weapons": [
-        "rvp:abramsx_xm914"
+        "rvp:abramsx_xm914",
+        {"id": "rvp:call_fire_strike_nato"}
       ]
     },
     {
@@ -433,6 +440,34 @@
           "y_rot": 0
         }
       ]
+    },
+    {
+      "id": "aps_radar_ne",
+      "name": "aps_radar_ne",
+      "type": "ywzj_vehicle:generic",
+      "structure_bone": "aps_radar_ne",
+      "is_seat": false
+    },
+    {
+      "id": "aps_radar_nw",
+      "name": "aps_radar_nw",
+      "type": "ywzj_vehicle:generic",
+      "structure_bone": "aps_radar_nw",
+      "is_seat": false
+    },
+    {
+      "id": "aps_radar_se",
+      "name": "aps_radar_se",
+      "type": "ywzj_vehicle:generic",
+      "structure_bone": "aps_radar_se",
+      "is_seat": false
+    },
+    {
+      "id": "aps_radar_sw",
+      "name": "aps_radar_sw",
+      "type": "ywzj_vehicle:generic",
+      "structure_bone": "aps_radar_sw",
+      "is_seat": false
     },
     {
       "id": "bone",
@@ -512,38 +547,10 @@
       "is_seat": false
     },
     {
-      "id": "aps_left2",
-      "name": "aps_left2",
-      "type": "ywzj_vehicle:generic",
-      "structure_bone": "aps_left2",
-      "is_seat": false
-    },
-    {
-      "id": "aps_left_barrel2",
-      "name": "aps_left_barrel2",
-      "type": "ywzj_vehicle:generic",
-      "structure_bone": "aps_left_barrel2",
-      "is_seat": false
-    },
-    {
       "id": "aps_right_barrel",
       "name": "aps_right_barrel",
       "type": "ywzj_vehicle:generic",
       "structure_bone": "aps_right_barrel",
-      "is_seat": false
-    },
-    {
-      "id": "aps_right2",
-      "name": "aps_right2",
-      "type": "ywzj_vehicle:generic",
-      "structure_bone": "aps_right2",
-      "is_seat": false
-    },
-    {
-      "id": "aps_right_barrel2",
-      "name": "aps_right_barrel2",
-      "type": "ywzj_vehicle:generic",
-      "structure_bone": "aps_right_barrel2",
       "is_seat": false
     },
     {
@@ -812,6 +819,12 @@
     "turret_barrel": "Main Gun",
     "turret_back": "Turret Bustle",
     "turret_top": "Turret Top",
+    "aps_right": "APS Launcher (R)",
+    "aps_left": "APS Launcher (L)",
+    "aps_radar_ne": "APS Radar (RF)",
+    "aps_radar_nw": "APS Radar (LF)",
+    "aps_radar_se": "APS Radar (RR)",
+    "aps_radar_sw": "APS Radar (LR)",
     "commander_machine_gun": "RWS",
     "commander_machine_gun_barrel": "RWS",
     "turret_smoke_grenade_l_barrel": "Smoke Launcher (L)",
@@ -843,6 +856,12 @@
     "turret_barrel": "主炮",
     "turret_back": "炮塔尾舱",
     "turret_top": "炮塔顶部",
+    "aps_right": "APS发射器(右)",
+    "aps_left": "APS发射器(左)",
+    "aps_radar_ne": "APS雷达(右前)",
+    "aps_radar_nw": "APS雷达(左前)",
+    "aps_radar_se": "APS雷达(右后)",
+    "aps_radar_sw": "APS雷达(左后)",
     "commander_machine_gun": "武器站",
     "commander_machine_gun_barrel": "武器站",
     "turret_smoke_grenade_l_barrel": "烟幕弹发射器（左）",

@@ -59,7 +59,7 @@
       "name": "weapon0",
       "type": "ywzj_vehicle:weapon",
       "rvp_fire_control_mode": "rvp_rf",
-      "rvp_rf_off_axis_deg": 40,
+      "rvp_rf_off_axis_deg": 20,
       "structure_bone": "weapon0",
       "sub_part_unit_ids": [
         "radar"
@@ -115,7 +115,7 @@
       "name": "weapon4",
       "type": "ywzj_vehicle:weapon",
       "rvp_fire_control_mode": "rvp_rf",
-      "rvp_rf_off_axis_deg": 40,
+      "rvp_rf_off_axis_deg": 20,
       "structure_bone": "weapon4",
       "sub_part_unit_ids": [
         "radar"
@@ -176,7 +176,7 @@
       "name": "weapon7",
       "type": "ywzj_vehicle:weapon",
       "rvp_fire_control_mode": "rvp_rf",
-      "rvp_rf_off_axis_deg": 40,
+      "rvp_rf_off_axis_deg": 20,
       "structure_bone": "weapon7",
       "sub_part_unit_ids": [
         "radar"
@@ -226,7 +226,7 @@
       "name": "weapon8",
       "type": "ywzj_vehicle:weapon",
       "rvp_fire_control_mode": "rvp_rf",
-      "rvp_rf_off_axis_deg": 40,
+      "rvp_rf_off_axis_deg": 20,
       "structure_bone": "weapon8",
       "sub_part_unit_ids": [
         "radar"
@@ -276,7 +276,7 @@
       "name": "weapon2",
       "type": "ywzj_vehicle:weapon",
       "rvp_fire_control_mode": "rvp_rf",
-      "rvp_rf_off_axis_deg": 40,
+      "rvp_rf_off_axis_deg": 20,
       "structure_bone": "weapon2",
       "sub_part_unit_ids": [
         "radar"

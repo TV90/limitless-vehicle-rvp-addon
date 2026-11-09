@@ -101,7 +101,9 @@ public final class RVP_GunnerProfileCompiler {
                     integer(config, "burst_fire_tick", 6, 0, 1200, path),
                     integer(config, "burst_rest_tick", 10, 0, 1200, path),
                     integer(config, "guided_weapon_cooldown_tick", 100, 0, 72000, path),
-                    integer(config, "ciws_target_cooldown_tick", inheritedCiwsCooldown, 0, 72000, path));
+                    integer(config, "ciws_target_cooldown_tick", inheritedCiwsCooldown, 0, 72000, path),
+                    integer(config, "post_reload_delay_tick_min", 20, 0, 1200, path),
+                    integer(config, "post_reload_delay_tick_max", 60, 0, 1200, path));
             case "weapon_countermeasure" -> view.weaponCountermeasure(
                     decimal(config, "range", 36.0, 0.0, 4096.0, path),
                     integer(config, "cooldown_tick", 80, 0, 72000, path));
@@ -110,7 +112,12 @@ public final class RVP_GunnerProfileCompiler {
                     integer(config, "hold_tick", 100, 0, 72000, path),
                     integer(config, "evade_tick_min", 140, 0, 72000, path),
                     integer(config, "evade_tick_max", 280, 0, 72000, path),
-                    (float) decimal(config, "evade_yaw_deg", 55.0, 0.0, 180.0, path));
+                    (float) decimal(config, "evade_yaw_deg", 55.0, 0.0, 180.0, path),
+                    decimal(config, "standoff_jitter", 0.2, 0.0, 0.6, path),
+                    decimal(config, "reload_reverse_ratio", 1.35, 1.0, 2.0, path),
+                    decimal(config, "reposition_chance", 0.35, 0.0, 1.0, path),
+                    integer(config, "reposition_cooldown_tick", 300, 0, 72000, path),
+                    decimal(config, "creature_stop_distance", 12.0, 0.0, 1024.0, path));
             case "launcher_positioning" -> view.launcherPositioning(
                     decimal(config, "stop_distance", 12.0, 0.0, 1024.0, path));
             case "smoke_evasion" -> view.smoke(
@@ -165,6 +172,8 @@ public final class RVP_GunnerProfileCompiler {
     /** 校验成对区间，不用运行时 clamp 掩盖配置错误。 */
     private static void validateOrderedRanges(String type, JsonObject config, String path) {
         switch (type) {
+            case "weapon_engagement" -> orderedIntegers(config, "post_reload_delay_tick_min", 20,
+                    "post_reload_delay_tick_max", 60, path);
             case "ground_engagement_move" -> orderedIntegers(config, "evade_tick_min", 140,
                     "evade_tick_max", 280, path);
             case "ground_patrol" -> {

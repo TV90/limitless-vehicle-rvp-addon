@@ -828,11 +828,13 @@ public final class RVP_BuiltinGunnerBehaviors {
                                                             @Nullable Entity target, boolean launcher, boolean ammo,
                                                             boolean reloading) {
         Vec3 look = vehicle.getLookAngle();
-        // 调用数值合同，目标类型不再影响停车距离，换弹状态由武器动作适配器给出。
+        // 调用数值合同，目标类型决定使用载具还是生物停车距离；换弹状态由武器动作适配器给出。
+        boolean creatureTarget = target instanceof net.minecraft.world.entity.LivingEntity
+                && !(target instanceof AbstractVehicle);
         return new RVP_GunnerGroundPolicy.Input(gunner.tickCount,
                 new RVP_GunnerGroundPolicy.Point(vehicle.getX(), vehicle.getZ()), vehicle.getYRot(), look.x, look.z,
                 target == null ? null : new RVP_GunnerGroundPolicy.Point(target.getX(), target.getZ()),
-                reloading, launcher, ammo);
+                creatureTarget, reloading, launcher, ammo);
     }
 
     /** 使用当前行为自己的编译参数视图，不读取其他行为的参数。 */
@@ -842,7 +844,10 @@ public final class RVP_BuiltinGunnerBehaviors {
                 profile.getGroundEvadeTickMin(), profile.getGroundEvadeTickMax(), profile.getGroundEvadeYawDeg(),
                 profile.getDriveStuckCheckTick(), profile.getDriveStuckDistance(), profile.getDriveRecoveryTick(),
                 profile.getGroundBigTurnIntervalTickMin(), profile.getGroundBigTurnIntervalTickMax(),
-                profile.getGroundBigTurnAngleDegMin(), profile.getGroundBigTurnAngleDegMax(), profile.getGroundBigTurnDurationTick());
+                profile.getGroundBigTurnAngleDegMin(), profile.getGroundBigTurnAngleDegMax(), profile.getGroundBigTurnDurationTick(),
+                profile.getGroundStandoffJitter(), profile.getGroundReloadReverseRatio(),
+                profile.getGroundRepositionChance(), profile.getGroundRepositionCooldownTick(),
+                profile.getCreatureStopDistance());
     }
 
     /** 发射架定位使用独立停车距离，其余机动数值沿用地面接敌参数。 */
@@ -852,7 +857,10 @@ public final class RVP_BuiltinGunnerBehaviors {
                 profile.getGroundEvadeTickMin(), profile.getGroundEvadeTickMax(), profile.getGroundEvadeYawDeg(),
                 profile.getDriveStuckCheckTick(), profile.getDriveStuckDistance(), profile.getDriveRecoveryTick(),
                 profile.getGroundBigTurnIntervalTickMin(), profile.getGroundBigTurnIntervalTickMax(),
-                profile.getGroundBigTurnAngleDegMin(), profile.getGroundBigTurnAngleDegMax(), profile.getGroundBigTurnDurationTick());
+                profile.getGroundBigTurnAngleDegMin(), profile.getGroundBigTurnAngleDegMax(), profile.getGroundBigTurnDurationTick(),
+                profile.getGroundStandoffJitter(), profile.getGroundReloadReverseRatio(),
+                profile.getGroundRepositionChance(), profile.getGroundRepositionCooldownTick(),
+                profile.getCreatureStopDistance());
     }
 
     /** 游戏继续消费原 Gunner 随机源，保持调用顺序与分布。 */

@@ -121,7 +121,9 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
             return null;
         }
         BulletHitResult entityResult = findEntityOnPathForSegment(start, end, motion);
-        BlockHitResult block = reflected ? clipBlockSegment(start, end) : null;
+        // 发射安全期内服务端不结算方块碰撞，客户端预测必须保持一致，避免视觉提前反弹。
+        boolean blockSafe = isBlockCollisionSafetyActive();
+        BlockHitResult block = reflected && !blockSafe ? clipBlockSegment(start, end) : null;
         boolean blockFirst = block != null && block.getType() != HitResult.Type.MISS && entityResult != null
                 && start.distanceToSqr(block.getLocation()) < start.distanceToSqr(entityResult.getLocation());
         if (!blockFirst && entityResult != null
@@ -132,6 +134,9 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
                 applyBounceVisualState(position(), getDeltaMovement(), getYRot(), getXRot(), bounceLeft);
             }
             return entityResult.getLocation();
+        }
+        if (blockSafe) {
+            return null;
         }
         if (block == null) block = clipBlockSegment(start, end);
         if (block.getType() == HitResult.Type.MISS) {

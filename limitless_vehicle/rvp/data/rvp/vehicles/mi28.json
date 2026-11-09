@@ -241,7 +241,7 @@
       "name": "sighting_system",
       "type": "ywzj_vehicle:weapon",
       "rvp_fire_control_mode": "rvp_ballistic_lead",
-      "rvp_fire_control_off_axis_deg": 40,
+      "rvp_fire_control_off_axis_deg": 20,
       "structure_bone": "sighting_system",
       "seat_offset": [
         0,

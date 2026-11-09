@@ -68,12 +68,22 @@ public final class RVP_MachinegunLeadSolver {
     @Nullable
     public static RVP_LeadSolution solveForTarget(WeaponUnit weaponUnit, RVP_WeaponData data, Vec3 muzzle,
                                                   Entity target, float partialTick) {
+        return solveForTarget(weaponUnit, data, muzzle, target, partialTick, Vec3.ZERO);
+    }
+
+    /**
+     * 带模块瞄准偏移的提前量解算：{@code aimOffset} 是目标模块中心相对实体位置的
+     * 世界坐标偏移，预测点按同一偏移平移，让机炮打模块而不是整车中心。
+     */
+    @Nullable
+    public static RVP_LeadSolution solveForTarget(WeaponUnit weaponUnit, RVP_WeaponData data, Vec3 muzzle,
+                                                  Entity target, float partialTick, Vec3 aimOffset) {
         if (weaponUnit == null || data == null || target == null || muzzle == null) {
             return null;
         }
         Vec3 targetPos = interpolateEntityCenter(target, partialTick);
         Vec3 targetVelocity = estimateEntityVelocity(target, targetPos);
-        return solveForTargetMotion(weaponUnit, data, muzzle, target, targetPos, targetVelocity, 0.0D);
+        return solveForTargetMotion(weaponUnit, data, muzzle, target, targetPos, targetVelocity, 0.0D, aimOffset);
     }
 
     /**
@@ -86,6 +96,14 @@ public final class RVP_MachinegunLeadSolver {
     static RVP_LeadSolution solveForTargetMotion(WeaponUnit weaponUnit, RVP_WeaponData data, Vec3 muzzle,
                                                  Entity target, Vec3 targetPos, Vec3 targetVelocity,
                                                  double bufferDelayTicks) {
+        return solveForTargetMotion(weaponUnit, data, muzzle, target, targetPos, targetVelocity,
+                bufferDelayTicks, Vec3.ZERO);
+    }
+
+    @Nullable
+    static RVP_LeadSolution solveForTargetMotion(WeaponUnit weaponUnit, RVP_WeaponData data, Vec3 muzzle,
+                                                 Entity target, Vec3 targetPos, Vec3 targetVelocity,
+                                                 double bufferDelayTicks, Vec3 aimOffset) {
         if (weaponUnit == null || data == null || target == null || muzzle == null || targetPos == null) {
             return null;
         }
@@ -116,7 +134,8 @@ public final class RVP_MachinegunLeadSolver {
                 muzzleSpeed,
                 gravity,
                 friction,
-                maxTicks
+                maxTicks,
+                aimOffset == null ? Vec3.ZERO : aimOffset
         );
     }
 
@@ -133,12 +152,13 @@ public final class RVP_MachinegunLeadSolver {
     private static RVP_LeadSolution solve(Entity target, Vec3 muzzle, Vec3 targetPos,
                                           Vec3 predictionBasePos, Vec3 targetVelocity,
                                           Vec3 inheritedVelocity, double muzzleSpeed, double gravity,
-                                          double friction, double maxTicks) {
+                                          double friction, double maxTicks, Vec3 aimOffset) {
         RVP_LeadSolution best = null;
 
         for (double timeTicks = 1.0; timeTicks <= maxTicks; timeTicks += SOLVE_STEP_TICKS) {
             // 只按目标实测速率做匀速预测；不再叠加与目标朝向有关的固定距离或额外时间偏置。
-            Vec3 futureTargetPos = predictTargetPosition(predictionBasePos, targetVelocity, timeTicks);
+            Vec3 futureTargetPos = predictTargetPosition(predictionBasePos, targetVelocity, timeTicks)
+                    .add(aimOffset);
             Vec3 aimPoint = futureTargetPos;
 
             for (int i = 0; i < AIM_REFINE_ITERATIONS; i++) {

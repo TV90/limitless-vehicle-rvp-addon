@@ -63,6 +63,7 @@
     "Upper_front": 0.55,
     "Lower_front": 0.8,
     "Engine": 1.2,
+    "turretring": 0.9,
     "turret": 0.6,
     "turret_barrel": 0.6,
     "missile_barrel": 1.3,
@@ -84,6 +85,16 @@
     "turret": 1.5
   },
   "bone_modules": {
+    "turretring": {
+      "modules": [
+        "turret_traverse"
+      ],
+      "turret_traverse": {
+        "part_id": "turret",
+        "threshold_light": 200,
+        "threshold_heavy": 600
+      }
+    },
     "Engine": {
       "modules": [
         "engine"
@@ -205,6 +216,13 @@
     }
   },
   "parts": [
+    {
+      "id": "turretring",
+      "name": "Turret Ring",
+      "type": "ywzj_vehicle:generic",
+      "structure_bone": "turretring",
+      "is_seat": false
+    },
     {
       "id": "turret",
       "name": "turret",
@@ -478,6 +496,7 @@
     "Upper_front": "Upper Glacis",
     "Lower_front": "Lower Glacis",
     "Engine": "Engine Bay",
+    "turretring": "Turret Ring",
     "turret": "Turret",
     "turret_barrel": "Cannon",
     "missile_barrel": "Missile Tube",
@@ -509,6 +528,7 @@
     "Upper_front": "首上",
     "Lower_front": "首下",
     "Engine": "发动机舱",
+    "turretring": "炮塔座圈",
     "turret": "炮塔",
     "turret_barrel": "机炮",
     "missile_barrel": "导弹发射管",

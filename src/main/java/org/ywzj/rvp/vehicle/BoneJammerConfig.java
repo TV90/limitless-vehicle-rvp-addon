@@ -14,7 +14,7 @@ import org.jetbrains.annotations.Nullable;
  * @param strength     干扰强度倍率，作用于随机错误分量幅度（默认 1.0）
  * @param facingPart   探测方向跟随的部件 id（如 {@code "turret"}，干扰锥随该部件旋转）；
  *                     为 null 或空时跟随车体朝向
- * @param facingYawDeg 在 facingPart/车体朝向基础上额外叠加的水平偏置角（度，正值向左）。
+ * @param facingYawDeg 在 facingPart/车体朝向基础上额外叠加的水平偏置角（度，正值朝车头右侧即 -X）。
  *                     用于左右分布式干扰机：两侧锥各自偏转、覆盖不同扇区，
  *                     一侧被击毁后该扇区失去覆盖、总干扰范围变小
  * @param approachAngleDeg 导弹来袭角判定（度，半角）：导弹飞行方向与「导弹→干扰机」连线的

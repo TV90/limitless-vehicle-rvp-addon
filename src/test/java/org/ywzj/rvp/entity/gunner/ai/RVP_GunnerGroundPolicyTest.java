@@ -8,7 +8,8 @@ import static org.junit.jupiter.api.Assertions.*;
 /** 验证抽取前的重要地面行为合同，包括同时递减的战术计时与脱困抢占。 */
 class RVP_GunnerGroundPolicyTest {
     /** 使用原默认数值的参数夹具。 */
-    private static final Settings SETTINGS = new Settings(12,100,140,140,55,20,1,20,300,300,120,120,40);
+    private static final Settings SETTINGS = new Settings(12,100,140,140,55,20,1,20,300,300,120,120,40,
+            0.2,1.35,0.35,300,6);
     /** 固定随机接口，避免测试依赖概率。 */
     private static final RandomInput RANDOM = new RandomInput() {
         @Override public int nextInt(int bound) { return 0; }
@@ -24,24 +25,30 @@ class RVP_GunnerGroundPolicyTest {
     /** 带换弹状态的输入；reloading=true 时主战武器处于装填窗口。 */
     private static Input input(long tick, double distance, float yaw, boolean launcher, boolean ammo, boolean reloading) {
         return new Input(tick,new Point(0,0),yaw,-Math.sin(Math.toRadians(yaw)),Math.cos(Math.toRadians(yaw)),
-                new Point(0,distance),reloading,launcher,ammo);
+                new Point(0,distance),false,reloading,launcher,ammo);
+    }
+
+    /** 生物目标输入：验证生物与载具使用不同停车距离。 */
+    private static Input creatureInput(long tick, double distance, float yaw, boolean reloading) {
+        return new Input(tick,new Point(0,0),yaw,-Math.sin(Math.toRadians(yaw)),Math.cos(Math.toRadians(yaw)),
+                new Point(0,distance),true,reloading,false,true);
     }
 
     @Test void standoffHoldsStillWithoutSideEvade() {
         var state=new GroundEngagementState();
-        for (int tick=0;tick<=300;tick++) {
+        for (int tick=0;tick<=60;tick++) {
             state.tick();
             var command=RVP_GunnerGroundPolicy.engage(input(tick,10,0,false,true),SETTINGS,state,RANDOM);
             assertEquals("HOLD",command.phase(),"tick="+tick);
             assertFalse(command.forward());
             assertFalse(command.backward());
         }
-        var lost=new Input(301,new Point(0,0),0,0,1,null,false,false,true);
+        var lost=new Input(61,new Point(0,0),0,0,1,null,false,false,false,true);
         assertEquals("NO_TARGET",RVP_GunnerGroundPolicy.engage(lost,SETTINGS,state,RANDOM).phase());
-        assertTrue(RVP_GunnerGroundPolicy.engage(input(302,100,0,false,true),SETTINGS,state,RANDOM).forward());
+        assertTrue(RVP_GunnerGroundPolicy.engage(input(62,100,0,false,true),SETTINGS,state,RANDOM).forward());
     }
 
-    /** 目标主动贴脸：<0.7×停车距离倒车回到停车距离，期间保持对敌转向。 */
+    /** 目标主动贴脸：进入驻车带下沿以内倒车，期间保持对敌转向。 */
     @Test void backsOffWhenTargetClosesInsideStandoff() {
         var state=new GroundEngagementState();
         var back=RVP_GunnerGroundPolicy.engage(input(1,5,0,false,true),SETTINGS,state,RANDOM);
@@ -59,20 +66,69 @@ class RVP_GunnerGroundPolicyTest {
         assertEquals("HOLD",turned.phase());
         assertFalse(turned.backward());
         assertTrue(turned.left() || turned.right());
-        var hold=RVP_GunnerGroundPolicy.engage(input(4,SETTINGS.stopDistance(),0,false,true),SETTINGS,state,RANDOM);
+        // 回到驻车带内后停止倒车。
+        var hold=RVP_GunnerGroundPolicy.engage(input(4,10,0,false,true),SETTINGS,state,RANDOM);
         assertEquals("HOLD",hold.phase());
         assertFalse(hold.backward());
     }
 
-    @Test void steeringAndForwardKeepTheirStrictAngleBoundaries() {
-        assertFalse(RVP_GunnerGroundPolicy.engage(input(1,100,-8,false,true),SETTINGS,new GroundEngagementState(),RANDOM).right());
+    /** 生物使用更近的停车阈值，且装填期不倒车；载具目标维持原距离与换弹倒车。 */
+    @Test void creatureTargetUsesCloserStopDistanceAndSkipsReloadReverse() {
+        var vehicle = RVP_GunnerGroundPolicy.engage(input(1,5,0,false,true),SETTINGS,
+                new GroundEngagementState(),RANDOM);
+        assertEquals("BACK_OFF",vehicle.phase());
+        var creatureState = new GroundEngagementState();
+        var creature = RVP_GunnerGroundPolicy.engage(creatureInput(1,5,0,false),SETTINGS,creatureState,RANDOM);
+        assertNotEquals("BACK_OFF",creature.phase());
+        assertFalse(creature.backward());
+        var reload = RVP_GunnerGroundPolicy.engage(creatureInput(2,5,0,true),SETTINGS,creatureState,RANDOM);
+        assertEquals("RELOAD_HOLD",reload.phase());
+        assertFalse(reload.backward());
+    }
+
+    /** 载具切生物时必须按生物阈值重抽驻车点，不能沿用载具的 60 格旧驻车点。 */
+    @Test void switchingFromVehicleToCreatureRefreshesStandoff() {
+        Settings wide = new Settings(60,100,140,140,55,20,1,20,300,600,120,180,40,
+                0.2,1.35,0.35,300,6);
+        var state = new GroundEngagementState();
+        var vehicle = RVP_GunnerGroundPolicy.engage(input(1,30,0,false,true),wide,state,RANDOM);
+        assertEquals("BACK_OFF",vehicle.phase());
+        var creature = RVP_GunnerGroundPolicy.engage(creatureInput(2,30,0,false),wide,state,RANDOM);
+        assertNotEquals("BACK_OFF",creature.phase());
+        assertTrue(creature.forward());
+    }
+
+    /** 连续倒车超过疲劳上限后必须打断为一段带偏航的前进。 */
+    @Test void continuousBackOffBreaksIntoForwardTurn() {
+        var state = new GroundEngagementState();
+        int breakTick = -1;
+        for (int tick = 1; tick <= 120; tick++) {
+            var command = RVP_GunnerGroundPolicy.engage(input(tick,5,0,false,true),SETTINGS,state,RANDOM);
+            if ("REVERSE_BREAK".equals(command.phase())) {
+                assertTrue(command.forward());
+                assertFalse(command.backward());
+                assertTrue(command.left() || command.right());
+                breakTick = tick;
+                break;
+            }
+            assertEquals("BACK_OFF",command.phase(),"tick="+tick);
+        }
+        assertTrue(breakTick > 0);
+        var continued = RVP_GunnerGroundPolicy.engage(
+                input(breakTick + 1,5,0,false,true),SETTINGS,state,RANDOM);
+        assertEquals("REVERSE_BREAK",continued.phase());
+        assertTrue(continued.forward());
+        assertFalse(continued.backward());
+    }
+
+    @Test void steeringAndForwardKeepTheirStrictAngleBoundaries() {        assertFalse(RVP_GunnerGroundPolicy.engage(input(1,100,-8,false,true),SETTINGS,new GroundEngagementState(),RANDOM).right());
         assertTrue(RVP_GunnerGroundPolicy.engage(input(1,100,-8.1f,false,true),SETTINGS,new GroundEngagementState(),RANDOM).right());
         assertFalse(RVP_GunnerGroundPolicy.engage(input(1,100,80,false,true),SETTINGS,new GroundEngagementState(),RANDOM).forward());
         assertTrue(RVP_GunnerGroundPolicy.engage(input(1,100,79.9f,false,true),SETTINGS,new GroundEngagementState(),RANDOM).forward());
-        assertFalse(RVP_GunnerGroundPolicy.engage(input(1,SETTINGS.stopDistance()*1.2,0,false,true),SETTINGS,new GroundEngagementState(),RANDOM).forward());
+        assertFalse(RVP_GunnerGroundPolicy.engage(input(1,10,0,false,true),SETTINGS,new GroundEngagementState(),RANDOM).forward());
     }
 
-    /** 换弹期战术倒车：进入 1.2× 停车距离倒车、到 1.8× 停下、装填完成恢复接敌，全程车头保持对敌。 */
+    /** 换弹期战术倒车：按随机倒车距离拉开，装填完成后恢复接敌，全程车头保持对敌。 */
     @Test void reloadReversesOutThenHoldsAndResumesApproach() {
         var state=new GroundEngagementState();
         var reverse=RVP_GunnerGroundPolicy.engage(
@@ -93,18 +149,40 @@ class RVP_GunnerGroundPolicyTest {
         assertEquals("RELOAD_HOLD",turned.phase());
         assertFalse(turned.backward());
         assertTrue(turned.left() || turned.right());
-        // 拉到 1.8× 停车距离后停止倒车，原地保持并继续对敌转向
+        // 超过随机倒车距离后停止倒车，原地保持并继续对敌转向
         var hold=RVP_GunnerGroundPolicy.engage(
                 input(3,SETTINGS.stopDistance()*1.8,90,false,true,true),SETTINGS,state,RANDOM);
         assertEquals("RELOAD_HOLD",hold.phase());
         assertFalse(hold.forward());
         assertFalse(hold.backward());
         assertTrue(hold.left() || hold.right());
-        // 装填完成且距离远于 1.2× 停车距离：恢复前进接敌
+        // 装填完成后目标仍远：恢复前进接敌
         var approach=RVP_GunnerGroundPolicy.engage(
                 input(4,100,0,false,true,false),SETTINGS,state,RANDOM);
         assertEquals("APPROACH",approach.phase());
         assertTrue(approach.forward());
+    }
+
+    /** 驻车带会随随机源变化，且换弹倒车不再固定倒到旧的 1.8× 停车距离。 */
+    @Test void standoffBandAndReloadRetreatAreRandomized() {
+        Settings wide = new Settings(60,100,140,140,55,20,1,20,300,600,120,180,40,
+                0.2,1.35,0.35,300,12);
+        RandomInput low = new RandomInput() {
+            @Override public int nextInt(int bound) { return 0; }
+            @Override public float nextFloat() { return 0.0F; }
+            @Override public boolean nextBoolean() { return true; }
+        };
+        RandomInput high = new RandomInput() {
+            @Override public int nextInt(int bound) { return 0; }
+            @Override public float nextFloat() { return 0.999F; }
+            @Override public boolean nextBoolean() { return true; }
+        };
+        assertEquals("APPROACH", RVP_GunnerGroundPolicy.engage(
+                input(1,70,0,false,true), wide, new GroundEngagementState(), low).phase());
+        assertEquals("HOLD", RVP_GunnerGroundPolicy.engage(
+                input(1,70,0,false,true), wide, new GroundEngagementState(), high).phase());
+        assertEquals("RELOAD_HOLD", RVP_GunnerGroundPolicy.engage(
+                input(1,90,0,false,true,true), wide, new GroundEngagementState(), low).phase());
     }
 
     @Test void recoveryLastsExactlyTwentyTicksAndLoadedLauncherDoesNotTriggerIt() {

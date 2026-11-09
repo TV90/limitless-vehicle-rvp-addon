@@ -1,10 +1,12 @@
 package org.ywzj.rvp.firesupport.server;
 
+import com.mojang.logging.LogUtils;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.phys.Vec3;
 import com.google.gson.JsonObject;
+import org.slf4j.Logger;
 import org.ywzj.rvp.firesupport.data.RVP_FireSupportProfile;
 import org.ywzj.rvp.firesupport.data.RVP_FireSupportRequest;
 import org.ywzj.rvp.firesupport.pattern.RVP_FireSupportPatternTypes;
@@ -40,6 +42,8 @@ public final class RVP_PodFireSupportRegistry {
     public static final String FIXED_PATTERN_ID = "point";
     /** POD 任务的确定性终端占位 UUID；guard 的 terminalLost 分支被 CallStage=false 关闭，仅作记录。 */
     private static final UUID POD_SENTINEL_TERMINAL = UUID.nameUUIDFromBytes("rvp-pod-fire-support".getBytes());
+    /** 配置诊断日志。 */
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     /** 已转换的运行时 profile 表：key = rvp:pod/<weaponPath>/<entryId>。 */
     private static volatile Map<ResourceLocation, RVP_FireSupportProfile> POD_PROFILES = Map.of();
@@ -66,6 +70,10 @@ public final class RVP_PodFireSupportRegistry {
             for (RVP_PodFireSupportEntryData entry : entries) {
                 if (!entry.isValid()) {
                     continue;
+                }
+                if (CommonAssetsManager.vehicleWeaponManager().getIndex(entry.getWeaponId()).isEmpty()) {
+                    LOGGER.warn("吊舱火力条目引用的武器未加载: pod={} entry={} weapon={}",
+                            weaponPath, entry.getId(), entry.getWeaponId());
                 }
                 RVP_FireSupportProfile profile = buildProfile(weaponPath, entry);
                 if (profile != null) {
@@ -95,9 +103,30 @@ public final class RVP_PodFireSupportRegistry {
                 "pod/" + weaponPath + "/" + entryId.toLowerCase(Locale.ROOT));
     }
 
+    /** @return 第一条配置合法的内联条目；全部非法或为空返回 null。 */
+    private static RVP_PodFireSupportEntryData firstValidEntry(List<RVP_PodFireSupportEntryData> entries) {
+        for (RVP_PodFireSupportEntryData candidate : entries) {
+            if (candidate.isValid()) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    /** @return 指定 id 的内联条目；不存在返回 null。 */
+    private static RVP_PodFireSupportEntryData findEntry(List<RVP_PodFireSupportEntryData> entries, String entryId) {
+        for (RVP_PodFireSupportEntryData candidate : entries) {
+            if (candidate.getId().equals(entryId)) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
     /**
      * 吊舱方块标记后的自动触发入口：按玩家已保存选择组装 POD 请求并提交任务，
-     * 结果经 actionbar 反馈操作者。坐标使用标记命中点，不读写 GPS 管理器。
+     * 未保存时默认第一条合法条目并持久化；结果经 actionbar 反馈操作者。
+     * 坐标使用标记命中点，不读写 GPS 管理器。
      *
      * @param weaponPath 吊舱武器 path（选择持久化键的一部分）
      * @param target 方块标记命中点（世界坐标）
@@ -108,27 +137,32 @@ public final class RVP_PodFireSupportRegistry {
             return;
         }
         String savedEntryId = RVP_PodFireSupportSelectionStore.getSelection(player, weaponPath);
+        RVP_PodFireSupportEntryData entry;
         if (savedEntryId == null || savedEntryId.isBlank()) {
-            // 未选配置：actionbar 引导玩家开吊舱地图工具选条目（2026-10-25 由静默改为提示，
-            // 用户反馈"标记后毫无反应无法区分是没选还是坏了"）。
-            player.displayClientMessage(Component.translatable(
-                    "message.ywzj_rvp.pod_fire_support.no_selection"), true);
-            return;
-        }
-        RVP_PodFireSupportEntryData entry = null;
-        for (RVP_PodFireSupportEntryData candidate : entries) {
-            if (candidate.getId().equals(savedEntryId)) {
-                entry = candidate;
-                break;
+            // 未选择时默认第一条合法条目并持久化（2026-11-10 用户要求：直接使用默认条目，
+            // 不再"耗弹后才提示未选择"）。持久化同时让地图工具与 Validator 的选择校验保持一致。
+            entry = firstValidEntry(entries);
+            if (entry == null) {
+                player.displayClientMessage(Component.translatable(
+                        "message.ywzj_rvp.pod_fire_support.selection_stale"), true);
+                return;
+            }
+            RVP_PodFireSupportSelectionStore.save(player, weaponPath, entry.getId());
+        } else {
+            entry = findEntry(entries, savedEntryId);
+            if (entry == null || !entry.isValid()) {
+                // 已保存选择指向不存在的条目（reload 删除等）：提示玩家重新选择。
+                player.displayClientMessage(Component.translatable(
+                        "message.ywzj_rvp.pod_fire_support.selection_stale"), true);
+                return;
             }
         }
-        if (entry == null || !entry.isValid()) {
-            // 已保存选择指向不存在的条目（reload 删除等）：提示玩家重新选择。
-            player.displayClientMessage(Component.translatable(
-                    "message.ywzj_rvp.pod_fire_support.selection_stale"), true);
-            return;
-        }
         ResourceLocation profileId = profileId(weaponPath, entry.getId());
+        // 空袭条目的 profile 只注册 air_strike 模式，地射条目注册 standard；固定写 standard 会让
+        // Validator 的 munition/mode 匹配失败并报"打击配置不存在"，因此直接取 profile 的唯一模式。
+        RVP_FireSupportProfile profile = getProfile(profileId);
+        String fireModeId = profile != null && profile.fireModes().size() == 1
+                ? profile.fireModes().keySet().iterator().next() : FIXED_FIRE_MODE_ID;
         // 组装 POD 请求：hand 为占位（Validator POD 分支不校验手），revision 由服务端快照自洽，
         // heading/inbound 对单点几何无意义固定 0，参数带 point 几何的散布半径默认值。
         RVP_FireSupportRequest request = new RVP_FireSupportRequest(
@@ -136,7 +170,7 @@ public final class RVP_PodFireSupportRegistry {
                 net.minecraft.world.InteractionHand.MAIN_HAND,
                 profileId,
                 munitionIdFor(entry.getId()),
-                FIXED_FIRE_MODE_ID,
+                fireModeId,
                 FIXED_PATTERN_ID,
                 target.x,
                 target.z,
@@ -193,13 +227,23 @@ public final class RVP_PodFireSupportRegistry {
         // 传入原始 JsonObject → IllegalArgumentException → 全部条目 WEAPON_UNAVAILABLE）。
         // 此处在注册表构建时完成 parse，配置问题即跳过该条目（problems 非致命项由
         // RVP_FireSupportJson 的缺省值兜底，致命缺键会在 collector 中留痕并跳过）。
+        // [RVP] 2026-11-10 修复空袭 WEAPON_UNAVAILABLE：投送工厂解析的是 delivery.data，
+        // 此前把整个 delivery（含 type/data 外壳）传进去，aircraft_id 等键全部读不到，
+        // 地射条目只是恰好命中工厂缺省值才没暴露。
         String key = "rvp.pod_fs." + weaponPath + "." + entry.getId();
         var problemCollector = new org.ywzj.rvp.firesupport.api.RVP_FireSupportProblemCollector();
-        Object parsedDelivery = deliveryFactory.parse(delivery, problemCollector, key);
+        JsonObject deliveryData = delivery.has("data") && delivery.get("data").isJsonObject()
+                ? delivery.getAsJsonObject("data") : new JsonObject();
+        Object parsedDelivery = deliveryFactory.parse(deliveryData, problemCollector, key);
         // 空射投送合法（2026-10-13 用户指定 AKF-98A 空射条目）：Validator 的 air 判定按
         // 打击模式 ID 分流——空射必须用 air_strike 模式，非空射必须用其它模式，两者互斥。
         boolean airDelivery = org.ywzj.rvp.firesupport.delivery.RVP_FireSupportDeliveryTypes
                 .AIR_LAUNCHED_PROJECTILE.equals(deliveryType);
+        if (airDelivery && parsedDelivery instanceof org.ywzj.rvp.firesupport.delivery.RVP_FireSupportDeliveryTypes.AirLaunchedProjectileData air
+                && CommonAssetsManager.vehicleDataManager().getVehicleData(air.aircraftId()).isEmpty()) {
+            LOGGER.warn("吊舱空袭条目的载具数据未加载: pod={} entry={} aircraft={}",
+                    weaponPath, entry.getId(), air.aircraftId());
+        }
         String fireModeId = airDelivery
                 ? org.ywzj.rvp.firesupport.config.RVP_FireSupportProfileParser.AIR_STRIKE_MODE_ID
                 : FIXED_FIRE_MODE_ID;
@@ -219,12 +263,13 @@ public final class RVP_PodFireSupportRegistry {
                 Map.of("radius_m", new RVP_FireSupportProfile.ParameterSpec(
                         entry.getScatterRadiusM(), 0.0, 256.0, 1.0, "m")),
                 RVP_FireSupportPatternTypes.createBuiltInPoint());
-        // 上限：并行任务沿用终端默认档（2/16）；任务时长上限给足引导+全部弹间隔的余量。
+        // 上限：并行任务沿用终端默认档（2/16）；请求冷却固定 0——吊舱的射击节流由武器
+        // 换弹（40s）承担，不再叠加原火力支援终端的冷却限制（2026-11-10 用户要求）。
         int missionDuration = entry.getCallDurationTicks()
                 + entry.getRoundsPerCall() * entry.getIntervalTicks() + 1200;
         RVP_FireSupportProfile.Limits limits = new RVP_FireSupportProfile.Limits(
                 0.0, entry.getMaxTargetDistanceM(), Math.max(entry.getMaxRounds(), entry.getRoundsPerCall()),
-                2, 16, entry.getCooldownTicks(), missionDuration, 16, 8);
+                2, 16, 0, missionDuration, 16, 8);
         return new RVP_FireSupportProfile(
                 3, key,
                 new RVP_FireSupportProfile.Item(key),

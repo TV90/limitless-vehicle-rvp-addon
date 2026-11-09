@@ -26,6 +26,7 @@ import org.ywzj.rvp.all.RVP_Entities;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
+import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 
 import net.minecraft.resources.ResourceLocation;
 import java.util.HashMap;
@@ -54,6 +55,12 @@ public class GunnerEntity extends Mob {
     private int detachedTicks;
     /** 服务端权威目标实体 ID。 */
     private int trackedTargetId = -1;
+    /** 地面大量目标时连续选择近目标的次数。 */
+    private int nearestTargetPickStreak;
+    /** 下一次改选最远目标所需的连续近距选择次数（2-3）。 */
+    private int nearestTargetPickThreshold = 2;
+    /** 最远目标保持截止 tick；期间不回切近目标，给前进接敌留出时间。 */
+    private int farthestTargetHoldUntilTick;
     /** 已执行首次司机补满的载具实体 ID。 */
     private int refilledVehicleId = -1;
     /** 当前 Gunner Profile 资源 ID。 */
@@ -64,6 +71,22 @@ public class GunnerEntity extends Mob {
     private int burstRestTicks;
     /** 当前 burst 结束后待启用的休止 tick。 */
     private int pendingBurstRestTicks;
+    /** 换弹完成后的起射延迟截止 tick；0 表示无延迟。 */
+    private int reloadSettleUntilTick;
+    /** 起射延迟观察的实际弹种身份；切换弹种时重置观察。 */
+    private int reloadSettleWeaponKey = -1;
+    /** 本轮装填是否由开火触发（只有战斗装填完成后才起射延迟）。 */
+    private boolean reloadSettleArmed;
+    /** 上一 tick 当前弹种是否处于装填。 */
+    private boolean reloadSettleWasReloading;
+    /** 观察换弹结束的实际弹种；开火后锁定为已发射叶子武器，避免与当前选中武器混淆。 */
+    private AbstractVehicleWeapon<?> reloadSettleWeapon;
+    /** 随机切弹：当前弹种累计已射击发数。 */
+    private int ammoSwitchShotCount;
+    /** 随机切弹：当前弹种下一次切换的发数门限（3-9）。 */
+    private int ammoSwitchShotThreshold;
+    /** 随机切弹：当前观察的顶层多弹种武器身份。 */
+    private int ammoSwitchWeaponKey = -1;
     /** 普通导弹再次发射前的剩余冷却 tick。 */
     private int missileCooldown;
     /** 对空导弹：开始锁定当前目标时的 tick（目标切换时重置；0=未开始）。 */
@@ -282,6 +305,29 @@ public class GunnerEntity extends Mob {
         return id == -1 ? null : level().getEntity(id);
     }
 
+    /** 地面索敌是否应继续保持已选的最远目标，给车体前进接敌留出时间。 */
+    public boolean isHoldingFarthestTargetPick() {
+        return tickCount < farthestTargetHoldUntilTick;
+    }
+
+    /** 连续近距选择是否已到改选最远目标的次数；保持窗口内不再尝试。 */
+    public boolean shouldTryFarthestTargetPick() {
+        return tickCount >= farthestTargetHoldUntilTick
+                && nearestTargetPickStreak >= nearestTargetPickThreshold;
+    }
+
+    /** 记录一次近距目标选择。 */
+    public void noteNearestTargetPick() {
+        nearestTargetPickStreak++;
+    }
+
+    /** 记录一次最远目标选择：随机 2-3 次后再次尝试，并保持该目标一段时间。 */
+    public void markFarthestTargetPick() {
+        nearestTargetPickStreak = 0;
+        nearestTargetPickThreshold = 2 + getRandom().nextInt(2);
+        farthestTargetHoldUntilTick = tickCount + 120 + getRandom().nextInt(81);
+    }
+
     public boolean markDriverRide(int vehicleId) {
         if (refilledVehicleId == vehicleId) {
             return false;
@@ -337,6 +383,92 @@ public class GunnerEntity extends Mob {
 
     public int getBurstRestTicks() {
         return burstRestTicks;
+    }
+
+    /** 换弹完成后仍需等待的起射延迟截止 tick。 */
+    public int getReloadSettleUntilTick() {
+        return reloadSettleUntilTick;
+    }
+
+    public void setReloadSettleUntilTick(int reloadSettleUntilTick) {
+        this.reloadSettleUntilTick = reloadSettleUntilTick;
+    }
+
+    /** 起射延迟观察的实际弹种身份。 */
+    public int getReloadSettleWeaponKey() {
+        return reloadSettleWeaponKey;
+    }
+
+    public void setReloadSettleWeaponKey(int reloadSettleWeaponKey) {
+        this.reloadSettleWeaponKey = reloadSettleWeaponKey;
+    }
+
+    /** 本轮装填是否由开火触发。 */
+    public boolean isReloadSettleArmed() {
+        return reloadSettleArmed;
+    }
+
+    public void setReloadSettleArmed(boolean reloadSettleArmed) {
+        this.reloadSettleArmed = reloadSettleArmed;
+    }
+
+    /** 上一 tick 当前弹种是否处于装填。 */
+    public boolean isReloadSettleWasReloading() {
+        return reloadSettleWasReloading;
+    }
+
+    public void setReloadSettleWasReloading(boolean reloadSettleWasReloading) {
+        this.reloadSettleWasReloading = reloadSettleWasReloading;
+    }
+
+    /** 主动切弹或更换武器时清空战斗装填延迟，避免把切弹装填误判成反击装填。 */
+    public void resetReloadSettle() {
+        reloadSettleUntilTick = 0;
+        reloadSettleWeaponKey = -1;
+        reloadSettleArmed = false;
+        reloadSettleWasReloading = false;
+        reloadSettleWeapon = null;
+    }
+
+    /** 开火后锁定实际弹种，后续只观察这门武器的装填下降沿。 */
+    public void armReloadSettle(AbstractVehicleWeapon<?> weapon) {
+        reloadSettleWeapon = weapon;
+        reloadSettleWeaponKey = weapon == null ? -1 : System.identityHashCode(weapon);
+        reloadSettleWasReloading = weapon != null && weapon.isReloading();
+        reloadSettleUntilTick = 0;
+        reloadSettleArmed = weapon != null;
+    }
+
+    /** 当前观察的开火弹种；null 表示尚未开火或已重置。 */
+    public AbstractVehicleWeapon<?> getReloadSettleWeapon() {
+        return reloadSettleWeapon;
+    }
+
+    /** 随机切弹：当前弹种累计已射击发数。 */
+    public int getAmmoSwitchShotCount() {
+        return ammoSwitchShotCount;
+    }
+
+    public void setAmmoSwitchShotCount(int ammoSwitchShotCount) {
+        this.ammoSwitchShotCount = ammoSwitchShotCount;
+    }
+
+    /** 随机切弹：下一次切换的发数门限。 */
+    public int getAmmoSwitchShotThreshold() {
+        return ammoSwitchShotThreshold;
+    }
+
+    public void setAmmoSwitchShotThreshold(int ammoSwitchShotThreshold) {
+        this.ammoSwitchShotThreshold = ammoSwitchShotThreshold;
+    }
+
+    /** 随机切弹：当前观察的顶层多弹种武器身份。 */
+    public int getAmmoSwitchWeaponKey() {
+        return ammoSwitchWeaponKey;
+    }
+
+    public void setAmmoSwitchWeaponKey(int ammoSwitchWeaponKey) {
+        this.ammoSwitchWeaponKey = ammoSwitchWeaponKey;
     }
 
     public void setBurstRestTicks(int burstRestTicks) {

@@ -46,13 +46,14 @@ public final class RVP_VehicleActionHudOverlay implements IGuiOverlay {
             texture("rotary_normal"), texture("rotary_auto_collective"), texture("rotary_hover"),
             texture("gps_mark"), texture("gps_single"), texture("gps_multi"), texture("gps_fast"), texture("gps_radar"),
             texture("airburst"),
-            texture("vision_white"), texture("vision_night"), texture("vision_thermal")};
+            texture("vision_white"), texture("vision_night"), texture("vision_thermal"),
+            texture("fire_support_bind"), texture("artillery_map")};
     private static final ResourceLocation DEPLOYED_TEXTURE = texture("deployed_auxiliary");
     private static final String[] LABELS = {"deploy_auxiliary", "switch_auxiliary", "tactical_map", "vehicle_status",
             "seeker", "fire_control_stable", "fire_control_semi_auto", "fire_control_off", "quick_lock",
             "loiter", "rotary_normal", "rotary_auto_collective", "rotary_hover",
             "gps_mark", "gps_single", "gps_multi", "gps_fast", "gps_radar", "airburst",
-            "vision_white", "vision_night", "vision_thermal"};
+            "vision_white", "vision_night", "vision_thermal", "fire_support_bind", "artillery_map"};
     private static final KeyMapping[] BINDINGS = {RVP_Keys.DEPLOY_DEPLOYABLE_UAV, RVP_Keys.SWITCH_DEPLOYABLE_UAV,
             RVP_Keys.OPEN_GPS_PANEL, RVP_Keys.OPEN_EQUIP_PANEL, AllKeys.TOGGLE_SEEKER,
             RVP_Keys.FIRE_CONTROL_STABILIZER, RVP_Keys.FIRE_CONTROL_STABILIZER, RVP_Keys.FIRE_CONTROL_STABILIZER,
@@ -62,7 +63,9 @@ public final class RVP_VehicleActionHudOverlay implements IGuiOverlay {
             AllKeys.FIRE_CONTROL_LOCK, RVP_Keys.FIRE_CONTROL_STABILIZER, RVP_Keys.FIRE_CONTROL_STABILIZER,
             RVP_Keys.FIRE_CONTROL_STABILIZER, RVP_Keys.FIRE_CONTROL_STABILIZER, AllKeys.FIRE_CONTROL_LOCK,
             // 白光/夜视/热成像三态共用本体热成像键
-            AllKeys.TOGGLE_THERMAL_IMAGING, AllKeys.TOGGLE_THERMAL_IMAGING, AllKeys.TOGGLE_THERMAL_IMAGING};
+            AllKeys.TOGGLE_THERMAL_IMAGING, AllKeys.TOGGLE_THERMAL_IMAGING, AllKeys.TOGGLE_THERMAL_IMAGING,
+            // 火力装订/炮兵地图与战术地图共用 K 键
+            RVP_Keys.OPEN_GPS_PANEL, RVP_Keys.OPEN_GPS_PANEL};
     private static ResourceLocation texture(String name) {
         return new ResourceLocation("ywzj_rvp", "textures/gui/actions/" + name + ".png");
     }
@@ -150,11 +153,21 @@ public final class RVP_VehicleActionHudOverlay implements IGuiOverlay {
         RVP_RotaryFlightMode rotaryMode = vehicle instanceof RotaryWingVehicle
                 && RVP_VehicleExtendedConfigManager.hasAutoCollectiveConfig(vehicle.getVehicleId())
                 ? RVP_ClientRotaryFlightModeState.get(vehicle.getId()) : null;
+        // K 键地图卡跟随当前武器：可呼叫火力时显示装订，炮兵地图弹种显示炮兵地图，否则战术地图。
+        RVP_WeaponBase currentRvpWeapon = RVP_WeaponResolveHelper.currentPrimaryRvp(unit);
+        boolean fireSupportBind = false;
+        boolean artilleryMap = false;
+        if (currentRvpWeapon != null) {
+            var podData = currentRvpWeapon.getData().getTargetingPodData();
+            fireSupportBind = podData != null && !podData.getFireSupportEntries().isEmpty();
+            artilleryMap = currentRvpWeapon.getData().getMiscData().isArtilleryMap();
+        }
+        Action mapAction = RVP_VehicleActionHudModel.mapAction(fireSupportBind, artilleryMap);
         List<Card> cards = cards(state,
                 new WeaponPrompts(seeker, seekerActive, fireControlAction, fireControlActive,
                         quickLock, quickLockActive, gpsMark, gpsMarkActive, gpsModeAction, airburst, airburstActive,
                         visionAction, visionActive),
-                new FlightPrompts(loiterApplicable, loitering, rotaryMode));
+                new FlightPrompts(loiterApplicable, loitering, rotaryMode), mapAction);
         String[] keys = new String[BINDINGS.length];
         boolean[] pressed = new boolean[BINDINGS.length];
         for (Card card : cards) {

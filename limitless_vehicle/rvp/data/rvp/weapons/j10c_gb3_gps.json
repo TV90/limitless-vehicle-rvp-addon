@@ -1,0 +1,147 @@
+{
+  "type": "rvp:bomb",
+  "name": "GB-3 GPS Bomb",
+  "recoil": 0,
+  "shoot_interval": 1000,
+  "max_capacity": 6,
+  "reload": {
+    "time": 400,
+    "ammo": "ywzj_vehicle:ammo_aerial_bomb"
+  },
+  "x_rot_max": 90,
+  "x_rot_min": -90,
+  "y_rot_max": 180,
+  "y_rot_min": -180,
+  "fuse_delay_tick": 0,
+  "gravity_scale": 0.35,
+  "fire_control_sensor_type_override": "eo",
+  "rvp_fire_control_sensor_mode": "eo_ccip",
+  "fire_data": {
+    "spread": 0,
+    "fire_mode": "FULL_AUTO",
+    "require_lock": false
+  },
+  "projectile_data": {
+    "velocity": 0.1,
+    "gravity": -0.02,
+    "inherit_vehicle_velocity": true,
+    "rotate_to_motion": true,
+    "max_speed": 3,
+    "turning_factor": {
+      "[[6,inf]]": 0.09
+    }
+  },
+  "fuse_data": {
+    "delay_tick": 0,
+    "proximity_radius": 0,
+    "detonate_on_life_end": false
+  },
+  "effects_data": {
+    "trajectory_particle": "none"
+  },
+  "guidance_data": {
+    "interference_data": {
+      "seeker_jam_limit": 4,
+      "seeker_fov_shrink_factor": 1.0,
+      "seeker_shut_off_time": 60,
+      "chaff_resistance": 0.5
+    },
+    "guidance_type": "GPS",
+    "gps_modes": [
+      "SINGLE",
+      "MULTI",
+      "FAST"
+    ],
+    "guidance_tick_range": "[[20,inf]]",
+    "max_guidance_angle": 180,
+    "predict_target_pos": true,
+    "enable_inertial_guidance": true,
+    "gps_spread_radius": 2,
+    "cruise_start_tick": 20,
+    "cruise_end_horizontal_dist": 70,
+    "cruise_gravity_scale": 0,
+    "cruise_leveling_factor": 0.2,
+    "guidance_target_distance_range": "[[1,inf]]"
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": true,
+      "damage": 850,
+      "radius": 12,
+      "proximity_fuze": true,
+      "proximity_radius": 0,
+      "destroy_block": true,
+      "explosion_damage_factor": {
+        "player": 0.0706,
+        "living": 0.0706,
+        "vehicle_default": 1.0,
+        "vehicles": {
+          "ywzj_vehicle:tracked_vehicle": 0.9,
+          "ywzj_vehicle:wheeled_vehicle": 1.2,
+          "ywzj_vehicle:vessel_vehicle": 2.0
+        }
+      }
+    }
+  },
+  "collision_data": {
+    "direct_damage": 10,
+    "damage_decay": [
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 30,
+        "end_distance": 45,
+        "start_factor": 0.9,
+        "end_factor": 0.8
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 45,
+        "end_distance": 60,
+        "start_factor": 0.8,
+        "end_factor": 0.6
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 60,
+        "end_distance": 65,
+        "start_factor": 0.6,
+        "end_factor": 0.5
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 65,
+        "end_distance": 70,
+        "start_factor": 0.5,
+        "end_factor": 0.35
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 70,
+        "end_distance": 75,
+        "start_factor": 0.35,
+        "end_factor": 0.2
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 75,
+        "end_distance": 81,
+        "start_factor": 0.2,
+        "end_factor": 0.1
+      }
+    ]
+  },
+  "misc_data": {
+    "ammo_radar_rcs_factor": [
+      1,
+      1,
+      1
+    ]
+  },
+  "name_CN": "GB-3 卫星制导炸弹"
+}

@@ -344,7 +344,8 @@
       "optical_sight_type": "crt_ui",
       "zoom_max": 4,
       "weapons": [
-        "rvp:mbt_127"
+        "rvp:mbt_127",
+        {"id": "rvp:call_fire_strike_nato"}
       ]
     },
     {

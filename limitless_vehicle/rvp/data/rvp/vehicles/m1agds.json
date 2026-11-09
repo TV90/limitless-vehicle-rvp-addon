@@ -16,7 +16,7 @@
     "turn_acceleration": 1,
     "max_turn": 2
   },
-  "max_health": 1200,
+  "max_health": 1000,
   "view_info": {
     "third_person_center_offset": [
       0,
@@ -61,6 +61,7 @@
     "Upper_front": 0.6,
     "Lower_front": 0.5,
     "Periscope": 0.8,
+    "turretring": 0.9,
     "turret": 0.4,
     "turret_r": 1.0,
     "turret_back": 1.3,
@@ -100,6 +101,7 @@
     "Upper_front": "Upper Glacis",
     "Lower_front": "Lower Glacis",
     "Periscope": "Periscope",
+    "turretring": "Turret Ring",
     "turret": "Turret",
     "turret_r": "Turret Right",
     "turret_back": "Turret Bustle",
@@ -134,6 +136,7 @@
     "Upper_front": "首上",
     "Lower_front": "首下",
     "Periscope": "潜望镜",
+    "turretring": "炮塔座圈",
     "turret": "炮塔",
     "turret_r": "炮塔右侧",
     "turret_back": "炮塔尾舱",
@@ -162,6 +165,16 @@
     "track_roller14": "左七负重轮"
   },
   "bone_modules": {
+    "turretring": {
+      "modules": [
+        "turret_traverse"
+      ],
+      "turret_traverse": {
+        "part_id": "turret",
+        "threshold_light": 200,
+        "threshold_heavy": 600
+      }
+    },
     "Engine": {
       "modules": [
         "engine"
@@ -256,6 +269,13 @@
     }
   },
   "parts": [
+    {
+      "id": "turretring",
+      "name": "Turret Ring",
+      "type": "ywzj_vehicle:generic",
+      "structure_bone": "turretring",
+      "is_seat": false
+    },
     {
       "id": "turret",
       "name": "turret",

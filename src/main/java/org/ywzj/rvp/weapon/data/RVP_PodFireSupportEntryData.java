@@ -26,10 +26,6 @@ public class RVP_PodFireSupportEntryData {
     @SerializedName("call_duration_ticks")
     private int callDurationTicks = 200;
 
-    /** 请求冷却（Tick）：成功接受后对该玩家的下一次请求生效。 */
-    @SerializedName("cooldown_ticks")
-    private int cooldownTicks = 600;
-
     /** 目标点距玩家最大水平距离（格）；最小距离固定 0。 */
     @SerializedName("max_target_distance_m")
     private double maxTargetDistanceM = 2048.0;
@@ -72,10 +68,6 @@ public class RVP_PodFireSupportEntryData {
 
     public int getCallDurationTicks() {
         return Math.max(callDurationTicks, 20);
-    }
-
-    public int getCooldownTicks() {
-        return Math.max(cooldownTicks, 0);
     }
 
     public double getMaxTargetDistanceM() {

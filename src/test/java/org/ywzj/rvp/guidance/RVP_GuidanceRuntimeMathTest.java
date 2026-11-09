@@ -118,6 +118,23 @@ class RVP_GuidanceRuntimeMathTest {
         assertEquals(0.5, guided.z, EPSILON);
     }
 
+    /** 巡航段对下降同样改平：攻角气动下进入巡航的 reset 不再瞬时清零速度。 */
+    @Test
+    void gpsCruiseLevelsNegativeClimbToo() {
+        Vec3 guided = RVP_GuidanceRuntimeMath.steerGpsCruise(
+                new Vec3(1, -1, 0),
+                new Vec3(0, -20, 100),
+                1.5,
+                0.5f,
+                0.25f,
+                false
+        );
+
+        assertEquals(0.5, guided.x, EPSILON);
+        assertEquals(-0.75, guided.y, EPSILON);
+        assertEquals(0.5, guided.z, EPSILON);
+    }
+
     @Test
     void gpsCruiseResetsVerticalVelocityOnlyOnEntry() {
         Vec3 guided = RVP_GuidanceRuntimeMath.steerGpsCruise(

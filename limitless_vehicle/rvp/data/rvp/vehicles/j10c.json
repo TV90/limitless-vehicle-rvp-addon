@@ -270,6 +270,40 @@
       ],
       "replace_weapon_display": true,
       "ammo_slot": 2
+    },
+    {
+      "part_unit_id": "variable_agm",
+      "attach_part_unit_id": "variable_agm_mount_1",
+      "weapon_id": "rvp:j10c_gb3_gps",
+      "model": "rvp:entity/weapon_mount/weapon_mount_gb3",
+      "texture": "rvp:textures/entity/weapon_mount/pylon_gb3.png",
+      "rack_bones": [
+        "pylon"
+      ],
+      "missile_bones": [
+        "missile1",
+        "missile2",
+        "missile3"
+      ],
+      "replace_weapon_display": true,
+      "ammo_slot": 1
+    },
+    {
+      "part_unit_id": "variable_agm",
+      "attach_part_unit_id": "variable_agm_mount_2",
+      "weapon_id": "rvp:j10c_gb3_gps",
+      "model": "rvp:entity/weapon_mount/weapon_mount_gb3",
+      "texture": "rvp:textures/entity/weapon_mount/pylon_gb3.png",
+      "rack_bones": [
+        "pylon"
+      ],
+      "missile_bones": [
+        "missile1",
+        "missile2",
+        "missile3"
+      ],
+      "replace_weapon_display": true,
+      "ammo_slot": 2
     }
   ],
   "parts": [
@@ -385,7 +419,8 @@
       "crosshair_style": "big_cross",
       "weapons": [
         "rvp:j10c_gb3_ir",
-        "rvp:j10c_gb3_laser"
+        "rvp:j10c_gb3_laser",
+        "rvp:j10c_gb3_gps"
       ]
     },
     {

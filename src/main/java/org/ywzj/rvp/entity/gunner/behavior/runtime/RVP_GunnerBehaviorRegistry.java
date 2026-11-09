@@ -58,11 +58,13 @@ public final class RVP_GunnerBehaviorRegistry {
         register(entries, "launcher_positioning", Set.of("stop_distance"), 500);
         register(entries, "stuck_recovery", Set.of("check_interval_tick", "stuck_distance", "recovery_tick"), 800);
         register(entries, "ground_engagement_move", Set.of("stop_distance", "hold_tick", "evade_tick_min",
-                "evade_tick_max", "evade_yaw_deg"), 500);
+                "evade_tick_max", "evade_yaw_deg", "standoff_jitter", "reload_reverse_ratio",
+                "reposition_chance", "reposition_cooldown_tick", "creature_stop_distance"), 500);
         register(entries, "ground_patrol", Set.of("big_turn_interval_tick_min", "big_turn_interval_tick_max",
                 "big_turn_angle_deg_min", "big_turn_angle_deg_max", "big_turn_duration_tick"), 200);
         register(entries, "weapon_engagement", Set.of("fire_window_deg", "lead_scale", "burst_fire_tick",
-                "burst_rest_tick", "guided_weapon_cooldown_tick", "ciws_target_cooldown_tick"), 500);
+                "burst_rest_tick", "guided_weapon_cooldown_tick", "ciws_target_cooldown_tick",
+                "post_reload_delay_tick_min", "post_reload_delay_tick_max"), 500);
         return new RVP_GunnerBehaviorRegistry(entries);
     }
 

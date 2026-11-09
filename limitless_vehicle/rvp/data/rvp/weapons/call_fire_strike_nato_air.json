@@ -1,0 +1,87 @@
+{
+  "type": "rvp:targetingpod",
+  "name": "Call Airstrike",
+  "name_CN": "呼叫空袭",
+  "shoot_interval": 20,
+  "max_capacity": 1,
+  "reload": {
+    "time": 800,
+    "ammo": "ywzj_vehicle:ammo_creative"
+  },
+  "targeting_pod_data": {
+    "mode": "block",
+    "block_range": 600,
+    "mark_duration": 400,
+    "write_gps_target": false,
+    "team_share": true,
+    "rvp_fire_support": [
+      {
+        "id": "f14d_mk84_2",
+        "display_CN": "F-14D 空袭：Mk-84 ×2",
+        "call_duration_ticks": 300,
+        "max_target_distance_m": 8192,
+        "max_rounds": 2,
+        "weapon": "rvp:f14d_mk84",
+        "rounds_per_call": 2,
+        "interval_ticks": 40,
+        "scatter_radius_m": 10,
+        "inbound_heading_degrees": 0,
+        "delivery": {
+          "type": "rvp:air_launched_projectile",
+          "data": {
+            "aircraft_id": "rvp:f14d",
+            "rack_offset": {
+              "x": 0.0,
+              "y": -2.0,
+              "z": 0.0
+            },
+            "entry_distance_m": 1280.0,
+            "exit_distance_m": 768.0,
+            "release_altitude_above_impact_m": 256.0,
+            "min_release_altitude_above_impact_m": 96.0,
+            "carrier_speed_m_per_tick": 2.5,
+            "preload_ticks": 80,
+            "heading_jitter_deg": 0.0
+          }
+        }
+      },
+      {
+        "id": "rafale_storm_shadow_2",
+        "display_CN": "阵风空袭：风暴阴影 ×2",
+        "call_duration_ticks": 300,
+        "max_target_distance_m": 8192,
+        "max_rounds": 2,
+        "weapon": "rvp:rafale_storm_shadow",
+        "rounds_per_call": 2,
+        "interval_ticks": 60,
+        "scatter_radius_m": 6,
+        "inbound_heading_degrees": 0,
+        "delivery": {
+          "type": "rvp:air_launched_projectile",
+          "data": {
+            "aircraft_id": "rvp:rafale",
+            "rack_offset": {
+              "x": 0.0,
+              "y": -2.0,
+              "z": 0.0
+            },
+            "entry_distance_m": 1280.0,
+            "exit_distance_m": 768.0,
+            "release_altitude_above_impact_m": 256.0,
+            "min_release_altitude_above_impact_m": 96.0,
+            "gps_release_distance_m": 768.0,
+            "carrier_speed_m_per_tick": 2.5,
+            "preload_ticks": 80,
+            "heading_jitter_deg": 0.0
+          }
+        }
+      }
+    ]
+  },
+  "laser_data": {
+    "range": 600
+  },
+  "fire_data": {
+    "fire_mode": "SEMI_AUTO"
+  }
+}

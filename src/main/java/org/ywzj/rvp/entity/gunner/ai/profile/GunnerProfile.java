@@ -35,9 +35,12 @@ public final class GunnerProfile {
     /** 目标速度提前量倍率。 */ private double leadScale = 1.0;
     /** 单轮 burst 持续时间，单位 tick。 */ private int burstFireTick = 6;
     /** 两轮 burst 间歇，单位 tick。 */ private int burstRestTick = 10;
+    /** 地面载具对地面载具换弹完成后的起射延迟下限，单位 tick。 */ private int postReloadDelayTickMin = 20;
+    /** 地面载具对地面载具换弹完成后的起射延迟上限，单位 tick。 */ private int postReloadDelayTickMax = 60;
     /** 本体式反制武器搜索半径，单位格。 */ private double countermeasureRange = 36.0;
     /** 本体式反制武器释放冷却，单位 tick。 */ private int countermeasureCooldownTick = 80;
     /** 地面接敌停车距离，单位格。 */ private double driveStopDistance = 60.0;
+    /** 面对玩家/生物等非载具活体时的接敌停车距离，单位格。 */ private double creatureStopDistance = 12.0;
     /** 发射架定位停车距离，单位格；与地面接敌分开，避免两行为写同一字段互相覆盖。 */
     private double launcherStopDistance = 12.0;
     /** 卡住位移检查间隔，单位 tick。 */ private int driveStuckCheckTick = 20;
@@ -65,6 +68,10 @@ public final class GunnerProfile {
     /** 地面接敌侧移最短时长，单位 tick。 */ private int groundEvadeTickMin = 140;
     /** 地面接敌侧移最长时长，单位 tick。 */ private int groundEvadeTickMax = 280;
     /** 地面接敌侧移偏航角，单位度。 */ private float groundEvadeYawDeg = 55.0F;
+    /** 地面接敌驻车距离随机抖动比例；0 表示固定 stop_distance。 */ private double groundStandoffJitter = 0.2;
+    /** 地面接敌换弹倒车距离相对停车距离的倍率。 */ private double groundReloadReverseRatio = 1.35;
+    /** 地面接敌停车期短机动触发概率。 */ private double groundRepositionChance = 0.35;
+    /** 地面接敌短机动最短间隔，单位 tick。 */ private int groundRepositionCooldownTick = 300;
     /** Smoke 威胁扫描间隔，单位 tick。 */ private int smokeScanIntervalTick = 10;
     /** Smoke 驶入/驻留时长，单位 tick。 */ private int smokeHoldTick = 260;
     /** Smoke 云搜索半径，单位格。 */ private double smokeLookRadius = 48.0;
@@ -104,13 +111,16 @@ public final class GunnerProfile {
     }
 
     public GunnerProfile weapon(float windowDeg, double lead, int burstFire, int burstRest,
-                                int guidedCooldownTick, int ciwsCooldownTick) {
+                                int guidedCooldownTick, int ciwsCooldownTick,
+                                int postReloadDelayMin, int postReloadDelayMax) {
         fireWindowDeg = windowDeg;
         leadScale = lead;
         burstFireTick = burstFire;
         burstRestTick = burstRest;
         guidedWeaponCooldownTick = guidedCooldownTick;
         ciwsTargetCooldownTick = ciwsCooldownTick;
+        postReloadDelayTickMin = postReloadDelayMin;
+        postReloadDelayTickMax = postReloadDelayMax;
         return this;
     }
 
@@ -127,12 +137,20 @@ public final class GunnerProfile {
     }
 
     public GunnerProfile groundEngagement(double stopDistance, int holdTick, int evadeMin,
-                                          int evadeMax, float evadeYawDeg) {
+                                          int evadeMax, float evadeYawDeg,
+                                          double standoffJitter, double reloadReverseRatio,
+                                          double repositionChance, int repositionCooldownTick,
+                                          double creatureStopDistance) {
         driveStopDistance = stopDistance;
+        this.creatureStopDistance = creatureStopDistance;
         groundHoldTick = holdTick;
         groundEvadeTickMin = evadeMin;
         groundEvadeTickMax = evadeMax;
         groundEvadeYawDeg = evadeYawDeg;
+        groundStandoffJitter = standoffJitter;
+        groundReloadReverseRatio = reloadReverseRatio;
+        groundRepositionChance = repositionChance;
+        groundRepositionCooldownTick = repositionCooldownTick;
         return this;
     }
 
@@ -245,9 +263,12 @@ public final class GunnerProfile {
     public double getLeadScale() { return leadScale; }
     public int getBurstFireTick() { return burstFireTick; }
     public int getBurstRestTick() { return burstRestTick; }
+    public int getPostReloadDelayTickMin() { return postReloadDelayTickMin; }
+    public int getPostReloadDelayTickMax() { return postReloadDelayTickMax; }
     public double getCountermeasureRange() { return countermeasureRange; }
     public int getCountermeasureCooldownTick() { return countermeasureCooldownTick; }
     public double getDriveStopDistance() { return driveStopDistance; }
+    public double getCreatureStopDistance() { return creatureStopDistance; }
     public double getLauncherStopDistance() { return launcherStopDistance; }
     public int getDriveStuckCheckTick() { return driveStuckCheckTick; }
     public double getDriveStuckDistance() { return driveStuckDistance; }
@@ -273,6 +294,10 @@ public final class GunnerProfile {
     public int getGroundEvadeTickMin() { return groundEvadeTickMin; }
     public int getGroundEvadeTickMax() { return groundEvadeTickMax; }
     public float getGroundEvadeYawDeg() { return groundEvadeYawDeg; }
+    public double getGroundStandoffJitter() { return groundStandoffJitter; }
+    public double getGroundReloadReverseRatio() { return groundReloadReverseRatio; }
+    public double getGroundRepositionChance() { return groundRepositionChance; }
+    public int getGroundRepositionCooldownTick() { return groundRepositionCooldownTick; }
     public int getSmokeScanIntervalTick() { return smokeScanIntervalTick; }
     public int getSmokeHoldTick() { return smokeHoldTick; }
     public double getSmokeLookRadius() { return smokeLookRadius; }

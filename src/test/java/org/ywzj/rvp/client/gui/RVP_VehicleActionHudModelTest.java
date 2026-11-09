@@ -169,4 +169,22 @@ class RVP_VehicleActionHudModelTest {
                 false, false, false, null, true, true, null, false), FlightPrompts.NONE);
         assertEquals(Phase.ACTIVE, programmed.get(2).phase());
     }
+
+    @Test void mapActionPriorityIsFireSupportThenArtilleryThenTactical() {
+        assertEquals(Action.MAP, mapAction(false, false));
+        assertEquals(Action.ARTILLERY_MAP, mapAction(false, true));
+        assertEquals(Action.FIRE_SUPPORT_BIND, mapAction(true, false));
+        assertEquals(Action.FIRE_SUPPORT_BIND, mapAction(true, true));
+    }
+
+    @Test void mapCardIsReplacedWithoutDisturbingOtherCards() {
+        assertEquals(List.of(Action.FIRE_SUPPORT_BIND, Action.STATUS),
+                cards(null, Action.FIRE_SUPPORT_BIND).stream().map(Card::action).toList());
+        assertEquals(List.of(Action.ARTILLERY_MAP, Action.STATUS),
+                cards(state(ORDINARY, 0, false), Action.ARTILLERY_MAP).stream().map(Card::action).toList());
+        assertEquals(List.of(Action.MAP, Action.STATUS, Action.SEEKER),
+                cards(null, new WeaponPrompts(true, false, null, false, false,
+                        false, false, false, null, false, false, null, false), FlightPrompts.NONE).stream()
+                        .map(Card::action).toList());
+    }
 }

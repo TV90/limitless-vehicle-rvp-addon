@@ -322,7 +322,8 @@
         "camera_depression_compensation_deg": 1.0
       },
       "weapons": [
-        "rvp:mbt_127"
+        "rvp:mbt_127",
+        {"id": "rvp:call_fire_strike_cn"}
       ]
     },
     {

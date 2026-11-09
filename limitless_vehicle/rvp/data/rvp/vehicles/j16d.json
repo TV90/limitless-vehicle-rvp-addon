@@ -430,7 +430,8 @@
       "weapons": [
         {
           "id": "rvp:j16d_targeting_pod_block"
-        }
+        },
+        {"id": "rvp:call_fire_strike_cn_air"}
       ],
       "parent_weapon_unit_aim": true
     },

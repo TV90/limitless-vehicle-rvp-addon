@@ -315,7 +315,8 @@
       "weapons": [
         {
           "id": "rvp:ea18g_targeting_pod_block"
-        }
+        },
+        {"id": "rvp:call_fire_strike_nato_air"}
       ],
       "parent_weapon_unit_aim": true
     },

@@ -218,7 +218,7 @@ public final class RVP_JammingRuntime {
 
     /**
      * 以弹体当前水平飞行方向为参考，判定干扰机在飞行线的左侧（+1）还是右侧（-1）。
-     * 弹体无水平速度或干扰机在正前/正后方时，按配置 facing_yaw 符号兜底（正值向左）。
+     * 弹体无水平速度或干扰机在正前/正后方时，按配置 facing_yaw 符号兜底（正值朝右）。
      */
     private static double resolveSideSign(RVP_BaseBullet projectile, AbstractVehicle vehicle, Vec3 missilePos) {
         Vec3 flight = projectile.getDeltaMovement();
@@ -234,7 +234,7 @@ public final class RVP_JammingRuntime {
     /**
      * 解析干扰机设备的探测前向：
      * 配置了 {@code facing_part}（如 {@code "turret"}）时取该部件世界朝向（随部件旋转），
-     * 否则退回车体朝向；再叠加 {@code facing_yaw} 水平偏置角（正值向左），
+     * 否则退回车体朝向；再叠加 {@code facing_yaw} 水平偏置角（正值朝车头右侧即 -X），
      * 使左右分布式干扰机各覆盖不同扇区。
      */
     public static Vec3 resolveFacing(AbstractVehicle vehicle, @Nullable String facingPart, double facingYawDeg) {

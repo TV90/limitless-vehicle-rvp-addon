@@ -574,7 +574,8 @@
         "rvp:mbt_127",
         {
           "part_unit_id": "commander_laser"
-        }
+        },
+        {"id": "rvp:call_fire_strike_cn"}
       ]
     },
     {

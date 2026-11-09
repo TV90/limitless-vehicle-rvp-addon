@@ -1,5 +1,6 @@
 package org.ywzj.rvp.firesupport.server;
 
+import com.mojang.logging.LogUtils;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -9,6 +10,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Mth;
 import net.minecraft.world.item.ItemStack;
+import org.slf4j.Logger;
 import org.ywzj.rvp.firesupport.api.RVP_FireSupportDelivery;
 import org.ywzj.rvp.firesupport.api.RVP_FireSupportDeliveryFactory;
 import org.ywzj.rvp.firesupport.config.RVP_FireSupportParameterValidator;
@@ -24,6 +26,7 @@ import org.ywzj.vehicle.custom.CommonAssetsManager;
 /** 把不可信客户端选择转换为完整、冻结且可调度的任务草案。 */
 public final class RVP_FireSupportRequestValidator {
     /** 网络之外再次约束选择 ID 的最大 UTF-16 长度。 */ private static final int MAX_SELECTION_LENGTH = 64;
+    /** 拒绝诊断日志。 */ private static final Logger LOGGER = LogUtils.getLogger();
 
     private RVP_FireSupportRequestValidator() {}
 
@@ -130,6 +133,8 @@ public final class RVP_FireSupportRequestValidator {
                     .map(index -> (RVP_WeaponData) index.data()).orElse(null);
             RVP_FireSupportDeliveryFactory factory = RVP_FireSupportDeliveryTypes.get(configuration.deliveryType());
             if (weapon == null || factory == null) {
+                LOGGER.warn("炮火请求被拒(WEAPON_UNAVAILABLE)：武器未加载或投送工厂缺失 profile={} weapon={} factoryType={} 索引命中={}",
+                        profileId, configuration.weaponId(), configuration.deliveryType(), weapon != null);
                 return ValidationResult.reject(RVP_FireSupportEndReason.WEAPON_UNAVAILABLE);
             }
             try {
@@ -137,10 +142,14 @@ public final class RVP_FireSupportRequestValidator {
                 RVP_FireSupportDelivery delivery = factory.create(configuration.deliveryData());
                 if (delivery instanceof org.ywzj.rvp.firesupport.delivery.RVP_AirLaunchedProjectileDelivery air
                         && CommonAssetsManager.vehicleDataManager().getVehicleData(air.data().aircraftId()).isEmpty()) {
+                    LOGGER.warn("炮火请求被拒(WEAPON_UNAVAILABLE)：空投载具数据不存在 profile={} weapon={} aircraft={}",
+                            profileId, configuration.weaponId(), air.data().aircraftId());
                     return ValidationResult.reject(RVP_FireSupportEndReason.WEAPON_UNAVAILABLE);
                 }
                 weapons.add(new RVP_FireSupportMissionWeapon(configuration, delivery, weapon));
             } catch (RuntimeException exception) {
+                LOGGER.warn("炮火请求被拒(WEAPON_UNAVAILABLE)：投送工厂创建异常 profile={} weapon={} type={}",
+                        profileId, configuration.weaponId(), configuration.deliveryType(), exception);
                 return ValidationResult.reject(RVP_FireSupportEndReason.WEAPON_UNAVAILABLE);
             }
         }

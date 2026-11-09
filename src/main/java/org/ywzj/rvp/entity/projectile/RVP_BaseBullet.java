@@ -3430,6 +3430,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         if (rvpData == null || level().isClientSide()) {
             return false;
         }
+        // 发射安全期内连近地引信一起抑制：否则弹体穿过山体时仍会在山体内空爆。
+        if (isBlockCollisionSafetyActive()) {
+            return false;
+        }
         RVP_FuseData fuse = rvpData.getFuseData();
         float clearance = fuse.getGroundProximityFuseDistance();
         // 调用本项目近地引信数学判定：零距离禁用，且使用独立 arm_tick 控制解保。
@@ -4204,6 +4208,13 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     protected int resolveBlockCollisionSafeTick() {
+        // 武器级配置优先：炮火支援地射弹体离开发射点需要穿过山体/地形（2026-11-10）。
+        if (rvpData != null) {
+            int configured = rvpData.getProjectileData().getBlockCollisionSafeTick();
+            if (configured > 0) {
+                return configured;
+            }
+        }
         // Gunner 垂发载具：前 10 tick 跳过方块碰撞，防止导弹刚发射就撞到地面/载具
         if (getOwner() instanceof org.ywzj.rvp.entity.gunner.GunnerEntity && shooterVehicle != null
                 && org.ywzj.rvp.entity.gunner.ai.GunnerBrain.hasLauncherDeployConfig(shooterVehicle)) {
@@ -5450,6 +5461,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         // 原逻辑直接跳过 ⇒ 命中却零爆炸伤害。此处把本发弹直击过的载具集合传给爆炸。
         // 传引用安全：RVP_VehicleExplosion 内部会 Set.copyOf（大半径爆炸走批处理时集合已被 clear）。
         ex.setDirectHitEntityIds(directHitVehicleIds);
+        // 命中包补发同样要对直击载具豁免半径截断（与 RVP_VehicleExplosion.hurt 的直击规则一致）：
+        // 巨型舰船锚点离命中点常超过爆炸半径，受伤照算但补发包被 dist 过滤掉 ⇒ 展板只累计直击那部分
+        // （实测 052D 130mm：真实掉血 375、展板 0.1%）。必须在下面 ERA 循环 clear 之前快照。
+        Set<Integer> directHitIdsForReport = Set.copyOf(directHitVehicleIds);
         Set<Entity> excluded = new HashSet<>();
         if (excludeEntity != null) {
             excluded.add(excludeEntity);
@@ -5562,7 +5577,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         if (!blastTargets.isEmpty()) {
             for (AbstractVehicle v : blastTargets) {
                 double dist = v.position().distanceTo(pos);
-                if (dist > radius) {
+                // 直击载具不受半径截断（与伤害侧一致）：锚点在半径外也要补发，否则面板少算爆炸伤害
+                if (dist > radius && !directHitIdsForReport.contains(v.getId())) {
                     continue;
                 }
                 Float healthBefore = blastHealthBefore.get(v.getId());

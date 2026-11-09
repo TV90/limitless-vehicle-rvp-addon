@@ -488,7 +488,7 @@
   "ui.rvp.barrel_burst": "Barrel burst!",
   "gui.ywzj_rvp.equipment.barrel_damaged": "DAMAGED",
   "rvp.flight_mode.normal": "Flight mode: Normal",
-  "rvp.flight_mode.auto_collective": "Flight mode: Auto Collective (climb/descent rate auto-trim, full attitude control)",
+  "rvp.flight_mode.auto_collective": "Flight mode: Auto Collective",
   "rvp.flight_mode.hover": "Flight mode: Hover",
   "ui.rvp.target_rcs_below_sea_threshold": "Target RCS below anti-ship seeker threshold, cannot lock/launch",
   "key.ywzj_rvp.toggle_heli_dock": "Helicopter Dock / Take Off",
@@ -600,5 +600,7 @@
   "hud.ywzj_rvp.action.airburst": "AIRBURST",
   "hud.ywzj_rvp.action.vision_white": "VIS",
   "hud.ywzj_rvp.action.vision_night": "NV",
-  "hud.ywzj_rvp.action.vision_thermal": "TI"
+  "hud.ywzj_rvp.action.vision_thermal": "TI",
+  "hud.ywzj_rvp.action.fire_support_bind": "FIRE BIND",
+  "hud.ywzj_rvp.action.artillery_map": "ARTY MAP"
 }

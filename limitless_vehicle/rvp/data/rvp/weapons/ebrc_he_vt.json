@@ -3,7 +3,7 @@
   "name": "CT-40 Cannon OE [HE-VT]",
   "recoil": 0.3,
   "shoot_interval": 333,
-  "max_capacity": 20,
+  "max_capacity": 15,
   "reload": {
     "time": 120,
     "ammo": "ywzj_vehicle:ammo_auto_cannon"
@@ -32,13 +32,17 @@
   "detonate_data": {
     "explosion_data": {
       "explode": true,
-      "damage": 80,
-      "radius": 4,
+      "damage": 40,
+      "radius": 3,
       "destroy_block": false,
       "explosion_damage_factor": {
+        "player": 0.4,
+        "living": 0.4,
         "vehicle_default": 1.0,
         "vehicles": {
-          "ywzj_vehicle:wheeled_vehicle": 1.2
+          "ywzj_vehicle:wheeled_vehicle": 1.5,
+          "ywzj_vehicle:rotary_wing_vehicle": 2.0,
+          "ywzj_vehicle:fixed_wing_vehicle": 2.0
         }
       }
     }
@@ -49,7 +53,7 @@
     "bounce": 1,
     "bounce_incidence_angle": 80,
     "bounce_on_vehicle": true,
-    "direct_damage": 80,
+    "direct_damage": 20,
     "damage_decay": [
       {
         "domain": "angle",
@@ -99,18 +103,13 @@
         "start_factor": 0.2,
         "end_factor": 0.1
       }
-    ],
-    "direct_damage_factor": {
-      "vehicle_default": 1.0,
-      "vehicles": {
-        "ywzj_vehicle:wheeled_vehicle": 0.6,
-        "ywzj_vehicle:rotary_wing_vehicle": 1.1,
-        "ywzj_vehicle:fixed_wing_vehicle": 1.1,
-        "ywzj_vehicle:tracked_vehicle": 0
-      }
-    }
+    ]
   },
   "fuse_data": {
+    "programmable_airburst": true,
+    "airburst_offset": 0.0,
+    "airburst_measure_min": 5,
+    "airburst_measure_max": 2000,
     "proximity_radius": 3.0,
     "proximity_fuse_height": 5,
     "proximity_fuse_tick": 3,

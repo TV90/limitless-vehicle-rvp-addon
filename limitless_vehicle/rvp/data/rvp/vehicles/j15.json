@@ -390,12 +390,12 @@
       "optical_sight_offset": [
         0,
         0,
-        1
+        0.25
       ],
       "operator_view_offset": [
-        0.19,
-        0.45,
-        -1.81
+        -1.296875,
+        2.8828125,
+        5.378125
       ],
       "optical_sight_type": "crt_ui",
       "zoom_max": 12,

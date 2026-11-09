@@ -29,6 +29,8 @@ import org.ywzj.vehicle.entity.weapon.RocketEntity;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.entity.vehicle.FixedWingVehicle;
 import org.ywzj.vehicle.entity.vehicle.RotaryWingVehicle;
+import org.ywzj.vehicle.entity.vehicle.TrackedVehicle;
+import org.ywzj.vehicle.entity.vehicle.WheeledVehicle;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
@@ -43,6 +45,8 @@ public final class GunnerTargeting {
 
     /** 飞机索敌半径倍率：大幅扩展 gunner 空对地（及空对空）索敌范围，供远程制导武器打击远处目标。 */
     private static final double AIR_SEARCH_MULTIPLIER = 6.0;
+    /** 地面近/远轮换所需的最少候选数；目标少时保持原来的就近评分。 */
+    private static final int FARTHEST_ALTERNATE_MIN_TARGETS = 3;
 
     @Nullable
     public static Entity findBestTarget(GunnerEntity gunner, AbstractVehicle vehicle, WeaponUnit weaponUnit, GunnerProfile profile) {
@@ -122,6 +126,10 @@ public final class GunnerTargeting {
     /**
      * 在某一优先级层级内选最优目标：优先选最远的 GPS 可打击目标（gps_prefer_farthest 启用时），
      * 否则按评分（距离 + 夹角×32，近的、正对机头的优先）。
+     *
+     * <p>地面载具面对大量目标时，持续就近选择会让车体一直停在近处、只触发倒车；
+     * 因此连续就近 2-3 次后改选一次最远目标，并保持 6-10 秒让车体前进接敌。
+     * 空中目标、候选不足 3 个或 GPS 最远选择已生效时维持原行为。</p>
      */
     @Nullable
     private static Entity pickBestInTier(GunnerEntity gunner, AbstractVehicle vehicle, WeaponUnit weaponUnit,
@@ -139,9 +147,34 @@ public final class GunnerTargeting {
                         .orElse(null);
             }
         }
-        return tier.stream()
+        Entity nearest = tier.stream()
                 .min(Comparator.comparingDouble(entity -> score(vehicle, weaponUnit, entity, launcher)))
                 .orElse(null);
+        if (nearest == null || !isGroundVehicle(vehicle)
+                || tier.size() < FARTHEST_ALTERNATE_MIN_TARGETS) {
+            return nearest;
+        }
+        if (gunner.isHoldingFarthestTargetPick()) {
+            Entity tracked = gunner.getTrackedTarget();
+            if (tracked != null && tracked.isAlive() && tier.contains(tracked)) {
+                // 保持期直接继续打远目标，避免下一次扫描立刻切回近目标把前进打断。
+                return tracked;
+            }
+        }
+        if (gunner.shouldTryFarthestTargetPick()) {
+            Entity farthest = tier.stream()
+                    .max(Comparator.comparingDouble(entity -> vehicle.position().distanceToSqr(entity.position())))
+                    .orElse(nearest);
+            gunner.markFarthestTargetPick();
+            return farthest;
+        }
+        gunner.noteNearestTargetPick();
+        return nearest;
+    }
+
+    /** 地面载具才参与近/远轮换；空中载具保持原有空战索敌节奏。 */
+    private static boolean isGroundVehicle(AbstractVehicle vehicle) {
+        return vehicle instanceof TrackedVehicle || vehicle instanceof WheeledVehicle;
     }
 
     /**
@@ -327,6 +360,11 @@ public final class GunnerTargeting {
         // 架束制导沿炮塔轴走时会压到地面。这里与弹体制导共用最大 OBB 中心：
         // 载具取实时主体 OBB 中心，玩家/生物等非载具自动回退 AABB 中心。
         return applyLead(sourcePos, org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(target), target);
+    }
+
+    /** 以调用方给定的瞄准基点叠加距离缩放的速度提前量。 */
+    public static Vec3 predictAimPoint(Vec3 sourcePos, Entity target, Vec3 aimBase) {
+        return applyLead(sourcePos, aimBase, target);
     }
 
     /**

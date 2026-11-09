@@ -60,7 +60,7 @@
     },
     "hitl_max_control_tick": 600,
     "hitl_video_modes": [
-      "THERMAL"
+      "COLOR"
     ],
     "hitl_right_click_detonate": true
   },

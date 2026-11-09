@@ -3,7 +3,7 @@
   "recoil": 0.3,
   "name": "CT-40 Cannon OFLT [APFSDS]",
   "shoot_interval": 333,
-  "max_capacity": 20,
+  "max_capacity": 15,
   "reload": {
     "time": 120,
     "ammo": "ywzj_vehicle:ammo_auto_cannon"

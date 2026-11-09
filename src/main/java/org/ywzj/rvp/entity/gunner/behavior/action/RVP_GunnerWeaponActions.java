@@ -23,6 +23,8 @@ import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.entity.vehicle.FixedWingVehicle;
 import org.ywzj.vehicle.entity.vehicle.RotaryWingVehicle;
+import org.ywzj.vehicle.entity.vehicle.TrackedVehicle;
+import org.ywzj.vehicle.entity.vehicle.WheeledVehicle;
 import org.ywzj.vehicle.entity.weapon.AmmoEntity;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
@@ -63,8 +65,20 @@ public final class RVP_GunnerWeaponActions {
         if (vehicle == null || vehicle.level().isClientSide()) {
             return RVP_GunnerActionResult.INVALID;
         }
+        // 地面载具对地面载具的反击节拍：只对直接瞄准武器生效，导弹和发射架保持原冷却纪律。
+        boolean groundDuel = isGroundDuelTarget(vehicle, target, launcher);
+        if (groundDuel) {
+            // 必须在选弹之前观察当前武器：装填中弹仓为空，selectWeaponIndex 会返回 -1，
+            // 否则整段装填都看不到下降沿，换弹完成后的起射延迟永远不会触发。
+            AbstractVehicleWeapon<?> watchWeapon = gunner.getReloadSettleWeapon();
+            if (watchWeapon == null) {
+                watchWeapon = weaponUnit.getCurrentWeapon().orElse(null);
+            }
+            updateReloadSettle(gunner, watchWeapon, profile);
+        }
         if (!launcher) {
-            Vec3 aimPoint = GunnerTargeting.predictAimPoint(weaponUnit.worldPivotPosition(), target)
+            Vec3 aimBase = org.ywzj.rvp.entity.gunner.ai.RVP_GunnerModuleAim.resolve(gunner, target);
+            Vec3 aimPoint = GunnerTargeting.predictAimPoint(weaponUnit.worldPivotPosition(), target, aimBase)
                     .add(target.getDeltaMovement().scale(Math.max(0.0, profile.getLeadScale() - 1.0)));
             // 调用本体武器站瞄准 API，让炮塔在选弹和射界检查前更新目标姿态。
             weaponUnit.aim(aimPoint);
@@ -82,7 +96,7 @@ public final class RVP_GunnerWeaponActions {
         AbstractVehicleWeapon<?> selectedWeapon = weaponUnit.getIndexedWeapons().get(weaponIndex);
         if (!launcher) {
             // 调用本项目 STABLE 资格与机炮求解入口，在机炮通过资格时用弹道预瞄覆盖旧目标点。
-            applyStableMachinegunAim(weaponUnit, selectedWeapon, target);
+            applyStableMachinegunAim(gunner, weaponUnit, selectedWeapon, target);
             // 架束/激光/指令线制导：炮塔瞄准目标炮管 OBB，抬高瞄准线，避免 LBR/SACLOS 压到地面。
             aimOperatorGuidedBarrel(weaponUnit, selectedWeapon, target, profile);
         }
@@ -157,7 +171,7 @@ public final class RVP_GunnerWeaponActions {
             gunner.setControlledWeaponIndex(fallback);
             // 调用本项目机炮火控入口，更新导弹锁定失败后切换到的 STABLE 机炮预瞄方向。
             boolean fallbackStableAim = !launcher
-                    && applyStableMachinegunAim(weaponUnit, selectedWeapon, target);
+                    && applyStableMachinegunAim(gunner, weaponUnit, selectedWeapon, target);
             if (fallbackStableAim) {
                 float xError = Math.abs(Mth.wrapDegrees(weaponUnit.getXRot() - weaponUnit.getXAimRot()));
                 float yError = Math.abs(Mth.wrapDegrees(weaponUnit.getYRot() - weaponUnit.getYAimRot()));
@@ -180,6 +194,14 @@ public final class RVP_GunnerWeaponActions {
             }
         }
 
+        // 换弹完成后的反击等待：炮塔/瞄准继续更新，但不立刻把刚装填的弹打出去。
+        if (groundDuel && !rvpMissile && gunner.getReloadSettleUntilTick() > gunner.tickCount) {
+            if (FMLEnvironment.dist == Dist.CLIENT) {
+                RVP_GunnerLockDebug.logEngage(vehicle, target, "RELOAD_SETTLE",
+                        "remain=" + (gunner.getReloadSettleUntilTick() - gunner.tickCount));
+            }
+            return RVP_GunnerActionResult.GATED;
+        }
         // [RVP] 2026-10-21 IR 连续跟踪锁定（方案 D3）：AI 炮手同样必须等 dwell——
         // IR 发射武器在 shoot 前经服务端 tracker 自算包线驻留，满 D 才写服务端 armed 表；
         // 未满/目标丢失 → GATED（不发射），下一 tick 继续（目标切换清零由 tracker 处理）。
@@ -198,9 +220,19 @@ public final class RVP_GunnerWeaponActions {
         // 此前非垂发车辆一律传 aimSource.aimContexts()，多管发射架（如 cssa5/ps1sm 的 missile_barrel 有 2 根管）
         // 会一次把多管全打出去；垂发车辆也保留单上下文特判。
         boolean singleContext = launcher || aimSource.getFiringMode() == WeaponUnitData.FiringMode.RIPPLE;
+        int ammoBeforeShot = selectedWeapon.getRemainAmmo();
         // 调用本体权威发射链，继续保留武器舱、Forge 事件、弹药与网络广播语义。
         weaponUnit.shoot(weaponIndex,
                 singleContext ? Collections.singletonList(aimSource.aimContext()) : aimSource.aimContexts(), gunner);
+        int firedRounds = Math.max(0, ammoBeforeShot - selectedWeapon.getRemainAmmo());
+        if (firedRounds > 0 && groundDuel && !rvpMissile
+                && selectedWeapon.getData() != null
+                && selectedWeapon.getData().getReload().getTime() > 0) {
+            AbstractVehicleWeapon<?> firedLeaf = RVP_WeaponResolveHelper.unwrap(selectedWeapon);
+            gunner.armReloadSettle(firedLeaf == null ? selectedWeapon : firedLeaf);
+        }
+        // 地面 gunner 随机切弹：同一多弹种组累计 3-9 发后随机换一种有弹的弹种。
+        RVP_GunnerAmmoSelector.onShotFired(gunner, vehicle, target, selectedWeapon, firedRounds);
         gunner.onBurstShot(launcher ? 1 : profile.getBurstFireTick(), profile.getBurstRestTick());
         if (rvpMissile) {
             gunner.setMissileCooldown(profile.getGuidedWeaponCooldownTick());
@@ -226,7 +258,8 @@ public final class RVP_GunnerWeaponActions {
     }
 
     /** 以服务端 RVP 弹道解算结果瞄准符合 STABLE 资格的 Gunner 机炮。 */
-    private static boolean applyStableMachinegunAim(WeaponUnit controlWeaponUnit,
+    private static boolean applyStableMachinegunAim(GunnerEntity gunner,
+                                                    WeaponUnit controlWeaponUnit,
                                                     AbstractVehicleWeapon<?> rawWeapon,
                                                     Entity target) {
         // 调用本项目火控资格解析器，拒绝非 RVP 机炮或不支持当前火控/传感器的武器站。
@@ -256,9 +289,11 @@ public final class RVP_GunnerWeaponActions {
             // 调用本体炮闩坐标，在挂载站未提供瞄准上下文时回退到实际炮口位置。
             muzzle = launchWeaponUnit.worldCurrentBoltPosition();
         }
-        // 调用双端安全的本项目机炮弹道解算器，按服务端实体位置和速度预测拦截点。
+        // 调用双端安全的本项目机炮弹道解算器，按服务端实体位置和速度预测拦截点；
+        // 偏移量让预测点落在模块 OBB 上，而不是整车 AABB 中心；空中目标偏移为零。
+        Vec3 aimOffset = org.ywzj.rvp.entity.gunner.ai.RVP_GunnerModuleAim.resolveAimOffset(gunner, target);
         RVP_LeadSolution solution = RVP_MachinegunLeadSolver.solveForTarget(
-                launchWeaponUnit, data, muzzle, target, 1.0F);
+                launchWeaponUnit, data, muzzle, target, 1.0F, aimOffset);
         if (solution == null || solution.leadWorldPos() == null) {
             return false;
         }
@@ -427,6 +462,49 @@ public final class RVP_GunnerWeaponActions {
             reloading = true;
         }
         return reloading;
+    }
+
+    /** 是否属于“地面载具对地面载具”的直接瞄准交战。 */
+    private static boolean isGroundDuelTarget(AbstractVehicle vehicle, Entity target, boolean launcher) {
+        return !launcher
+                && (vehicle instanceof TrackedVehicle || vehicle instanceof WheeledVehicle)
+                && (target instanceof TrackedVehicle || target instanceof WheeledVehicle);
+    }
+
+    /**
+     * 跟踪实际弹种的装填下降沿：只有“开火打空后重新装填”完成，才写入 1-3 秒反击等待。
+     * 主动切弹造成的装填由 {@link GunnerEntity#resetReloadSettle()} 清空，不会误触发。
+     */
+    private static void updateReloadSettle(GunnerEntity gunner, AbstractVehicleWeapon<?> weapon,
+                                           GunnerProfile profile) {
+        if (weapon == null) {
+            return;
+        }
+        AbstractVehicleWeapon<?> leaf = RVP_WeaponResolveHelper.unwrap(weapon);
+        if (leaf == null) {
+            leaf = weapon;
+        }
+        int weaponKey = System.identityHashCode(leaf);
+        boolean reloading = leaf.isReloading();
+        if (gunner.getReloadSettleWeaponKey() != weaponKey) {
+            // 换武器/换弹种后重新观察，避免把上一门炮的装填状态带过来。
+            gunner.setReloadSettleWeaponKey(weaponKey);
+            gunner.setReloadSettleWasReloading(reloading);
+            gunner.setReloadSettleArmed(false);
+            gunner.setReloadSettleUntilTick(0);
+            return;
+        }
+        boolean wasReloading = gunner.isReloadSettleWasReloading();
+        if (wasReloading && !reloading && gunner.isReloadSettleArmed()) {
+            int min = Math.max(0, profile.getPostReloadDelayTickMin());
+            int max = Math.max(min, profile.getPostReloadDelayTickMax());
+            if (max > 0) {
+                int delay = min >= max ? min : min + gunner.getRandom().nextInt(max - min + 1);
+                gunner.setReloadSettleUntilTick(gunner.tickCount + delay);
+            }
+            gunner.setReloadSettleArmed(false);
+        }
+        gunner.setReloadSettleWasReloading(reloading);
     }
 
     /** 供调试监控只读查询当前会选择的武器索引。 */

@@ -244,6 +244,14 @@ public class RVP_ProjectileData {
     @SerializedName("collision_box_size")
     private Double collisionBoxSize;
 
+    /**
+     * 发射后忽略方块碰撞的 Tick 数，默认 0（禁用）。炮火支援地射弹体离开发射点时常贴着
+     * 山体/地形，窗口内跳过方块碰撞与近地引信，避免"一发射就撞山"；实体碰撞仍正常结算。
+     * 命名与 {@code fuse_data.entity_collision_safe_tick} 对齐。
+     */
+    @SerializedName("block_collision_safe_tick")
+    private int blockCollisionSafeTick = 0;
+
     /** 服务器权威风漂配置，默认使用禁用配置；仅配置 {@code wind_data.enabled=true} 时生效。 */
     @SerializedName("wind_data")
     private RVP_WindData windData = new RVP_WindData();
@@ -446,6 +454,11 @@ public class RVP_ProjectileData {
             return COLLISION_BOX_SIZE_DEFAULT;
         }
         return (float) Math.min(collisionBoxSize, 16.0D);
+    }
+
+    /** @return 发射后忽略方块碰撞与近地引信的 Tick 数；负值按 0（禁用）处理。 */
+    public int getBlockCollisionSafeTick() {
+        return Math.max(blockCollisionSafeTick, 0);
     }
 
     /** @return 有限 (0, 90) 度攻角上限；缺省、null 和非法配置返回 0（关闭）。 */

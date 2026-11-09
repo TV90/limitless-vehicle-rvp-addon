@@ -19,8 +19,8 @@ import org.jetbrains.annotations.Nullable;
  * @param launcherPart        发射器武器部件 id（如 {@code "aps_right"}），必填；缺省视为未启用
  * @param facingPart          探测扇区朝向跟随的部件 id（如 {@code "turret"}），随部件旋转；
  *                            为 null 或空时跟随车体朝向
- * @param facingYawDeg        扇区朝向水平偏置角（度，正值向左）。
- *                            右侧模块 -90、左侧模块 +90 各覆盖左右扇区
+ * @param facingYawDeg        扇区朝向水平偏置角（度，正值朝车头右侧即 -X，与 {@link org.ywzj.rvp.countermeasure.RVP_JammingRuntime#resolveFacing} 一致）。
+ *                            右前 +45、左前 -45、右后 +135、左后 -135（参考 m1a2sep/vt4/ztz100 的 ne/nw/se/sw 配置）
  * @param scanFovDeg          探测扇区全角（度），半角 = fov/2 用于 withinAngle 判定（默认 120）
  * @param detectRadius        探测距离（格）（默认 32）
  * @param interceptRadius     拦截球半径（格），目标位置周围（默认 8）

@@ -42,7 +42,11 @@ public final class RVP_VehicleActionHudModel {
         /** 夜视通道。 */
         VISION_NIGHT,
         /** 热成像通道。 */
-        VISION_THERMAL
+        VISION_THERMAL,
+        /** 装订呼叫火力打击信息（复用战术地图键）。 */
+        FIRE_SUPPORT_BIND,
+        /** 炮兵地图（复用战术地图键）。 */
+        ARTILLERY_MAP
     }
     public enum Phase { READY, DISABLED, COOLING, DEPLOYED, ACTIVE }
     public record Card(Action action, Phase phase, boolean enabled, int cooldownSeconds) {}
@@ -80,7 +84,17 @@ public final class RVP_VehicleActionHudModel {
      * @param flight 盘旋与直升机三态
      */
     public static List<Card> cards(RVP_AuxiliaryHudSnapshot state, WeaponPrompts weapon, FlightPrompts flight) {
-        List<Card> cards = new ArrayList<>(cards(state));
+        return cards(state, weapon, flight, Action.MAP);
+    }
+
+    /**
+     * 完整动作条，地图卡按当前武器替换为火力装订/炮兵地图。
+     *
+     * @param mapAction 当前 K 键实际打开的地图类型对应的动作卡
+     */
+    public static List<Card> cards(RVP_AuxiliaryHudSnapshot state, WeaponPrompts weapon, FlightPrompts flight,
+                                   Action mapAction) {
+        List<Card> cards = new ArrayList<>(cards(state, mapAction));
         if (flight.loiterApplicable()) cards.add(toggle(Action.LOITER, flight.loitering()));
         if (flight.rotaryMode() != null) {
             cards.add(ready(switch (flight.rotaryMode()) {
@@ -104,7 +118,12 @@ public final class RVP_VehicleActionHudModel {
     }
 
     public static List<Card> cards(RVP_AuxiliaryHudSnapshot state) {
-        Card map = ready(Action.MAP), status = ready(Action.STATUS);
+        return cards(state, Action.MAP);
+    }
+
+    /** 地图卡可替换为火力装订/炮兵地图；其它动作枚举按战术地图处理。 */
+    public static List<Card> cards(RVP_AuxiliaryHudSnapshot state, Action mapAction) {
+        Card map = ready(mapAction), status = ready(Action.STATUS);
         if (state == null || state.role() == RVP_AuxiliaryHudSnapshot.Role.ORDINARY) return List.of(map, status);
         if (state.role() == RVP_AuxiliaryHudSnapshot.Role.CHILD)
             return List.of(available(Action.SWITCH, state.switchAllowed()), map, status);
@@ -114,6 +133,15 @@ public final class RVP_VehicleActionHudModel {
         Card deploy = state.deployed() ? new Card(Action.DEPLOY, Phase.DEPLOYED, false, 0)
                 : available(Action.DEPLOY, state.deployAllowed());
         return List.of(deploy, available(Action.SWITCH, state.switchAllowed()), map, status);
+    }
+
+    /**
+     * 按当前武器决定 K 键地图卡：装订呼叫火力 > 炮兵地图 > 普通战术地图。
+     * 与 RVP_ClientEvents 的按键分流保持同一优先级。
+     */
+    public static Action mapAction(boolean fireSupportBind, boolean artilleryMap) {
+        if (fireSupportBind) return Action.FIRE_SUPPORT_BIND;
+        return artilleryMap ? Action.ARTILLERY_MAP : Action.MAP;
     }
 
     private static Card ready(Action action) { return new Card(action, Phase.READY, true, 0); }

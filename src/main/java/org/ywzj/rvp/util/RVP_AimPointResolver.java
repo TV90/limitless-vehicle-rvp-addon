@@ -3,7 +3,9 @@ package org.ywzj.rvp.util;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
+import org.ywzj.rvp.vehicle.BoneModuleType;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
@@ -11,6 +13,8 @@ import org.ywzj.vehicle.vehicle.structure.VehicleCubeOBB;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * [RVP] 锁定/制导瞄准点统一解析（2026-10-01 用户定版 §46）：对载具目标取**体积最大的那一块
@@ -47,7 +51,131 @@ public final class RVP_AimPointResolver {
     /** 候选下界：体积不足最大 OBB 该比例的极小骨（履带链节/滚轮）不参与抽点。 */
     private static final double IR_LOCK_MIN_VOLUME_RATIO = 0.03;
 
+    /** 模块瞄准点每多少个 tick 重抽一次，避免逐 tick 抖动又不会固定打同一点。 */
+    private static final int MODULE_AIM_SLICE_TICK = 40;
+
     private RVP_AimPointResolver() {}
+
+    /**
+     * Gunner 模块瞄准点的稳定种子：(炮手实体 ID, 目标 UUID, 时间片) 的三元混合。
+     * 同一时间片内逐 tick 结果一致，跨时间片换一块模块。
+     */
+    public static long moduleAimSeed(int sourceId, Entity target, long slice) {
+        long targetBits = 0L;
+        if (target != null) {
+            targetBits = target.getUUID().getLeastSignificantBits()
+                    ^ Long.rotateLeft(target.getUUID().getMostSignificantBits(), 17);
+        }
+        return mix(targetBits
+                ^ sourceId * 0x9E3779B97F4A7C15L
+                ^ slice * 0xC2B2AE3D27D4EB4FL);
+    }
+
+    /**
+     * 按骨模块权重抽一块模块 OBB，返回稳定骨键；候选由
+     * {@link RVP_NamedVehicleObbs#collect(AbstractVehicle)} 提供实时几何。
+     * 无 bone_modules、无候选或全失效时返回 null，由调用方回退最大 OBB。
+     */
+    public static @Nullable RVP_NamedVehicleObbs.Key pickModuleObbKey(Entity target, long seed) {
+        if (!(target instanceof AbstractVehicle vehicle) || vehicle.isRemoved()) {
+            return null;
+        }
+        Map<String, Set<BoneModuleType>> moduleMap =
+                RVP_VehicleHitboxFactorManager.INSTANCE.resolveBoneModules(vehicle);
+        if (moduleMap.isEmpty()) {
+            return null;
+        }
+        List<RVP_NamedVehicleObbs.Box> boxes = RVP_NamedVehicleObbs.collect(vehicle);
+        if (boxes.isEmpty()) {
+            return null;
+        }
+        double[] weights = new double[boxes.size()];
+        double total = 0.0D;
+        for (int index = 0; index < boxes.size(); index++) {
+            RVP_NamedVehicleObbs.Box box = boxes.get(index);
+            Set<BoneModuleType> modules = moduleMap.get(box.key().bone());
+            double weight = moduleAimWeight(vehicle, box.key().bone(), modules);
+            if (weight <= 0.0D) {
+                continue;
+            }
+            // 体积开方：大模块略占优，但不会把炮管/传感器完全挤掉。
+            weight *= Math.sqrt(Math.max(0.0D, box.volume()));
+            if (weight <= 0.0D) {
+                continue;
+            }
+            weights[index] = weight;
+            total += weight;
+        }
+        if (total <= 0.0D) {
+            return null;
+        }
+        double pick = ((mix(seed) >>> 11) * 0x1.0p-53) * total;
+        for (int index = 0; index < boxes.size(); index++) {
+            if (weights[index] <= 0.0D) {
+                continue;
+            }
+            pick -= weights[index];
+            if (pick <= 0.0D) {
+                return boxes.get(index).key();
+            }
+        }
+        for (int index = boxes.size() - 1; index >= 0; index--) {
+            if (weights[index] > 0.0D) {
+                return boxes.get(index).key();
+            }
+        }
+        return null;
+    }
+
+    /** 当前骨键是否仍属于可瞄准模块（全部模块已失效时返回 false）。 */
+    public static boolean isModuleAimKeyUsable(AbstractVehicle vehicle, RVP_NamedVehicleObbs.Key key) {
+        if (vehicle == null || key == null) {
+            return false;
+        }
+        Map<String, Set<BoneModuleType>> moduleMap =
+                RVP_VehicleHitboxFactorManager.INSTANCE.resolveBoneModules(vehicle);
+        Set<BoneModuleType> modules = moduleMap.get(key.bone());
+        return moduleAimWeight(vehicle, key.bone(), modules) > 0.0D;
+    }
+
+    /** 模块优先级权重；ERA/维修等不可作为瞄准模块的类型返回 0。 */
+    private static double moduleAimWeight(AbstractVehicle vehicle, String bone,
+                                          @Nullable Set<BoneModuleType> modules) {
+        if (bone == null || modules == null || modules.isEmpty()) {
+            return 0.0D;
+        }
+        double best = 0.0D;
+        for (BoneModuleType type : modules) {
+            double weight = moduleWeight(type);
+            if (weight <= 0.0D) {
+                continue;
+            }
+            if (RVP_VehicleHitboxFactorManager.INSTANCE.isModuleDestroyed(vehicle.getUUID(), bone, type)) {
+                continue;
+            }
+            best = Math.max(best, weight);
+        }
+        return best;
+    }
+
+    private static double moduleWeight(BoneModuleType type) {
+        return switch (type) {
+            case BARREL -> 1.0D;
+            case TURRET_TRAVERSE -> 0.95D;
+            case ENGINE -> 0.9D;
+            case RADAR -> 0.75D;
+            case APS -> 0.65D;
+            case ECM_ACTIVE, ECM_PASSIVE -> 0.6D;
+            case JAMMER -> 0.6D;
+            case DIRCM -> 0.5D;
+            case TRACK -> 0.5D;
+            case COUNTERMEASURE -> 0.45D;
+            case BARREL_DAMAGED -> 0.5D;
+            case TURRET_TRAVERSE_DAMAGED -> 0.5D;
+            case ENGINE_DAMAGED -> 0.45D;
+            case ERA, MAINTENANCE -> 0.0D;
+        };
+    }
 
     /**
      * 目标"最大体积 OBB 中心"，不可用时返回 fallback。
