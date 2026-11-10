@@ -14,11 +14,9 @@ import net.minecraft.client.renderer.culling.Frustum;
 import net.minecraft.client.renderer.entity.EntityRenderer;
 import net.minecraft.client.renderer.entity.EntityRendererProvider;
 import net.minecraft.client.renderer.texture.OverlayTexture;
-import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
-import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.ywzj.rvp.client.state.RVP_ClientHitlState;
 import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteAmmoVisualRenderer;
@@ -239,11 +237,6 @@ public class RVP_BedrockProjectileEntityRenderer<T extends AmmoEntity> extends E
             return false;
         }
         return true;
-    }
-
-    @Override
-    protected int getBlockLightLevel(@NotNull T entity, @NotNull BlockPos blockPos) {
-        return 15;
     }
 
     @Override

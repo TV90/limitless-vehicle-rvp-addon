@@ -5,8 +5,10 @@ import net.minecraft.world.entity.Entity;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.WeakHashMap;
 
 /**
  * [RVP] IR 导引头 armed 授权表——服务端（2026-10-21「连续跟踪锁定」）。
@@ -26,7 +28,12 @@ public final class RVP_ServerIrSeekerArmedTable {
     /** 单条授权：armed 目标实体 id + 授权时刻。 */
     public record ArmedEntry(int entityId, long armedGameTime) {}
 
-    private static final Map<WeaponUnit, Map<ResourceLocation, ArmedEntry>> TABLE = new HashMap<>();
+    /**
+     * 根站 -> 弹种 -> 授权。弱键：ArmedEntry 不引用 WeaponUnit，载具卸载后允许回收；
+     * 停服/世界卸载时另有 {@link #clearAll()} 立即清空。
+     */
+    private static final Map<WeaponUnit, Map<ResourceLocation, ArmedEntry>> TABLE =
+            Collections.synchronizedMap(new WeakHashMap<>());
 
     /** 写入/刷新授权（AI 与收包校验通过后调用）。 */
     public static void arm(WeaponUnit root, ResourceLocation weaponId, int entityId, long gameTime) {
@@ -43,9 +50,19 @@ public final class RVP_ServerIrSeekerArmedTable {
             return;
         }
         Map<ResourceLocation, ArmedEntry> byWeapon = TABLE.get(root);
-        if (byWeapon != null) {
-            byWeapon.remove(weaponId);
+        if (byWeapon == null) {
+            return;
         }
+        byWeapon.remove(weaponId);
+        // 子键清空后连同根站条目一起移除，避免 root 永久留在静态表里。
+        if (byWeapon.isEmpty()) {
+            TABLE.remove(root);
+        }
+    }
+
+    /** 世界卸载/停服时清空全部 IR 授权。 */
+    public static void clearAll() {
+        TABLE.clear();
     }
 
     /** @return armed 目标实体（实时解析 + 存活校验）；未授权/已失效返回 null。 */

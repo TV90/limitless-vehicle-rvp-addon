@@ -12,11 +12,13 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.AABB;
 import net.minecraftforge.eventbus.api.EventPriority;
+import org.jetbrains.annotations.Nullable;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.RenderGuiOverlayEvent;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
@@ -77,6 +79,7 @@ import org.ywzj.rvp.config.RVP_DeployableUavConfig;
 import org.ywzj.rvp.config.RVP_DeployableUavConfigCache;
 import org.ywzj.rvp.config.RVP_LoiterConfigCache;
 import org.ywzj.rvp.util.RVP_CcipUtil;
+import org.ywzj.rvp.util.RVP_WeaponResolveHelper;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.rvp.weapon.core.RVP_AimContexts;
 import org.ywzj.rvp.weapon.core.RVP_WeaponSensorHelper;
@@ -133,6 +136,12 @@ public class RVP_ClientEvents {
     /** [RVP] 上一 tick 完好雷达的开启集合（实体id → ON 的雷达部件 id），主控开关方向判定用。 */
     private static final java.util.Map<Integer, java.util.Set<String>> ywzj_rvp$radarOnSnapshot =
             new java.util.HashMap<>();
+
+    /** 世界卸载/断线时清空雷达主控快照与待校平集合，避免旧实体 id 长期残留。 */
+    public static void clearRadarSnapshots() {
+        ywzj_rvp$radarPendingFlip.clear();
+        ywzj_rvp$radarOnSnapshot.clear();
+    }
 
     /**
      * [RVP] 雷达骨骼部件主控开关（§44 2026-09-30 定版：**恒生效**，不再要求"存在被击毁
@@ -616,13 +625,15 @@ public class RVP_ClientEvents {
         if (weaponUnit != null
                 && !weaponUnit.getCurrentWeapon().isEmpty()
                 && player.getVehicle() instanceof AbstractVehicle vehicle) {
-            AbstractVehicleWeapon<?> currentWeapon = weaponUnit.getCurrentWeapon().get();
+            AbstractVehicleWeapon<?> currentWeapon = RVP_WeaponResolveHelper
+                    .unwrap(weaponUnit.getCurrentWeapon().get());
             if (currentWeapon instanceof RVP_WeaponBase weapon
                     && ywzj_rvp$shouldUpdateBombCcip(weapon)) {
                 RVP_RocketCcipState.clear(vehicle.getId());
                 ywzj_rvp$updateBombCcip(vehicle, weaponUnit, weapon);
-            } else if (!RVP_RocketCcipOverlay.isBallisticRocketWeapon(currentWeapon, weaponUnit)) {
+            } else if (currentWeapon == null || !RVP_RocketCcipOverlay.isBallisticRocketWeapon(currentWeapon, weaponUnit)) {
                 RVP_RocketCcipState.clear(vehicle.getId());
+                ywzj_rvp$clearBombCcipState();
             }
         }
 
@@ -966,12 +977,23 @@ public class RVP_ClientEvents {
     }
 
     private static boolean ywzj_rvp$shouldUpdateBombCcip(RVP_WeaponBase weapon) {
-        if (weapon == null || weapon.getData().getWeaponKind() != org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind.BOMB) {
-            return false;
-        }
-        return weapon.getData().usesGuidanceType(RVP_EnumGuidanceType.GPS)
-                || "eo_ccip".equalsIgnoreCase(weapon.getData().getFireControlSensorMode());
+        // 传感器门（CCIP/EO/GPS 模式）在 updateBombCcip 内统一判定；这里对全部 RVP 航弹
+        // 计算弹道落点，覆盖无制导 Mk-84 与 GPS/IR/SALH 弹在 CCIP 模式下的准星。
+        return weapon != null
+                && weapon.getData().getWeaponKind() == org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind.BOMB;
     }
+
+    /**
+     * 炸弹 CCIP 自持的上一 tick 落点（载具 + 武器标识 + 落点）。
+     *
+     * <p>本体的 {@code WeaponUnit.tickHit} 每 tick 先把自己的直线落点写进 {@code weaponHitPosO}，
+     * 若直接沿用，HUD 的 partialTick 插值会在“直线落点 ↔ 弹道落点”之间抖动，高速航弹尤其明显。</p>
+     */
+    private static int ywzj_rvp$bombCcipVehicleId = Integer.MIN_VALUE;
+    @Nullable
+    private static ResourceLocation ywzj_rvp$bombCcipWeaponId;
+    @Nullable
+    private static Vec3 ywzj_rvp$bombCcipPreviousHit;
 
     private static void ywzj_rvp$updateBombCcip(AbstractVehicle vehicle, WeaponUnit weaponUnit,
                                                 RVP_WeaponBase weapon) {
@@ -981,18 +1003,40 @@ public class RVP_ClientEvents {
         if (weapon.getData().usesGuidanceType(RVP_EnumGuidanceType.GPS) && RVP_ClientGPSState.isActive()) {
             weaponUnit.weaponHitPosO = null;
             weaponUnit.weaponHitPos = null;
+            ywzj_rvp$clearBombCcipState();
         } else {
-            Vec3 releasePos = RVP_AimContexts.muzzle(weaponUnit.aimContext());
-            Vec3 aimDir = VectorUtil.rotToVec(weaponUnit.aimContext().direction.x, weaponUnit.aimContext().direction.y).normalize();
+            // Agent/Multi 包裹后当前武器不在操作站本体上：出弹点/方向取实际挂载站，
+            // 落点仍写回操作站（HUD 读的是操作站的 weaponHitPos）。
+            WeaponUnit launchUnit = weapon.getWeaponUnit() != null ? weapon.getWeaponUnit() : weaponUnit;
+            Vec3 releasePos = RVP_AimContexts.muzzle(launchUnit.aimContext());
+            Vec3 aimDir = VectorUtil.rotToVec(launchUnit.aimContext().direction.x, launchUnit.aimContext().direction.y).normalize();
             Vec3 startVelocity = aimDir.scale(weapon.getData().resolveMuzzleSpeed(org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind.BOMB));
             if (weapon.getData().isInheritVehicleVelocity()) {
                 startVelocity = startVelocity.add(vehicle.getDeltaMovement());
             }
             Vec3 ccipHit = RVP_CcipUtil.computeBombImpact(
                     vehicle.level(), releasePos, startVelocity, weapon.getData());
-            weaponUnit.weaponHitPosO = weaponUnit.weaponHitPos;
+            // 本体 tickHit 每 tick 会先把 weaponHitPosO 改写成自己的直线落点；直接拿它做插值会让
+            // 高速载具的 CCIP 在“直线点 ↔ 弹道点”之间来回跳。这里自持上一 tick 的弹道落点。
+            ResourceLocation bombWeaponId = weapon.getData().getWeaponId();
+            boolean sameChain = vehicle.getId() == ywzj_rvp$bombCcipVehicleId
+                    && bombWeaponId != null && bombWeaponId.equals(ywzj_rvp$bombCcipWeaponId)
+                    && ywzj_rvp$bombCcipPreviousHit != null;
+            weaponUnit.weaponHitPosO = sameChain
+                    ? ywzj_rvp$bombCcipPreviousHit
+                    : (ccipHit != null ? ccipHit : weaponUnit.weaponHitPos);
             weaponUnit.weaponHitPos = ccipHit;
+            ywzj_rvp$bombCcipVehicleId = vehicle.getId();
+            ywzj_rvp$bombCcipWeaponId = bombWeaponId;
+            ywzj_rvp$bombCcipPreviousHit = ccipHit;
         }
+    }
+
+    /** 清空炸弹 CCIP 自持链（换弹种/离开炸弹武器时调用），避免新旧落点跨武器插值。 */
+    private static void ywzj_rvp$clearBombCcipState() {
+        ywzj_rvp$bombCcipVehicleId = Integer.MIN_VALUE;
+        ywzj_rvp$bombCcipWeaponId = null;
+        ywzj_rvp$bombCcipPreviousHit = null;
     }
 
     private static void ywzj_rvp$refreshVehicleMarkers(Minecraft mc, LocalPlayer player) {

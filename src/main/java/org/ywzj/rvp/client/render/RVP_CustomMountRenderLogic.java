@@ -74,6 +74,11 @@ public final class RVP_CustomMountRenderLogic {
         AUTO_TRACE_KEYS.clear();
     }
 
+    /** 世界卸载/断线时清空弹药消耗预测，避免按实体 id 累积。 */
+    public static void clearPredictedAmmo() {
+        PREDICTED_AMMO.clear();
+    }
+
     public static boolean isDebugEnabled() {
         return DEBUG_ENABLED.get();
     }

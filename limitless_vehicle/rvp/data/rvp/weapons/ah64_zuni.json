@@ -1,0 +1,118 @@
+{
+  "type": "rvp:rocket",
+  "name": "Zuni Rocket",
+  "shoot_interval": 200,
+  "max_capacity": 8,
+  "reload": {
+    "time": 300,
+    "ammo": "ywzj_vehicle:ammo_rocket"
+  },
+  "rvp_fire_control_sensor_mode": "eo_ccip",
+  "fire_data": {
+    "spread": 0.2,
+    "fire_mode": "FULL_AUTO"
+  },
+  "projectile_data": {
+    "inherit_vehicle_velocity": true,
+    "velocity": 4.5,
+    "gravity": -0.015,
+    "drag": 0,
+    "constant_speed": true,
+    "rotate_to_motion": true,
+    "max_speed": 4.5
+  },
+  "fuse_data": {
+    "detonate_on_life_end": false
+  },
+  "guidance_data": {
+    "guidance_type": "NONE"
+  },
+  "effects_data": {
+    "trajectory_particle": "minecraft:campfire_signal_smoke",
+    "impact_particle": "minecraft:block",
+    "explosion_particle": "minecraft:explosion_emitter"
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": true,
+      "damage": 60,
+      "radius": 6,
+      "destroy_block": true,
+      "explosion_damage_factor": {
+        "player": 0.8333,
+        "living": 0.8333,
+        "vehicle_default": 1.0,
+        "vehicles": {
+          "ywzj_vehicle:wheeled_vehicle": 1.2
+        }
+      }
+    }
+  },
+  "collision_data": {
+    "living_penetration": 0,
+    "wall_penetration": 0,
+    "bounce": 1,
+    "bounce_incidence_angle": 80,
+    "bounce_on_vehicle": true,
+    "direct_damage": 200,
+    "damage_decay": [
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 30,
+        "end_distance": 45,
+        "start_factor": 0.9,
+        "end_factor": 0.8
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 45,
+        "end_distance": 60,
+        "start_factor": 0.8,
+        "end_factor": 0.6
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 60,
+        "end_distance": 65,
+        "start_factor": 0.6,
+        "end_factor": 0.5
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 65,
+        "end_distance": 70,
+        "start_factor": 0.5,
+        "end_factor": 0.35
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 70,
+        "end_distance": 75,
+        "start_factor": 0.35,
+        "end_factor": 0.2
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 75,
+        "end_distance": 81,
+        "start_factor": 0.2,
+        "end_factor": 0.1
+      }
+    ],
+    "direct_damage_factor": {
+      "vehicle_default": 1.0,
+      "vehicles": {
+        "ywzj_vehicle:wheeled_vehicle": 1.1,
+        "ywzj_vehicle:rotary_wing_vehicle": 1.1,
+        "ywzj_vehicle:fixed_wing_vehicle": 1.1
+      }
+    }
+  },
+  "name_CN": "阻尼人火箭弹"
+}

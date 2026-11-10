@@ -57,6 +57,28 @@ public final class RVP_ServerVehicleIndex {
 
     private RVP_ServerVehicleIndex() {}
 
+    /**
+     * 世界卸载/停服时清空全部维度的载具索引。
+     *
+     * <p>正常离开由 {@link #onEntityLeaveLevel} 维护；这里兜底 ServerStopping 或关卡关闭时
+     * 未逐实体触发 leave 的路径，避免静态表继续强引用旧 ServerLevel 的载具。</p>
+     */
+    public static void clearAll() {
+        VEHICLES_BY_LEVEL.clear();
+    }
+
+    /**
+     * 单个维度卸载时只清该维度的列表。
+     *
+     * <p>索引只在 EntityJoinLevelEvent 建立；若在玩家跨维度时把整个索引清空，
+     * 其它维度已加载的载具不会自动补回，巨型载具命中补筛会静默失效。</p>
+     */
+    public static void clearLevel(Level level) {
+        if (level != null) {
+            VEHICLES_BY_LEVEL.remove(keyOf(level));
+        }
+    }
+
     private static String keyOf(Level level) {
         return level.dimension().location().toString();
     }

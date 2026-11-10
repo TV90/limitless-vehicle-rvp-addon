@@ -59,7 +59,7 @@
   "landing_gear_part_id": "landing_gear",
   "rvp_auto_landing_gear": true,
   "max_health": 500,
-  "nctr_name": "苏27",
+  "nctr_name": "S27",
   "view_info": {
     "third_person_center_offset": [
       0,
@@ -380,12 +380,12 @@
       "with_focus_locker": true,
       "with_stabilizer": true,
       "rot_info": {
-        "x_rot_speed": 15,
-        "y_rot_speed": 15,
+        "x_rot_speed": 7,
+        "y_rot_speed": 7,
         "x_rot_min": -40,
-        "x_rot_max": 40,
-        "y_rot_min": -80,
-        "y_rot_max": 80
+        "x_rot_max": 120,
+        "y_rot_min": -120,
+        "y_rot_max": 120
       },
       "optical_sight_offset": [
         0,

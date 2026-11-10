@@ -60,7 +60,7 @@
   "landing_gear_part_id": "landing_gear",
   "rvp_auto_landing_gear": true,
   "max_health": 500,
-  "nctr_name": "苏27",
+  "nctr_name": "S27",
   "view_info": {
     "third_person_center_offset": [
       0,

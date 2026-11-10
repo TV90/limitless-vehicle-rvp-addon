@@ -4,8 +4,9 @@ import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
-import java.util.HashMap;
+import java.util.Collections;
 import java.util.Map;
+import java.util.WeakHashMap;
 
 /**
  * B3 旁路状态表：替代被删的 {@code WeaponUnitArmMixin} /
@@ -20,9 +21,16 @@ public final class RVP_WeaponLockStateTable {
 
     private RVP_WeaponLockStateTable() {}
 
-    private static final Map<WeaponUnit, ArmState> ARM_STATES = new HashMap<>();
-    private static final Map<WeaponUnit, ExternalLockState> EXTERNAL_STATES = new HashMap<>();
-    private static final Map<WeaponUnit, Integer> PENDING_IDS = new HashMap<>();
+    /**
+     * 三张按武器站记录的锁定/预选表全部弱键化：值都是纯数值/记录，不反向引用 WeaponUnit，
+     * 载具卸载后允许旧站与旧维度被回收；停服/卸载时另有 {@link #clearAll()} 立即清空。
+     */
+    private static final Map<WeaponUnit, ArmState> ARM_STATES =
+            Collections.synchronizedMap(new WeakHashMap<>());
+    private static final Map<WeaponUnit, ExternalLockState> EXTERNAL_STATES =
+            Collections.synchronizedMap(new WeakHashMap<>());
+    private static final Map<WeaponUnit, Integer> PENDING_IDS =
+            Collections.synchronizedMap(new WeakHashMap<>());
 
     /**
      * 待定雷达锁宽限（2026-10-08）：pending 实体在客户端原生跟踪范围外（BVR 广播克隆）解析不到时，
@@ -32,7 +40,8 @@ public final class RVP_WeaponLockStateTable {
     public record PendingLockGrace(long expireTick, Vec3 lastPos) {
     }
 
-    private static final Map<WeaponUnit, PendingLockGrace> PENDING_LOCK_GRACE = new HashMap<>();
+    private static final Map<WeaponUnit, PendingLockGrace> PENDING_LOCK_GRACE =
+            Collections.synchronizedMap(new WeakHashMap<>());
 
     /** 标记待定雷达锁宽限（applyRequestedLock 每次 pending 重发时刷新）。 */
     public static void markPendingRadarLockGrace(WeaponUnit unit, long expireTick, Vec3 lastPos) {
@@ -51,6 +60,14 @@ public final class RVP_WeaponLockStateTable {
         if (unit != null) {
             PENDING_LOCK_GRACE.remove(unit);
         }
+    }
+
+    /** 世界卸载/停服时清空全部锁定侧表；弱键只是兜底，不能保证立刻回收。 */
+    public static void clearAll() {
+        ARM_STATES.clear();
+        EXTERNAL_STATES.clear();
+        PENDING_IDS.clear();
+        PENDING_LOCK_GRACE.clear();
     }
 
     // ===================== ARM 预选目标 =====================

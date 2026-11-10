@@ -37,6 +37,8 @@ public final class RVP_CcipUtil {
         boolean bombDefaultGravity = data.getWeaponKind() == RVP_EnumWeaponKind.BOMB
                 && !usesPropulsion
                 && data.getGravity() == 0f;
+        int previousGroundY = level.getHeight(Heightmap.Types.MOTION_BLOCKING,
+                (int) Math.floor(x), (int) Math.floor(z));
 
         for (int tick = 0; tick < MAX_TICKS; tick++) {
             if (usesPropulsion) {
@@ -46,14 +48,29 @@ public final class RVP_CcipUtil {
             }
             flightSpeed = Math.max(velocity.length(), 0.01D);
 
+            double previousX = x;
+            double previousY = y;
+            double previousZ = z;
             x += velocity.x;
             y += velocity.y;
             z += velocity.z;
 
             int groundY = level.getHeight(Heightmap.Types.MOTION_BLOCKING, (int) Math.floor(x), (int) Math.floor(z));
             if (y <= groundY) {
-                return new Vec3(x, groundY, z);
+                // 段内解出穿越地面的比例并插值：整 tick 结算会让高速载具的落点按一步（2~3 格）跳格，
+                // 表现就是 CCIP 准星在高速时抖动。高度同样在前后两列之间插值，保证连续。
+                double previousClearance = previousY - previousGroundY;
+                double clearance = y - groundY;
+                double denominator = previousClearance - clearance;
+                double t = denominator > 1.0E-9D
+                        ? Mth.clamp(previousClearance / denominator, 0.0D, 1.0D)
+                        : 1.0D;
+                return new Vec3(
+                        Mth.lerp(t, previousX, x),
+                        Mth.lerp(t, previousGroundY, groundY),
+                        Mth.lerp(t, previousZ, z));
             }
+            previousGroundY = groundY;
         }
         return null;
     }

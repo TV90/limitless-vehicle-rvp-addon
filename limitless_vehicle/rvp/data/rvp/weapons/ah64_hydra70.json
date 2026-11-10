@@ -15,7 +15,7 @@
   "projectile_data": {
     "inherit_vehicle_velocity": true,
     "velocity": 6,
-    "gravity": -0.01,
+    "gravity": -0.015,
     "drag": 0,
     "constant_speed": true,
     "rotate_to_motion": true,

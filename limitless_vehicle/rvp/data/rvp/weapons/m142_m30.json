@@ -54,8 +54,8 @@
         "living": 0.3125,
         "vehicle_default": 1.0,
         "vehicles": {
-          "ywzj_vehicle:tracked_vehicle": 0.9,
-          "ywzj_vehicle:wheeled_vehicle": 1.2,
+          "ywzj_vehicle:tracked_vehicle": 1.8,
+          "ywzj_vehicle:wheeled_vehicle": 3.2,
           "ywzj_vehicle:vessel_vehicle": 2.0
         }
       }
@@ -68,6 +68,13 @@
     "bounce_incidence_angle": 80,
     "bounce_on_vehicle": true,
     "direct_damage": 50,
+    "direct_damage_factor": {
+      "vehicle_default": 1.0,
+      "vehicles": {
+        "ywzj_vehicle:tracked_vehicle": 2.0,
+        "ywzj_vehicle:wheeled_vehicle": 3.0
+      }
+    },
     "damage_decay": [
       {
         "domain": "angle",

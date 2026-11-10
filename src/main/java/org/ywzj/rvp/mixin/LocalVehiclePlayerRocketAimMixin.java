@@ -37,6 +37,18 @@ public class LocalVehiclePlayerRocketAimMixin {
     @Unique
     private int ywzj_rvp$previousRocketVehicleId = Integer.MIN_VALUE;
 
+    /** 超出客户端已加载区块时，用战术地图高度缓存解出的落点（炮兵武器专用）。 */
+    @Unique
+    private Vec3 ywzj_rvp$cachedArtilleryHit;
+
+    /** 上次战术地图高度解算的载具 tick，用于把高开销解算节流到每 4 tick 一次。 */
+    @Unique
+    private int ywzj_rvp$lastArtillerySolveTick = Integer.MIN_VALUE;
+
+    /** 上次战术地图高度解算对应的武器 ID，换弹种时重新解算。 */
+    @Unique
+    private ResourceLocation ywzj_rvp$lastArtilleryWeaponId;
+
     @Inject(method = "tickAim", at = @At("HEAD"), remap = false)
     private void ywzj_rvp$capturePreviousRocketAim(CallbackInfo ci) {
         LocalVehiclePlayer self = (LocalVehiclePlayer) (Object) this;
@@ -61,8 +73,9 @@ public class LocalVehiclePlayerRocketAimMixin {
             }
             return;
         }
-        AbstractVehicleWeapon<?> currentWeapon = weaponUnit.getCurrentWeapon().get();
-        if (!RVP_RocketCcipOverlay.isBallisticRocketWeapon(currentWeapon, weaponUnit)) {
+        AbstractVehicleWeapon<?> currentWeapon = org.ywzj.rvp.util.RVP_WeaponResolveHelper
+                .unwrap(weaponUnit.getCurrentWeapon().get());
+        if (currentWeapon == null || !RVP_RocketCcipOverlay.isBallisticRocketWeapon(currentWeapon, weaponUnit)) {
             if (self.onVehicle()) {
                 ywzj_rvp$clearRocketCcip(self.vehicle.getId());
             }
@@ -96,6 +109,24 @@ public class LocalVehiclePlayerRocketAimMixin {
                 rawHit = RVP_RocketBallistics.computeWeaponImpact(
                         vehicle.level(), rocketWeaponUnit, vehicle.getDeltaMovement(), weapon.getData(), vehicle,
                         RVP_RocketBallistics.DEFAULT_PREDICTION_TICK);
+                // 落点超出客户端已加载区块时原版射线拿不到地形，改用战术地图高度缓存 + 载具所在高度的
+                // 水平面回退解算；与炮兵地图逆解同一套数据，避免远距离 CCIP 退化成空中保底点。
+                if (rawHit == null && weapon.getData().getMiscData().isArtilleryMap()) {
+                    ResourceLocation artilleryWeaponId = weapon.getData().getWeaponId();
+                    boolean reuse = artilleryWeaponId != null
+                            && artilleryWeaponId.equals(this.ywzj_rvp$lastArtilleryWeaponId)
+                            && vehicle.tickCount - this.ywzj_rvp$lastArtillerySolveTick < 4;
+                    if (reuse && this.ywzj_rvp$cachedArtilleryHit != null) {
+                        rawHit = this.ywzj_rvp$cachedArtilleryHit;
+                    } else {
+                        rawHit = RVP_RocketBallistics.computeArtilleryWeaponImpact(
+                                vehicle.level(), rocketWeaponUnit, vehicle.getDeltaMovement(), weapon.getData(),
+                                vehicle, vehicle.getY(), RVP_TacticalMapCache::getCachedHeight);
+                        this.ywzj_rvp$lastArtillerySolveTick = vehicle.tickCount;
+                        this.ywzj_rvp$lastArtilleryWeaponId = artilleryWeaponId;
+                        this.ywzj_rvp$cachedArtilleryHit = rawHit;
+                    }
+                }
             }
             weaponId = weapon.getData().getWeaponId();
         }

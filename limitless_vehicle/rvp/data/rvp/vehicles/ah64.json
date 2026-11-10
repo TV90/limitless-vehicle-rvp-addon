@@ -140,7 +140,6 @@
       "zoom_max": 12,
       "weapons": [
         {
-          "id": "rvp:ah64_hydra70",
           "part_unit_id": "rocket"
         },
         {
@@ -285,6 +284,10 @@
       "structure_bone": "rocket",
       "is_seat": false,
       "crosshair_style": "cross",
+      "weapons": [
+        "rvp:ah64_hydra70",
+        "rvp:ah64_zuni"
+      ],
       "rot_info": {
         "x_rot_speed": 0,
         "y_rot_speed": 0
@@ -425,6 +428,26 @@
       "rack_bones": ["pylon"],
       "replace_weapon_display": true,
       "ammo_slot": 2
+    },
+    {
+      "part_unit_id": "rocket",
+      "attach_part_unit_id": "rocket",
+      "weapon_id": "rvp:ah64_hydra70",
+      "model": "rvp:entity/weapon_mount/model_none",
+      "texture": "rvp:textures/entity/weapon_mount/model_none.png",
+      "rack_bones": ["pylon"],
+      "replace_weapon_display": false,
+      "ammo_slot": 1
+    },
+    {
+      "part_unit_id": "rocket",
+      "attach_part_unit_id": "rocket",
+      "weapon_id": "rvp:ah64_zuni",
+      "model": "rvp:entity/weapon_mount/model_none",
+      "texture": "rvp:textures/entity/weapon_mount/model_none.png",
+      "rack_bones": ["pylon"],
+      "replace_weapon_display": false,
+      "ammo_slot": 1
     }
   ],
   "bone_modules": {

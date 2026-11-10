@@ -185,6 +185,30 @@
       "shoot_structure_bones": [
         "missile_shoot2_barrel"
       ]
+    },
+    {
+      "part_unit_id": "rocket",
+      "attach_part_unit_id": "rocket",
+      "weapon_id": "rvp:mi28_s13",
+      "model": "rvp:entity/weapon_mount/model_none",
+      "texture": "rvp:textures/entity/weapon_mount/model_none.png",
+      "rack_bones": [
+        "pylon"
+      ],
+      "replace_weapon_display": false,
+      "ammo_slot": 1
+    },
+    {
+      "part_unit_id": "rocket",
+      "attach_part_unit_id": "rocket",
+      "weapon_id": "rvp:mi28_s8ko",
+      "model": "rvp:entity/weapon_mount/model_none",
+      "texture": "rvp:textures/entity/weapon_mount/model_none.png",
+      "rack_bones": [
+        "pylon"
+      ],
+      "replace_weapon_display": false,
+      "ammo_slot": 1
     }
   ],
   "parts": [
@@ -228,7 +252,6 @@
       "zoom_max": 12,
       "weapons": [
         {
-          "id": "rvp:mi28_s13",
           "part_unit_id": "rocket"
         },
         {
@@ -310,6 +333,10 @@
       "is_seat": false,
       "fire_control_sensor_type": "ccip",
       "crosshair_style": "cross",
+      "weapons": [
+        "rvp:mi28_s13",
+        "rvp:mi28_s8ko"
+      ],
       "rot_info": {
         "x_rot_speed": 0,
         "y_rot_speed": 0

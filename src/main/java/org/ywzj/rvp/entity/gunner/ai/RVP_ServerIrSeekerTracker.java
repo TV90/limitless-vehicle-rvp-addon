@@ -9,8 +9,10 @@ import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.WeakHashMap;
 
 /**
  * [RVP] AI 炮手 IR 导引头 dwell tracker（服务端，2026-10-21，方案 D3）。
@@ -31,7 +33,12 @@ public final class RVP_ServerIrSeekerTracker {
         int dwellTicks;
     }
 
-    private static final Map<WeaponUnit, Map<ResourceLocation, DwellState>> DWELL = new HashMap<>();
+    /**
+     * 根站 -> 弹种 -> 驻留状态。弱键：DwellState 不引用 WeaponUnit，载具卸载后允许回收；
+     * 停服/世界卸载时另有 {@link #clearAll()} 立即清空。
+     */
+    private static final Map<WeaponUnit, Map<ResourceLocation, DwellState>> DWELL =
+            Collections.synchronizedMap(new WeakHashMap<>());
 
     /**
      * AI 开火前逐 tick 调用：包线内累加 dwell，满 D 写 {@link RVP_ServerIrSeekerArmedTable}
@@ -71,8 +78,18 @@ public final class RVP_ServerIrSeekerTracker {
     /** 清除指定站 + 弹种的 AI 驻留状态（目标丢失/载具移除时；授权表读取侧天然拒射）。 */
     public static void clear(WeaponUnit root, ResourceLocation weaponId) {
         Map<ResourceLocation, DwellState> byWeapon = DWELL.get(root);
-        if (byWeapon != null) {
-            byWeapon.remove(weaponId);
+        if (byWeapon == null) {
+            return;
         }
+        byWeapon.remove(weaponId);
+        // 子键清空后连同根站条目一起移除，避免 root 永久留在静态表里。
+        if (byWeapon.isEmpty()) {
+            DWELL.remove(root);
+        }
+    }
+
+    /** 世界卸载/停服时清空全部 AI 驻留状态。 */
+    public static void clearAll() {
+        DWELL.clear();
     }
 }

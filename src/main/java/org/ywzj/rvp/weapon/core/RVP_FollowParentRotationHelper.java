@@ -7,9 +7,10 @@ import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.structure.VehicleCubeGroup;
 
-import java.util.HashMap;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.WeakHashMap;
 
 /**
  * 替代被删 {@code WeaponUnitFollowParentRotationMixin} 的非 mixin 实现。
@@ -23,8 +24,14 @@ public final class RVP_FollowParentRotationHelper {
 
     private RVP_FollowParentRotationHelper() {}
 
-    /** unit -> 本 tick 已处理标记。 */
-    private static final Map<WeaponUnit, Integer> LAST_TICK = new HashMap<>();
+    /**
+     * unit -> 本 tick 已处理标记。
+     *
+     * <p>弱键：WeaponUnit 被载具强引用，载具卸载后这里不应继续把它钉在静态表里。
+     * 值的 Integer 不反向引用 unit，因此 WeakHashMap 不会出现“value→key”自锁。</p>
+     */
+    private static final Map<WeaponUnit, Integer> LAST_TICK =
+            Collections.synchronizedMap(new WeakHashMap<>());
 
     public static void tick(WeaponUnit unit) {
         if (unit == null || unit.getVehicle() == null) {
@@ -55,6 +62,11 @@ public final class RVP_FollowParentRotationHelper {
                     () -> RVP_HitboxDebug.notePartMissing(id)
             );
         }
+    }
+
+    /** 世界卸载/停服时显式清空；弱键只负责兜底，不保证立即回收。 */
+    public static void clearAll() {
+        LAST_TICK.clear();
     }
 
     private static void resetLocalRotation(PartUnit<?> partUnit) {

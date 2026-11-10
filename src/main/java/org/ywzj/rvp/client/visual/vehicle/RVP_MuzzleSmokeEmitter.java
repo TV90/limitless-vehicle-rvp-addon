@@ -7,6 +7,8 @@ import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.event.entity.EntityLeaveLevelEvent;
+import net.minecraftforge.event.level.LevelEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
@@ -63,6 +65,42 @@ public final class RVP_MuzzleSmokeEmitter {
             new WeakHashMap<>();
 
     private RVP_MuzzleSmokeEmitter() {
+    }
+
+    /**
+     * 载具离开客户端世界：显式删除节流状态。
+     *
+     * <p>本表的 value 里含 WeaponUnit，而 WeaponUnit 反向引用载具 key，WeakHashMap 的弱键
+     * 永远无法回收；必须在实体离场时手动 remove，不能只依赖弱引用。</p>
+     */
+    public static void remove(AbstractVehicle vehicle) {
+        if (vehicle == null) {
+            return;
+        }
+        synchronized (LAST_EMISSION_TICKS) {
+            LAST_EMISSION_TICKS.remove(vehicle);
+        }
+    }
+
+    /** 世界卸载/断线时清空全部炮口烟节流状态。 */
+    public static void clearAll() {
+        synchronized (LAST_EMISSION_TICKS) {
+            LAST_EMISSION_TICKS.clear();
+        }
+    }
+
+    @SubscribeEvent
+    public static void onEntityLeaveLevel(EntityLeaveLevelEvent event) {
+        if (event.getLevel().isClientSide() && event.getEntity() instanceof AbstractVehicle vehicle) {
+            remove(vehicle);
+        }
+    }
+
+    @SubscribeEvent
+    public static void onLevelUnload(LevelEvent.Unload event) {
+        if (event.getLevel().isClientSide()) {
+            clearAll();
+        }
     }
 
     /**

@@ -155,8 +155,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     private static final double PARTICLE_VIEW_DISTANCE_SQ = PARTICLE_VIEW_DISTANCE * PARTICLE_VIEW_DISTANCE;
     private static final Logger LOGGER = LogUtils.getLogger();
     /** 弹体每 Tick 请求的未来路径窗口。
-     * distance = sqrt(motion.x² + motion.z²) * PROJECTILE_CHUNK_HORIZON_TICKS */
-    private static final int PROJECTILE_CHUNK_HORIZON_TICKS = 1;
+     * distance = sqrt(motion.x² + motion.z²) * PROJECTILE_CHUNK_HORIZON_TICKS
+     * 取 4：Ticket 要等下一 ServerTick START 才分配，再过 1~2 刻才升到 entity-ticking；
+     * 只前瞻 1 刻会在每次跨区块边界时等待门冻结 1~3 刻，表现为周期性一顿一顿。 */
+    private static final int PROJECTILE_CHUNK_HORIZON_TICKS = 4;
     /** 区块持续无法进入 entity-ticking 时的安全等待上限。 */
     private static final int MAX_PROJECTILE_CHUNK_WAIT_TICKS = 200;
     /** 目标局部加速度估计的限幅，单位格/Tick^2，防止单次同步跳变制造远距虚假提前量。 */

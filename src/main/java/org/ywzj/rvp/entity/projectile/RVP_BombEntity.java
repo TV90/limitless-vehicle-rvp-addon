@@ -2,6 +2,7 @@ package org.ywzj.rvp.entity.projectile;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.Projectile;
@@ -19,6 +20,39 @@ import org.ywzj.vehicle.vehicle.PhysicsEngine;
  * Bomb entity with gravity-first motion for {@code rvp:bomb}.
  */
 public class RVP_BombEntity extends RVP_BaseBullet {
+
+    /**
+     * 客户端插值步数，对齐原版移动包请求的 3 步。
+     *
+     * <p>基类 {@code AmmoEntity#lerpTo} 把所有弹体固定成 1 步（收到位置包当刻直接瞬移），
+     * 对子弹/导弹是精度优先；炸弹飞行时间长、下落慢，客户端刻与网络包相位错开时会
+     * 出现「包到才动、没包就停」的一顿一顿。这里恢复原版 3 步平滑，与普通实体一致。</p>
+     */
+    private static final int CLIENT_LERP_STEPS = 3;
+    /**
+     * 目标点前瞻刻数 = 步数 − 1：3 步指数平滑在稳态下会滞后 2 刻，
+     * 按估计速度把目标点前移同样的量，炸弹模型才不会明显落在真实弹道/爆炸点后面。
+     */
+    private static final int CLIENT_PREDICT_TICKS = CLIENT_LERP_STEPS - 1;
+    /** 位移速度估计的安全上限（格/刻）：超过按传送处理，不做前瞻。 */
+    private static final double MAX_PREDICT_SPEED = 32.0D;
+    /** 两次位置包间隔超过该刻数视为断流，丢弃速度估计。 */
+    private static final long MAX_SAMPLE_INTERVAL_TICKS = 4L;
+
+    private double clientLerpX;
+    private double clientLerpY;
+    private double clientLerpZ;
+    private float clientLerpYRot;
+    private float clientLerpXRot;
+    private int clientLerpSteps;
+    private double clientPredictX;
+    private double clientPredictY;
+    private double clientPredictZ;
+    private double clientSampleX;
+    private double clientSampleY;
+    private double clientSampleZ;
+    private long clientSampleTick;
+    private boolean clientHasSample;
 
     /**
      * 划破空气哨音（客户端专属，服务端永不触碰）。
@@ -50,10 +84,93 @@ public class RVP_BombEntity extends RVP_BaseBullet {
     @Override
     public void tick() {
         super.tick();
-        // 基类 tick 在客户端分支提前 return，音效需在其后独立驱动
+        // 基类 tick 在客户端分支提前 return，音效与插值需在其后独立驱动
         if (level().isClientSide()) {
+            tickClientLerp();
             tickSound();
         }
+    }
+
+    /**
+     * 客户端位置/姿态插值：接管 {@code AmmoEntity#lerpTo} 的 1 步瞬移语义。
+     *
+     * <p>不调用 {@code super.lerpTo}，避免基类私有 lerp 状态被同时激活；
+     * 服务端不会收到此调用，保留原路径以防未来调用方误用。</p>
+     *
+     * <p>目标点按最近两次位置包的位移估计做 {@link #CLIENT_PREDICT_TICKS} 刻前瞻，
+     * 抵消指数平滑的稳态滞后；传送包/断流/异常速度不做前瞻。</p>
+     */
+    @Override
+    public void lerpTo(double x, double y, double z, float yRot, float xRot, int steps, boolean teleport) {
+        if (!level().isClientSide()) {
+            super.lerpTo(x, y, z, yRot, xRot, steps, teleport);
+            return;
+        }
+        updateClientPredict(x, y, z, teleport);
+        this.clientLerpX = x + clientPredictX * CLIENT_PREDICT_TICKS;
+        this.clientLerpY = y + clientPredictY * CLIENT_PREDICT_TICKS;
+        this.clientLerpZ = z + clientPredictZ * CLIENT_PREDICT_TICKS;
+        this.clientLerpYRot = yRot;
+        this.clientLerpXRot = xRot;
+        this.clientLerpSteps = CLIENT_LERP_STEPS;
+    }
+
+    /** 用相邻位置包的时间差估计每刻位移；同一客户端刻内的多个包共用同一样本基线。 */
+    private void updateClientPredict(double x, double y, double z, boolean teleport) {
+        long now = level().getGameTime();
+        if (teleport) {
+            clientHasSample = false;
+            clientPredictX = 0.0D;
+            clientPredictY = 0.0D;
+            clientPredictZ = 0.0D;
+        } else if (clientHasSample) {
+            long elapsed = now - clientSampleTick;
+            if (elapsed >= 1L && elapsed <= MAX_SAMPLE_INTERVAL_TICKS) {
+                clientPredictX = (x - clientSampleX) / elapsed;
+                clientPredictY = (y - clientSampleY) / elapsed;
+                clientPredictZ = (z - clientSampleZ) / elapsed;
+                clientSampleX = x;
+                clientSampleY = y;
+                clientSampleZ = z;
+                clientSampleTick = now;
+            } else if (elapsed > MAX_SAMPLE_INTERVAL_TICKS) {
+                clientPredictX = 0.0D;
+                clientPredictY = 0.0D;
+                clientPredictZ = 0.0D;
+                clientSampleX = x;
+                clientSampleY = y;
+                clientSampleZ = z;
+                clientSampleTick = now;
+            }
+        } else {
+            clientHasSample = true;
+            clientSampleX = x;
+            clientSampleY = y;
+            clientSampleZ = z;
+            clientSampleTick = now;
+        }
+        double speedSq = clientPredictX * clientPredictX
+                + clientPredictY * clientPredictY
+                + clientPredictZ * clientPredictZ;
+        if (speedSq > MAX_PREDICT_SPEED * MAX_PREDICT_SPEED) {
+            clientPredictX = 0.0D;
+            clientPredictY = 0.0D;
+            clientPredictZ = 0.0D;
+        }
+    }
+
+    private void tickClientLerp() {
+        if (clientLerpSteps <= 0) {
+            return;
+        }
+        double nextX = getX() + (clientLerpX - getX()) / clientLerpSteps;
+        double nextY = getY() + (clientLerpY - getY()) / clientLerpSteps;
+        double nextZ = getZ() + (clientLerpZ - getZ()) / clientLerpSteps;
+        float nextYRot = getYRot() + (float) Mth.wrapDegrees(clientLerpYRot - getYRot()) / clientLerpSteps;
+        float nextXRot = getXRot() + (clientLerpXRot - getXRot()) / clientLerpSteps;
+        --clientLerpSteps;
+        setPos(nextX, nextY, nextZ);
+        setRot(nextYRot, nextXRot);
     }
 
     /**

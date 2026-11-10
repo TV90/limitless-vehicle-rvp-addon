@@ -26,6 +26,18 @@ public class GPSTargetManager {
         return TARGETS.computeIfAbsent(uuid, unused -> new PlayerState());
     }
 
+    /** 断线/实体离场时移除对应 UUID 的点位状态，避免长期累积。 */
+    public static void remove(UUID uuid) {
+        if (uuid != null) {
+            TARGETS.remove(uuid);
+        }
+    }
+
+    /** 世界卸载/停服时清空全部玩家与炮手的 GPS 点位状态。 */
+    public static void clearAll() {
+        TARGETS.clear();
+    }
+
     public static Snapshot clear(ServerPlayer player) {
         PlayerState state = state(player.getUUID());
         state.clearPoints();

@@ -17,13 +17,13 @@
     "collision_box_size": 0.7,
     "velocity": 0.1,
     "second_pulse": true,
-    "second_pulse_thrust": 4.734375,
+    "second_pulse_thrust": 5.91796875,
     "second_pulse_burn_time": 400,
     "second_pulse_trigger_speed": 10.0,
     "has_rocket_engine": true,
     "mass": 463,
     "fuel_mass": 163.3,
-    "thrust": 11.45716,
+    "thrust": 14.32145,
     "motor_burn_time": 140,
     "inherit_vehicle_velocity": true,
     "drag_coefficient": 0.155364,
@@ -38,7 +38,8 @@
       "[[-inf,-64]]": 0.8
     },
     "turning_factor": {
-      "[[1,inf]]": 0.06
+      "[[1,99]]": 0.12,
+      "[[100,inf]]": 0.08
     },
     "ignition_delay_tick": 20,
     "rvp_aero_steering": true,

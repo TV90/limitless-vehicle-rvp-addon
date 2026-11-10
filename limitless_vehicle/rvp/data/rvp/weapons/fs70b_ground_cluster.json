@@ -25,7 +25,7 @@
     "max_speed": 8
   },
   "fuse_data": {
-    "ground_proximity_fuse_distance": 20.0,
+    "ground_proximity_fuse_distance": 35.0,
     "ground_proximity_fuse_arm_tick": 40,
     "detonate_on_life_end": false
   },
@@ -46,7 +46,7 @@
       "explosion_damage_factor": {
         "vehicle_default": 1.0,
         "vehicles": {
-          "ywzj_vehicle:wheeled_vehicle": 1.2
+          "ywzj_vehicle:wheeled_vehicle": 1.6
         }
       }
     }
@@ -111,7 +111,7 @@
     "direct_damage_factor": {
       "vehicle_default": 1.0,
       "vehicles": {
-        "ywzj_vehicle:wheeled_vehicle": 1.1,
+        "ywzj_vehicle:wheeled_vehicle": 1.5,
         "ywzj_vehicle:rotary_wing_vehicle": 1.1,
         "ywzj_vehicle:fixed_wing_vehicle": 1.1
       }
@@ -136,7 +136,7 @@
             "spread": {
               "mode": "canister",
               "canister_type": 1,
-              "canister_diff": 10.0,
+              "canister_diff": 25.0,
               "canister_distribution": "uniform",
               "canister_shape": "circle"
             }

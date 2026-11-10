@@ -74,6 +74,50 @@
             "heading_jitter_deg": 0.0
           }
         }
+      },
+      {
+        "id": "yhuo_he_6",
+        "display_CN": "呼叫远火（高爆弹）×6",
+        "call_duration_ticks": 200,
+        "max_target_distance_m": 8192,
+        "max_rounds": 6,
+        "weapon": "rvp:m142_ground_rocket",
+        "rounds_per_call": 6,
+        "interval_ticks": 15,
+        "scatter_radius_m": 20,
+        "delivery": {
+          "type": "rvp:ground_launched_projectile",
+          "data": {
+            "launch_distance_m": 768.0,
+            "min_launch_distance_m": 256.0,
+            "launch_height_above_ground_m": 2.5,
+            "max_apex_above_impact_m": 512.0,
+            "preload_ticks": 80,
+            "heading_jitter_deg": 0.0
+          }
+        }
+      },
+      {
+        "id": "yhuo_cluster_6",
+        "display_CN": "呼叫远火（集束弹）×6",
+        "call_duration_ticks": 200,
+        "max_target_distance_m": 8192,
+        "max_rounds": 6,
+        "weapon": "rvp:m142_ground_cluster",
+        "rounds_per_call": 6,
+        "interval_ticks": 15,
+        "scatter_radius_m": 20,
+        "delivery": {
+          "type": "rvp:ground_launched_projectile",
+          "data": {
+            "launch_distance_m": 768.0,
+            "min_launch_distance_m": 256.0,
+            "launch_height_above_ground_m": 2.5,
+            "max_apex_above_impact_m": 512.0,
+            "preload_ticks": 80,
+            "heading_jitter_deg": 0.0
+          }
+        }
       }
     ]
   },

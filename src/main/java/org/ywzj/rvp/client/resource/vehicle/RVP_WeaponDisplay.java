@@ -12,9 +12,9 @@ public class RVP_WeaponDisplay extends RVP_BaseDisplay {
 
     public RVP_WeaponDisplay(RVP_BaseDisplayPojo pojo) {
         super(pojo);
-        if (getBedrockBackend() == RVP_BedrockBackend.RVP) {
-            rebuildWeaponBackend(pojo);
-        }
+        // RVP_BaseDisplay 已不再预烘本体模型，由本方法统一产出模型（含 vehicle 后端回退），
+        // 避免"基类烘一份、子类再烘一份"的重复工作。
+        rebuildWeaponBackend(pojo);
     }
 
     private void rebuildWeaponBackend(RVP_BaseDisplayPojo pojo) {

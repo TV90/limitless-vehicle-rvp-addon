@@ -39,7 +39,8 @@
       "[[-inf,-64]]": 0.8
     },
     "turning_factor": {
-      "[[1,inf]]": 0.06
+      "[[1,99]]": 0.12,
+      "[[100,inf]]": 0.08
     },
     "ignition_delay_tick": 20,
     "rvp_aero_steering": true,

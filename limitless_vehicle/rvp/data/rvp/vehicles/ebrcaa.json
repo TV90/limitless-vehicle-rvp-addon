@@ -206,7 +206,7 @@
         "y_rot_min": 0
       },
       "scan_sector_angle": 180,
-      "radar_type": "EBRC",
+      "radar_type": "ITO",
       "scan_animation_mode": "phase",
       "scan_period_tick": 60,
       "scan_min_height": 15,

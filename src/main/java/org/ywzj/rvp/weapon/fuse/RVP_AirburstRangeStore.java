@@ -37,4 +37,9 @@ public final class RVP_AirburstRangeStore {
     public static void clearVehicle(int vehicleId) {
         RANGES.keySet().removeIf(k -> (int) (k >> 32) == vehicleId);
     }
+
+    /** 世界卸载/停服时清空全部空爆测距，避免载具 id 复用后读到旧值。 */
+    public static void clearAll() {
+        RANGES.clear();
+    }
 }

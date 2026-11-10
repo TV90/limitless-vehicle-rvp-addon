@@ -35,6 +35,8 @@ public final class RVP_CustomMountReloadListener extends SimplePreparableReloadL
     @Override
     protected void apply(@NotNull Void object, @NotNull ResourceManager resourceManager, @NotNull ProfilerFiller profiler) {
         RVP_CustomMountRenderLogic.clearModelCache();
+        // 共享烘焙缓存按 POJO 弱键存储；reload 时主动清一遍，避免旧 display 尚未被 GC 时继续命中旧模型。
+        org.ywzj.rvp.client.resource.vehicle.RVP_VehicleModelFactory.clearBakeCache();
         // backend / no-cull 骨骼缓存是 WeakHashMap<VehicleBedrockModel, …>：旧模型实例会随 GC 消失，
         // 这里主动清一遍让重载后首个访问直接落到最新 display 上（未命中时 getBackend 自会 bindKnownDisplays）。
         RVP_DisplayBackendUtil.clearCache();

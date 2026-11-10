@@ -1,6 +1,7 @@
 {
   "type": "ywzj_vehicle:vessel_vehicle",
   "ui_preset": "052d",
+  "nctr_name": "NVL",
   "attributes": {
     "brake_force": 0,
     "forward_force": 16400000,
@@ -344,7 +345,7 @@
         "y_rot_min": 0,
         "y_rot_max": 360
       },
-      "radar_type": "052D",
+      "radar_type": "052",
       "scan_animation_mode": "phase",
       "scan_period_tick": 20,
       "scan_sector_angle": 170,

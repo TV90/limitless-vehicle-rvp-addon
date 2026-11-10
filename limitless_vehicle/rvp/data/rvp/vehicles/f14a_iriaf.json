@@ -109,7 +109,7 @@
   "rvp_auto_landing_gear": true,
   "airbrake_part_id": "airbrake",
   "max_health": 500,
-  "nctr_name": "F-14A",
+  "nctr_name": "F14",
   "view_info": {
     "third_person_center_offset": [
       0,
@@ -245,7 +245,7 @@
       },
       "operator_view_offset": [
         0.0390625,
-        3.3125,
+        3.4625,
         5.6875
       ],
       "optical_sight_type": "none",

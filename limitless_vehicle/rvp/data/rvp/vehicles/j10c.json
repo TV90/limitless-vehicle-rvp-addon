@@ -476,7 +476,7 @@
         "y_rot_max": 85,
         "y_rot_min": -85
       },
-      "radar_type": "KLJ-10A",
+      "radar_type": "J10",
       "nctr_mode": "MODERN",
       "scan_sector_angle": 120,
       "max_scan_distance": 1800.0,

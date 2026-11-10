@@ -15,8 +15,9 @@ import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 
 import java.lang.reflect.Field;
-import java.util.HashMap;
+import java.util.Collections;
 import java.util.Map;
+import java.util.WeakHashMap;
 
 /**
  * 替代被删 {@code WeaponUnitSetWeaponMixin}（切换武器自动开关弹舱 + 手动覆盖）与
@@ -39,12 +40,20 @@ public final class RVP_WeaponSwitchSyncHelper {
 
     private RVP_WeaponSwitchSyncHelper() {}
 
-    /** unit -> 本 tick 已处理标记（unit 的 vehicle.tickCount）。 */
-    private static final Map<WeaponUnit, Integer> LAST_TICK = new HashMap<>();
+    /**
+     * unit -> 本 tick 已处理标记（unit 的 vehicle.tickCount）。
+     *
+     * <p>三张表全部弱键化：WeaponUnit 由载具强引用，载具卸载后不能让静态表继续钉住
+     * 旧载具/旧维度；值均为 int/int[]，不反向引用 key，WeakHashMap 语义成立。</p>
+     */
+    private static final Map<WeaponUnit, Integer> LAST_TICK =
+            Collections.synchronizedMap(new WeakHashMap<>());
     /** unit -> 上次同步时的 [primaryIndex, secondaryIndex]。 */
-    private static final Map<WeaponUnit, int[]> LAST_INDEX = new HashMap<>();
+    private static final Map<WeaponUnit, int[]> LAST_INDEX =
+            Collections.synchronizedMap(new WeakHashMap<>());
     /** unit -> 手动覆盖激活时的 [primaryIndex, secondaryIndex]（匹配时跳过自动同步）。 */
-    private static final Map<WeaponUnit, int[]> MANUAL_OVERRIDE = new HashMap<>();
+    private static final Map<WeaponUnit, int[]> MANUAL_OVERRIDE =
+            Collections.synchronizedMap(new WeakHashMap<>());
 
     /** B3：切换武器时关闭导引头的私有字段（无公共 setter，`toggleSeeker` 为 @OnlyIn(CLIENT)）。
      * 服务端不调用 toggleSeeker、seekerOn 恒为 false，无需反射；且服务端 WeaponUnit 含客户端专属字段类型
@@ -68,6 +77,13 @@ public final class RVP_WeaponSwitchSyncHelper {
             seekerOnField = field;
         }
         return field;
+    }
+
+    /** 世界卸载/停服时显式清空；弱键只负责兜底，不保证立即回收。 */
+    public static void clearAll() {
+        LAST_TICK.clear();
+        LAST_INDEX.clear();
+        MANUAL_OVERRIDE.clear();
     }
 
     public static void tick(WeaponUnit unit) {

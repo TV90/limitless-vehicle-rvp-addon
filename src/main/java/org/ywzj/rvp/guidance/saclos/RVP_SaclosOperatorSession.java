@@ -103,4 +103,9 @@ public final class RVP_SaclosOperatorSession {
     public static void clear(UUID playerId) {
         SESSIONS.remove(playerId);
     }
+
+    /** 世界卸载/停服时清空全部照射会话。 */
+    public static void clearAll() {
+        SESSIONS.clear();
+    }
 }

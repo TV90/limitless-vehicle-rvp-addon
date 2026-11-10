@@ -1009,6 +1009,11 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         }
     }
 
+    /** 停服/断线：清空全部累计进度差分缓存，避免静态表跨世界残留。 */
+    public static void clearBoneDamageProgressCacheAll() {
+        LAST_DAMAGE_PROGRESS.clear();
+    }
+
     /**
      * [RVP] 骨的累计失效阈值（面板虚拟血量分母）：bone_modules 骨 = 条目 min_damage；
      * 引擎骨 = 瘫痪阈（threshold_heavy）；炮管骨 = barrel threshold。未配置/∞ 返回 -1（无限）。
