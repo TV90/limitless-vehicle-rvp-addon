@@ -169,7 +169,7 @@
       "rot_info": {
         "x_rot_speed": 7,
         "y_rot_speed": 7,
-        "x_rot_min": -40,
+        "x_rot_min": -10,
         "x_rot_max": 120,
         "y_rot_min": -120,
         "y_rot_max": 120
@@ -219,7 +219,7 @@
     },
     {
       "id": "pl10",
-      "name": "pl10",
+      "name": "gui.ywzj_rvp.variants.pylon.pl10",
       "type": "ywzj_vehicle:weapon",
       "structure_bone": "ir_missile",
       "ammo_capacity": 2,

@@ -19,7 +19,9 @@ public final class RVP_RocketEngineLightQuery {
         if (bullet.isRemoved()) { return false; }
         // 调用 RVP 弹体客户端安全配置，避免客户端 rvpData 尚未赋值而永久无光。
         RVP_WeaponData data = bullet.getResolvedWeaponConfig();
-        if (data == null || !data.getProjectileData().hasRocketEngine()) { return false; }
+        // 无推力/无燃烧窗口的弹体（炸弹等）不算发动机：否则 misconfigured 的 engine 标记会让喷焰常亮。
+        if (data == null || !data.getProjectileData().hasRocketEngine()
+                || !data.getProjectileData().usesPropulsion()) { return false; }
         // 按对象引用识别独立虚拟显示实例，不能把同 UUID 雷达代理的默认发动机字段当权威事实。
         var visual = org.ywzj.rvp.client.state.remotevisibility.RVP_ClientVirtualMissileVisualState.owned(bullet);
         if (visual != null) return visual.timeline().motorPhase(

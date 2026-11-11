@@ -1,6 +1,8 @@
 {
   "type": "rvp:missile",
   "name": "FIM-92K IR-SAM",
+  "parent_weapon_unit_aim_override": false,
+  "crosshair_style_override": "circle",
   "shoot_interval": 2000,
   "max_capacity": 4,
   "reload": {

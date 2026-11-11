@@ -1,6 +1,7 @@
 {
   "type": "rvp:missile",
   "name": "AGM-179 MR ARH-AGM",
+  "crosshair_style_override": "circle",
   "shoot_interval": 2000,
   "max_capacity": 4,
   "reload": {

@@ -44,7 +44,7 @@ public final class RVP_CcipUtil {
             if (usesPropulsion) {
                 velocity = stepPropulsionVelocity(velocity, data, tick, y);
             } else {
-                velocity = stepBallisticVelocity(velocity, data, bombDefaultGravity, flightSpeed);
+                velocity = stepBallisticVelocity(velocity, data, bombDefaultGravity, flightSpeed, y);
             }
             flightSpeed = Math.max(velocity.length(), 0.01D);
 
@@ -75,13 +75,16 @@ public final class RVP_CcipUtil {
         return null;
     }
 
-    private static Vec3 stepBallisticVelocity(Vec3 velocity, RVP_WeaponData data, boolean bombDefaultGravity, double flightSpeed) {
+    private static Vec3 stepBallisticVelocity(Vec3 velocity, RVP_WeaponData data, boolean bombDefaultGravity,
+                                              double flightSpeed, double altitude) {
         double gravity = data.getGravity();
         if (bombDefaultGravity) {
             gravity = -PhysicsEngine.G;
         }
         Vec3 next = velocity.add(0.0D, gravity, 0.0D);
         next = applyMchHorizontalDrag(next, data.getDragInAir());
+        // 调用共享无动力弹体阻力：与实体弹道同一速度平方模型，CCIP 落点不会因新增阻力而偏长。
+        next = RVP_UnguidedBallisticMath.applyBallisticDrag(next, altitude, data);
         if (data.getProjectileData().isConstantSpeed() && next.lengthSqr() > 1.0E-6) {
             next = next.normalize().scale(Math.max(flightSpeed, 0.01D));
         }

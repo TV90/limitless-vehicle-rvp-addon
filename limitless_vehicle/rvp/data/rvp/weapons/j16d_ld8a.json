@@ -1,6 +1,7 @@
 {
   "type": "rvp:missile",
   "name": "LD-8 ARM",
+  "parent_weapon_unit_aim_override": false,
   "show_msl_indicator": false,
   "shoot_interval": 1000,
   "max_capacity": 2,

@@ -297,10 +297,13 @@ public final class RVP_WeaponTypes {
         return root.getAsJsonObject("projectile_data");
     }
 
-    /** When propulsion fields are present but {@code has_rocket_engine} is omitted, default it to true. */
+    /**
+     * When actual propulsion fields are present but {@code has_rocket_engine} is omitted, default it to true.
+     * {@code mass} is ballistic mass for unpowered bombs as well, so it must not imply an engine.
+     */
     private static void autoEnableRocketEngine(JsonObject root, JsonObject proj) {
-        boolean hasPropulsion = root.has("mass") || root.has("thrust") || root.has("motor_burn_time")
-                || proj.has("mass") || proj.has("thrust") || proj.has("motor_burn_time");
+        boolean hasPropulsion = root.has("thrust") || root.has("motor_burn_time")
+                || proj.has("thrust") || proj.has("motor_burn_time");
         if (hasPropulsion && !proj.has("has_rocket_engine")) {
             proj.addProperty("has_rocket_engine", true);
         }

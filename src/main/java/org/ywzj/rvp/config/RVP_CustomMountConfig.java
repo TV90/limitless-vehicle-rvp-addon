@@ -28,7 +28,8 @@ public record RVP_CustomMountConfig(
         Vec3fConfig offset,
         Vec3fConfig rotationDeg,
         Vec3fConfig scale,
-        List<String> shootStructureBones
+        List<String> shootStructureBones,
+        boolean roundRobinAmmoHide
 ) {
 
     public record Vec3fConfig(float x, float y, float z) {
@@ -86,7 +87,12 @@ public record RVP_CustomMountConfig(
                 // [RVP] 出弹骨（载具结构模型骨骼名，区别于挂架渲染模型骨 rack/missile_bones）：
                 // 配置后该条目对应的发射点改由这些骨骼的 Cube 推算，与衔接点分离；
                 // 未配置时该条目不贡献出弹点（整站均未配置则回退本体 _barrel 推算行为）
-                parseStringList(obj, "shoot_structure_bones")
+                parseStringList(obj, "shoot_structure_bones"),
+                // [RVP] 多挂架多弹体可见性轮转（默认 false 保持"按挂架整段消失"旧行为）：
+                // 为 true 时按 ammo_slot 顺序逐发轮转消耗各挂架的下一枚弹药，
+                // 用于匹配 RIPPLE 在多个挂点间交替开火时的弹体消失顺序；
+                // 仅对"每条目恰好一根出弹骨"的分组生效，否则自动回退顺序模式。
+                GsonHelper.getAsBoolean(obj, "round_robin_ammo_hide", false)
         );
     }
 

@@ -1,6 +1,8 @@
 {
   "type": "rvp:bomb",
   "name": "GB-3 SALH Bomb",
+  "parent_weapon_unit_aim_override": true,
+  "crosshair_style_override": "big_cross",
   "recoil": 0,
   "shoot_interval": 1000,
   "max_capacity": 6,
@@ -14,7 +16,7 @@
   "y_rot_min": -180,
   "fuse_delay_tick": 0,
   "gravity_scale": 0.35,
-  "fire_control_sensor_type_override": "eo",
+  "fire_control_sensor_type_override": "ccip",
   "rvp_fire_control_sensor_mode": "eo_ccip",
   "fire_data": {
     "spread": 0,
@@ -24,6 +26,8 @@
   "projectile_data": {
     "velocity": 0.1,
     "gravity": -0.02,
+    "mass": 500,
+    "drag_coefficient": 0.077682,
     "inherit_vehicle_velocity": true,
     "rotate_to_motion": true,
     "max_speed": 3,
@@ -128,5 +132,23 @@
       1
     ]
   },
-  "name_CN": "GB-3 激光制导炸弹"
+  "name_CN": "GB-3 激光制导炸弹",
+  "ccip_marker_data": {
+    "radius_scale": 0.5,
+    "height_clamp": 2.5,
+    "surface_lift": 0.08,
+    "min_ring_screen_fraction": 0.02,
+    "ring_width_per_block": 0.008,
+    "ring_min_width": 0.12,
+    "ring_max_width": 1.5,
+    "line_width_per_block": 0.0035,
+    "line_min_width": 0.04,
+    "line_max_width": 0.5,
+    "line_height_screen_fraction": 0.35,
+    "line_min_height": 4.0,
+    "line_max_height": 400.0,
+    "ring_color": "0xC800FF00",
+    "line_bottom_color": "0xC800FF00",
+    "line_top_color": "0x3000FF00"
+  }
 }

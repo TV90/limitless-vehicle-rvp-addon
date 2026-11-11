@@ -1,6 +1,8 @@
 {
   "type": "rvp:missile",
   "name": "PL-10 IR-AAM",
+  "parent_weapon_unit_aim_override": false,
+  "crosshair_style_override": "circle",
   "show_msl_indicator": true,
   "shoot_interval": 1000,
   "max_capacity": 2,

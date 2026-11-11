@@ -51,7 +51,7 @@
     }
   },
   "attributes": {
-    "thrust": 83300,
+    "thrust": 66640,
     "thrust_k": 1.23529,
     "ceiling": 1024,
     "x_rot_input_step": 0.215,
@@ -59,7 +59,7 @@
     "z_rot_input_step": 0.22,
     "air_drag_k_min": 18.0,
     "air_drag_k_max": 70.0,
-    "lift_to_drag_k": 2.75,
+    "lift_to_drag_k": 3.1625,
     "angle_of_attack_min": -10,
     "angle_of_attack_max": 28,
     "x_rot_input_drag_k": 1.0,
@@ -160,7 +160,11 @@
         "missile3"
       ],
       "replace_weapon_display": true,
-      "ammo_slot": 1
+      "ammo_slot": 1,
+      "shoot_structure_bones": [
+        "variable_agm_1_shoot_barrel"
+      ],
+      "round_robin_ammo_hide": true
     },
     {
       "part_unit_id": "variable_agm",
@@ -177,7 +181,11 @@
         "missile3"
       ],
       "replace_weapon_display": true,
-      "ammo_slot": 2
+      "ammo_slot": 2,
+      "shoot_structure_bones": [
+        "variable_agm_2_shoot_barrel"
+      ],
+      "round_robin_ammo_hide": true
     },
     {
       "part_unit_id": "variable_agm",
@@ -194,7 +202,11 @@
         "missile3"
       ],
       "replace_weapon_display": true,
-      "ammo_slot": 1
+      "ammo_slot": 1,
+      "shoot_structure_bones": [
+        "variable_agm_1_shoot_barrel"
+      ],
+      "round_robin_ammo_hide": true
     },
     {
       "part_unit_id": "variable_agm",
@@ -211,7 +223,11 @@
         "missile3"
       ],
       "replace_weapon_display": true,
-      "ammo_slot": 2
+      "ammo_slot": 2,
+      "shoot_structure_bones": [
+        "variable_agm_2_shoot_barrel"
+      ],
+      "round_robin_ammo_hide": true
     },
     {
       "part_unit_id": "variable_agm",
@@ -226,7 +242,11 @@
         "missile1"
       ],
       "replace_weapon_display": true,
-      "ammo_slot": 1
+      "ammo_slot": 1,
+      "shoot_structure_bones": [
+        "variable_agm_1_shoot_barrel"
+      ],
+      "round_robin_ammo_hide": true
     },
     {
       "part_unit_id": "variable_agm",
@@ -241,7 +261,11 @@
         "missile1"
       ],
       "replace_weapon_display": true,
-      "ammo_slot": 2
+      "ammo_slot": 2,
+      "shoot_structure_bones": [
+        "variable_agm_2_shoot_barrel"
+      ],
+      "round_robin_ammo_hide": true
     }
   ],
   "parts": [
@@ -262,7 +286,7 @@
       "rot_info": {
         "x_rot_speed": 5,
         "y_rot_speed": 5,
-        "x_rot_min": -40,
+        "x_rot_min": -10,
         "x_rot_max": 80,
         "y_rot_min": -100,
         "y_rot_max": 100
@@ -317,7 +341,7 @@
     },
     {
       "id": "variable_aam",
-      "name": "variable_aam",
+      "name": "gui.ywzj_rvp.variants.pylon.aam",
       "type": "ywzj_vehicle:weapon",
       "structure_bone": "mica",
       "ammo_capacity": 4,
@@ -338,7 +362,7 @@
     },
     {
       "id": "variable_agm",
-      "name": "variable_agm",
+      "name": "gui.ywzj_rvp.variants.pylon.agm",
       "type": "ywzj_vehicle:weapon",
       "structure_bone": "variable_agm_1",
       "rvp_structure_bolt_bones": [

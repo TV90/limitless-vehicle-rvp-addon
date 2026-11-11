@@ -445,6 +445,7 @@
     },
     {
       "id": "commander_machine_gun",
+      "with_stabilizer": true,
       "name": "commander_machine_gun",
       "type": "ywzj_vehicle:weapon",
       "structure_bone": "commander_machine_gun",

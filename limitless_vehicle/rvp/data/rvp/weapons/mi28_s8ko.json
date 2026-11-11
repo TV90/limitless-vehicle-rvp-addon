@@ -1,6 +1,8 @@
 {
   "type": "rvp:rocket",
   "name": "S-8KO Rocket",
+  "parent_weapon_unit_aim_override": false,
+  "crosshair_style_override": "cross",
   "shoot_interval": 200,
   "max_capacity": 20,
   "reload": {

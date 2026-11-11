@@ -32,6 +32,7 @@ import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -74,8 +75,50 @@ public final class RVP_ShootBoltQueueResolver {
     private static volatile java.lang.reflect.Field xturnGroupField;
     /** 标记"已尝试解析且失败"，避免每次调用都重试并重复刷告警日志（退化为 structureGroup）。 */
     private static volatile boolean xturnGroupResolveFailed;
+    /**
+     * 每站出弹队列缓存（vehicleId → stationId → 队列集），数据包 apply 时整体替换。
+     * 同一武器站内不同武器共用一条 {@code WeaponUnit.bolts} 活列表，但各武器的自定义
+     * 挂架出弹点可能不同（如 F/A-18 内侧挂点的炸弹与 8 发阻尼人），故按武器拆分；
+     * 未配置出弹骨的武器回退整站并集（与拆分前的数据层语义一致）。
+     */
+    private static volatile Map<ResourceLocation, Map<String, StationBoltQueues>> stationQueues = Map.of();
+    /** 队列表版本号：每次数据包 apply 自增，运行期同步器据此对已生成载具补应用。 */
+    private static volatile long cacheVersion;
 
     private RVP_ShootBoltQueueResolver() {}
+
+    /**
+     * [RVP] 单站出弹队列集：{@code union} 为整站并集（模板 bolts 与未配置武器的回退），
+     * {@code byWeapon} 为按武器拆分后的独立队列。
+     */
+    public record StationBoltQueues(List<Bolt> union, Map<ResourceLocation, List<Bolt>> byWeapon) {
+
+        /** 取该武器的出弹队列；无独立配置时回退整站并集。 */
+        public List<Bolt> boltsFor(@Nullable ResourceLocation weaponId) {
+            if (weaponId != null) {
+                List<Bolt> own = byWeapon.get(weaponId);
+                if (own != null && !own.isEmpty()) {
+                    return own;
+                }
+            }
+            return union;
+        }
+    }
+
+    /** 查单站队列集；未配置出弹骨或载具不在册时返回 {@code null}。 */
+    @Nullable
+    public static StationBoltQueues getStationQueues(@Nullable ResourceLocation vehicleId, @Nullable String stationId) {
+        if (vehicleId == null || stationId == null) {
+            return null;
+        }
+        Map<String, StationBoltQueues> perVehicle = stationQueues.get(vehicleId);
+        return perVehicle == null ? null : perVehicle.get(stationId);
+    }
+
+    /** 队列表版本号（运行期同步器用于"重载后补应用"判定）。 */
+    public static long cacheVersion() {
+        return cacheVersion;
+    }
 
     /**
      * [RVP] 数据层出弹点写入（数据包 apply TAIL 调用，双端各自执行）。
@@ -89,6 +132,7 @@ public final class RVP_ShootBoltQueueResolver {
             return;
         }
         int appliedStations = 0;
+        Map<ResourceLocation, Map<String, StationBoltQueues>> allQueues = new HashMap<>();
         for (Map.Entry<ResourceLocation, JsonElement> entry : resources.entrySet()) {
             ResourceLocation vehicleId = entry.getKey();
             // 目的：读取本载具的挂架条目；未配置自定义挂架的载具直接跳过
@@ -113,6 +157,7 @@ public final class RVP_ShootBoltQueueResolver {
             if (byStation.isEmpty()) {
                 continue;
             }
+            Map<String, StationBoltQueues> vehicleQueues = new HashMap<>();
             // 目的：遍历部件模板（accessor 读 protected parts），命中站 id 的写入出弹 bolts
             List<PartUnitEntry<?, ?>> parts = ((BaseVehicleDataAccessor) (Object) data).ywzj_rvp$getParts();
             for (PartUnitEntry<?, ?> partEntry : parts) {
@@ -131,7 +176,10 @@ public final class RVP_ShootBoltQueueResolver {
                             weaponData.getId(), anchorBoneName);
                     continue;
                 }
-                List<Bolt> bolts = computeStationBolts(stationConfigs, anchorBone, model, vehicleId);
+                // 目的：同一站多个出弹骨条目可能引用同一根缺失骨，逐武器拆分后会重复出现，
+                // 用共享集合保证每根骨只告警一次
+                Set<String> warnedBones = new HashSet<>();
+                List<Bolt> bolts = computeStationBolts(stationConfigs, anchorBone, model, vehicleId, warnedBones);
                 if (bolts.isEmpty()) {
                     continue;
                 }
@@ -142,16 +190,38 @@ public final class RVP_ShootBoltQueueResolver {
                 }
                 template.clear();
                 template.addAll(bolts);
+                // 目的：按 weapon_id 拆分该站出弹队列（模板仍写整站并集作为未配置武器的回退），
+                // 运行期同步器随当前武器切换实体 bolts —— 同一站内不同弹种可以有不同出弹点集合
+                Map<ResourceLocation, List<RVP_CustomMountConfig>> byWeapon = new HashMap<>();
+                for (RVP_CustomMountConfig config : stationConfigs) {
+                    byWeapon.computeIfAbsent(config.weaponId(), key -> new ArrayList<>()).add(config);
+                }
+                Map<ResourceLocation, List<Bolt>> weaponQueues = new HashMap<>();
+                for (Map.Entry<ResourceLocation, List<RVP_CustomMountConfig>> weaponEntry : byWeapon.entrySet()) {
+                    List<Bolt> weaponBolts = computeStationBolts(weaponEntry.getValue(), anchorBone, model,
+                            vehicleId, warnedBones);
+                    if (!weaponBolts.isEmpty()) {
+                        weaponQueues.put(weaponEntry.getKey(), List.copyOf(weaponBolts));
+                    }
+                }
+                vehicleQueues.put(weaponData.getId(),
+                        new StationBoltQueues(List.copyOf(bolts), Map.copyOf(weaponQueues)));
                 appliedStations++;
                 Bolt first = bolts.get(0);
-                LOGGER.info("[RVP] 出弹点数据层写入 vehicle={} station={} bolts={} first=({},{},{}) 管长={}",
-                        vehicleId, weaponData.getId(), bolts.size(),
+                LOGGER.info("[RVP] 出弹点数据层写入 vehicle={} station={} bolts={} 武器队列={} first=({},{},{}) 管长={}",
+                        vehicleId, weaponData.getId(), bolts.size(), weaponQueues.size(),
                         String.format(java.util.Locale.ROOT, "%.3f", first.offset.x),
                         String.format(java.util.Locale.ROOT, "%.3f", first.offset.y),
                         String.format(java.util.Locale.ROOT, "%.3f", first.offset.z),
                         String.format(java.util.Locale.ROOT, "%.3f", first.barrelLength));
             }
+            if (!vehicleQueues.isEmpty()) {
+                allQueues.put(vehicleId, Map.copyOf(vehicleQueues));
+            }
         }
+        // 目的：整表原子替换 + 版本自增，运行期同步器据此对已生成载具补应用
+        stationQueues = Map.copyOf(allQueues);
+        cacheVersion++;
         if (appliedStations > 0) {
             LOGGER.info("[RVP] 出弹点数据层写入完成：站 {} 个", appliedStations);
         }
@@ -206,7 +276,7 @@ public final class RVP_ShootBoltQueueResolver {
      */
     private static List<Bolt> computeStationBolts(List<RVP_CustomMountConfig> stationConfigs,
                                                   BedrockBone anchorBone, BedrockModel model,
-                                                  ResourceLocation vehicleId) {
+                                                  ResourceLocation vehicleId, Set<String> warnedBones) {
         List<RVP_CustomMountConfig> entries = new ArrayList<>(stationConfigs);
         entries.sort(Comparator
                 .comparingInt((RVP_CustomMountConfig config) -> config.ammoSlot() > 0 ? config.ammoSlot() : Integer.MAX_VALUE)
@@ -221,8 +291,10 @@ public final class RVP_ShootBoltQueueResolver {
                 }
                 BedrockBone bone = model.getBoneMap().get(boneName);
                 if (bone == null) {
-                    LOGGER.warn("[RVP] 出弹骨不存在，跳过 vehicle={} bone={}",
-                            vehicleId, boneName);
+                    if (warnedBones.add(boneName)) {
+                        LOGGER.warn("[RVP] 出弹骨不存在，跳过 vehicle={} bone={}",
+                                vehicleId, boneName);
+                    }
                     continue;
                 }
                 // 目的：出弹骨坐标系 → 锚定骨坐标系（xTurnGroup 空间）的平移差

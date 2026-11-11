@@ -1,6 +1,8 @@
 {
   "type": "rvp:missile",
   "name": "YJ-80 IR-AGM",
+  "parent_weapon_unit_aim_override": true,
+  "crosshair_style_override": "circle",
   "shoot_interval": 2000,
   "max_capacity": 2,
   "reload": {

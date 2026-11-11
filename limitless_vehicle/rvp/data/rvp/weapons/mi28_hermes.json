@@ -1,6 +1,7 @@
 {
   "type": "rvp:missile",
   "name": "Hermes ARH-AGM",
+  "crosshair_style_override": "circle",
   "shoot_interval": 2000,
   "fire_control_sensor_type_override": "rf",
   "max_capacity": 4,

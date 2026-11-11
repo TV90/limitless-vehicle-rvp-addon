@@ -1,6 +1,8 @@
 {
   "type": "rvp:missile",
   "name": "AASM-64 IR-AGM",
+  "parent_weapon_unit_aim_override": true,
+  "crosshair_style_override": "circle",
   "shoot_interval": 3000,
   "max_capacity": 6,
   "reload": {

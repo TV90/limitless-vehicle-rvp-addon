@@ -1,6 +1,7 @@
 {
   "type": "rvp:missile",
   "name": "YJ-83 ARH-ASM",
+  "crosshair_style_override": "circle",
   "name_CN": "鹰击-83K 主动雷达制导反舰导弹",
   "shoot_interval": 1000,
   "max_capacity": 4,

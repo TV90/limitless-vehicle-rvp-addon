@@ -82,7 +82,7 @@
     },
     {
       "id": "rocket",
-      "name": "rocket",
+      "name": "gui.ywzj_rvp.variants.pylon.rocket",
       "type": "ywzj_vehicle:weapon",
       "structure_bone": "shoot_barrel",
       "bolts": [

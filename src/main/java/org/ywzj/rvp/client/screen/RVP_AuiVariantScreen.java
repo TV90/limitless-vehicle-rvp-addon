@@ -188,15 +188,7 @@ public class RVP_AuiVariantScreen extends ApricityScreen {
             entry.setAttribute("tabindex", "0");
             Element name = document.createElement("span");
             name.setClassName("weapon-entry-name");
-            // 挂架队显示 part 名；分组栏优先 save_id，普通弹种站显示 multi 名
-            String display;
-            if (isPylon) {
-                display = station.partId();
-            } else if (station.groupTitle() != null && !station.groupTitle().isBlank()) {
-                display = station.groupTitle();
-            } else {
-                display = station.multi.getDisplayName().getString();
-            }
+            String display = isPylon ? resolvePylonDisplay(station) : resolveGroupDisplay(station);
             name.setTextContent(display);
             Element count = document.createElement("span");
             count.setClassName("weapon-entry-count");
@@ -218,6 +210,80 @@ public class RVP_AuiVariantScreen extends ApricityScreen {
             }
         }
         refreshStationActive();
+    }
+
+    /**
+     * 挂架队显示名：优先武器站数据里的可读名（{@code name} 对应的语言键），
+     * 仍是内部 id 时退化为去掉 {@code variable_} 前缀和下划线的短名。
+     */
+    private static String resolvePylonDisplay(StationEntry station) {
+        String unitName = station.unit.getName().getString();
+        if (unitName != null && !unitName.isBlank() && !unitName.equals(station.partId())) {
+            return unitName;
+        }
+        return prettifyId(station.partId());
+    }
+
+    /**
+     * 弹种组显示名：分组槽不再直接显示 {@code save_id}，改用组内第一枚弹的可读名
+     * （去掉 {@code [AP]}/{@code [HE]} 这类尾缀）；普通弹种站沿用 multi 名，空时再退化。
+     */
+    private static String resolveGroupDisplay(StationEntry station) {
+        boolean grouped = station.groupTitle() != null && !station.groupTitle().isBlank();
+        if (grouped) {
+            String roleKey = ammoRoleKey(station.groupTitle());
+            if (roleKey != null) {
+                return I18n.get(roleKey);
+            }
+            String subName = firstSubWeaponName(station.multi);
+            return subName != null ? subName : prettifyId(station.groupTitle());
+        }
+        if (station.multi != null) {
+            String multiName = station.multi.getDisplayName().getString();
+            if (multiName != null && !multiName.isBlank()) {
+                return multiName;
+            }
+        }
+        String subName = firstSubWeaponName(station.multi);
+        return subName != null ? subName : "";
+    }
+
+    /**
+     * 坦克/步战车主炮并槽组按用途命名：{@code save_id} 以 {@code _ap} 结尾=反装甲，
+     * {@code _he} 结尾=反步兵；导弹/机炮/多用途组返回 null，仍按弹名派生。
+     */
+    private static String ammoRoleKey(String groupId) {
+        if (groupId == null) {
+            return null;
+        }
+        String id = groupId.toLowerCase(java.util.Locale.ROOT);
+        if (id.endsWith("_ap")) {
+            return "gui.ywzj_rvp.variants.ammo.anti_armor";
+        }
+        if (id.endsWith("_he")) {
+            return "gui.ywzj_rvp.variants.ammo.anti_infantry";
+        }
+        return null;
+    }
+
+    private static String firstSubWeaponName(VehicleMultiWeapons multi) {
+        if (multi == null || multi.getSubWeapons().isEmpty()) {
+            return null;
+        }
+        String name = multi.getSubWeapons().get(0).getDisplayName().getString();
+        if (name == null) {
+            return null;
+        }
+        name = name.replaceAll("\\s*[\\[【(（][^\\]】)）]*[\\]】)）]\\s*$", "").trim();
+        return name.isEmpty() ? null : name;
+    }
+
+    private static String prettifyId(String id) {
+        if (id == null || id.isBlank()) {
+            return "";
+        }
+        String trimmed = id.startsWith("variable_") ? id.substring("variable_".length()) : id;
+        return trimmed.replace('_', ' ').trim();
     }
 
     private void selectStation(int index) {

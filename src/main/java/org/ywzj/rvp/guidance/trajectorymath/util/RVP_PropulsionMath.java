@@ -24,7 +24,9 @@ public final class RVP_PropulsionMath {
     public static double resolveAttitudeMass(RVP_ProjectileData data, int motorTick) {
         if (data == null) return 0.0;
         // 调用既有质量和推进资格出口，避免未燃烧时提前扣除燃料。
-        if (motorTick < 0 || !data.usesPropulsion()) return data.getResolvedMass();
+        if (motorTick < 0) return data.getResolvedMass();
+        // 无动力弹体（炸弹等）不受 engine 门控，惯量沿用弹道质量，不能因未开发动机变成 0。
+        if (!data.usesPropulsion()) return data.getBallisticDragMass();
         // 调用已有动力解析公式；二脉冲仍使用主燃尽干质量，不需要在此触发点火。
         return resolveMotorState(data, motorTick, false).mass();
     }

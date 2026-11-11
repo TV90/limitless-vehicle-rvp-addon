@@ -67,6 +67,10 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     @SerializedName("effects_data")
     private RVP_EffectsData effectsData = new RVP_EffectsData();
 
+    /** CCIP 地面落点标记外观（圆环/引线尺寸与颜色），见 {@link RVP_CcipMarkerData}。 */
+    @SerializedName("ccip_marker_data")
+    private RVP_CcipMarkerData ccipMarkerData = new RVP_CcipMarkerData();
+
     /** 落点爆炸与火焰/药水等自定义效果，见 {@link RVP_DetonateData}。 */
     @SerializedName("detonate_data")
     private RVP_DetonateData detonateData = new RVP_DetonateData();
@@ -153,6 +157,15 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     private Boolean parentWeaponUnitAimOverride;
 
     /**
+     * 弹药侧冷发射豁免：true=即使所属武器站配置了 {@code cold_launch_time_tick/velocity}
+     * 也不进入冷发射阶段；false=强制沿用武器站配置。null（未配置）=按弹种默认：
+     * 火箭弹/炸弹豁免，其它弹种沿用武器站配置。
+     * 仅 RVP 弹体消费（{@code RVP_ProjectileSpawner} → {@code RVP_BaseBullet#initColdLaunch}）。
+     */
+    @SerializedName("cold_launch_exempt")
+    private Boolean coldLaunchExempt;
+
+    /**
      * 可选：本武器锁定敌人时播放的导引头锁定音（{@code SoundEvent} 资源位置字符串，
      * 如 {@code "ywzj_rvp:ir_track_alarm"} / {@code "ywzj_vehicle:missile_launch"}）。
      * 不配置则消费方回退全局默认 {@code RVP_Sounds.IR_TRACK_ALARM}。
@@ -179,6 +192,11 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
 
     public String getTacticalMapIcon() {
         return tacticalMapIcon == null ? "" : tacticalMapIcon;
+    }
+
+    /** CCIP 地面落点标记外观；未配置/显式为 null 时回退 {@link RVP_CcipMarkerData#DEFAULT}。 */
+    public RVP_CcipMarkerData getCcipMarkerData() {
+        return ccipMarkerData == null ? RVP_CcipMarkerData.DEFAULT : ccipMarkerData;
     }
 
     public void setWeaponKind(RVP_EnumWeaponKind weaponKind) {
@@ -342,6 +360,17 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     @Nullable
     public Boolean getParentWeaponUnitAimOverride() {
         return parentWeaponUnitAimOverride;
+    }
+
+    /**
+     * 弹药侧冷发射豁免：显式配置优先；未配置时火箭弹/炸弹默认豁免，
+     * 导弹等其它弹种沿用武器站冷发射配置。
+     */
+    public boolean isColdLaunchExempt() {
+        if (coldLaunchExempt != null) {
+            return coldLaunchExempt;
+        }
+        return weaponKind == RVP_EnumWeaponKind.ROCKET || weaponKind == RVP_EnumWeaponKind.BOMB;
     }
 
     @Nullable

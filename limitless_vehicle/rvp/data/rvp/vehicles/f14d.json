@@ -221,6 +221,86 @@
       "shoot_structure_bones": [
         "variable_missile_2_shoot_barrel"
       ]
+    },
+    {
+      "part_unit_id": "variable_missile",
+      "attach_part_unit_id": "variable_missile_mount_2",
+      "weapon_id": "rvp:ah64_zuni",
+      "model": "rvp:entity/weapon_mount/weapon_mount_f14d_zuni_r",
+      "texture": "rvp:textures/entity/weapon_mount/weapon_mount_f14d_zuni.png",
+      "rack_bones": [
+        "pylon"
+      ],
+      "missile_bones": [
+        "missile1",
+        "missile2",
+        "missile3",
+        "missile4"
+      ],
+      "replace_weapon_display": true,
+      "ammo_slot": 1,
+      "shoot_structure_bones": [
+        "variable_missile_2_shoot_barrel"
+      ],
+      "round_robin_ammo_hide": true
+    },
+    {
+      "part_unit_id": "variable_missile",
+      "attach_part_unit_id": "variable_missile_mount_1",
+      "weapon_id": "rvp:ah64_zuni",
+      "model": "rvp:entity/weapon_mount/weapon_mount_f14d_zuni_l",
+      "texture": "rvp:textures/entity/weapon_mount/weapon_mount_f14d_zuni.png",
+      "rack_bones": [
+        "pylon"
+      ],
+      "missile_bones": [
+        "missile1",
+        "missile2",
+        "missile3",
+        "missile4"
+      ],
+      "replace_weapon_display": true,
+      "ammo_slot": 2,
+      "shoot_structure_bones": [
+        "variable_missile_1_shoot_barrel"
+      ],
+      "round_robin_ammo_hide": true
+    },
+    {
+      "part_unit_id": "variable_missile",
+      "attach_part_unit_id": "variable_missile_mount_2",
+      "weapon_id": "rvp:f14_gbu31",
+      "model": "rvp:entity/weapon_mount/weapon_mount_f14d_gbu31_r",
+      "texture": "rvp:textures/entity/weapon_mount/weapon_mount_f14d_gbu31.png",
+      "rack_bones": [
+        "pylon"
+      ],
+      "missile_bones": [
+        "missile1"
+      ],
+      "replace_weapon_display": true,
+      "ammo_slot": 1,
+      "shoot_structure_bones": [
+        "variable_missile_2_shoot_barrel"
+      ]
+    },
+    {
+      "part_unit_id": "variable_missile",
+      "attach_part_unit_id": "variable_missile_mount_1",
+      "weapon_id": "rvp:f14_gbu31",
+      "model": "rvp:entity/weapon_mount/weapon_mount_f14d_gbu31_l",
+      "texture": "rvp:textures/entity/weapon_mount/weapon_mount_f14d_gbu31.png",
+      "rack_bones": [
+        "pylon"
+      ],
+      "missile_bones": [
+        "missile1"
+      ],
+      "replace_weapon_display": true,
+      "ammo_slot": 2,
+      "shoot_structure_bones": [
+        "variable_missile_1_shoot_barrel"
+      ]
     }
   ],
   "parts": [
@@ -238,17 +318,22 @@
       "rot_info": {
         "x_rot_speed": 15,
         "y_rot_speed": 15,
-        "x_rot_min": -3,
-        "x_rot_max": 3,
-        "y_rot_min": -3,
-        "y_rot_max": 3
+        "x_rot_min": -20,
+        "x_rot_max": 80,
+        "y_rot_min": -60,
+        "y_rot_max": 60
       },
-      "operator_view_offset": [
-        0.0390625,
-        3.4625,
-        5.6875
+      "optical_sight_offset": [
+        0.12995625,
+        2.09206875,
+        -2.2856
       ],
-      "optical_sight_type": "none",
+      "operator_view_offset": [
+        0.12995625,
+        2.09206875,
+        -2.4356
+      ],
+      "optical_sight_type": "crt_ui",
       "sub_part_unit_ids": [
         "radar"
       ],
@@ -304,21 +389,23 @@
     },
     {
       "id": "variable_missile",
-      "name": "variable_missile",
+      "name": "gui.ywzj_rvp.variants.pylon.missile",
       "type": "ywzj_vehicle:weapon",
       "structure_bone": "variable_missile_1",
       "rvp_structure_bolt_bones": [
         "variable_missile_1_barrel",
         "variable_missile_2_barrel"
       ],
-      "ammo_capacity": 2,
+      "ammo_capacity": -1,
       "fire_control_sensor_type": "ccip",
       "is_seat": false,
       "parent_weapon_unit_aim": false,
       "crosshair_style": "big_cross",
       "weapons": [
         "rvp:f14d_aim7p",
-        "rvp:f14d_mk84"
+        "rvp:f14d_mk84",
+        "rvp:ah64_zuni",
+        "rvp:f14_gbu31"
       ]
     },
     {

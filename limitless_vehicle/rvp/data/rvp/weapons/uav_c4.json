@@ -1,6 +1,9 @@
 {
   "type": "rvp:bomb",
   "name": "UAV C4 Self-Destruct Charge",
+  "fire_control_sensor_type_override": "ccip",
+  "parent_weapon_unit_aim_override": false,
+  "crosshair_style_override": "big_cross",
   "name_CN": "UAV C4 自爆炸药",
   "recoil": 0,
   "shoot_interval": 2000,

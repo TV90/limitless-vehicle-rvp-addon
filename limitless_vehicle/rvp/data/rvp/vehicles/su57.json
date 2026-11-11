@@ -223,7 +223,7 @@
     },
     {
       "id": "kh_38",
-      "name": "kh_38",
+      "name": "gui.ywzj_rvp.variants.pylon.kh38",
       "type": "ywzj_vehicle:weapon",
       "structure_bone": "kh_38",
       "ammo_capacity": 2,
@@ -244,7 +244,7 @@
     },
     {
       "id": "kh_58",
-      "name": "kh_58",
+      "name": "gui.ywzj_rvp.variants.pylon.kh58",
       "type": "ywzj_vehicle:weapon",
       "structure_bone": "kh_58",
       "ammo_capacity": 2,

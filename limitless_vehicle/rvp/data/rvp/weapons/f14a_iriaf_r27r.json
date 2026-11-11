@@ -1,6 +1,7 @@
 {
   "type": "rvp:missile",
   "name": "R-27R SARH-AAM",
+  "crosshair_style_override": "circle",
   "show_msl_indicator": true,
   "shoot_interval": 500,
   "fire_control_sensor_type_override": "rf",

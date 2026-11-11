@@ -1,6 +1,8 @@
 {
   "type": "rvp:missile",
   "name": "KD-88A IR-AGM",
+  "parent_weapon_unit_aim_override": true,
+  "crosshair_style_override": "circle",
   "shoot_interval": 2000,
   "max_capacity": 2,
   "reload": {

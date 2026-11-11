@@ -378,6 +378,8 @@ public class RVP_ClientEvents {
         if (mc.level != null) {
             RVP_TacticalMapCache.processChunkUpdates(mc.level, player.getX(), player.getZ(), 6);
             RVP_TacticalMapCache.uploadDirtyTextures();
+            // [RVP] 自定义挂架出弹队列随当前武器切换（同站多弹种各自出弹点，客户端为开火坐标权威端）
+            org.ywzj.rvp.mount.RVP_ShootBoltWeaponSync.tickVehicles(mc.level.entitiesForRendering());
         }
 
         // [RVP] 雷达骨骼部件（2026-09-27）：雷达损坏时按雷达键给出动作栏提示。

@@ -697,6 +697,19 @@ public class RVP_ProjectileData {
         return hasRocketEngine ? Math.max(dragCoefficient, 0f) : 0f;
     }
 
+    /**
+     * 无动力弹体（炸弹等）沿用导弹速度平方阻力：显式 {@code drag_coefficient} 不再要求
+     * {@code has_rocket_engine=true}，未配置仍为 0（关闭）。
+     */
+    public float getBallisticDragCoefficient() {
+        return Math.max(dragCoefficient, 0f);
+    }
+
+    /** 无动力弹体的阻力质量；未配置 {@code mass} 返回 0，调用方据此关闭阻力。 */
+    public float getBallisticDragMass() {
+        return Math.max(mass, 0f);
+    }
+
     public Map<RVP_Range<Float>, Float> getAltitudeDragFactor() {
         return altitudeDragFactor;
     }

@@ -1,6 +1,7 @@
 package org.ywzj.rvp.weapon.physics;
 
 import net.minecraft.world.phys.Vec3;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_QuadraticAirDrag;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.vehicle.PhysicsEngine;
@@ -38,12 +39,26 @@ public final class RVP_UnguidedBallisticMath {
     public static Step stepProjectile(Vec3 position, Vec3 velocity, RVP_WeaponData data) {
         Vec3 nextVelocity = velocity.add(0.0D, data.getGravity(), 0.0D);
         nextVelocity = applyMchHorizontalDrag(nextVelocity, data.getDragInAir());
+        nextVelocity = applyBallisticDrag(nextVelocity, position.y, data);
         if (data.getProjectileData().isConstantSpeed() && nextVelocity.lengthSqr() > 1.0E-6D) {
             nextVelocity = nextVelocity.normalize().scale(Math.max(velocity.length(), 0.01D));
         }
         nextVelocity = clampSpeed(nextVelocity, data.getProjectileData().getMinSpeed(),
                 data.getProjectileData().getMaxSpeed());
         return new Step(position.add(nextVelocity), nextVelocity);
+    }
+
+    /**
+     * 无动力弹体的速度平方阻力，语义与动力导弹链一致：按弹体质量、速度平方和当前高度
+     * 空气密度倍率扣速。仅显式配置 {@code drag_coefficient} 与 {@code mass} 时生效，
+     * 未配置的旧弹药行为不变；实体运动、CCIP 与炮火支援解算共用本方法。
+     */
+    public static Vec3 applyBallisticDrag(Vec3 velocity, double altitude, RVP_WeaponData data) {
+        float coefficient = data.getProjectileData().getBallisticDragCoefficient();
+        float mass = data.getProjectileData().getBallisticDragMass();
+        if (coefficient <= 0.0F || mass <= 0.0F) return velocity;
+        return RVP_QuadraticAirDrag.apply(velocity, coefficient, mass,
+                data.getProjectileData().resolveAltitudeDragFactor(altitude));
     }
 
     /** 对齐 {@code RVP_BombEntity}：未配置自定义重力时先补本体炸弹默认重力。 */

@@ -1,6 +1,7 @@
 {
   "type": "rvp:missile",
   "name": "Chunqiu Cannonball",
+  "crosshair_style_override": "circle",
   "show_msl_indicator": true,
   "shoot_interval": 1000,
   "max_capacity": 4,

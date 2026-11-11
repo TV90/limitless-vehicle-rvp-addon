@@ -1,6 +1,8 @@
 {
   "type": "rvp:missile",
   "name": "YJ-91A ARM",
+  "parent_weapon_unit_aim_override": false,
+  "cold_launch_exempt": true,
   "headshot_multiplier": 1.5,
   "recoil": 0.1,
   "shoot_interval": 2000,

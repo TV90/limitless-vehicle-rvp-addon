@@ -14,6 +14,7 @@ import org.joml.Matrix4f;
 import org.lwjgl.opengl.GL11;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.client.cockpit.RVP_CockpitDiag;
+import org.ywzj.rvp.client.state.RVP_ClientProjectileRenderInterpolator;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.mixin.accessor.BaseBulletAccessor;
 import org.ywzj.rvp.util.RVP_RadarContactHelper;
@@ -61,6 +62,7 @@ public class RVP_MslOverlay {
         GuiGraphics guiGraphics = event.getGuiGraphics();
         int screenWidth = mc.getWindow().getGuiScaledWidth();
         int screenHeight = mc.getWindow().getGuiScaledHeight();
+        float partialTick = event.getPartialTick();
 
         // 获取世界中的所有 RVP 导弹（覆盖全射程；O(实体) 遍历，替代 ±8192 立方体 getEntitiesOfClass，
         // 客户端每帧渲染路径，16384³ 的 section 索引遍历灾难级）
@@ -113,12 +115,13 @@ public class RVP_MslOverlay {
                 if (!missile.isMotorBurningNow()) continue;
             }
 
-            // 投影到屏幕
-            Vec3 targetPos = missile.position();
+            // 投影到屏幕：使用与实体渲染器同一显示位置解析，按 partialTick 插值/短时外推，
+            // 避免 20Hz 网络位置更新让标签在 60fps 下逐帧跳格。
+            Vec3 targetPos = RVP_ClientProjectileRenderInterpolator.resolveRenderCenter(missile, partialTick);
             Vec3 screenPos = VectorUtil.worldToScreen(targetPos);
             if (screenPos == null || screenPos.z < 0) continue;
 
-            double dist = mc.player.position().distanceTo(targetPos);
+            double dist = mc.gameRenderer.getMainCamera().getPosition().distanceTo(targetPos);
             String distStr = String.format("%.0fm", dist);
             RVP_WeaponData weaponData = RVP_RadarContactHelper.resolveBulletWeaponData(missile);
             // 最晚发射的自己烧完的导弹：超出配置范围时回退至上一个非 null 区间的文案

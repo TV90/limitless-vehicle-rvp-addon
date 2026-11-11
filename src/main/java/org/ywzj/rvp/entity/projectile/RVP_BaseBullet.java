@@ -1230,13 +1230,22 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     public void initColdLaunch(@Nullable WeaponUnit weaponUnit) {
+        // 直接调用方未提供弹药侧豁免信息时，按武器站冷发射配置执行。
+        initColdLaunch(weaponUnit, false);
+    }
+
+    /**
+     * @param exempt 弹药侧冷发射豁免；true 时忽略武器站的 cold_launch_time_tick/velocity，
+     *               点火时刻只由 ignition_delay_tick 决定。
+     */
+    public void initColdLaunch(@Nullable WeaponUnit weaponUnit, boolean exempt) {
         this.launchWeaponUnit = weaponUnit;
         if (weaponUnit == null) {
             return;
         }
-        coldLaunchTimeTick = Math.max(weaponUnit.getColdLaunchTimeTick(), 0);
+        coldLaunchTimeTick = exempt ? 0 : Math.max(weaponUnit.getColdLaunchTimeTick(), 0);
         Vec3 configuredVelocity = weaponUnit.getColdLaunchVelocity();
-        if (configuredVelocity != null) {
+        if (!exempt && configuredVelocity != null) {
             coldLaunchVelocity = configuredVelocity;
         }
         refreshMotorBurnWindow();
@@ -3367,6 +3376,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             if (isGpsCruisePhaseActive()) gravity *= resolveGpsCruiseGravityScale();
             velocity = velocity.add(0, gravity, 0);
             velocity = applyMchHorizontalDrag(velocity, dragInAir);
+            if (!isMissile()) {
+                // 调用共享无动力弹体阻力：巡航/恒速分支也必须与 stepProjectile 同口径，否则炸弹会突然“变轻”。
+                velocity = RVP_UnguidedBallisticMath.applyBallisticDrag(velocity, position().y, rvpData);
+            }
         } else {
             velocity = velocity.add(0, rvpData.getGravityInWater(), 0);
             velocity = applyMchHorizontalDrag(velocity, rvpData.getDragInWater());

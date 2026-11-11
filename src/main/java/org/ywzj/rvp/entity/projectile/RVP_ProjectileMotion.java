@@ -17,6 +17,8 @@ import org.ywzj.rvp.guidance.trajectorymath.util.RVP_QuadraticAirDrag;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.data.RVP_ProjectileData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
+import org.ywzj.vehicle.entity.vehicle.FixedWingVehicle;
+import org.ywzj.vehicle.entity.vehicle.RotaryWingVehicle;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.PhysicsEngine;
 
@@ -421,7 +423,9 @@ public final class RVP_ProjectileMotion {
      */
     private static void initializeColdLaunchAttackAngle(RVP_BaseBullet projectile, RVP_BaseBullet.AimRot aim) {
         // 调用本项目攻角门控，仅改变启用冷发射攻角模型的导弹，普通弹及普通导弹保持原有发射姿态。
-        if (projectile.getColdLaunchTimeTick() <= 0 || !usesAttackAngle(projectile)) {
+        // 空中载具的叠加式冷发射保持生成时瞄准姿态，不能把机头锁到竖直弹射轴上。
+        if (projectile.getColdLaunchTimeTick() <= 0 || !usesAttackAngle(projectile)
+                || usesAdditiveColdLaunch(projectile)) {
             return;
         }
         AbstractVehicle carrier = projectile.shooterVehicle;
@@ -644,6 +648,14 @@ public final class RVP_ProjectileMotion {
             return velocity;
         }
         Vector3f[] axes = carrier.getMainCubeOBB().obb().getAxes();
+        if (usesAdditiveColdLaunch(projectile)) {
+            // 空中载具的继承+方向跟随弹：只在离架首 Tick 叠一次向下弹射速度，
+            // 之后保留"出膛速度 + 载机速度"前飞，不再每 Tick 替换速度把机头掰向弹射轴。
+            if (projectile.getFlightTickCount() == 0) {
+                return velocity.add(resolveColdLaunchVelocity(projectile.getColdLaunchVelocity(), axes));
+            }
+            return velocity;
+        }
         if (coldLaunchTick > 0 && projectile.getFlightTickCount() < coldLaunchTick) {
             // 调用本项目冷发射速度解析：冷段每 Tick 重算局部弹射速度，但载机部分固定为发射快照。
             return resolveEffectiveColdLaunchVelocity(
@@ -659,6 +671,25 @@ public final class RVP_ProjectileMotion {
         }
         // 调用本项目发射速度快照入口：无枪口初速的延迟点火弹同样不得读取载机实时速度。
         return projectile.getLaunchVehicleVelocity().add(eject);
+    }
+
+    /**
+     * 空中载具（固定翼/旋翼）上同时配置载机速度继承与方向跟随的导弹走叠加式冷发射。
+     *
+     * <p>航空武器站的冷发射速度是本体系向下弹射（{@code [0,-0.5,0]}），原先相对载机速度
+     * 每 Tick 整段替换速度，方向跟随随即把机头对齐到弹射轴，离架就呈俯冲姿态。
+     * 这类弹本来就继承载机速度前飞，只需离架时叠加一次向下弹射速度。</p>
+     */
+    private static boolean usesAdditiveColdLaunch(RVP_BaseBullet projectile) {
+        if (projectile.getColdLaunchTimeTick() <= 0 || projectile.rvpData == null) {
+            return false;
+        }
+        AbstractVehicle carrier = projectile.shooterVehicle;
+        if (!(carrier instanceof FixedWingVehicle) && !(carrier instanceof RotaryWingVehicle)) {
+            return false;
+        }
+        RVP_ProjectileData projectileData = projectile.rvpData.getProjectileData();
+        return projectileData.isInheritVehicleVelocity() && projectileData.isRotateToMotion();
     }
 
     /**

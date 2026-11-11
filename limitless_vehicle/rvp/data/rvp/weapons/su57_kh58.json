@@ -1,6 +1,7 @@
 {
   "type": "rvp:missile",
   "name": "KH-58USHK ARM",
+  "parent_weapon_unit_aim_override": false,
   "headshot_multiplier": 1.5,
   "recoil": 0.1,
   "shoot_interval": 1000,

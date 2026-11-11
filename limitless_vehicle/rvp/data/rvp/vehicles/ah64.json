@@ -215,7 +215,7 @@
     },
     {
       "id": "missile_1",
-      "name": "missile_1",
+      "name": "gui.ywzj_rvp.variants.pylon.missile_1",
       "type": "ywzj_vehicle:weapon",
       "structure_bone": "missile_1_barrel",
       "bolts": [
@@ -247,7 +247,7 @@
     },
     {
       "id": "missile_2",
-      "name": "missile_2",
+      "name": "gui.ywzj_rvp.variants.pylon.missile_2",
       "type": "ywzj_vehicle:weapon",
       "structure_bone": "missile_2_barrel",
       "bolts": [
@@ -279,7 +279,7 @@
     },
     {
       "id": "rocket",
-      "name": "rocket",
+      "name": "gui.ywzj_rvp.variants.pylon.rocket",
       "type": "ywzj_vehicle:weapon",
       "structure_bone": "rocket",
       "is_seat": false,

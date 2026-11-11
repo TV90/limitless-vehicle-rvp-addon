@@ -171,7 +171,7 @@ public final class RVP_ProjectileSpawner {
         projectile.setRemoteChunkPathEnabled(
                 context.chunkLoadingPolicy() == RVP_ProjectileChunkLoadingPolicy.REMOTE_FIRE_SUPPORT);
         projectile.setShooterWeaponUnit(context.sourceWeaponUnit());
-        projectile.initColdLaunch(context.launchWeaponUnit());
+        projectile.initColdLaunch(context.launchWeaponUnit(), context.weaponData().isColdLaunchExempt());
         if (context.launchWeaponUnit() != null && context.wireLaunchFrom() != null) {
             AimContext wireAim = new AimContext();
             wireAim.from = context.wireLaunchFrom();

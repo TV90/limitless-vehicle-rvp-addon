@@ -328,7 +328,7 @@
     },
     {
       "id": "variable_aam",
-      "name": "variable_aam",
+      "name": "gui.ywzj_rvp.variants.pylon.aam",
       "type": "ywzj_vehicle:weapon",
       "structure_bone": "variable_aam_1",
       "rvp_structure_bolt_bones": [

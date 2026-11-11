@@ -51,7 +51,7 @@
     }
   },
   "attributes": {
-    "thrust": 80066,
+    "thrust": 64052.8,
     "thrust_k": 1.26316,
     "ceiling": 1024,
     "x_rot_input_step": 0.2,
@@ -59,7 +59,7 @@
     "z_rot_input_step": 0.2,
     "air_drag_k_min": 17.2,
     "air_drag_k_max": 68.8,
-    "lift_to_drag_k": 3,
+    "lift_to_drag_k": 3.45,
     "x_rot_input_drag_k": 1.0,
     "y_rot_input_drag_k": 0.25,
     "z_rot_input_drag_k": 0.125,
@@ -287,7 +287,7 @@
       "rot_info": {
         "x_rot_speed": 7,
         "y_rot_speed": 7,
-        "x_rot_min": -40,
+        "x_rot_min": -10,
         "x_rot_max": 120,
         "y_rot_min": -120,
         "y_rot_max": 120
@@ -342,7 +342,7 @@
     },
     {
       "id": "variable_agm",
-      "name": "variable_agm",
+      "name": "gui.ywzj_rvp.variants.pylon.agm",
       "type": "ywzj_vehicle:weapon",
       "structure_bone": "variable_agm_1",
       "rvp_structure_bolt_bones": [
@@ -361,7 +361,7 @@
     },
     {
       "id": "variable_aam",
-      "name": "variable_aam",
+      "name": "gui.ywzj_rvp.variants.pylon.aam",
       "type": "ywzj_vehicle:weapon",
       "structure_bone": "variable_aam_1",
       "rvp_structure_bolt_bones": [

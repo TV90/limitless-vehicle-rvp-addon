@@ -1,7 +1,9 @@
 {
   "type": "rvp:rocket",
   "name": "S-13OF Rocket",
-  "shoot_interval": 300,
+  "parent_weapon_unit_aim_override": false,
+  "crosshair_style_override": "cross",
+  "shoot_interval": 250,
   "max_capacity": 10,
   "reload": {
     "time": 300,

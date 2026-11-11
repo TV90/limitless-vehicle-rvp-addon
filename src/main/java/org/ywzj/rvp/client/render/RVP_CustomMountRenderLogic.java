@@ -18,6 +18,7 @@ import org.ywzj.rvp.client.resource.vehicle.RVP_BedrockBackend;
 import org.ywzj.rvp.client.resource.vehicle.RVP_VehicleModelFactory;
 import org.ywzj.rvp.config.RVP_CustomMountConfig;
 import org.ywzj.rvp.config.RVP_CustomMountConfigCache;
+import org.ywzj.rvp.mount.RVP_CustomMountAmmoVisibility;
 import org.ywzj.rvp.mount.RVP_ShootBoltQueueResolver;
 import org.ywzj.vehicle.client.resource.ClientAssetsManager;
 import org.ywzj.vehicle.client.resource.DisplayManager;
@@ -633,24 +634,31 @@ public final class RVP_CustomMountRenderLogic {
             return;
         }
         // 目的：队列总弹数 = 排序后各条目 missile_bones 数之和（与出弹队列同序同长）
+        int[] missileCounts = new int[mounts.size()];
         int totalQueue = 0;
-        for (ResolvedMount mount : mounts) {
-            totalQueue += Math.max(0, mount.config().missileBones().size());
+        for (int i = 0; i < mounts.size(); i++) {
+            int count = Math.max(0, mounts.get(i).config().missileBones().size());
+            missileCounts[i] = count;
+            totalQueue += count;
         }
         // 目的：已发射数由"队列总弹数 - 可见弹药"得出（可见弹药 = 服务端同步与客户端
         // 开火预测取小，见 resolveVisibleAmmo）
         int visibleAmmo = mounts.get(0).visibleAmmo();
         int fired = Math.max(0, totalQueue - visibleAmmo);
-        // 目的：逐条目按队列偏移折算可见枚数（单弹条目 c=1 自然退化为全显/全隐）
-        int queueOffset = 0;
+        // 目的：开启 round_robin_ammo_hide 的分组按开火轮转逐发消耗各挂架的下一枚；
+        // 该语义只在"每个挂架恰好一根出弹骨"时与 countFire 的单 bolt 轮转一致，
+        // 其他情况自动回退旧的整段消耗，避免多出弹骨条目出现新的错位。
+        boolean roundRobinMode = mounts.stream().anyMatch(mount -> mount.config().roundRobinAmmoHide())
+                && mounts.stream().allMatch(mount -> mount.config().shootStructureBones().size() == 1);
+        int[] hiddenCounts = roundRobinMode
+                ? RVP_CustomMountAmmoVisibility.roundRobin(missileCounts, fired)
+                : RVP_CustomMountAmmoVisibility.sequential(missileCounts, fired);
+        // 目的：逐条目按分配结果折算可见枚数（单弹条目 c=1 自然退化为全显/全隐）
         int fallbackSlot = 1;
         for (int i = 0; i < mounts.size(); i++) {
             ResolvedMount mount = mounts.get(i);
             int slot = mount.config().ammoSlot() > 0 ? mount.config().ammoSlot() : fallbackSlot++;
-            int missileCount = Math.max(0, mount.config().missileBones().size());
-            int hiddenOnThis = Math.max(0, Math.min(missileCount, fired - queueOffset));
-            int visibleOnThis = missileCount - hiddenOnThis;
-            queueOffset += missileCount;
+            int visibleOnThis = missileCounts[i] - hiddenCounts[i];
             mounts.set(i, new ResolvedMount(mount.config(), mount.syncedAmmo(), mount.visibleAmmo(),
                     mount.predictedAmmo(), slot, visibleOnThis <= 0, visibleOnThis, mount.firingMode()));
         }

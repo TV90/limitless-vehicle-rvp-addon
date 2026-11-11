@@ -1,0 +1,15 @@
+{
+  "type": "ywzj_rvp:weapon",
+  "bedrock_backend": "rvp",
+  "sounds": {
+    "fire": "rvp:launch_air",
+    "reload": "ywzj_vehicle:common_reload"
+  },
+  "fire_sound": {
+    "max_distance": 150,
+    "volume": 1,
+    "pitch": 1
+  },
+  "model": "rvp:entity/ammo/missile_aim174b",
+  "texture": "rvp:textures/entity/weapon_mount/pylon_f18_aim174b.png"
+}

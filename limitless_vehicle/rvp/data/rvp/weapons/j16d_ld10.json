@@ -1,6 +1,8 @@
 {
   "type": "rvp:missile",
   "name": "LD-10 ARM",
+  "parent_weapon_unit_aim_override": false,
+  "cold_launch_exempt": true,
   "show_msl_indicator": false,
   "shoot_interval": 1000,
   "max_capacity": 4,

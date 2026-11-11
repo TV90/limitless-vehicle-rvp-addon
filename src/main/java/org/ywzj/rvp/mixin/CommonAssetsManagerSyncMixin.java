@@ -6,17 +6,23 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.event.OnDatapackSyncEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.network.PacketDistributor;
+import org.ywzj.vehicle.YwzjVehicle;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
+import org.ywzj.vehicle.custom.StructureModelManager;
+import org.ywzj.vehicle.custom.VehicleDataManager;
+import org.ywzj.vehicle.custom.VehicleWeaponManager;
 import org.ywzj.vehicle.network.Channel;
 import org.ywzj.vehicle.network.SliceReassembler;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Overwrite;
-import org.spongepowered.asm.mixin.Shadow;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.function.BiConsumer;
+import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
 /**
@@ -28,14 +34,16 @@ import java.util.zip.GZIPOutputStream;
  * 重序列化 32872 字符）在玩家进服时直接 {@code EncoderException: String too big}，
  * 服务端 {@code Couldn't place player in world}，客户端表现为"无效的玩家数据"断线。</p>
  *
+ * <p>写入端放宽后，客户端本体的 {@code fromNetwork} 仍用默认上限的
+ * {@code readMap(..., FriendlyByteBuf::readUtf)} 读取（单串上限 32767），超过上限的
+ * 结构模型（vt4/t84bm）会抛 {@code DecoderException}，被 {@code fromNetwork} 的
+ * {@code catch (Exception)} 整体吞掉：这一次同步里三张缓存全部没导入，客户端悄悄退回
+ * 本地包，表现为服务端数据包改动不生效。因此读写两端必须同时放宽。</p>
+ *
  * <p>实现采用 {@code @Overwrite} 而非 {@code @Redirect}：目标为本体类（remap=false 的
  * mixin 不会为 vanilla @At 写 refmap 条目，Redirect 在生产环境不生效）；Overwrite 的
- * 方法体在本体与映射环境一致，dev/生产行为相同。除三处值写入放宽为
- * {@code writeUtf(value, 65535)} 外与本体逻辑逐行一致——本体更新此方法时需同步此处。</p>
- *
- * <p>为什么只放宽写入端是安全的：写完的整段缓冲随后经 gzip 压缩再分片发送（本体已有），
- * 单串上限是压缩前唯一的隐形瓶颈；客户端 {@code fromNetwork} 用无上限校验的
- * {@code readUtf()} 读取，线格式（VarInt 长度 + UTF-8 字节）完全不变。</p>
+ * 方法体在本体与映射环境一致，dev/生产行为相同。线格式（VarInt 数量 + 逐条 key
+ * + VarInt 长度 + UTF-8 字节）与本体完全一致。本体更新这两个方法时需同步此处。</p>
  *
  * <p>65535 = 单串上限放宽一倍；更大的结构模型仍会撞线，根治（分块传输或字节数组负载）
  * 需本体侧改造，已同步本体作者。</p>
@@ -51,6 +59,16 @@ public abstract class CommonAssetsManagerSyncMixin {
             keyWriter.accept(buf, entry.getKey());
             buf.writeUtf(entry.getValue(), 65535);
         }
+    }
+
+    /** 与写入端 {@code rvp$writeUtfMapRelaxed} 对称：VarInt 数量 + 逐条 key/放宽上限的值。 */
+    private static Map<ResourceLocation, String> rvp$readUtfMapRelaxed(FriendlyByteBuf buf) {
+        int size = buf.readVarInt();
+        Map<ResourceLocation, String> map = new HashMap<>(Math.max(size, 1));
+        for (int i = 0; i < size; i++) {
+            map.put(buf.readResourceLocation(), buf.readUtf(65535));
+        }
+        return map;
     }
 
     /**
@@ -90,6 +108,33 @@ public abstract class CommonAssetsManagerSyncMixin {
                     Channel.CHANNEL.send(PacketDistributor.ALL.noArg(), packet);
                 }
             }
+        }
+    }
+
+    /**
+     * @reason 本体原实现用 {@code readMap(FriendlyByteBuf::readResourceLocation, FriendlyByteBuf::readUtf)}
+     * 读取三张缓存，而 {@code readUtf()} 默认单串上限仍是 32767：写入端放宽后，结构模型
+     * JSON（vt4 32793 / t84bm 32831 字符）在客户端抛 {@code DecoderException}，整个同步被本方法的
+     * catch 吞掉，三张缓存一起退回本地包。本覆写仅把值读取放宽为 {@code readUtf(65535)}，
+     * gzip 解压与三次导入顺序和本体一致。
+     */
+    @Overwrite(remap = false)
+    public static void fromNetwork(FriendlyByteBuf buf) {
+        try {
+            byte[] data = new byte[buf.readableBytes()];
+            buf.getBytes(buf.readerIndex(), data);
+            try (GZIPInputStream gzip = new GZIPInputStream(new ByteArrayInputStream(data))) {
+                data = gzip.readAllBytes();
+            }
+            FriendlyByteBuf decoded = new FriendlyByteBuf(Unpooled.wrappedBuffer(data));
+            Map<ResourceLocation, String> structureModels = rvp$readUtfMapRelaxed(decoded);
+            Map<ResourceLocation, String> vehicleWeapons = rvp$readUtfMapRelaxed(decoded);
+            Map<ResourceLocation, String> vehicleData = rvp$readUtfMapRelaxed(decoded);
+            StructureModelManager.fromNetwork(structureModels);
+            VehicleWeaponManager.fromNetwork(vehicleWeapons);
+            VehicleDataManager.fromNetwork(vehicleData);
+        } catch (Exception exception) {
+            YwzjVehicle.LOGGER.error("Failed to read common assets from network", exception);
         }
     }
 }

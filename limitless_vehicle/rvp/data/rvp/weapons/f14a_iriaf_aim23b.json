@@ -1,6 +1,7 @@
 {
   "type": "rvp:missile",
   "name": "Fakour-90 LR ARH-AAM",
+  "crosshair_style_override": "circle",
   "show_msl_indicator": true,
   "shoot_interval": 500,
   "max_capacity": 4,
@@ -25,7 +26,7 @@
     "second_pulse_trigger_speed": 10,
     "second_pulse_trigger_distance": 2000,
     "second_pulse_thrust": 26.277083,
-    "second_pulse_burn_time": 200,
+    "second_pulse_burn_time": 300,
     "inherit_vehicle_velocity": true,
     "drag_coefficient": 0.236028,
     "rvp_induced_drag": 0.003,
@@ -39,8 +40,8 @@
       "[[-inf,-64]]": 0.8
     },
     "turning_factor": {
-      "[[1,99]]": 0.12,
-      "[[100,inf]]": 0.08
+      "[[1,139]]": 0.12,
+      "[[140,inf]]": 0.08
     },
     "ignition_delay_tick": 20,
     "rvp_aero_steering": true,

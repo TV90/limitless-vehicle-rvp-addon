@@ -304,7 +304,7 @@
     },
     {
       "id": "variable_missile",
-      "name": "variable_missile",
+      "name": "gui.ywzj_rvp.variants.pylon.missile",
       "type": "ywzj_vehicle:weapon",
       "structure_bone": "variable_missile_1",
       "rvp_structure_bolt_bones": [

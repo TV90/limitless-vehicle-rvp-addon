@@ -130,6 +130,9 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
         if (RVP_ClientGPSUtil.isFastActiveFor(this) && !RVP_ClientGPSUtil.tryFastGpsMark()) {
             return false;
         }
+        // [RVP] 同一帧内"切武器 + 开火"时，tick 末尾的批量出弹队列同步尚未执行，
+        // 开火前补一次，保证 aimContexts 取自当前武器自己的出弹点
+        org.ywzj.rvp.mount.RVP_ShootBoltWeaponSync.applyStation(getWeaponUnit());
         boolean fired = super.doClientShoot();
         return fired;
     }
