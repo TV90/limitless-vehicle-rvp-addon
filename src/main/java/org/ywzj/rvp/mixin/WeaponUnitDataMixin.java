@@ -84,6 +84,10 @@ public class WeaponUnitDataMixin implements WeaponUnitDataExt {
     @Unique
     private boolean ywzj_rvp$withNightVision;
 
+    /** 焦点锁定吸附载具半径，单位为格；0=关闭。 */
+    @Unique
+    private float ywzj_rvp$focusLockSnapRadius;
+
     @Inject(method = "<init>(Lorg/ywzj/vehicle/custom/part/data/WeaponUnitPojo;)V", at = @At("TAIL"), remap = false)
     private void ywzj_rvp$init(WeaponUnitPojo pojo, CallbackInfo ci) {
         if (pojo instanceof WeaponUnitPojoExt ext) {
@@ -99,6 +103,7 @@ public class WeaponUnitDataMixin implements WeaponUnitDataExt {
             this.ywzj_rvp$sightFireDisguise = ext.ywzj_rvp$getSightFireDisguise();
             this.ywzj_rvp$rearDepressionBlock = ext.ywzj_rvp$getRearDepressionBlock();
             this.ywzj_rvp$withNightVision = ext.ywzj_rvp$withNightVision();
+            this.ywzj_rvp$focusLockSnapRadius = ext.ywzj_rvp$getFocusLockSnapRadius();
             RVP_HitboxDebug.noteConfigLoaded(this.ywzj_rvp$followParentOnlyPartUnitIds);
         }
     }
@@ -238,5 +243,10 @@ public class WeaponUnitDataMixin implements WeaponUnitDataExt {
     @Override
     public boolean ywzj_rvp$withNightVision() {
         return ywzj_rvp$withNightVision;
+    }
+
+    @Override
+    public float ywzj_rvp$getFocusLockSnapRadius() {
+        return ywzj_rvp$focusLockSnapRadius;
     }
 }

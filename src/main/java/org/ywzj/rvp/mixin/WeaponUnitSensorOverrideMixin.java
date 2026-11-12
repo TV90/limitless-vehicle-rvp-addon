@@ -5,6 +5,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import org.ywzj.rvp.util.RVP_WeaponResolveHelper;
+import org.ywzj.rvp.weapon.core.RVP_FocusLockSnapState;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
@@ -27,6 +28,12 @@ public class WeaponUnitSensorOverrideMixin {
     @Inject(method = "getFireControlSensorType", at = @At("HEAD"), cancellable = true, remap = false)
     private void ywzj_rvp$overrideSensorTypeByCurrentWeapon(CallbackInfoReturnable<WeaponUnitData.FireControlSensorType> cir) {
         WeaponUnit self = (WeaponUnit) (Object) this;
+        // 焦点吸附锁定期间按 EO 口径校验：观瞄站静态传感器常为 NONE（实际的 EO 来自
+        // 武器 eo_ccip 动态语义），若返回 NONE 本体实体验证分支会每刻把刚建立的吸附锁清掉。
+        if (RVP_FocusLockSnapState.isSnapped(self)) {
+            cir.setReturnValue(WeaponUnitData.FireControlSensorType.EO);
+            return;
+        }
         // 必须经 currentPrimary 解包：当前武器可能是 VehicleMultiWeapons（二选一组，
         // 如 AH64 导弹站的 ir/arh 组）或 Agent 代理——二者均非 RVP_WeaponBase，
         // 不解包会导致覆盖判定失败、站级静态值泄漏（表现为两种传感器并存）。

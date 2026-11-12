@@ -1,9 +1,9 @@
 {
   "type": "rvp:missile",
+  "launch_speed_range": "[[0.4167,inf]]",
   "name": "YJ-15 ARH-ASM",
   "parent_weapon_unit_aim_override": false,
   "crosshair_style_override": "circle",
-  "cold_launch_exempt": true,
   "name_CN": "鹰击-15 主动雷达制导反舰导弹",
   "shoot_interval": 2000,
   "max_capacity": 2,

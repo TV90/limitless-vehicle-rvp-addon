@@ -1,5 +1,6 @@
 {
   "type": "rvp:missile",
+  "launch_speed_range": "[[0.4167,inf]]",
   "life": 2400,
   "name": "TL-17 CLOS MITL-AGM",
   "shoot_interval": 2000,

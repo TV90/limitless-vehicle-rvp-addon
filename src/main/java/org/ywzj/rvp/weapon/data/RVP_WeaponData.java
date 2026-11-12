@@ -71,6 +71,11 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     @SerializedName("ccip_marker_data")
     private RVP_CcipMarkerData ccipMarkerData = new RVP_CcipMarkerData();
 
+    /** 多挂点 CCIP：先把全部 cube 发射点平均成一个，再解算一次落点（默认 false = 逐发射点解算后平均落点）。
+     *  <p>适用于两侧火箭巢相隔较远的固定翼；默认 false 保持现有逐点口径不变。</p> */
+    @SerializedName("ccip_average_launch_points")
+    private boolean ccipAverageLaunchPoints = false;
+
     /** 落点爆炸与火焰/药水等自定义效果，见 {@link RVP_DetonateData}。 */
     @SerializedName("detonate_data")
     private RVP_DetonateData detonateData = new RVP_DetonateData();
@@ -166,6 +171,17 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     private Boolean coldLaunchExempt;
 
     /**
+     * 载具速度门（可选）：允许发射的载具速度区间，单位 **格/刻**（载具 3D 速度模长，
+     * 与弹道数据同口径；30 km/h ≈ 0.4167 格/刻）。写法沿用 {@link RVP_Range} 闭区间并集：
+     * {@code "[[0.4167,inf]]"} 只允许 0.4167 格/刻以上、{@code "[[inf,0.7]]"} 只允许低速、
+     * {@code "[[inf,0.7],[4.2,inf]]"} 两端均可。null（未配置）=不限制。
+     * 配置后每次发射都检查，速度不在区间内拒射且不扣弹
+     * （{@code RVP_ProjectileWeapon#prepareShot}）。
+     */
+    @SerializedName("launch_speed_range")
+    private RVP_Range<Float> launchSpeedRange;
+
+    /**
      * 可选：本武器锁定敌人时播放的导引头锁定音（{@code SoundEvent} 资源位置字符串，
      * 如 {@code "ywzj_rvp:ir_track_alarm"} / {@code "ywzj_vehicle:missile_launch"}）。
      * 不配置则消费方回退全局默认 {@code RVP_Sounds.IR_TRACK_ALARM}。
@@ -197,6 +213,11 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     /** CCIP 地面落点标记外观；未配置/显式为 null 时回退 {@link RVP_CcipMarkerData#DEFAULT}。 */
     public RVP_CcipMarkerData getCcipMarkerData() {
         return ccipMarkerData == null ? RVP_CcipMarkerData.DEFAULT : ccipMarkerData;
+    }
+
+    /** 是否先把多个 cube 发射点平均成一个再解算 CCIP；默认 false。 */
+    public boolean isCcipAverageLaunchPoints() {
+        return ccipAverageLaunchPoints;
     }
 
     public void setWeaponKind(RVP_EnumWeaponKind weaponKind) {
@@ -371,6 +392,12 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
             return coldLaunchExempt;
         }
         return weaponKind == RVP_EnumWeaponKind.ROCKET || weaponKind == RVP_EnumWeaponKind.BOMB;
+    }
+
+    /** 载具速度门；null 表示不限制，见字段 JavaDoc。 */
+    @Nullable
+    public RVP_Range<Float> getLaunchSpeedRange() {
+        return launchSpeedRange;
     }
 
     @Nullable

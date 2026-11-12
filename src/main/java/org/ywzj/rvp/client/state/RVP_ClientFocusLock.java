@@ -115,6 +115,8 @@ public final class RVP_ClientFocusLock {
         }
         // 调用会话同步，后台远景选点由后续客户端 Tick 发起，不阻塞 R 键响应。
         synchronize(changedStation, origin);
+        // 焦点落在载具轮廓内时直接升级为 EO 实体锁，退出焦点链。
+        RVP_FocusLockSnap.trySnap(changedStation, origin);
     }
 
     /** 让 GPS 等选点共享当前焦点方向，未知距离时不得从旧的位置代理反算近距离视差。 */
@@ -279,6 +281,8 @@ public final class RVP_ClientFocusLock {
             // 清理已解锁或旧世界的状态；暂停/切观瞄时仍保留有效焦点的真实命中语义。
             LOCKS.entrySet().removeIf(entry -> entry.getKey().getVehicle().level() != minecraft.level
                     || entry.getKey().getFocusLockPos() == null);
+            // 调用吸附锁定校验，目标失效或锁定槽被改写时解除登记。
+            RVP_FocusLockSnap.tickUpkeep();
             // 调用后台结果收取，仅在客户端线程校验并写回，绝不等待未完成查询。
             finishTerrainQuery(minecraft);
             // 调用方向代理刷新与远景查询调度，渲染帧只读方向，不改炮塔真实姿态。
@@ -360,6 +364,10 @@ public final class RVP_ClientFocusLock {
         // 调用本体当前观瞄位置，代理刷新不使用过时渲染原点。
         Vec3 origin = LocalVehiclePlayer.instance.cameraPosition(currentStation, 1.0F);
         synchronize(currentStation, origin);
+        // 焦点落在载具轮廓内时升级为 EO 实体锁；之后由本体实体锁定分支接管。
+        if (RVP_FocusLockSnap.trySnap(currentStation, origin)) {
+            return;
+        }
         if (currentStation instanceof RVP_OpticalWeaponUnit optical) {
             // 在实体 Tick 前更新两类焦点请求，渲染阶段只读实际轨迹。
             optical.request(aim.direction(origin), aim.isDirectionLocked() ? null : aim.target());

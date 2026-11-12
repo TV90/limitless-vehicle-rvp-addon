@@ -40,4 +40,7 @@ public interface WeaponUnitDataExt {
 
     /** 夜视仪选配（weapon unit 级，与本体 withThermalImager 同级）；默认 false。 */
     boolean ywzj_rvp$withNightVision();
+
+    /** 焦点锁定吸附载具半径，单位为格；0=关闭。 */
+    float ywzj_rvp$getFocusLockSnapRadius();
 }

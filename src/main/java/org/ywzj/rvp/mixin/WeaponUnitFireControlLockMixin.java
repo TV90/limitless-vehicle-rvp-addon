@@ -32,6 +32,11 @@ public abstract class WeaponUnitFireControlLockMixin {
     @Inject(method = "fireControlLock", at = @At("HEAD"), cancellable = true, remap = false)
     private void rvp$handleRfFireControlLock(CallbackInfo ci) {
         WeaponUnit self = (WeaponUnit) (Object) this;
+        // 吸附锁定期间再按 R = 解除该锁，不进入本体光电/雷达重锁分流。
+        if (org.ywzj.rvp.client.state.RVP_FocusLockSnap.releaseIfSnapped(self)) {
+            ci.cancel();
+            return;
+        }
         // 调用既有 HEAD 的安全桥，仅新版吊舱对齐本体光电射线与实际画面。
         RVP_ClientActionsAccess.prepareOpticalSelection(self);
         Optional<?> weaponOpt = self.getCurrentWeapon();

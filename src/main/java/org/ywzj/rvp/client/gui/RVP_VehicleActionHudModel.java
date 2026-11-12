@@ -46,7 +46,9 @@ public final class RVP_VehicleActionHudModel {
         /** 装订呼叫火力打击信息（复用战术地图键）。 */
         FIRE_SUPPORT_BIND,
         /** 炮兵地图（复用战术地图键）。 */
-        ARTILLERY_MAP
+        ARTILLERY_MAP,
+        /** 焦点锁定（R 键，需观瞄站带焦点锁定器且处于观瞄视角）。 */
+        FOCUS_LOCK
     }
     public enum Phase { READY, DISABLED, COOLING, DEPLOYED, ACTIVE }
     public record Card(Action action, Phase phase, boolean enabled, int cooldownSeconds) {}
@@ -94,6 +96,14 @@ public final class RVP_VehicleActionHudModel {
      */
     public static List<Card> cards(RVP_AuxiliaryHudSnapshot state, WeaponPrompts weapon, FlightPrompts flight,
                                    Action mapAction) {
+        return cards(state, weapon, flight, mapAction, false, false);
+    }
+
+    /**
+     * 完整动作条；{@code focusLock} 为当前观瞄站是否提供焦点锁定（由调用方按观瞄视角判定）。
+     */
+    public static List<Card> cards(RVP_AuxiliaryHudSnapshot state, WeaponPrompts weapon, FlightPrompts flight,
+                                   Action mapAction, boolean focusLock, boolean focusLockActive) {
         List<Card> cards = new ArrayList<>(cards(state, mapAction));
         if (flight.loiterApplicable()) cards.add(toggle(Action.LOITER, flight.loitering()));
         if (flight.rotaryMode() != null) {
@@ -108,6 +118,7 @@ public final class RVP_VehicleActionHudModel {
             cards.add(toggle(weapon.fireControlAction(), weapon.fireControlActive()));
         }
         if (weapon.quickLock()) cards.add(toggle(Action.QUICK_LOCK, weapon.quickLockActive()));
+        if (focusLock) cards.add(toggle(Action.FOCUS_LOCK, focusLockActive));
         if (weapon.gpsMark()) cards.add(toggle(Action.GPS_MARK, weapon.gpsMarkActive()));
         if (weapon.gpsModeAction() != null) cards.add(ready(weapon.gpsModeAction()));
         if (weapon.airburst()) cards.add(toggle(Action.AIRBURST, weapon.airburstActive()));
@@ -115,6 +126,33 @@ public final class RVP_VehicleActionHudModel {
             cards.add(toggle(weapon.visionAction(), weapon.visionActive()));
         }
         return cards;
+    }
+
+    /**
+     * 按键提示排列：导引头、快速锁定、焦点锁定、部署/切换等通用功能在前，
+     * 火控/制导/视觉在中，盘旋与旋翼模式随后，战术地图与载具状态收尾。
+     */
+    public static List<Card> sortForDisplay(List<Card> cards) {
+        List<Card> sorted = new ArrayList<>(cards);
+        sorted.sort(java.util.Comparator.comparingInt(card -> displayPriority(card.action())));
+        return sorted;
+    }
+
+    private static int displayPriority(Action action) {
+        return switch (action) {
+            case SEEKER -> 10;
+            case QUICK_LOCK -> 20;
+            case FOCUS_LOCK -> 30;
+            case DEPLOY -> 40;
+            case SWITCH -> 50;
+            case FIRE_CONTROL_STABLE, FIRE_CONTROL_SEMI_AUTO, FIRE_CONTROL_OFF -> 60;
+            case GPS_MARK, GPS_SINGLE, GPS_MULTI, GPS_FAST, GPS_RADAR -> 70;
+            case AIRBURST -> 80;
+            case VISION_WHITE, VISION_NIGHT, VISION_THERMAL -> 90;
+            case LOITER, ROTARY_NORMAL, ROTARY_AUTO_COLLECTIVE, ROTARY_HOVER -> 100;
+            case MAP, FIRE_SUPPORT_BIND, ARTILLERY_MAP -> 110;
+            case STATUS -> 120;
+        };
     }
 
     public static List<Card> cards(RVP_AuxiliaryHudSnapshot state) {

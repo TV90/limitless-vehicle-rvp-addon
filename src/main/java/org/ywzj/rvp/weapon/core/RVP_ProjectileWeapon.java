@@ -21,6 +21,7 @@ import org.ywzj.rvp.weapon.ahead.RVP_AheadProgrammer;
 import org.ywzj.rvp.weapon.data.RVP_EnumFireMode;
 import org.ywzj.rvp.weapon.data.RVP_EnumSpreadShape;
 import org.ywzj.rvp.weapon.data.RVP_FireData;
+import org.ywzj.rvp.weapon.data.RVP_Range;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.util.RVP_CanisterGridUtil;
 import org.ywzj.rvp.weapon.util.RVP_SpreadDistributionUtil;
@@ -248,6 +249,17 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
             }
         }
 
+        // 载具速度门（2026-11-12）：弹药侧配置允许速度区间后，速度越界拒射且不扣弹。
+        // 固定翼要求 30 km/h（0.4167 格/刻）以上才可发射，避免悬停/静止时冷发射把 (0,-0.5,0) 当成机头方向。
+        if (!passesLaunchSpeedGate(data)) {
+            if (shooter instanceof net.minecraft.server.level.ServerPlayer notifyPlayer) {
+                notifyPlayer.displayClientMessage(
+                        net.minecraft.network.chat.Component.translatable("ui.rvp.launch_speed_out_of_range"), true);
+            }
+            noteLaunchResult("SHOT_REJECTED", "LAUNCH_SPEED_OUT_OF_RANGE", 0);
+            return null;
+        }
+
         Entity lock = null;
         if (data.isHomingProjectile()
                 && (!data.isVehicleLaserGuided() && !data.isCommandGuided() || data.isSaclosTvGuided())) {
@@ -321,6 +333,23 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
             return null;
         }
         return new ApprovedShot(launchUnit, rootUnit, lock);
+    }
+
+    /**
+     * 载具速度门：配置了 {@code launch_speed_range} 后，载具 3D 速度（格/刻）必须落在允许区间内；
+     * 未配置时一律放行，拒射发生在扣弹/加热之前。
+     */
+    private boolean passesLaunchSpeedGate(RVP_WeaponData data) {
+        RVP_Range<Float> allowedSpeed = data.getLaunchSpeedRange();
+        if (allowedSpeed == null) {
+            return true;
+        }
+        return isLaunchSpeedAllowed(allowedSpeed, getVehicle().getDeltaMovement().length());
+    }
+
+    /** 纯区间判定，供单元测试覆盖单区间/并集边界；未配置区间时一律放行。 */
+    static boolean isLaunchSpeedAllowed(@Nullable RVP_Range<Float> allowedSpeed, double vehicleSpeed) {
+        return allowedSpeed == null || allowedSpeed.contains((float) vehicleSpeed);
     }
 
     /**

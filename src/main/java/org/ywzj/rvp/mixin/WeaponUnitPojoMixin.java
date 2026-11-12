@@ -81,6 +81,12 @@ public class WeaponUnitPojoMixin implements WeaponUnitPojoExt {
     @Unique
     private boolean ywzj_rvp$withNightVision;
 
+    /** 焦点锁定吸附载具半径，单位为格；0/未配置=关闭。
+     *  <p>用 Float 而非 float：Unsafe 分配下未配置落 null，由 getter 兜底 0（关闭）。 */
+    @SerializedName("rvp_focus_lock_snap_radius")
+    @Unique
+    private Float ywzj_rvp$focusLockSnapRadius;
+
     @Override
     public String ywzj_rvp$getFireControlMode() {
         // Gson Unsafe 分配下 String 字段"未配置"实际为 null，兜底空串（= 完全使用本体火控）
@@ -141,5 +147,10 @@ public class WeaponUnitPojoMixin implements WeaponUnitPojoExt {
     @Override
     public boolean ywzj_rvp$withNightVision() {
         return ywzj_rvp$withNightVision;
+    }
+
+    @Override
+    public float ywzj_rvp$getFocusLockSnapRadius() {
+        return ywzj_rvp$focusLockSnapRadius == null ? 0.0f : ywzj_rvp$focusLockSnapRadius;
     }
 }

@@ -30,6 +30,12 @@ public final class RVP_ProjectileMotion {
 
     private static final double MISSILE_COAST_LERP = 0.2D;
 
+    /**
+     * 临时开关（2026-11-12）：关闭空中载具"叠加式冷发射"修复，回到冷发射窗口内每 Tick
+     * 整段替换速度、机头锁定弹射轴的基线行为，供冷发射实机对比测试。恢复修复时改回 {@code true}。
+     */
+    private static final boolean AIR_COLD_LAUNCH_ADDITIVE_FIX = false;
+
     private RVP_ProjectileMotion() {}
 
     /** 只在导弹且显式请求攻角时接管姿态；瞬转豁免由共用参数快照判定。 */
@@ -681,6 +687,10 @@ public final class RVP_ProjectileMotion {
      * 这类弹本来就继承载机速度前飞，只需离架时叠加一次向下弹射速度。</p>
      */
     private static boolean usesAdditiveColdLaunch(RVP_BaseBullet projectile) {
+        // 临时开关关闭时一律走基线冷发射分支，修复代码保留待对比测试后重新启用。
+        if (!AIR_COLD_LAUNCH_ADDITIVE_FIX) {
+            return false;
+        }
         if (projectile.getColdLaunchTimeTick() <= 0 || projectile.rvpData == null) {
             return false;
         }

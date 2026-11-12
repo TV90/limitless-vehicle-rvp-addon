@@ -1,5 +1,6 @@
 {
   "type": "rvp:missile",
+  "launch_speed_range": "[[0.4167,inf]]",
   "life": 2400,
   "name": "AGM-84H/K TV MITL-AGM",
   "shoot_interval": 2000,

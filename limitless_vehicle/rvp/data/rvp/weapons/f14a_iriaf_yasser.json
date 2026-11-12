@@ -3,6 +3,7 @@
   "name": "Yasser HVY Rocket",
   "parent_weapon_unit_aim_override": false,
   "crosshair_style_override": "cross",
+  "ccip_average_launch_points": true,
   "shoot_interval": 200,
   "max_capacity": 2,
   "reload": {

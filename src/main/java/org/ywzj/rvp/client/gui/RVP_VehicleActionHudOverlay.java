@@ -24,6 +24,7 @@ import org.ywzj.rvp.config.RVP_VehicleExtendedConfigManager;
 import org.ywzj.rvp.event.RVP_RotaryFlightMode;
 import org.ywzj.rvp.ext.WeaponUnitDataExt;
 import org.ywzj.rvp.util.RVP_WeaponResolveHelper;
+import org.ywzj.rvp.weapon.core.RVP_FocusLockSnapState;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.rvp.weapon.fuse.RVP_AirburstRangeStore;
 import org.ywzj.rvp.weapon.util.RVP_WeaponLeafResolver;
@@ -47,13 +48,13 @@ public final class RVP_VehicleActionHudOverlay implements IGuiOverlay {
             texture("gps_mark"), texture("gps_single"), texture("gps_multi"), texture("gps_fast"), texture("gps_radar"),
             texture("airburst"),
             texture("vision_white"), texture("vision_night"), texture("vision_thermal"),
-            texture("fire_support_bind"), texture("artillery_map")};
+            texture("fire_support_bind"), texture("artillery_map"), texture("focus_lock")};
     private static final ResourceLocation DEPLOYED_TEXTURE = texture("deployed_auxiliary");
     private static final String[] LABELS = {"deploy_auxiliary", "switch_auxiliary", "tactical_map", "vehicle_status",
             "seeker", "fire_control_stable", "fire_control_semi_auto", "fire_control_off", "quick_lock",
             "loiter", "rotary_normal", "rotary_auto_collective", "rotary_hover",
             "gps_mark", "gps_single", "gps_multi", "gps_fast", "gps_radar", "airburst",
-            "vision_white", "vision_night", "vision_thermal", "fire_support_bind", "artillery_map"};
+            "vision_white", "vision_night", "vision_thermal", "fire_support_bind", "artillery_map", "focus_lock"};
     private static final KeyMapping[] BINDINGS = {RVP_Keys.DEPLOY_DEPLOYABLE_UAV, RVP_Keys.SWITCH_DEPLOYABLE_UAV,
             RVP_Keys.OPEN_GPS_PANEL, RVP_Keys.OPEN_EQUIP_PANEL, AllKeys.TOGGLE_SEEKER,
             RVP_Keys.FIRE_CONTROL_STABILIZER, RVP_Keys.FIRE_CONTROL_STABILIZER, RVP_Keys.FIRE_CONTROL_STABILIZER,
@@ -65,7 +66,9 @@ public final class RVP_VehicleActionHudOverlay implements IGuiOverlay {
             // 白光/夜视/热成像三态共用本体热成像键
             AllKeys.TOGGLE_THERMAL_IMAGING, AllKeys.TOGGLE_THERMAL_IMAGING, AllKeys.TOGGLE_THERMAL_IMAGING,
             // 火力装订/炮兵地图与战术地图共用 K 键
-            RVP_Keys.OPEN_GPS_PANEL, RVP_Keys.OPEN_GPS_PANEL};
+            RVP_Keys.OPEN_GPS_PANEL, RVP_Keys.OPEN_GPS_PANEL,
+            // 焦点锁定沿用本体锁定键（R）
+            AllKeys.FIRE_CONTROL_LOCK};
     private static ResourceLocation texture(String name) {
         return new ResourceLocation("ywzj_rvp", "textures/gui/actions/" + name + ".png");
     }
@@ -163,11 +166,16 @@ public final class RVP_VehicleActionHudOverlay implements IGuiOverlay {
             artilleryMap = currentRvpWeapon.getData().getMiscData().isArtilleryMap();
         }
         Action mapAction = RVP_VehicleActionHudModel.mapAction(fireSupportBind, artilleryMap);
-        List<Card> cards = cards(state,
+        // 焦点锁定卡只在观瞄站带焦点锁定器且处于观瞄视角时出现；焦点锁住或已吸附载具时常亮
+        boolean scopeView = LocalVehiclePlayer.instance.viewType == LocalVehiclePlayer.ViewType.SCOPE;
+        boolean focusLock = unit != null && unit.withFocusLocker() && scopeView;
+        boolean focusLockActive = focusLock && (unit.getFocusLockPos() != null
+                || RVP_FocusLockSnapState.isSnapped(unit));
+        List<Card> cards = RVP_VehicleActionHudModel.sortForDisplay(cards(state,
                 new WeaponPrompts(seeker, seekerActive, fireControlAction, fireControlActive,
                         quickLock, quickLockActive, gpsMark, gpsMarkActive, gpsModeAction, airburst, airburstActive,
                         visionAction, visionActive),
-                new FlightPrompts(loiterApplicable, loitering, rotaryMode), mapAction);
+                new FlightPrompts(loiterApplicable, loitering, rotaryMode), mapAction, focusLock, focusLockActive));
         String[] keys = new String[BINDINGS.length];
         boolean[] pressed = new boolean[BINDINGS.length];
         for (Card card : cards) {

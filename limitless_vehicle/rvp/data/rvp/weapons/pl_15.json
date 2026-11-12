@@ -1,5 +1,6 @@
 {
   "type": "rvp:missile",
+  "launch_speed_range": "[[0.4167,inf]]",
   "name": "PL-15 DP-ARH-AAM",
   "crosshair_style_override": "circle",
   "show_msl_indicator": true,

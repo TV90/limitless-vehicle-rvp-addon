@@ -115,6 +115,12 @@ public final class RVP_RocketBallistics {
         if (contexts.isEmpty()) {
             return null;
         }
+        // 多挂点火箭巢：先把发射原点与方向平均成一个，再只解算一次；
+        // 左右翼相隔越远，逐点解算后平均落点与真实弹道的偏差越大。
+        if (data.isCcipAverageLaunchPoints() && contexts.size() > 1) {
+            return computeAimContextImpact(level, averageContexts(contexts), vehicleVelocity, data, clipEntity,
+                    predictionTick, fallbackGroundY, terrainHeightResolver);
+        }
         int nextIndex = resolveCurrentBoltIndex(weaponUnit, contexts.size());
         Vec3 selected = computeAimContextImpact(
                 level, contexts.get(nextIndex), vehicleVelocity, data, clipEntity, predictionTick,
@@ -155,6 +161,27 @@ public final class RVP_RocketBallistics {
         }
         int nextIndex = resolveCurrentBoltIndex(weaponUnit, contexts.size());
         return computeAimContextImpact(level, contexts.get(nextIndex), vehicleVelocity, params, clipEntity);
+    }
+
+    /**
+     * 把多个 cube 发射点合并成一个平均发射点：原点取算术平均，方向按首点做环绕差后取平均。
+     */
+    public static AimContext averageContexts(List<AimContext> contexts) {
+        AimContext first = contexts.get(0);
+        Vec3 fromSum = Vec3.ZERO;
+        double xRot = 0.0D;
+        double yRot = 0.0D;
+        for (AimContext context : contexts) {
+            fromSum = fromSum.add(RVP_AimContexts.muzzle(context));
+            xRot += Mth.wrapDegrees(context.direction.x - first.direction.x);
+            yRot += Mth.wrapDegrees(context.direction.y - first.direction.y);
+        }
+        int count = contexts.size();
+        AimContext average = new AimContext();
+        average.from = fromSum.scale(1.0D / count);
+        average.direction = new Vec2((float) (first.direction.x + xRot / count),
+                (float) (first.direction.y + yRot / count));
+        return average;
     }
 
     @Nullable

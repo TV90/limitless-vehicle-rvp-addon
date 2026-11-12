@@ -51,7 +51,6 @@ public final class RVP_AuiAuxiliaryVehicleScreen extends ApricityScreen {
     /** 当前浏览候选的名称节点。 */
     private Element selectedName;
     /** 当前浏览候选的载具 ID 节点。 */
-    private Element selectedId;
     /** 当前浏览候选的联动角色节点。 */
     private Element selectedRole;
     /** 生成参数说明节点。 */
@@ -124,7 +123,6 @@ public final class RVP_AuiAuxiliaryVehicleScreen extends ApricityScreen {
         if (document == null) return;
         optionList = document.getElementById("aux-option-list");
         selectedName = document.getElementById("aux-selected-name");
-        selectedId = document.getElementById("aux-selected-id");
         selectedRole = document.getElementById("aux-selected-role");
         selectedDetails = document.getElementById("aux-selected-details");
         stateText = document.getElementById("aux-state");
@@ -156,13 +154,21 @@ public final class RVP_AuiAuxiliaryVehicleScreen extends ApricityScreen {
             name.setTextContent(resolveOptionName(option));
             Element id = document.createElement("span");
             id.setClassName("aux-option-id");
-            id.setTextContent(option.vehicleId().toString());
+            // 列表副标题用可读的分类名，不显示 rvp:xxx 这种内部 ID
+            id.setTextContent(resolveRoleLabel(option.role()));
             entry.appendChild(name);
             entry.appendChild(id);
             int index = i;
             entry.addEventListener("click", event -> selectOption(index));
             optionList.appendChild(entry);
         }
+    }
+
+    /** 联动角色的可读名称；没有对应翻译时回退原始角色值。 */
+    private static String resolveRoleLabel(String role) {
+        if (role == null || role.isBlank()) return "";
+        String key = "gui.ywzj_rvp.auxiliary.role." + role.toLowerCase(java.util.Locale.ROOT);
+        return I18n.exists(key) ? I18n.get(key) : role;
     }
 
     /** 候选名称按当前语言解析；中文配置字面量不能覆盖载具已有的中英文翻译。 */
@@ -194,13 +200,14 @@ public final class RVP_AuiAuxiliaryVehicleScreen extends ApricityScreen {
             }
         }
         if (selectedName != null) selectedName.setTextContent(resolveOptionName(option));
-        if (selectedId != null) selectedId.setTextContent(option.vehicleId().toString());
-        if (selectedRole != null) selectedRole.setTextContent(option.role());
+        if (selectedRole != null) selectedRole.setTextContent(resolveRoleLabel(option.role()));
         if (selectedDetails != null) {
-            var offset = option.spawnOffset();
-            selectedDetails.setTextContent(I18n.get("gui.ywzj_rvp.auxiliary.details",
-                    String.format(java.util.Locale.ROOT, "%.1f, %.1f, %.1f", offset.x, offset.y, offset.z),
-                    option.spawnYawMode(), option.initialSpeed()));
+            // 只给投放方式的自然描述，不再罗列偏移/朝向/初速度这类字段值
+            String hint = I18n.get("parent".equalsIgnoreCase(option.spawnYawMode())
+                    ? "gui.ywzj_rvp.auxiliary.deploy_follow" : "gui.ywzj_rvp.auxiliary.deploy_fixed");
+            selectedDetails.setTextContent(option.initialSpeed() <= 0.0f ? hint
+                    : I18n.get("gui.ywzj_rvp.auxiliary.deploy_speed", hint,
+                            String.format(java.util.Locale.ROOT, "%.1f", option.initialSpeed())));
         }
         createPreview(option);
         refreshStateWidgets();

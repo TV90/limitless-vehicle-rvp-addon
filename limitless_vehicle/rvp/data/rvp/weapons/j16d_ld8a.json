@@ -1,5 +1,6 @@
 {
   "type": "rvp:missile",
+  "launch_speed_range": "[[0.4167,inf]]",
   "name": "LD-8 ARM",
   "parent_weapon_unit_aim_override": false,
   "show_msl_indicator": false,

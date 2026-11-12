@@ -1,7 +1,7 @@
 {
   "type": "rvp:missile",
+  "launch_speed_range": "[[0.4167,inf]]",
   "name": "AGM-65E SALH-AGM",
-  "cold_launch_exempt": true,
   "shoot_interval": 2000,
   "max_capacity": 4,
   "reload": {

@@ -1,8 +1,8 @@
 {
   "type": "rvp:missile",
+  "launch_speed_range": "[[0.4167,inf]]",
   "name": "AGM-84 ARH-ASM",
   "crosshair_style_override": "circle",
-  "cold_launch_exempt": true,
   "name_CN": "AGM-84 主动雷达制导反舰导弹",
   "shoot_interval": 1000,
   "max_capacity": 4,

@@ -1,5 +1,6 @@
 {
   "type": "rvp:missile",
+  "launch_speed_range": "[[0.4167,inf]]",
   "name": "YJ-83 ARH-ASM",
   "crosshair_style_override": "circle",
   "name_CN": "鹰击-83K 主动雷达制导反舰导弹",
