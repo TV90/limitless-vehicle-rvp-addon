@@ -2,12 +2,16 @@
   "type": "rvp:machinegun",
   "name": "7.62mm LMG",
   "shoot_interval": 100,
-  "max_capacity": 50,
+  "max_capacity": 100,
   "reload": {
     "time": 80,
     "ammo": "ywzj_vehicle:ammo_machine_gun"
   },
   "fire_data": {
+    "heat_count": 21,
+    "max_heat_count": 950,
+    "overheat_extra_heat": 10,
+    "heat_decay_accel": 1.5,
     "spread": 1.0,
     "fire_mode": "FULL_AUTO"
   },

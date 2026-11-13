@@ -59,16 +59,16 @@ class RVP_EoJammerGlowManagerTest {
     }
 
     private static void assertPackWiring(String vehicle, List<String> expectedModuleBones) throws Exception {
-        Path display = Path.of("limitless_vehicle/rvp/assets/rvp/display/vehicle", vehicle + ".json");
+        Path display = org.ywzj.rvp.testutil.RVP_TestPackPaths.assets("display/vehicle", vehicle + ".json");
         JsonObject displayRoot = json(Files.readString(display, StandardCharsets.UTF_8));
         List<RVP_EoJammerGlowManager.Rule> rules = RVP_EoJammerGlowManager.parseRules(displayRoot);
         assertEquals(expectedModuleBones.size(), rules.size(), vehicle + " 玻片规则数量");
 
         Set<String> modelBones = collectBones(json(Files.readString(
-                Path.of("limitless_vehicle/rvp/assets/rvp/models/bedrock/entity", vehicle + ".json"),
+                org.ywzj.rvp.testutil.RVP_TestPackPaths.assets("models/bedrock/entity", vehicle + ".json"),
                 StandardCharsets.UTF_8)));
         JsonObject boneModules = json(Files.readString(
-                Path.of("limitless_vehicle/rvp/data/rvp/vehicles", vehicle + ".json"),
+                org.ywzj.rvp.testutil.RVP_TestPackPaths.data("vehicles", vehicle + ".json"),
                 StandardCharsets.UTF_8)).getAsJsonObject("bone_modules");
         assertNotNull(boneModules, vehicle + " 缺少 bone_modules");
 

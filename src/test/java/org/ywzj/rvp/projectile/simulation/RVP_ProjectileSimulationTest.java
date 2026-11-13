@@ -112,9 +112,9 @@ class RVP_ProjectileSimulationTest {
 
     @Test
     void authoritativeExamplesAreDeterministicAndAllAirProjectileConfigurationsLoad() throws Exception {
-        Path weapons = Path.of("limitless_vehicle/rvp/data/rvp/weapons");
+        java.util.List<Path> weaponDirs = org.ywzj.rvp.testutil.RVP_TestPackPaths.weaponDirs();
         int count = 0;
-        try (var files = Files.list(weapons)) {
+        for (Path weapons : weaponDirs) try (var files = Files.list(weapons)) {
             for (Path path : files.filter(p -> p.toString().endsWith(".json")).sorted().toList()) {
                 var json = JsonParser.parseString(Files.readString(path)).getAsJsonObject();
                 if (!List.of("rvp:missile", "rvp:machinegun", "rvp:rocket", "rvp:bomb", "rvp:torpedo", "rvp:dispenser").contains(json.get("type").getAsString())) continue;
@@ -130,7 +130,7 @@ class RVP_ProjectileSimulationTest {
         try (var files = Files.list(Path.of("src/test/resources/projectile-simulation"))) {
             for (Path path : files.filter(p -> p.toString().endsWith(".json")).sorted().toList()) {
                 var scene = RVP_ProjectileSimulationMain.read(path);
-                var weapon = RVP_ProjectileSimulationWeapon.read(weapons, scene.weapon);
+                var weapon = RVP_ProjectileSimulationWeapon.read(org.ywzj.rvp.testutil.RVP_TestPackPaths.weaponDirFor(scene.weapon), scene.weapon);
                 var first = new RVP_ProjectileSimulation().run(scene, weapon);
                 var second = new RVP_ProjectileSimulation().run(scene, weapon);
                 assertEquals(RVP_ProjectileSimulationMain.JSON.toJson(first), RVP_ProjectileSimulationMain.JSON.toJson(second), scene.id);

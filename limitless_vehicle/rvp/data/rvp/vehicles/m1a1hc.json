@@ -25,14 +25,7 @@
   },
   "energy_info": {
     "energy_capacity": 1,
-    "energy_consumption_per_tick": 1e-05,
-    "engine_particle_offsets": [
-      [
-        0.2,
-        1.7,
-        -4.2
-      ]
-    ]
+    "energy_consumption_per_tick": 1e-05
   },
   "physics_info": {
     "suspension_response": 0.25,
@@ -95,6 +88,9 @@
     "track_roller14": 0.4
   },
   "hitbox_explosion_damage_factor": {
+    "commander_machine_gun": 2.0,
+    "commander_machine_gun_barrel": 2.0,
+
     "Periscope": 1.5,
     "turret_top": 1.5
   },
@@ -138,6 +134,12 @@
     "track_roller12": "Left Road Wheel 5",
     "track_roller13": "Left Road Wheel 6",
     "track_roller14": "Left Road Wheel 7"
+  },
+  "ecm_active": {
+    "active_duration_ticks": 60,
+    "cooldown_ticks": 400,
+    "ammo_jam_radius": 200,
+    "vehicle_jam_radius": 0
   },
   "bone_modules": {
     "turretring": {
@@ -312,7 +314,9 @@
           "modding_only_multi": true,
           "vehicle_heat_count": 140,
           "vehicle_max_heat_count": 320,
-          "vehicle_overheat_extra_heat": 80
+          "vehicle_overheat_extra_heat": 80,
+          "vehicle_heat_label": "overlay.ywzj_rvp.heat.loader",
+          "vehicle_heat_label_CN": "overlay.ywzj_rvp.heat.loader"
         },
         {
           "ids": [
@@ -324,7 +328,9 @@
           "merge_into_previous_slot": true,
           "vehicle_heat_count": 140,
           "vehicle_max_heat_count": 320,
-          "vehicle_overheat_extra_heat": 80
+          "vehicle_overheat_extra_heat": 80,
+          "vehicle_heat_label": "overlay.ywzj_rvp.heat.loader",
+          "vehicle_heat_label_CN": "overlay.ywzj_rvp.heat.loader"
         },
         {
           "id": "rvp:mbt_762",

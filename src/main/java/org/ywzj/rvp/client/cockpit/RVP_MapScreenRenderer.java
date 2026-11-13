@@ -13,6 +13,7 @@ import org.ywzj.rvp.network.S2CMarkedBlockSync;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.vehicle.client.render.util.Color;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
+import org.ywzj.vehicle.entity.weapon.AmmoEntity;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
@@ -132,16 +133,22 @@ public final class RVP_MapScreenRenderer {
         net.minecraft.client.multiplayer.ClientLevel mapLevel = mcMap.level;
         if (mapLevel != null) {
             for (Entity entity : mapLevel.entitiesForRendering()) {
-                if (!(entity instanceof RVP_BaseBullet bullet)) {
+                int ordColor;
+                if (entity instanceof RVP_BaseBullet bullet) {
+                    ordColor = RVP_TacticalMapScreen.tacticalAmmoMarkerColor(
+                            mapPlayer, mapPlayerVehicle, bullet, radarVisibleIds);
+                } else if (entity instanceof AmmoEntity ammo && RVP_TacticalMapScreen.isBaseOrdnance(entity)) {
+                    // 本体导弹/火箭弹/炸弹：与战术地图同源同条件
+                    ordColor = RVP_TacticalMapScreen.tacticalBaseAmmoMarkerColor(
+                            mapPlayer, mapPlayerVehicle, ammo, radarVisibleIds);
+                } else {
                     continue;
                 }
-                int ordColor = RVP_TacticalMapScreen.tacticalAmmoMarkerColor(
-                        mapPlayer, mapPlayerVehicle, bullet, radarVisibleIds);
                 if (ordColor == 0) {
                     continue;
                 }
-                int ox = worldToScreenX(bullet.getX(), centerX, width, contentLeft, contentSize);
-                int oy = worldToScreenY(bullet.getZ(), centerZ, height, contentTop, contentSize);
+                int ox = worldToScreenX(entity.getX(), centerX, width, contentLeft, contentSize);
+                int oy = worldToScreenY(entity.getZ(), centerZ, height, contentTop, contentSize);
                 if (ox < contentLeft || oy < contentTop || ox >= contentLeft + contentSize
                         || oy >= contentTop + contentSize) {
                     continue;
@@ -150,7 +157,7 @@ public final class RVP_MapScreenRenderer {
                         ox + ordnanceHalf, oy + ordnanceHalf, ordColor);
                 // 弹药点同样画速度矢量（用户要求"都显示"），颜色=关系色
                 vectorPts.add(new double[]{ox, oy});
-                vectorEntities.add(bullet);
+                vectorEntities.add(entity);
                 vectorColors.add(ordColor);
             }
         }

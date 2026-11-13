@@ -33,7 +33,7 @@
       "per_round": 4,
       "burst_rounds": 8,
       "launch_interval_tick": 4,
-      "reload_tick": 200,
+      "reload_tick": 300,
       "radar_jam_radius": 8,
       "radar_jam_count": 2,
       "radar_jam_cooldown_tick": 60,

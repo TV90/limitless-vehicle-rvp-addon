@@ -74,8 +74,10 @@ import org.ywzj.vehicle.custom.vehicle.RotaryWingVehicleData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.entity.vehicle.FixedWingVehicle;
 import org.ywzj.vehicle.entity.vehicle.RotaryWingVehicle;
+import org.ywzj.vehicle.entity.weapon.AerialBombEntity;
 import org.ywzj.vehicle.entity.weapon.AmmoEntity;
 import org.ywzj.vehicle.entity.weapon.MissileEntity;
+import org.ywzj.vehicle.entity.weapon.RocketEntity;
 import org.ywzj.vehicle.network.Channel;
 import org.ywzj.vehicle.network.message.ClientRadarAction;
 import org.ywzj.vehicle.network.message.ClientVehicleSwitchWeapon;
@@ -1580,8 +1582,8 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
                 }
                 drawMissileMarker(guiGraphics, bullet, relationColorForBullet(player, playerVehicle, bullet));
                 registerMarkerHit(entity, MarkerKind.MISSILE, entity.getX(), entity.getY(), entity.getZ(), 7, getMarkerTargetPos(entity));
-            } else if (entity instanceof MissileEntity) {
-                drawMissileMarker(guiGraphics, entity, relationColorForEntity(player, entity));
+            } else if (isBaseOrdnance(entity) && entity instanceof AmmoEntity ammo) {
+                drawMissileMarker(guiGraphics, entity, relationColorForBaseAmmo(player, playerVehicle, ammo));
                 registerMarkerHit(entity, MarkerKind.MISSILE, entity.getX(), entity.getY(), entity.getZ(), 7, getMarkerTargetPos(entity));
             } else if (RVP_RadarContactHelper.isHbmMissile(entity)) {
                 drawMissileMarker(guiGraphics, entity, relationColorForEntity(player, entity));
@@ -1641,7 +1643,12 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
             if (!shouldShowEntityOnTacticalMap(player, playerVehicle, entity)) {
                 continue;
             }
-            if (entity instanceof MissileEntity || RVP_RadarContactHelper.isHbmMissile(entity)) {
+            if (isBaseOrdnance(entity) && entity instanceof AmmoEntity ammo) {
+                drawMissileMarker(guiGraphics, entity, relationColorForBaseAmmo(player, playerVehicle, ammo));
+                registerMarkerHit(entity, MarkerKind.MISSILE, entity.getX(), entity.getY(), entity.getZ(), 7, getMarkerTargetPos(entity));
+                continue;
+            }
+            if (RVP_RadarContactHelper.isHbmMissile(entity)) {
                 drawMissileMarker(guiGraphics, entity, relationColorForEntity(player, entity));
                 registerMarkerHit(entity, MarkerKind.MISSILE, entity.getX(), entity.getY(), entity.getZ(), 7, getMarkerTargetPos(entity));
                 continue;
@@ -3407,6 +3414,14 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
                 return (float) (Math.toDegrees(Math.atan2(velocity.z, velocity.x)) - 90.0D);
             }
         }
+        // 本体弹药不保证每 tick 更新实体朝向：火箭弹/炸弹按速度方向画图标，避免图标钉在发射朝向。
+        if (isBaseOrdnance(entity)) {
+            Vec3 velocity = entity.getDeltaMovement();
+            double horizontalSqr = velocity.x * velocity.x + velocity.z * velocity.z;
+            if (horizontalSqr > 1.0E-6D) {
+                return (float) (Math.toDegrees(Math.atan2(velocity.z, velocity.x)) - 90.0D);
+            }
+        }
         return entity.getViewYRot(renderPartialTick);
     }
 
@@ -3510,12 +3525,60 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
         return bullet.getTeam() != null && isAlliedTeam(player, bullet.getTeam()) ? FRIEND_ICON_COLOR : HOSTILE_ICON_COLOR;
     }
 
+    /** 本体战术地图需要显示的本体弹药（导弹/火箭弹/航空炸弹）。 */
+    public static boolean isBaseOrdnance(Entity entity) {
+        return entity instanceof MissileEntity
+                || entity instanceof RocketEntity
+                || entity instanceof AerialBombEntity;
+    }
+
+    /**
+     * 本体弹药的关系色：优先按发射载具判定，其次按 owner/队伍。
+     * 与 RVP 弹的 {@link #relationColorForBullet} 同语义，保证己方/友军弹药常显、敌方弹药走雷达可见性。
+     */
+    public static int relationColorForBaseAmmo(@Nullable LocalPlayer player, @Nullable AbstractVehicle playerVehicle,
+                                               AmmoEntity ammo) {
+        if (player == null || ammo == null) {
+            return FRIEND_ICON_COLOR;
+        }
+        AbstractVehicle shooter = ammo.vehicle;
+        if (shooter != null && shooter == playerVehicle) {
+            return OWN_ICON_COLOR;
+        }
+        Entity owner = ammo.getOwner();
+        if (owner == player) {
+            return OWN_ICON_COLOR;
+        }
+        if (playerVehicle != null && owner != null && playerVehicle.getPassengers().contains(owner)) {
+            return OWN_ICON_COLOR;
+        }
+        if (shooter != null) {
+            int color = relationColorForVehicle(player, shooter);
+            if (color != NEUTRAL_ICON_COLOR) {
+                return color;
+            }
+        }
+        if (owner != null) {
+            int color = relationColorForEntity(player, owner);
+            if (color != NEUTRAL_ICON_COLOR) {
+                return color;
+            }
+        }
+        Team team = ammo.getTeam();
+        if (team != null) {
+            return isAlliedTeam(player, team) ? FRIEND_ICON_COLOR : HOSTILE_ICON_COLOR;
+        }
+        return NEUTRAL_ICON_COLOR;
+    }
+
     private boolean shouldShowEntityOnTacticalMap(@Nullable LocalPlayer player, @Nullable AbstractVehicle playerVehicle, Entity entity) {
         if (player == null || entity == null) {
             return true;
         }
         int relationColor = entity instanceof RVP_BaseBullet bullet
                 ? relationColorForBullet(player, playerVehicle, bullet)
+                : isBaseOrdnance(entity) && entity instanceof AmmoEntity ammo
+                ? relationColorForBaseAmmo(player, playerVehicle, ammo)
                 : relationColorForEntity(player, entity);
         if (isRealtimeVisibleRelation(relationColor)) {
             return true;
@@ -3616,6 +3679,13 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
     public static ResourceLocation resolveMissileIcon(Entity entity) {
         if (RVP_RadarContactHelper.isHbmMissile(entity)) {
             return CRUISE_MISSILE_ICON;
+        }
+        // 本体弹药：导弹/火箭弹用导弹图标，航空炸弹用炸弹图标（与 RVP 弹种图标口径一致）
+        if (entity instanceof AerialBombEntity) {
+            return BOMB_ICON;
+        }
+        if (entity instanceof MissileEntity || entity instanceof RocketEntity) {
+            return MISSILE_ICON;
         }
         if (entity instanceof RVP_BaseBullet bullet) {
             if (resolveProjectileKind(bullet) == RVP_EnumWeaponKind.ROCKET) {
@@ -3773,6 +3843,31 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
         }
         if (player != null && RVP_ClientTacticalRevealState.isVisible(
                 player.level().dimension().location(), bullet.getId())) {
+            return color;
+        }
+        return 0;
+    }
+
+    /**
+     * 本体弹药（导弹/火箭弹/航空炸弹）的地图屏标记颜色，条件与 RVP 弹同源：
+     * 己方/友军常显，敌方仅雷达探测或战术揭示可见。
+     *
+     * @return 应显示时返回关系色，不应显示返回 0
+     */
+    public static int tacticalBaseAmmoMarkerColor(@Nullable LocalPlayer player, @Nullable AbstractVehicle playerVehicle,
+                                                  AmmoEntity ammo, @Nullable Set<Integer> radarVisibleIds) {
+        if (!isBaseOrdnance(ammo)) {
+            return 0;
+        }
+        int color = relationColorForBaseAmmo(player, playerVehicle, ammo);
+        if (isRealtimeVisibleRelation(color)) {
+            return color;
+        }
+        if (radarVisibleIds != null && radarVisibleIds.contains(ammo.getId())) {
+            return color;
+        }
+        if (player != null && RVP_ClientTacticalRevealState.isVisible(
+                player.level().dimension().location(), ammo.getId())) {
             return color;
         }
         return 0;
@@ -3950,6 +4045,9 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
         if (entity instanceof MissileEntity missile) {
             return missile.targetPos;
         }
+        if (entity instanceof AerialBombEntity bomb) {
+            return bomb.targetPos;
+        }
         Vec3 specialTarget = RVP_RadarContactHelper.resolveSpecialTargetPos(entity);
         if (specialTarget != null) {
             return specialTarget;
@@ -4077,6 +4175,9 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
         }
         if (entity instanceof RVP_BaseBullet bullet) {
             return relationColorForBullet(player, playerVehicle, bullet);
+        }
+        if (isBaseOrdnance(entity) && entity instanceof AmmoEntity ammo) {
+            return relationColorForBaseAmmo(player, playerVehicle, ammo);
         }
         return relationColorForEntity(player, entity);
     }

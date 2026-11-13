@@ -295,8 +295,10 @@
       "modules": [
         "ecm_active"
       ],
-      "ecm_active": {
-        "ammo_jam_radius": 250,
+"ecm_active": {
+        "active_duration_ticks": 60,
+        "cooldown_ticks": 400,
+        "ammo_jam_radius": 200,
         "vehicle_jam_radius": 0
       },
       "min_damage": 20

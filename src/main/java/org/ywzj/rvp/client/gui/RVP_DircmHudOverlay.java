@@ -6,6 +6,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraftforge.client.gui.overlay.ForgeGui;
 import net.minecraftforge.client.gui.overlay.IGuiOverlay;
 import org.ywzj.rvp.client.state.RVP_ClientBoneModuleState;
+import org.ywzj.rvp.client.state.RVP_ClientHitlState;
 import org.ywzj.rvp.client.state.RVP_DircmHudState;
 import org.ywzj.rvp.config.UIPresetAccess;
 import org.ywzj.rvp.config.UIPresetManager.UIPosition;
@@ -30,6 +31,10 @@ public class RVP_DircmHudOverlay implements IGuiOverlay {
 
     @Override
     public void render(ForgeGui gui, GuiGraphics guiGraphics, float partialTick, int screenWidth, int screenHeight) {
+        // 人在回路视频视角是纯弹载画面，不显示母车 DIRCM 状态文字。
+        if (RVP_ClientHitlState.isActive()) {
+            return;
+        }
         if (LocalVehiclePlayer.instance == null || !LocalVehiclePlayer.instance.onVehicle()) {
             return;
         }

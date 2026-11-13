@@ -3,12 +3,16 @@
   "recoil": 0.3,
   "name": "M230 30mm Cannon",
   "shoot_interval": 150,
-  "max_capacity": 40,
+  "max_capacity": 200,
   "reload": {
     "time": 120,
     "ammo": "ywzj_vehicle:ammo_auto_cannon"
   },
   "fire_data": {
+    "heat_count": 22,
+    "max_heat_count": 760,
+    "overheat_extra_heat": 10,
+    "heat_decay_accel": 1.5,
     "spread": 0.6,
     "fire_mode": "FULL_AUTO"
   },

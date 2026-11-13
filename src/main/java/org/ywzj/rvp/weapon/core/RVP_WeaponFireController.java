@@ -399,6 +399,16 @@ public final class RVP_WeaponFireController {
         return RVP_WeaponHeatManager.heatRatio(weapon);
     }
 
+    /** 过热文案（英文/默认）；空 = 使用默认“过热”键。 */
+    public String getHeatLabel() {
+        return RVP_WeaponHeatManager.heatLabel(weapon);
+    }
+
+    /** 过热文案（中文）；空 = 使用默认“过热”键。 */
+    public String getHeatLabelCn() {
+        return RVP_WeaponHeatManager.heatLabelCn(weapon);
+    }
+
     private void clearChargeState() {
         switch (mode()) {
             case CHARGE -> weapon.setChargeTick(0);

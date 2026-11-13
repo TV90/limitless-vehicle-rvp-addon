@@ -89,10 +89,15 @@ public class RVP_TVMissileOverlay {
         double range = point == null ? Double.NaN : point.distanceTo(missile.position());
         if (!designated && range >= RVP_ClientHitlState.DESIGNATE_AIM_RANGE - 1) range = Double.NaN;
         String track = RVP_ClientHitlState.getLockStatusLabel();
+        boolean airburst = missile.rvp$isHitlRightClickDetonate();
         // 调用统一缩放的紧凑侧栏；飞行时间复用生成包飞行刻与客户端后续刻的既有视觉时钟。
         RVP_HitlInstrumentRenderer.draw(gg, font, speedKmh, missile.getY(), range,
                 missile.getDisplayFlightTickCount() / 20.0, lastRateDegPerSec, video, control, track,
-                missile.rvp$isHitlRightClickDetonate());
+                airburst);
+        boolean airburstNearby = airburst && hasNonSelfEntityWithin(mc, missile, 10.0D);
+        RVP_HitlInstrumentRenderer.drawActionHints(gg, font,
+                RVP_ClientHitlState.isDesignateMode(), airburst,
+                RVP_ClientHitlState.shouldPromptDesignateKey(), airburstNearby);
         if (RVP_ClientHitlState.isHitlLinkBlocked()) RVP_HitlVideoLossRenderer.drawCaption(gg, font);
         if (RVP_ClientHitlState.isMouseSteering() && !RVP_ClientHitlState.isHitlLinkBlocked()) drawSteeringCursor(gg);
         else { cursor.reset(); lastFrameNanos = 0; }
@@ -135,6 +140,20 @@ public class RVP_TVMissileOverlay {
         lastTickCount = tc;
         lastYaw = yaw;
         lastPitch = pitch;
+    }
+
+    /** 空爆提示变红条件：导弹周围 10 格内存在非自身、非发射者的存活实体。 */
+    private static boolean hasNonSelfEntityWithin(Minecraft mc, RVP_MissileEntity missile, double radius) {
+        if (mc.level == null) {
+            return false;
+        }
+        Entity owner = missile.getOwner();
+        for (Entity entity : mc.level.getEntities(missile, missile.getBoundingBox().inflate(radius))) {
+            if (entity != missile && entity != owner && entity.isAlive() && !entity.isRemoved()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static void reset() {

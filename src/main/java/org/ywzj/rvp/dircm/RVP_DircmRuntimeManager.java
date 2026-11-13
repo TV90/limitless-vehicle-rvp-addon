@@ -17,15 +17,20 @@ import org.ywzj.rvp.network.S2CDircmHudSync;
 import org.ywzj.rvp.vehicle.BoneDircmConfig;
 import org.ywzj.rvp.vehicle.RVP_BoneModuleStateTable;
 import org.ywzj.rvp.vehicle.RVP_DircmStateSavedData;
+import org.ywzj.rvp.compat.RVP_BaseAmmoCompat;
 import org.ywzj.rvp.compat.RVP_SuperbWarfareCompat;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
+import org.ywzj.vehicle.entity.weapon.MissileEntity;
+import org.ywzj.vehicle.util.VehicleExplosion;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -85,6 +90,27 @@ public final class RVP_DircmRuntimeManager {
     }
 
     private static final Map<UUID, DircmState> STATES = new HashMap<>();
+
+    /** 本体红外弹被 DIRCM 致盲后的持续偏转状态（按实体 UUID，跨维度安全）。 */
+    public static final class BaseIrJamState {
+        public final int sourceVehicleId;
+        public final double sideSign;
+        public int remainTick;
+
+        BaseIrJamState(int sourceVehicleId, double sideSign, int remainTick) {
+            this.sourceVehicleId = sourceVehicleId;
+            this.sideSign = sideSign;
+            this.remainTick = remainTick;
+        }
+    }
+
+    private static final Map<UUID, BaseIrJamState> BASE_IR_JAMS = new HashMap<>();
+
+    /** 本体红外弹被干扰后的偏转角速度（度/tick），与 RVP DIRCM 的 jammingHeadingRate 对齐。 */
+    private static final double BASE_IR_HEADING_RATE_DEG = 2.5;
+
+    /** 单 tick 最大偏转角（度），与 RVP_JamDeflectionHelper 一致。 */
+    private static final double BASE_IR_HEADING_MAX_DEG = 15.0;
 
     private RVP_DircmRuntimeManager() {
     }
@@ -161,6 +187,20 @@ public final class RVP_DircmRuntimeManager {
         ChannelState channel = state.channels.computeIfAbsent(boneName, k -> new ChannelState());
         boolean changed = false;
 
+        // 旧存档/热更新可能残留“两个通道锁同一枚弹”：按骨名字典序保留一个，其余立即释放。
+        if (channel.busyTargetId >= 0) {
+            for (Map.Entry<String, ChannelState> entry : state.channels.entrySet()) {
+                if (!entry.getKey().equals(boneName)
+                        && entry.getValue().busyTargetId == channel.busyTargetId
+                        && entry.getKey().compareTo(boneName) < 0) {
+                    channel.busyTargetId = -1;
+                    channel.chargeRemainTick = 0;
+                    changed = true;
+                    break;
+                }
+            }
+        }
+
         // 当前目标维护
         if (channel.busyTargetId >= 0) {
             // 既有照射通道可继续持有虚拟弹，后续仍按原 UUID 和敌我规则校验。
@@ -178,6 +218,20 @@ public final class RVP_DircmRuntimeManager {
                 } else {
                     channel.beamRemainTick--;
                     RVP_SuperbWarfareCompat.deflectSbwMissile(target, vehicle);
+                    aimLaserAt(vehicle, config, target);
+                }
+            } else if (target instanceof org.ywzj.vehicle.entity.weapon.MissileEntity baseMissile) {
+                // 本体红外弹：光束期内持续清空目标；本体 IR 制导丢目标后不会重新截获。
+                if (!baseMissile.isAlive() || baseMissile.isRemoved()
+                        || channel.beamRemainTick <= 0
+                        || baseMissile.position().distanceTo(vehicle.position()) > config.detectRadius()) {
+                    channel.busyTargetId = -1;
+                    channel.chargeRemainTick = config.chargeTick();
+                    changed = true;
+                } else {
+                    channel.beamRemainTick--;
+                    applyBaseInfraredJam(vehicle, baseMissile);
+                    aimLaserAt(vehicle, config, baseMissile);
                 }
             } else if (!(target instanceof RVP_BaseBullet bullet) || !target.isAlive() || target.isRemoved()) {
                 // 目标消失/死亡：释放通道进入充能
@@ -199,6 +253,7 @@ public final class RVP_DircmRuntimeManager {
                     changed = true;
                 } else {
                     channel.beamRemainTick--;
+                    aimLaserAt(vehicle, config, bullet);
                 }
             }
         }
@@ -214,25 +269,48 @@ public final class RVP_DircmRuntimeManager {
         // 通道空闲且充能完毕：扫描扇区内的目标
         if (channel.busyTargetId < 0 && channel.chargeRemainTick <= 0) {
             if (vehicle.tickCount % config.scanIntervalTick() == 0) {
-                RVP_BaseBullet target = findTarget(vehicle, config);
+                // 同车多 DIRCM 通道共享占用表：已被其他通道锁定的导弹不再重复选择，
+                // 避免两个通道同 tick 各自扫到最近弹、对同一目标同时出光束。
+                Set<Integer> claimedByOtherChannels = new HashSet<>();
+                for (Map.Entry<String, ChannelState> entry : state.channels.entrySet()) {
+                    if (!entry.getKey().equals(boneName) && entry.getValue().busyTargetId >= 0) {
+                        claimedByOtherChannels.add(entry.getValue().busyTargetId);
+                    }
+                }
+                RVP_BaseBullet target = findTarget(vehicle, config, claimedByOtherChannels);
                 if (target != null) {
                     channel.busyTargetId = target.getId();
                     channel.beamRemainTick = config.beamTick();
                     channel.chargeRemainTick = 0;
                     // 干扰在光束建立瞬间即完成
                     applyJam(vehicle, target);
+                    aimLaserAt(vehicle, config, target);
                     changed = true;
                 } else {
-                    // SBW 联动：无 RVP 导弹时，扫描 SBW 红外（guideType=0）导弹占用通道并偏转
-                    Entity sbw = findSbwTarget(vehicle, config);
-                    if (sbw != null) {
-                        channel.busyTargetId = sbw.getId();
+                    // 本体红外弹：RVP 弹优先，其次本体弹，最后 SBW。
+                    org.ywzj.vehicle.entity.weapon.MissileEntity baseIr =
+                            findBaseInfraredTarget(vehicle, config, claimedByOtherChannels);
+                    if (baseIr != null) {
+                        channel.busyTargetId = baseIr.getId();
                         channel.beamRemainTick = config.beamTick();
                         channel.chargeRemainTick = 0;
-                        RVP_SuperbWarfareCompat.deflectSbwMissile(sbw, vehicle);
-                        // SBW 联动：通知干扰者（DIRCM 司机）与被干扰方（SBW 导弹发射者）
-                        notifySbwJamAndVictim(vehicle, sbw);
+                        applyBaseInfraredJam(vehicle, baseIr);
+                        notifyBaseIrJam(vehicle, baseIr);
+                        aimLaserAt(vehicle, config, baseIr);
                         changed = true;
+                    } else {
+                        // SBW 联动：无 RVP 导弹时，扫描 SBW 红外（guideType=0）导弹占用通道并偏转
+                        Entity sbw = findSbwTarget(vehicle, config, claimedByOtherChannels);
+                        if (sbw != null) {
+                            channel.busyTargetId = sbw.getId();
+                            channel.beamRemainTick = config.beamTick();
+                            channel.chargeRemainTick = 0;
+                            RVP_SuperbWarfareCompat.deflectSbwMissile(sbw, vehicle);
+                            // SBW 联动：通知干扰者（DIRCM 司机）与被干扰方（SBW 导弹发射者）
+                            notifySbwJamAndVictim(vehicle, sbw);
+                            aimLaserAt(vehicle, config, sbw);
+                            changed = true;
+                        }
                     }
                 }
             }
@@ -247,7 +325,8 @@ public final class RVP_DircmRuntimeManager {
      * DIRCM 火力通道（busyTargetId）并在光束期内调用 deflectSbwMissile 持续偏转。</p>
      */
     @Nullable
-    private static Entity findSbwTarget(AbstractVehicle vehicle, BoneDircmConfig config) {
+    private static Entity findSbwTarget(AbstractVehicle vehicle, BoneDircmConfig config,
+                                        Set<Integer> claimedByOtherChannels) {
         if (!RVP_SuperbWarfareCompat.isLoaded()) {
             return null;
         }
@@ -256,6 +335,9 @@ public final class RVP_DircmRuntimeManager {
         double bestSqr = Double.MAX_VALUE;
         Entity best = null;
         for (Entity entity : vehicle.level().getEntities(vehicle, box, e -> true)) {
+            if (claimedByOtherChannels.contains(entity.getId())) {
+                continue;
+            }
             if (!RVP_SuperbWarfareCompat.isSbwMissile(entity)) {
                 continue;
             }
@@ -286,9 +368,213 @@ public final class RVP_DircmRuntimeManager {
         return best;
     }
 
-    /** 在扇区内寻找最近的可触发目标（所有 RVP 导弹/火箭/炸弹）。 */
+    /**
+     * 本体红外弹联动：在 DIRCM 前方探测扇区内寻找最近的、可被照射的本体红外制导导弹。
+     * 与 RVP 弹采用同一朝向/来袭角/敌我过滤；本体 IR 制导丢目标后不会重新截获。
+     */
     @Nullable
-    private static RVP_BaseBullet findTarget(AbstractVehicle vehicle, BoneDircmConfig config) {
+    private static org.ywzj.vehicle.entity.weapon.MissileEntity findBaseInfraredTarget(
+            AbstractVehicle vehicle, BoneDircmConfig config, Set<Integer> claimedByOtherChannels) {
+        Vec3 front = RVP_JammingRuntime.resolveFacing(vehicle, config.facingPart(), config.facingYawDeg());
+        AABB box = vehicle.getBoundingBox().inflate(config.detectRadius());
+        double bestSqr = Double.MAX_VALUE;
+        org.ywzj.vehicle.entity.weapon.MissileEntity best = null;
+        for (Entity entity : vehicle.level().getEntities(vehicle, box,
+                e -> e instanceof org.ywzj.vehicle.entity.weapon.MissileEntity)) {
+            org.ywzj.vehicle.entity.weapon.MissileEntity missile =
+                    (org.ywzj.vehicle.entity.weapon.MissileEntity) entity;
+            if (claimedByOtherChannels.contains(missile.getId())) {
+                continue;
+            }
+            // 已被任一 DIRCM 通道施加过干扰的本体 IR 弹不再重复占用另一通道。
+            if (BASE_IR_JAMS.containsKey(missile.getUUID())) {
+                continue;
+            }
+            if (!missile.isAlive() || missile.isRemoved()) {
+                continue;
+            }
+            if (!RVP_BaseAmmoCompat.isInfraredHoming(missile)) {
+                continue;
+            }
+            if (RVP_BaseAmmoCompat.isFriendly(vehicle, missile)) {
+                continue;
+            }
+            Vec3 toTarget = missile.position().subtract(vehicle.position());
+            double dist = toTarget.length();
+            if (dist > config.detectRadius() || dist < 1.0E-6) {
+                continue;
+            }
+            if (!RVP_GuidanceRuntimeGeometry.withinAngle(front, toTarget, config.halfAngleDeg())) {
+                continue;
+            }
+            // 来袭角判定：只干扰朝本车飞来的弹
+            Vec3 flight = missile.getDeltaMovement();
+            Vec3 toVehicle = vehicle.position().subtract(missile.position());
+            if (flight.lengthSqr() > 1.0E-6 && toVehicle.lengthSqr() > 1.0E-6
+                    && !RVP_GuidanceRuntimeGeometry.withinAngle(flight.normalize(), toVehicle.normalize(),
+                    config.approachHalfAngleDeg())) {
+                continue;
+            }
+            double dSqr = toTarget.lengthSqr();
+            if (dSqr < bestSqr) {
+                bestSqr = dSqr;
+                best = missile;
+            }
+        }
+        return best;
+    }
+
+    /**
+     * 让 DIRCM 激光部件跟随目标转动。复用本体 {@link WeaponUnit#aim(Vec3)}：
+     * 服务端只写 xAimRot/yAimRot，PartUnit 同步数据下发客户端，客户端按 rot_info 转速平滑转向。
+     * APS 的发射器联动使用同一入口。
+     */
+    private static void aimLaserAt(AbstractVehicle vehicle, BoneDircmConfig config, @Nullable Entity target) {
+        if (vehicle == null || config == null || target == null || vehicle.level().isClientSide()) {
+            return;
+        }
+        String partId = config.laserPart();
+        if (partId == null || partId.isBlank()) {
+            return;
+        }
+        org.ywzj.vehicle.vehicle.part.PartUnit<?> part = vehicle.getPartUnit(partId).orElse(null);
+        if (part instanceof WeaponUnit weaponUnit) {
+            weaponUnit.aim(target.getBoundingBox().getCenter());
+        }
+    }
+
+    /** 本体红外弹被 DIRCM 致盲时，向干扰者与被干扰弹发射者发 actionbar 提示。 */
+    private static void notifyBaseIrJam(AbstractVehicle vehicle,
+                                        org.ywzj.vehicle.entity.weapon.MissileEntity missile) {
+        if (vehicle.level().isClientSide()) {
+            return;
+        }
+        Entity owner = missile.getOwner();
+        if (owner instanceof ServerPlayer victim) {
+            victim.displayClientMessage(
+                    Component.translatable("message.ywzj_rvp.dircm_jammed"), true);
+        }
+        long now = vehicle.level().getGameTime();
+        Long last = LAST_JAM_NOTIFY_BY_VEHICLE.get(vehicle.getId());
+        if (last != null && now - last < JAM_NOTIFY_INTERVAL) {
+            return;
+        }
+        LAST_JAM_NOTIFY_BY_VEHICLE.put(vehicle.getId(), now);
+        Entity driver = vehicle.getDriver();
+        if (driver instanceof ServerPlayer jammer) {
+            jammer.displayClientMessage(
+                    Component.translatable("message.ywzj_rvp.dircm_irradiate"), true);
+        }
+    }
+
+    /**
+     * 注册本体红外弹的 DIRCM 持续干扰：丢制导并记录 10 秒自毁倒计时。
+     * 同一枚弹只注册一次；后续多通道照射不会重置倒计时。
+     */
+    public static void applyBaseInfraredJam(AbstractVehicle source,
+                                            org.ywzj.vehicle.entity.weapon.MissileEntity missile) {
+        if (source == null || missile == null || missile.level().isClientSide()) {
+            return;
+        }
+        RVP_BaseAmmoCompat.blindInfrared(missile);
+        BASE_IR_JAMS.computeIfAbsent(missile.getUUID(),
+                id -> new BaseIrJamState(source.getId(), resolveBaseSideSign(missile, source),
+                        SELF_DESTRUCT_TICK));
+    }
+
+    /** 本体弹离开世界时清理干扰状态，避免 UUID 幽灵条目累积。 */
+    public static void onEntityLeave(Entity entity) {
+        if (entity instanceof org.ywzj.vehicle.entity.weapon.MissileEntity) {
+            BASE_IR_JAMS.remove(entity.getUUID());
+        }
+    }
+
+    /**
+     * 每 tick 推进本体红外弹的持续偏转（由 {@code RVP_DircmEventHandler} 服务端驱动）：
+     * 保持丢制导，水平速度按 2.5°/tick 朝远离干扰机一侧旋转，10 秒后自毁。
+     */
+    public static void tickBaseInfraredJams(ServerLevel level) {
+        if (BASE_IR_JAMS.isEmpty()) {
+            return;
+        }
+        for (Entity entity : level.getEntities().getAll()) {
+            if (!(entity instanceof org.ywzj.vehicle.entity.weapon.MissileEntity missile)
+                    || !missile.isAlive() || missile.isRemoved()) {
+                continue;
+            }
+            BaseIrJamState state = BASE_IR_JAMS.get(missile.getUUID());
+            if (state == null) {
+                continue;
+            }
+            if (state.remainTick <= 0) {
+                selfDestructBaseMissile(missile);
+                BASE_IR_JAMS.remove(missile.getUUID());
+                continue;
+            }
+            RVP_BaseAmmoCompat.blindInfrared(missile);
+            deflectBaseMissile(missile, state.sideSign);
+            state.remainTick--;
+        }
+    }
+
+    /** 本体红外弹的强制偏转：水平速度方向每 tick 旋转 2.5°，朝远离干扰机一侧。 */
+    private static void deflectBaseMissile(org.ywzj.vehicle.entity.weapon.MissileEntity missile,
+                                           double sideSign) {
+        Vec3 vel = missile.getDeltaMovement();
+        double hSpeed = Math.hypot(vel.x, vel.z);
+        if (hSpeed <= 1.0E-6) {
+            return;
+        }
+        Vec3 hDir = new Vec3(vel.x, 0.0, vel.z).normalize();
+        Vec3 away = buildHorizontalPerp(hDir).scale(sideSign).normalize();
+        double theta = Math.toRadians(Math.min(BASE_IR_HEADING_RATE_DEG, BASE_IR_HEADING_MAX_DEG));
+        Vec3 hNew = hDir.scale(Math.cos(theta)).add(away.scale(Math.sin(theta)));
+        if (hNew.lengthSqr() > 1.0E-8) {
+            hNew = hNew.normalize().scale(hSpeed);
+            missile.setDeltaMovement(hNew.x, vel.y, hNew.z);
+        }
+    }
+
+    /** 与 RVP_JamDeflectionHelper 相同的水平垂直方向计算。 */
+    private static Vec3 buildHorizontalPerp(Vec3 dir) {
+        Vec3 horizontalDir = new Vec3(dir.x, 0.0, dir.z);
+        if (horizontalDir.lengthSqr() <= 1.0E-8) {
+            return new Vec3(1.0, 0.0, 0.0);
+        }
+        Vec3 perp = horizontalDir.normalize().cross(new Vec3(0.0, 1.0, 0.0));
+        return perp.lengthSqr() <= 1.0E-8 ? new Vec3(1.0, 0.0, 0.0) : perp.normalize();
+    }
+
+    /** 偏转侧向符号：远离干扰机载具一侧（与 RVP_BaseBullet 同公式）。 */
+    private static double resolveBaseSideSign(org.ywzj.vehicle.entity.weapon.MissileEntity missile,
+                                              AbstractVehicle vehicle) {
+        Vec3 flight = missile.getDeltaMovement();
+        Vec3 flightH = new Vec3(flight.x, 0.0, flight.z);
+        Vec3 toJammerH = new Vec3(vehicle.getX() - missile.getX(), 0.0, vehicle.getZ() - missile.getZ());
+        if (flightH.lengthSqr() <= 1.0E-8 || toJammerH.lengthSqr() <= 1.0E-8) {
+            return 1.0;
+        }
+        Vec3 leftPerp = new Vec3(flightH.z, 0.0, -flightH.x).normalize();
+        double dot = leftPerp.dot(toJammerH.normalize());
+        return dot >= 0.0 ? -1.0 : 1.0;
+    }
+
+    /** 本体红外弹干扰 10 秒后按自身爆炸配置自毁，与 RVP 永久干扰弹同表现。 */
+    private static void selfDestructBaseMissile(org.ywzj.vehicle.entity.weapon.MissileEntity missile) {
+        if (missile.level().isClientSide() || !missile.isAlive()) {
+            return;
+        }
+        if (missile.explosion != null) {
+            new VehicleExplosion(missile.level(), missile.getOwner(), missile, missile.position(),
+                    missile.explosion.radius, missile.explosion.damage, missile.explosion.destroyBlock)
+                    .explode();
+        }
+        missile.discard();
+    }
+
+    @Nullable
+    private static RVP_BaseBullet findTarget(AbstractVehicle vehicle, BoneDircmConfig config,
+                                             Set<Integer> claimedByOtherChannels) {
         Vec3 front = RVP_JammingRuntime.resolveFacing(vehicle, config.facingPart(), config.facingYawDeg());
         // [DIRCM DEBUG] 打印探测扇区朝向，排查左右/前右方向异常
         if ((vehicle.tickCount & 63) == 0) {
@@ -304,6 +590,13 @@ public final class RVP_DircmRuntimeManager {
         for (Entity entity : org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.merge(
                 vehicle.level(), box, vehicle.level().getEntities(vehicle, box, e -> true), e -> e != vehicle)) {
             if (!(entity instanceof RVP_BaseBullet bullet) || !entity.isAlive()) {
+                continue;
+            }
+            if (claimedByOtherChannels.contains(bullet.getId())) {
+                continue;
+            }
+            // 已被干扰的弹体不再被新通道选中（避免两个 DIRCM 对同一枚弹同时出光束）。
+            if (bullet.dircmJammed) {
                 continue;
             }
             // 排除机炮弹（MACHINEGUN 类）：用户需求只覆盖导弹/火箭/炸弹

@@ -4,7 +4,7 @@
   "name": "BTS-10",
   "name_CN": "BTS-10 横向效应增强弹",
   "shoot_interval": 300,
-  "max_capacity": 30,
+  "max_capacity": 150,
   "reload": {
     "time": 120,
     "ammo": "ywzj_vehicle:ammo_auto_cannon"

@@ -124,12 +124,12 @@ class RVP_VehicleImpactSparksTest {
 
     @Test
     void packKeepsArmorPiercingRoundsEnabledAndHeDefaultsOn() throws Exception {
-        Path root = Path.of("limitless_vehicle/rvp/data/rvp/weapons");
+        
         for (String weapon : List.of("abramsx_xm829a5", "bmpt_2a42", "gsh_30_1", "lav25_apfsds",
                 "m1a2sep_m829a2", "mi28_2a42", "t84bm_3bm42", "t90m_3bm59", "vt4_dtc10",
                 "zbl08a_apfsds", "ztz100_dtc251")) {
             // 提取实际 JSON 的 effects_data，用生产数据模型验证开关与口径。
-            RVP_EffectsData data = gson.fromJson(JsonParser.parseString(Files.readString(root.resolve(weapon + ".json")))
+            RVP_EffectsData data = gson.fromJson(JsonParser.parseString(Files.readString(org.ywzj.rvp.testutil.RVP_TestPackPaths.data("weapons", weapon + ".json")))
                     .getAsJsonObject().get("effects_data"), RVP_EffectsData.class);
             // 调用生产规则核实真实穿甲弹配置已启用，并且口径与曳光宽度分开。
             assertTrue(RVP_VehicleImpactSparks.shouldEmit(data), weapon);
@@ -138,7 +138,7 @@ class RVP_VehicleImpactSparksTest {
         for (String weapon : List.of("gsh_30_1_he", "lav25_hei", "zbl08a_hei", "t84bm_3of26",
                 "t90m_3of26", "vt4_dtb10", "abramsx_xm1127", "ztz100_dtb251", "m1a2sep_m830a1")) {
             // 提取实际 HE 配置的视觉分组；开关改为默认开启后 HE 同样生效。
-            RVP_EffectsData data = gson.fromJson(JsonParser.parseString(Files.readString(root.resolve(weapon + ".json")))
+            RVP_EffectsData data = gson.fromJson(JsonParser.parseString(Files.readString(org.ywzj.rvp.testutil.RVP_TestPackPaths.data("weapons", weapon + ".json")))
                     .getAsJsonObject().get("effects_data"), RVP_EffectsData.class);
             // 调用生产规则核实 HE/HEAT 走默认开启；需要关闭时在 JSON 显式写 false，由上一用例覆盖。
             assertTrue(RVP_VehicleImpactSparks.shouldEmit(data), weapon);

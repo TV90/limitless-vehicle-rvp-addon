@@ -32,7 +32,7 @@
       "per_round": 4,
       "burst_rounds": 8,
       "launch_interval_tick": 4,
-      "reload_tick": 200,
+      "reload_tick": 300,
       "radar_jam_radius": 8,
       "radar_jam_count": 2,
       "radar_jam_cooldown_tick": 60,
@@ -356,6 +356,7 @@
       "operator_on_weapon_unit": false,
       "disable_scope_auto_level": true,
       "with_focus_locker": true,
+      "rvp_focus_lock_snap_radius": 2.0,
       "with_stabilizer": true,
       "rot_info": {
         "x_rot_speed": 7,

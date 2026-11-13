@@ -3,12 +3,16 @@
   "name": "H/PJ-12 30mm Cannon",
   "recoil": 0,
   "shoot_interval": 50,
-  "max_capacity": 150,
+  "max_capacity": 600,
   "reload": {
     "time": 120,
     "ammo": "ywzj_vehicle:ammo_auto_cannon"
   },
   "fire_data": {
+    "heat_count": 20,
+    "max_heat_count": 2850,
+    "overheat_extra_heat": 10,
+    "heat_decay_accel": 1.5,
     "spread": 0.3,
     "fire_mode": "FULL_AUTO"
   },

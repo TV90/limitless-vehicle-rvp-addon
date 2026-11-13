@@ -3,12 +3,16 @@
   "name": "GAU-12 25mm Cannon",
   "recoil": 0.3,
   "shoot_interval": 50,
-  "max_capacity": 80,
+  "max_capacity": 300,
   "reload": {
     "time": 120,
     "ammo": "ywzj_vehicle:ammo_auto_cannon"
   },
   "fire_data": {
+    "heat_count": 20,
+    "max_heat_count": 1520,
+    "overheat_extra_heat": 10,
+    "heat_decay_accel": 1.5,
     "spread": 2,
     "fire_mode": "FULL_AUTO"
   },

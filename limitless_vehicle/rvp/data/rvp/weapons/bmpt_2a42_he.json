@@ -2,12 +2,16 @@
   "type": "rvp:machinegun",
   "name": "3UOR6 30MM HEI",
   "shoot_interval": 100,
-  "max_capacity": 40,
+  "max_capacity": 150,
   "reload": {
     "time": 200,
     "ammo": "ywzj_vehicle:ammo_auto_cannon"
   },
   "fire_data": {
+    "heat_count": 21,
+    "max_heat_count": 760,
+    "overheat_extra_heat": 10,
+    "heat_decay_accel": 1.5,
     "spread": 0.525,
     "fire_mode": "FULL_AUTO"
   },

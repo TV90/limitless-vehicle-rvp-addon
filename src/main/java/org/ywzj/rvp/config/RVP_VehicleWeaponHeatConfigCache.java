@@ -123,7 +123,10 @@ public final class RVP_VehicleWeaponHeatConfigCache {
         return new RVP_VehicleWeaponHeatConfig(
                 Math.max(0, GsonHelper.getAsInt(obj, "vehicle_heat_count", 0)),
                 maxHeat,
-                Math.max(0, GsonHelper.getAsInt(obj, "vehicle_overheat_extra_heat", 30))
+                Math.max(0, GsonHelper.getAsInt(obj, "vehicle_overheat_extra_heat", 30)),
+                GsonHelper.getAsString(obj, "vehicle_heat_label", "").trim(),
+                GsonHelper.getAsString(obj, "vehicle_heat_label_CN", "").trim(),
+                Math.max(0.0, GsonHelper.getAsDouble(obj, "vehicle_heat_decay_accel", 0.0))
         );
     }
 

@@ -54,6 +54,21 @@ public class RVP_FireData {
     @SerializedName("overheat_extra_heat")
     private int overheatExtraHeat = 30;
 
+    /** 过热文案的翻译键（如 overlay.ywzj_rvp.heat.loader）；空 = 默认“过热”。 */
+    @SerializedName("heat_label")
+    private String heatLabel;
+
+    /** 过热文案中文翻译键/文本；空时回退 heat_label。 */
+    @SerializedName("heat_label_CN")
+    private String heatLabelCn;
+
+    /**
+     * 停火后的过热恢复加速：每停火 1 秒，冷却速度额外增加该值（热/tick）。
+     * 0 = 保持固定 1 热/tick 冷却；默认只在部分机炮上启用。
+     */
+    @SerializedName("heat_decay_accel")
+    private double heatDecayAccel = 0.0;
+
     /**
      * Maximum off-axis launch angle in degrees.
      * {@code null} keeps legacy unrestricted firing.
@@ -120,6 +135,18 @@ public class RVP_FireData {
 
     public int getOverheatExtraHeat() {
         return Math.max(overheatExtraHeat, 0);
+    }
+
+    public String getHeatLabel() {
+        return heatLabel == null ? "" : heatLabel.trim();
+    }
+
+    public String getHeatLabelCn() {
+        return heatLabelCn == null ? "" : heatLabelCn.trim();
+    }
+
+    public double getHeatDecayAccel() {
+        return Math.max(heatDecayAccel, 0.0);
     }
 
     public Integer getMaxOffAxisShootAngle() {

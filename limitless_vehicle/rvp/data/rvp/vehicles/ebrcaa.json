@@ -383,6 +383,14 @@
     }
   ],
   "bone_modules": {
+    "turret": {
+      "modules": ["turret_traverse"],
+      "turret_traverse": {
+        "part_id": "turret",
+        "threshold_light": 450,
+        "threshold_heavy": 0
+      }
+    },
     "upper_front": {
       "modules": [
         "engine"

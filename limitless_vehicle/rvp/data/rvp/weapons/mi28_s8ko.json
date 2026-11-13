@@ -4,9 +4,9 @@
   "parent_weapon_unit_aim_override": false,
   "crosshair_style_override": "cross",
   "shoot_interval": 200,
-  "max_capacity": 20,
+  "max_capacity": 40,
   "reload": {
-    "time": 300,
+    "time": 450,
     "ammo": "ywzj_vehicle:ammo_rocket"
   },
   "rvp_fire_control_sensor_mode": "eo_ccip",
@@ -41,8 +41,8 @@
       "radius": 3,
       "destroy_block": true,
       "explosion_damage_factor": {
-        "player": 0.8333,
-        "living": 0.8333,
+        "player": 0.6,
+        "living": 0.6,
         "vehicle_default": 1.0,
         "vehicles": {
           "ywzj_vehicle:wheeled_vehicle": 1.2

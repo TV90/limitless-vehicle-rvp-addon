@@ -21,7 +21,7 @@ class RVP_ProjectileInertiaSimulationTest {
     /** PPN 新增 AIR/SARH 与高抛交接场景，同样读取未改参数的权威武器。 */
     private static final Path PPN_SCENARIOS = Path.of("src/test/resources/projectile-ppn-simulation");
     /** 只读取项目根的权威武器配置。 */
-    private static final Path WEAPONS = Path.of("limitless_vehicle/rvp/data/rvp/weapons");
+    
 
     /** 各种发射速度、离轴角与目标运动均须独立报告测试结果。 */
     @TestFactory
@@ -43,7 +43,7 @@ class RVP_ProjectileInertiaSimulationTest {
     private void verify(Path path, boolean catchAtActivation) throws IOException {
         // 调用现有场景与权威武器解析器，不复制武器参数或在生产代码中区分武器 ID。
         var scene = RVP_ProjectileSimulationMain.read(path);
-        var weapon = RVP_ProjectileSimulationWeapon.read(WEAPONS, scene.weapon);
+        var weapon = RVP_ProjectileSimulationWeapon.read(org.ywzj.rvp.testutil.RVP_TestPackPaths.weaponDirFor(scene.weapon), scene.weapon);
         var flight = new RVP_ProjectileEntitySimulation(weapon.data(), weapon.kind(), scene);
         var before = flight.snapshot();
         Vec3 oldTarget = flight.targetPosition();

@@ -2,12 +2,16 @@
   "type": "rvp:machinegun",
   "name": "7.62mm Minigun",
   "shoot_interval": 50,
-  "max_capacity": 80,
+  "max_capacity": 100,
   "reload": {
     "time": 80,
     "ammo": "ywzj_vehicle:ammo_machine_gun"
   },
   "fire_data": {
+    "heat_count": 20,
+    "max_heat_count": 1520,
+    "overheat_extra_heat": 10,
+    "heat_decay_accel": 1.5,
     "spread": 3.0,
     "fire_mode": "FULL_AUTO"
   },

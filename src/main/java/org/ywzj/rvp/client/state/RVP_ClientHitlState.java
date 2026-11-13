@@ -60,6 +60,10 @@ public class RVP_ClientHitlState {
     private static float displayLookOffsetPitch;
     private static final float LOOK_OFFSET_TAU = 0.055f;
     private static boolean initialDesignateSent;
+    /** 本次入镜的起始 gameTime，用于“发射 2 秒内未按 R 标记”提示。 */
+    private static long launchTick = -1L;
+    /** 本次入镜后玩家是否成功按过 R 标记；用于关闭延迟提示。 */
+    private static boolean redesignatePressedSinceLaunch;
     @Nullable
     private static Vec3 clientDesignatedPos;
     private static int clientDesignatedEntityId = -1;
@@ -106,6 +110,18 @@ public class RVP_ClientHitlState {
 
     public static boolean isDesignateMode() {
         return isActive() && controlMode == RVP_EnumHitlControlMode.DESIGNATE;
+    }
+
+    /**
+     * 是否应闪烁“按 R 锚定目标点”提示：本次入镜是指令线弹、发射后已超过 2 秒，
+     * 且玩家尚未成功按过 R。自动指定仍照常执行，本提示只提醒玩家主动确认锁点。
+     */
+    public static boolean shouldPromptDesignateKey() {
+        if (!isDesignateMode() || redesignatePressedSinceLaunch || launchTick < 0L) {
+            return false;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        return mc.level != null && mc.level.getGameTime() - launchTick >= 40L;
     }
 
     public static float getLookOffsetYaw() {
@@ -268,6 +284,8 @@ public class RVP_ClientHitlState {
         displayLookOffsetYaw = 0f;
         displayLookOffsetPitch = 0f;
         initialDesignateSent = false;
+        launchTick = -1L;
+        redesignatePressedSinceLaunch = false;
         clientDesignatedPos = null;
         clientDesignatedEntityId = -1;
         clientDesignatedObb = null;
@@ -285,6 +303,9 @@ public class RVP_ClientHitlState {
         if (missileChanged) {
             videoMode = RVP_EnumVideoMode.COLOR;
             videoModeUserSelected = false;
+            launchTick = Minecraft.getInstance().level != null
+                    ? Minecraft.getInstance().level.getGameTime() : -1L;
+            redesignatePressedSinceLaunch = false;
         }
         while (RVP_Keys.HITL_EXIT.consumeClick()) {
             // Drain the fire-click residue when TV enter is bound to the same mouse button as exit.
@@ -328,6 +349,8 @@ public class RVP_ClientHitlState {
         displayLookOffsetYaw = 0f;
         displayLookOffsetPitch = 0f;
         initialDesignateSent = false;
+        launchTick = -1L;
+        redesignatePressedSinceLaunch = false;
         clientDesignatedPos = null;
         clientDesignatedEntityId = -1;
         clientDesignatedObb = null;
@@ -382,6 +405,9 @@ public class RVP_ClientHitlState {
                 hitlPitch = 0f;
                 RVP_ClientHitlCamera.onMissileAcquired(missile);
                 missileEntitySeen = true;
+                if (launchTick < 0L && mc.level != null) {
+                    launchTick = mc.level.getGameTime();
+                }
                 if (!videoModeUserSelected) {
                     videoMode = resolveInitialVideoMode(missile);
                 }
@@ -391,6 +417,9 @@ public class RVP_ClientHitlState {
                 }
             }
             entityWaitTicks = 0;
+            // EntityCulling 等 tick 剔除 mod 会把相机前方 2 格以外的弹体当成不可见实体跳过客户端 tick，
+            // 导致 HITL 镜头停在发射点；noCulling 是这类 mod 的通用兼容开关，只在本会话期间打开。
+            missile.noCulling = true;
             videoMode = videoModeUserSelected
                     ? normalizeVideoMode(missile, videoMode)
                     : resolveInitialVideoMode(missile);
@@ -562,7 +591,10 @@ public class RVP_ClientHitlState {
         }
         while (RVP_Keys.HITL_REDESIGNATE.consumeClick()) {
             // 即使禁锁也消费按键，不能在倒计时结束后补发干扰期积压的指定请求。
-            if (!hitlLinkBlocked && !dircmJam && noRedesignateTicks <= 0) redesignateTargetAtCrosshair(mc, missile);
+            if (!hitlLinkBlocked && !dircmJam && noRedesignateTicks <= 0) {
+                redesignatePressedSinceLaunch = true;
+                redesignateTargetAtCrosshair(mc, missile);
+            }
         }
     }
 

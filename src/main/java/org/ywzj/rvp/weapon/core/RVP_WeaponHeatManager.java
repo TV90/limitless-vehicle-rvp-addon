@@ -65,7 +65,7 @@ public final class RVP_WeaponHeatManager {
             if (!spec.enabled()) {
                 return;
             }
-            tickState(spec.state(), tickClock(weapon));
+            tickState(spec.state(), tickClock(weapon), spec.heatDecayAccel());
         }
     }
 
@@ -76,7 +76,7 @@ public final class RVP_WeaponHeatManager {
                 return true;
             }
             HeatState state = spec.state();
-            tickState(state, tickClock(weapon));
+            tickState(state, tickClock(weapon), spec.heatDecayAccel());
             return state.currentHeat < spec.maxHeatCount();
         }
     }
@@ -88,7 +88,9 @@ public final class RVP_WeaponHeatManager {
                 return;
             }
             HeatState state = spec.state();
-            tickState(state, tickClock(weapon));
+            long now = tickClock(weapon);
+            tickState(state, now, spec.heatDecayAccel());
+            state.lastShotTick = now;
             state.currentHeat += spec.heatCount();
             if (state.currentHeat >= spec.maxHeatCount()) {
                 state.currentHeat += spec.overheatExtraHeat();
@@ -107,7 +109,7 @@ public final class RVP_WeaponHeatManager {
             HeatState state = spec.state();
             // 读取时推进冷却：恒定速率下同一游戏 tick 内多次读取 elapsed=0，
             // 不会加速冷却。保证客户端 HUD 在没有射击事件驱动时也能实时反映冷却进度。
-            tickState(state, tickClock(weapon));
+            tickState(state, tickClock(weapon), spec.heatDecayAccel());
             return Math.max(state.currentHeat, 0);
         }
     }
@@ -154,7 +156,7 @@ public final class RVP_WeaponHeatManager {
                 return false;
             }
             HeatState state = spec.state();
-            tickState(state, tickClock(weapon));
+            tickState(state, tickClock(weapon), spec.heatDecayAccel());
             if (state.overheatedLatch
                     && state.currentHeat < spec.maxHeatCount() * OVERHEAT_RECOVERY_RATIO) {
                 state.overheatedLatch = false;
@@ -180,11 +182,37 @@ public final class RVP_WeaponHeatManager {
                     .computeIfAbsent(weapon.getVehicle(), ignored -> new HashMap<>())
                     .computeIfAbsent(vehicleResolved.key(), ignored -> new HeatState());
             RVP_VehicleWeaponHeatConfig config = vehicleResolved.config();
-            return new HeatSpec(state, config.heatCount(), config.maxHeatCount(), config.overheatExtraHeat());
+            return new HeatSpec(state, config.heatCount(), config.maxHeatCount(),
+                    config.overheatExtraHeat(), config.heatLabel(), config.heatLabelCn(),
+                    config.heatDecayAccel());
         }
 
         RVP_FireData fire = weapon.getData().getFireData();
-        return new HeatSpec(weaponHeatState(weapon), fire.getHeatCount(), fire.getMaxHeatCount(), fire.getOverheatExtraHeat());
+        return new HeatSpec(weaponHeatState(weapon), fire.getHeatCount(), fire.getMaxHeatCount(),
+                fire.getOverheatExtraHeat(), fire.getHeatLabel(), fire.getHeatLabelCn(),
+                fire.getHeatDecayAccel());
+    }
+
+    /** 当前武器过热文案（英文/默认）；未启用过热返回空串。 */
+    public static String heatLabel(RVP_WeaponBase weapon) {
+        synchronized (LOCK) {
+            HeatSpec spec = resolveSpec(weapon);
+            if (!spec.enabled()) {
+                return "";
+            }
+            return spec.heatLabel().isBlank() ? spec.heatLabelCn() : spec.heatLabel();
+        }
+    }
+
+    /** 当前武器过热文案（中文）；未配置中文时回退英文/默认。 */
+    public static String heatLabelCn(RVP_WeaponBase weapon) {
+        synchronized (LOCK) {
+            HeatSpec spec = resolveSpec(weapon);
+            if (!spec.enabled()) {
+                return "";
+            }
+            return spec.heatLabelCn().isBlank() ? spec.heatLabel() : spec.heatLabelCn();
+        }
     }
 
     /**
@@ -210,7 +238,7 @@ public final class RVP_WeaponHeatManager {
         return new WeaponKey(partId, weapon.getIndex());
     }
 
-    private static void tickState(HeatState state, long tickCount) {
+    private static void tickState(HeatState state, long tickCount, double decayAccel) {
         if (state.lastTick == Long.MIN_VALUE) {
             state.lastTick = tickCount;
             return;
@@ -221,14 +249,25 @@ public final class RVP_WeaponHeatManager {
         }
         long elapsed = tickCount - state.lastTick;
         state.lastTick = tickCount;
-        // 每个新增游戏刻扣 1 点热量，长时间未读取时一次补齐冷却。
-        state.currentHeat = (int) Math.max(0, state.currentHeat - elapsed);
+        // 基础冷却 1 热/tick；heat_decay_accel > 0 时，停火超过 1 秒后冷却开始加速。
+        // 连续射击的间隔（通常 <20 tick）不计入加速，避免改变“连射 N 发过热”的阈值。
+        double rate = 1.0;
+        if (decayAccel > 0.0 && state.lastShotTick != Long.MIN_VALUE) {
+            long idleTicks = Math.max(0L, tickCount - state.lastShotTick);
+            double idleSecondsAfterGrace = Math.max(0.0, (idleTicks - 20) / 20.0);
+            rate += decayAccel * idleSecondsAfterGrace;
+            // 硬上限 20 热/tick，避免停火数分钟后单次结算跨度过大。
+            rate = Math.min(rate, 20.0);
+        }
+        state.currentHeat = (int) Math.max(0, state.currentHeat - Math.round(rate * elapsed));
     }
 
     public static final class HeatState {
         private int currentHeat;
         /** 上次推进冷却的世界 gameTime（long，防老存档 gameTime 超 int 溢出）。 */
         private long lastTick = Long.MIN_VALUE;
+        /** 最近一次成功射击的世界 gameTime（用于停火加速冷却）；未射击为 Long.MIN_VALUE。 */
+        private long lastShotTick = Long.MIN_VALUE;
         /** 是否处于"打过热等待冷却到 20% 以下"的锁定期；未启用过热的武器恒为 false。 */
         private boolean overheatedLatch;
     }
@@ -237,7 +276,10 @@ public final class RVP_WeaponHeatManager {
             HeatState state,
             int heatCount,
             int maxHeatCount,
-            int overheatExtraHeat
+            int overheatExtraHeat,
+            String heatLabel,
+            String heatLabelCn,
+            double heatDecayAccel
     ) {
         boolean enabled() {
             return maxHeatCount > 0;

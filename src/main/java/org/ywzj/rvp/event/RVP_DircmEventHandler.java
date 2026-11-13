@@ -42,6 +42,8 @@ public class RVP_DircmEventHandler {
         if (event.getLevel().isClientSide()) {
             return;
         }
+        // 本体红外弹被 DIRCM 干扰后离场：清掉持续偏转状态
+        RVP_DircmRuntimeManager.onEntityLeave(event.getEntity());
         if (!(event.getEntity() instanceof AbstractVehicle vehicle)) {
             return;
         }
@@ -70,6 +72,8 @@ public class RVP_DircmEventHandler {
                 }
                 RVP_DircmRuntimeManager.tick(vehicle);
             }
+            // 本体红外弹的 DIRCM 持续偏转与 10 秒自毁
+            RVP_DircmRuntimeManager.tickBaseInfraredJams(level);
             // HITL 弹临时干扰恢复（服务端）
             for (net.minecraft.world.entity.Entity entity : level.getEntities().getAll()) {
                 // 白闪结束后仍推进禁锁计时，TV 的 60 tick 干扰不能把 120 tick 禁锁永久停在 60。

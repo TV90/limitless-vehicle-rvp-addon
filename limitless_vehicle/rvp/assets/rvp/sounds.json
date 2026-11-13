@@ -163,5 +163,22 @@
         "attenuation_distance": 16
       }
     ]
-  }
-}
+  },
+  "rocket_snd": {
+    "sounds": [
+      "rvp:weapon/rocket_snd"
+    ],
+    "subtitle": "rvp.sounds.rocket_snd"
+  },
+  "hmg_127_snd": {
+    "sounds": [
+      "rvp:weapon/hmg_127_snd"
+    ],
+    "subtitle": "rvp.sounds.hmg_127_snd"
+  },
+  "tank_atgm_snd": {
+    "sounds": [
+      "rvp:weapon/tank_atgm_snd"
+    ],
+    "subtitle": "rvp.sounds.tank_atgm_snd"
+  }}

@@ -42,4 +42,14 @@ class RVP_TurretTraverseHandlerTest {
         assertEquals(1, config.stage(599.99f));
         assertEquals(2, config.stage(600f));
     }
+
+    @Test void zeroHeavyThresholdKeepsSingleStageAtLightThreshold() {
+        var config = BoneTurretTraverseConfig.parse(JsonParser.parseString(
+                "{\"part_id\":\"turret\",\"threshold_light\":450,\"threshold_heavy\":0}"));
+        assertNotNull(config);
+        assertEquals(0, config.stage(449.9f));
+        assertEquals(1, config.stage(450f));
+        assertEquals(1, config.stage(100000f));
+        assertEquals(0.9f, RVP_TurretTraverseHandler.speedForStage(3f, config.stage(100000f)), 1.0e-6f);
+    }
 }

@@ -302,6 +302,7 @@
       "operator_on_weapon_unit": false,
       "disable_scope_auto_level": true,
       "with_focus_locker": true,
+      "rvp_focus_lock_snap_radius": 2.0,
       "with_stabilizer": true,
       "rot_info": {
         "x_rot_speed": 7,
@@ -364,6 +365,7 @@
       "operator_on_weapon_unit": false,
       "disable_scope_auto_level": true,
       "with_focus_locker": true,
+      "rvp_focus_lock_snap_radius": 2.0,
       "with_stabilizer": true,
       "rot_info": {
         "x_rot_speed": 7,

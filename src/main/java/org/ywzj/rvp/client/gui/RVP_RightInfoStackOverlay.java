@@ -128,7 +128,13 @@ public class RVP_RightInfoStackOverlay implements IGuiOverlay {
         boolean showHeat = weapon.getFireController().hasHeat();
         if (showHeat) {
             int percent = Math.max(0, Math.round(heatRatio * 100f));
-            texts.add(Component.translatable("overlay.ywzj_rvp.heat", percent).getString());
+            String heatKey = org.ywzj.rvp.client.util.RVP_LangHelper.isChineseUi()
+                    ? weapon.getFireController().getHeatLabelCn()
+                    : weapon.getFireController().getHeatLabel();
+            if (heatKey == null || heatKey.isBlank()) {
+                heatKey = "overlay.ywzj_rvp.heat";
+            }
+            texts.add(Component.translatable(heatKey, percent).getString());
             colors.add(heatColor(heatRatio));
         }
 

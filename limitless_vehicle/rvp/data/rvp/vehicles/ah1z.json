@@ -32,7 +32,7 @@
       "per_round": 4,
       "burst_rounds": 8,
       "launch_interval_tick": 4,
-      "reload_tick": 200,
+      "reload_tick": 300,
       "radar_jam_radius": 8,
       "radar_jam_count": 2,
       "radar_jam_cooldown_tick": 60,
@@ -83,14 +83,14 @@
     "energy_consumption_per_tick": 1e-05,
     "engine_particle_offsets": [
       [
-        -0.9,
-        2.5,
-        -1
+        -0.93254375,
+        2.20440625,
+        -3.77574375
       ],
       [
-        0.9,
-        2.5,
-        -1
+        0.93254375,
+        2.20440625,
+        -3.77574375
       ]
     ]
   },

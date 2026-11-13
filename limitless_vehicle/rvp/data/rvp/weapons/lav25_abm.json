@@ -3,7 +3,7 @@
   "recoil": 0.3,
   "name": "XM1049 25mm HE-ABM",
   "shoot_interval": 400,
-  "max_capacity": 30,
+  "max_capacity": 150,
   "reload": {
     "time": 120,
     "ammo": "ywzj_vehicle:ammo_auto_cannon"
@@ -116,6 +116,7 @@
   },
   "fuse_data": {
     "programmable_airburst": true,
+    "airburst_explosion_radius": 5,
     "airburst_measure_min": 5,
     "airburst_measure_max": 2000
   },

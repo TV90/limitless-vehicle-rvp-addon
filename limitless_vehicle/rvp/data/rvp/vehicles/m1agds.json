@@ -28,14 +28,7 @@
   },
   "energy_info": {
     "energy_capacity": 1,
-    "energy_consumption_per_tick": 1e-05,
-    "engine_particle_offsets": [
-      [
-        0.2,
-        1.7,
-        -4.2
-      ]
-    ]
+    "energy_consumption_per_tick": 1e-05
   },
   "physics_info": {
     "suspension_response": 0.25,

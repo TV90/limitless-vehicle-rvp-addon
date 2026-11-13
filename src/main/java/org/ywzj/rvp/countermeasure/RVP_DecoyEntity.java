@@ -7,11 +7,13 @@ import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.network.PlayMessages;
 import org.jetbrains.annotations.NotNull;
 import org.ywzj.rvp.all.RVP_Entities;
 import org.ywzj.rvp.client.bridge.RVP_ClientActionsAccess;
+import org.ywzj.vehicle.api.entity.TargetObstruction;
 import org.ywzj.vehicle.particle.SmokeCloudOption;
 
 /**
@@ -22,7 +24,7 @@ import org.ywzj.vehicle.particle.SmokeCloudOption;
  * 干扰物不参与碰撞、不可拾取、不触发近炸（近炸/命中忽略见 M4 的引信判定）。
  * 外观数据经 {@link SynchedEntityData} 随生成包同步，无需逐 tick 同步。</p>
  */
-public class RVP_DecoyEntity extends Entity implements RVP_Decoy {
+public class RVP_DecoyEntity extends Entity implements RVP_Decoy, TargetObstruction {
 
     private static final EntityDataAccessor<Integer> DATA_TYPE =
             SynchedEntityData.defineId(RVP_DecoyEntity.class, EntityDataSerializers.INT);
@@ -124,6 +126,16 @@ public class RVP_DecoyEntity extends Entity implements RVP_Decoy {
         entityData.define(DATA_LIFETIME, 160);
         entityData.define(DATA_GLOW_COLOR, 0xFFFFFF);
         entityData.define(DATA_HALO_SCALE, 1.0F);
+    }
+
+    /**
+     * 干扰物判定盒对齐本体 {@code DecoyFlareEntity} 的 16×16×16：
+     * 本体 {@code Radar.detectTargets} 会跳过尺寸 &lt; 1 的实体，红外导引头射线也只按 AABB 求交。
+     * 0.2 的小盒无法被本体导弹当作干扰物，故放大为纯判定盒（不可拾取、不参与碰撞）。
+     */
+    @Override
+    protected AABB makeBoundingBox() {
+        return AABB.ofSize(position(), 16.0, 16.0, 16.0);
     }
 
     @Override

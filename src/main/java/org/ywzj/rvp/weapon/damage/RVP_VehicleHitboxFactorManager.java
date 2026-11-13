@@ -1017,6 +1017,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
     /**
      * [RVP] 骨的累计失效阈值（面板虚拟血量分母）：bone_modules 骨 = 条目 min_damage；
      * 引擎骨 = 瘫痪阈（threshold_heavy）；炮管骨 = barrel threshold。未配置/∞ 返回 -1（无限）。
+     * 方向机单档配置（threshold_heavy=0）没有二级损坏，分母退回一级阈值。
      */
     public float resolveBoneDamageThreshold(AbstractVehicle vehicle, String boneName) {
         if (vehicle == null || boneName == null) {
@@ -1029,7 +1030,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         BoneModuleConfig moduleConfig = cfg.moduleByBoneName.get(boneName);
         var traverse = resolveTurretTraverseConfig(vehicle, boneName);
         if (traverse != null) {
-            return traverse.thresholdHeavy();
+            return traverse.thresholdHeavy() > 0 ? traverse.thresholdHeavy() : traverse.thresholdLight();
         }
         if (moduleConfig != null && Float.isFinite(moduleConfig.minTriggerDamage())) {
             return moduleConfig.minTriggerDamage();

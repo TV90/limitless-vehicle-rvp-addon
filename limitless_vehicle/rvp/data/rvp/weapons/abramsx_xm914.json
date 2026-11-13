@@ -3,12 +3,16 @@
   "recoil": 0.3,
   "name": "XM914 30mm Cannon",
   "shoot_interval": 300,
-  "max_capacity": 20,
+  "max_capacity": 150,
   "reload": {
     "time": 120,
     "ammo": "ywzj_vehicle:ammo_auto_cannon"
   },
   "fire_data": {
+    "heat_count": 25,
+    "max_heat_count": 380,
+    "overheat_extra_heat": 10,
+    "heat_decay_accel": 1.5,
     "spread": 0.6,
     "fire_mode": "FULL_AUTO"
   },
@@ -109,6 +113,7 @@
   },
   "fuse_data": {
     "programmable_airburst": true,
+    "airburst_explosion_radius": 4,
     "airburst_measure_min": 5,
     "airburst_measure_max": 2000
   },

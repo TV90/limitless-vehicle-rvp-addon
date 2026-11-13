@@ -2,12 +2,16 @@
   "type": "rvp:machinegun",
   "name": "12.7mm HMG",
   "shoot_interval": 150,
-  "max_capacity": 30,
+  "max_capacity": 100,
   "reload": {
     "time": 120,
     "ammo": "ywzj_vehicle:ammo_machine_gun"
   },
   "fire_data": {
+    "heat_count": 22,
+    "max_heat_count": 570,
+    "overheat_extra_heat": 10,
+    "heat_decay_accel": 1.5,
     "spread": 0.5,
     "fire_mode": "FULL_AUTO"
   },

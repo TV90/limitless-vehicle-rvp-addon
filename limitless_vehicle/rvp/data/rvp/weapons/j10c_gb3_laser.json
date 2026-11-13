@@ -52,6 +52,18 @@
     "guidance_target_distance_range": "[[0,4500]]"
   },
   "detonate_data": {
+    "hbm_effect_data": {
+      "enabled": true,
+      "real_explosion": "none",
+      "visual_preset": "bomb",
+      "effect_yield": 1,
+      "spawn_frag": false,
+      "white_phosphorus": false,
+      "chlorine_yield": 1,
+      "visual_scale": 0.18,
+      "visual_density": 0.5,
+      "destroy_block": false
+    },
     "explosion_data": {
       "explode": true,
       "damage": 850,

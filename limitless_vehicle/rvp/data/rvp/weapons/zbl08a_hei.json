@@ -3,7 +3,7 @@
   "recoil": 0.3,
   "name": "DTB-10-30 30mm HE",
   "shoot_interval": 300,
-  "max_capacity": 30,
+  "max_capacity": 150,
   "reload": {
     "time": 120,
     "ammo": "ywzj_vehicle:ammo_auto_cannon"

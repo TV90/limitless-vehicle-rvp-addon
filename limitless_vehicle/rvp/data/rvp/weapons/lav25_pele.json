@@ -4,7 +4,7 @@
   "name": "XM1149 PELE",
   "name_CN": "XM1149 横向效应增强弹",
   "shoot_interval": 300,
-  "max_capacity": 30,
+  "max_capacity": 150,
   "reload": {
     "time": 120,
     "ammo": "ywzj_vehicle:ammo_auto_cannon"

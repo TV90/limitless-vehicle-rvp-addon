@@ -2,7 +2,7 @@
   "type": "ywzj_rvp:weapon",
   "bedrock_backend": "rvp",
   "sounds": {
-    "fire": "ywzj_vehicle:missile_launch",
+    "fire": "rvp:rocket_snd",
     "reload": "ywzj_vehicle:common_reload"
   },
   "model": "rvp:entity/ammo/rocket_yasser",

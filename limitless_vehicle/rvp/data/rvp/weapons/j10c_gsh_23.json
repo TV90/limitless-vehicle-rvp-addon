@@ -3,12 +3,16 @@
   "recoil": 0.3,
   "name": "23mm GSh-23-2",
   "shoot_interval": 50,
-  "max_capacity": 80,
+  "max_capacity": 300,
   "reload": {
     "time": 120,
     "ammo": "ywzj_vehicle:ammo_auto_cannon"
   },
   "fire_data": {
+    "heat_count": 20,
+    "max_heat_count": 1520,
+    "overheat_extra_heat": 10,
+    "heat_decay_accel": 1.5,
     "spread": 0.3,
     "fire_mode": "FULL_AUTO"
   },

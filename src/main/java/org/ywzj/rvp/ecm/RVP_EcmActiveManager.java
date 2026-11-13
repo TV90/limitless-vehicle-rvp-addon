@@ -27,9 +27,11 @@ import org.ywzj.rvp.vehicle.BoneModuleType;
 import org.ywzj.rvp.vehicle.RVP_BoneModuleStateTable;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
+import org.ywzj.vehicle.entity.weapon.MissileEntity;
 import org.ywzj.vehicle.util.EntityUtil;
 import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.countermeasure.RVP_ChaffJamState;
+import org.ywzj.rvp.compat.RVP_BaseAmmoCompat;
 import org.ywzj.rvp.weapon.core.RVP_WeaponLockStateTable;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
@@ -341,12 +343,16 @@ public final class RVP_EcmActiveManager {
     private static void tickActiveJamming(ServerLevel level, List<ActiveInfo> activeInfos) {
         // 收集本维度真实和虚拟弹药，脱离世界实体列表不能使导引头免疫主动干扰。
         List<RVP_BaseBullet> bullets = new ArrayList<>();
+        List<MissileEntity> baseMissiles = new ArrayList<>();
         for (Entity entity : org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.allEntities(level)) {
             if (entity instanceof RVP_BaseBullet bullet && bullet.isAlive()) {
                 bullets.add(bullet);
+            } else if (entity instanceof MissileEntity missile && missile.isAlive()) {
+                // 本体导弹独立收集：ECM 只瘫痪其主动雷达制导，不改写本体制导类。
+                baseMissiles.add(missile);
             }
         }
-        if (bullets.isEmpty()) {
+        if (bullets.isEmpty() && baseMissiles.isEmpty()) {
             return;
         }
         for (ActiveInfo info : activeInfos) {
@@ -429,6 +435,29 @@ public final class RVP_EcmActiveManager {
                 }
                 if (bullet.ecmActiveJamRemainTick > 0) {
                     jammed++;
+                }
+            }
+            // 本体弹药联动：ECM 范围内瘫痪敌方主动雷达弹（关闭弹载雷达并清空目标）。
+            // 本体主动雷达弹的重新截获只在 activeRadarOn=true 时执行，关闭一次后不会再次上锁。
+            for (MissileEntity missile : baseMissiles) {
+                if (!missile.isAlive() || missile.isRemoved()) {
+                    continue;
+                }
+                if (RVP_BaseAmmoCompat.isFriendly(ecmVehicle, missile)) {
+                    continue;
+                }
+                if (missile.position().distanceToSqr(ecmVehicle.position()) > ammoRadiusSqr) {
+                    continue;
+                }
+                inRange++;
+                if (!RVP_BaseAmmoCompat.isActiveRadarHoming(missile)) {
+                    continue;
+                }
+                RVP_BaseAmmoCompat.disableActiveRadar(missile);
+                jammed++;
+                if (RVP_DebugFlags.ECM.isEnabled()) {
+                    System.out.println("[RVP-ECM][BaseAmmo] veh=" + ecmVehicle.getId()
+                            + " 瘫痪本体主动雷达弹 id=" + missile.getId() + " ammoR=" + ammoRadius);
                 }
             }
             if (RVP_DebugFlags.ECM.isEnabled() && (inRange > 0 || jammed > 0)) {

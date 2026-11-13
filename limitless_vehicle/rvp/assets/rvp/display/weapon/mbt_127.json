@@ -2,7 +2,7 @@
   "type": "ywzj_rvp:weapon",
   "bedrock_backend": "rvp",
   "sounds": {
-    "fire": "ywzj_vehicle:gun_12.7mm_shot",
+    "fire": "rvp:hmg_127_snd",
     "reload": "ywzj_vehicle:gun_reload"
   }
 }

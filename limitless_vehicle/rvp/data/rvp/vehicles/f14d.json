@@ -32,7 +32,7 @@
       "per_round": 4,
       "burst_rounds": 8,
       "launch_interval_tick": 4,
-      "reload_tick": 200,
+      "reload_tick": 300,
       "radar_jam_radius": 8,
       "radar_jam_count": 2,
       "radar_jam_cooldown_tick": 60,
@@ -324,9 +324,9 @@
         "y_rot_max": 60
       },
       "optical_sight_offset": [
-        0.12995625,
-        2.09206875,
-        -2.2856
+        0.0,
+        0.0,
+        2.0
       ],
       "operator_view_offset": [
         0.12995625,

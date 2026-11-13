@@ -3,12 +3,16 @@
   "name": "CT-40 Cannon OET CHR [AHEAD]",
   "recoil": 0.3,
   "shoot_interval": 333,
-  "max_capacity": 15,
+  "max_capacity": 100,
   "reload": {
     "time": 120,
     "ammo": "ywzj_vehicle:ammo_auto_cannon"
   },
   "fire_data": {
+    "heat_count": 26,
+    "max_heat_count": 285,
+    "overheat_extra_heat": 10,
+    "heat_decay_accel": 1.5,
     "spread": 0.5,
     "fire_mode": "FULL_AUTO"
   },
@@ -112,6 +116,7 @@
   },
   "fuse_data": {
     "programmable_airburst": true,
+    "airburst_explosion_radius": 5,
     "ahead_enabled": true,
     "ahead_burst_offset_meters": 40.0,
     "ahead_require_lock": true,

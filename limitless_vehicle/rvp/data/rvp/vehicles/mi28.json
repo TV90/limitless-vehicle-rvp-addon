@@ -10,7 +10,7 @@
       "per_round": 4,
       "burst_rounds": 8,
       "launch_interval_tick": 4,
-      "reload_tick": 200,
+      "reload_tick": 400,
       "decoy": {
         "lifetime_tick": 160,
         "speed": 1.0,
@@ -32,7 +32,7 @@
       "per_round": 4,
       "burst_rounds": 8,
       "launch_interval_tick": 4,
-      "reload_tick": 200,
+      "reload_tick": 300,
       "radar_jam_radius": 8,
       "radar_jam_count": 2,
       "radar_jam_cooldown_tick": 60,
@@ -429,6 +429,60 @@
         "x_rot_speed": 0,
         "y_rot_speed": 0
       }
+    },
+    {
+      "id": "dircm_l",
+      "name": "dircm_l",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "dircm_left",
+      "render_bone": "dircm_l",
+      "is_seat": false,
+      "rot_info": {
+        "x_rot_speed": 32,
+        "y_rot_speed": 32,
+        "x_rot_min": -35,
+        "x_rot_max": 125,
+        "y_rot_min": -125,
+        "y_rot_max": 35,
+        "x_rot": 55,
+        "y_rot": -45,
+        "need_power": true
+      },
+      "bolts": [
+        {
+          "offset": [0, 0, 0],
+          "barrel_length": 0.1,
+          "x_rot": 0,
+          "y_rot": 0
+        }
+      ]
+    },
+    {
+      "id": "dircm_r",
+      "name": "dircm_r",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "dircm_right",
+      "render_bone": "dircm_r",
+      "is_seat": false,
+      "rot_info": {
+        "x_rot_speed": 32,
+        "y_rot_speed": 32,
+        "x_rot_min": -35,
+        "x_rot_max": 125,
+        "y_rot_min": -35,
+        "y_rot_max": 125,
+        "x_rot": 55,
+        "y_rot": 45,
+        "need_power": true
+      },
+      "bolts": [
+        {
+          "offset": [0, 0, 0],
+          "barrel_length": 0.1,
+          "x_rot": 0,
+          "y_rot": 0
+        }
+      ]
     }
   ],
   "physics_info": {
@@ -447,6 +501,44 @@
         "countermeasure"
       ],
       "min_damage": 20
+    },
+    "dircm_l": {
+      "modules": [
+        "dircm"
+      ],
+      "dircm": {
+        "laser_part": "dircm_l",
+        "facing_part": "dircm_l",
+        "facing_yaw": 0.0,
+        "scan_fov": 120,
+        "detect_radius": 192.0,
+        "approach_angle": 80,
+        "beam_tick": 40,
+        "charge_tick": 200,
+        "scan_interval_tick": 5,
+        "exclude_owner_projectile": true,
+        "display_name": "左"
+      },
+      "min_damage": 30
+    },
+    "dircm_r": {
+      "modules": [
+        "dircm"
+      ],
+      "dircm": {
+        "laser_part": "dircm_r",
+        "facing_part": "dircm_r",
+        "facing_yaw": 0.0,
+        "scan_fov": 120,
+        "detect_radius": 192.0,
+        "approach_angle": 80,
+        "beam_tick": 40,
+        "charge_tick": 200,
+        "scan_interval_tick": 5,
+        "exclude_owner_projectile": true,
+        "display_name": "右"
+      },
+      "min_damage": 30
     },
     "__vehicle__": {
       "modules": [

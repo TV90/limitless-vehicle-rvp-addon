@@ -3,12 +3,16 @@
   "name": "2A38M 30mm AAA [HE]",
   "recoil": 0.3,
   "shoot_interval": 75,
-  "max_capacity": 60,
+  "max_capacity": 600,
   "reload": {
     "time": 120,
     "ammo": "ywzj_vehicle:ammo_auto_cannon"
   },
   "fire_data": {
+    "heat_count": 21,
+    "max_heat_count": 1140,
+    "overheat_extra_heat": 10,
+    "heat_decay_accel": 1.5,
     "spread": 0.3,
     "fire_mode": "FULL_AUTO"
   },
