@@ -6,13 +6,8 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.world.phys.Vec3;
-import net.minecraftforge.client.event.RenderGuiOverlayEvent;
-import net.minecraftforge.client.gui.overlay.VanillaGuiOverlay;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.common.Mod;
 import org.joml.Matrix4f;
 import org.lwjgl.opengl.GL11;
-import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.client.cockpit.RVP_CockpitDiag;
 import org.ywzj.rvp.client.state.RVP_ClientProjectileRenderInterpolator;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
@@ -28,8 +23,8 @@ import java.util.List;
  * MSL 指示器叠加层。
  * 对玩家自己的 RVP 导弹渲染红色菱形框 + MSL + 距离，
  * 对他人导弹只在燃烧动力段内渲染。
+ * 由 {@link RVP_OverlayRegistry} 注册在 CHAT_PANEL 之下，和本体 HUD 同层。
  */
-@Mod.EventBusSubscriber(value = net.minecraftforge.api.distmarker.Dist.CLIENT, modid = RVP_MOD.MOD_ID)
 public class RVP_MslOverlay {
 
     private static final int DIAMOND_SIZE = 10;
@@ -47,22 +42,13 @@ public class RVP_MslOverlay {
     /** 自己的导弹动力段烧完后，最远渲染距离（格）。 */
     private static final double OWN_MAX_RENDER_DIST = 4096.0;
 
-    @SubscribeEvent
-    public static void onRenderGuiOverlay(RenderGuiOverlayEvent.Post event) {
-        // 目的：RenderGuiOverlayEvent 对每个已渲染 overlay 各触发一次（每帧 40+ 次），
-        // 而本处理器的全实体遍历 + 逐导弹解析只应每帧执行一次——锚定每帧必渲染的
-        // 原生 CHAT_PANEL 层，其余事件全部忽略（修复：多弹在飞时帧率腰斩）
-        if (event.getOverlay().id() != VanillaGuiOverlay.CHAT_PANEL.id()) {
-            return;
-        }
+    public static void render(GuiGraphics guiGraphics, float partialTick) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null) return;
         if (!(mc.player.getVehicle() instanceof AbstractVehicle playerVehicle)) return;
 
-        GuiGraphics guiGraphics = event.getGuiGraphics();
         int screenWidth = mc.getWindow().getGuiScaledWidth();
         int screenHeight = mc.getWindow().getGuiScaledHeight();
-        float partialTick = event.getPartialTick();
 
         // 获取世界中的所有 RVP 导弹（覆盖全射程；O(实体) 遍历，替代 ±8192 立方体 getEntitiesOfClass，
         // 客户端每帧渲染路径，16384³ 的 section 索引遍历灾难级）

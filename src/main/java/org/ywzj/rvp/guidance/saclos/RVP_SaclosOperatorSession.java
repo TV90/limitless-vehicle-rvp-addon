@@ -3,6 +3,7 @@ package org.ywzj.rvp.guidance.saclos;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
+import org.ywzj.rvp.vehicle.RVP_FcsState;
 
 import java.util.Map;
 import java.util.UUID;
@@ -57,6 +58,9 @@ public final class RVP_SaclosOperatorSession {
     }
 
     public static boolean isLaserEnabled(RVP_BaseBullet projectile) {
+        if (RVP_FcsState.isDestroyed(projectile.getShooterVehicle())) {
+            return false;
+        }
         if (projectile.getOwner() == null) {
             return true;
         }

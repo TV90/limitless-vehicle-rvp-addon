@@ -38,6 +38,10 @@ public class RVP_ClientHitlState {
     private static int rightClickGuardUntilTick = Integer.MIN_VALUE;
     /** Shared range for HUD crosshair, designation, and virtual sky aim points. */
     public static final double DESIGNATE_AIM_RANGE = 1200.0;
+    /** HITL 独立倍率范围与滚轮步进；倍率只影响电视画面，不写回武器站 zoom。 */
+    private static final float HITL_ZOOM_MIN = 1.0f;
+    private static final float HITL_ZOOM_MAX = 8.0f;
+    private static final float HITL_ZOOM_STEP = 1.25f;
 
     /** 视频终结后的独立显示计时，不延长远程地图或导弹控制会话。 */
     private static final RVP_HitlSignalLossPresentation signalLoss = new RVP_HitlSignalLossPresentation();
@@ -60,6 +64,8 @@ public class RVP_ClientHitlState {
     private static float displayLookOffsetPitch;
     private static final float LOOK_OFFSET_TAU = 0.055f;
     private static boolean initialDesignateSent;
+    /** 当前 HITL 画面倍率；每次入镜固定从 1 开始（发射前放大状态不继承）。 */
+    private static float hitlZoom = HITL_ZOOM_MIN;
     /** 本次入镜的起始 gameTime，用于“发射 2 秒内未按 R 标记”提示。 */
     private static long launchTick = -1L;
     /** 本次入镜后玩家是否成功按过 R 标记；用于关闭延迟提示。 */
@@ -152,6 +158,20 @@ public class RVP_ClientHitlState {
 
     public static int getActiveMissileId() {
         return activeMissileId;
+    }
+
+    /** 当前人在回路画面倍率（1 = 不放大）。 */
+    public static float getHitlZoom() {
+        return hitlZoom;
+    }
+
+    /** 滚轮调整画面倍率：向上（正增量）放大、向下缩小；只改 HITL 状态，不触及武器站 zoom。 */
+    public static void adjustHitlZoom(double scrollDelta) {
+        if (scrollDelta == 0.0) {
+            return;
+        }
+        hitlZoom = Mth.clamp(hitlZoom * (float) Math.pow(HITL_ZOOM_STEP, scrollDelta),
+                HITL_ZOOM_MIN, HITL_ZOOM_MAX);
     }
 
     public static int getClientDesignatedEntityId() {
@@ -303,6 +323,7 @@ public class RVP_ClientHitlState {
         if (missileChanged) {
             videoMode = RVP_EnumVideoMode.COLOR;
             videoModeUserSelected = false;
+            hitlZoom = HITL_ZOOM_MIN;
             launchTick = Minecraft.getInstance().level != null
                     ? Minecraft.getInstance().level.getGameTime() : -1L;
             redesignatePressedSinceLaunch = false;
@@ -340,6 +361,7 @@ public class RVP_ClientHitlState {
         controlSeq = 0;
         videoMode = RVP_EnumVideoMode.COLOR;
         videoModeUserSelected = false;
+        hitlZoom = HITL_ZOOM_MIN;
         TVMissileVideoPostHandler.setActive(false);
         LocalVehiclePlayer.instance.thermalImaging = false;
         hitlYaw = 0f;

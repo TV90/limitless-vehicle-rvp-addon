@@ -90,7 +90,14 @@ public enum BoneModuleType {
     /** 方向机损坏档，绑定的炮塔仅以 0.01 度/刻回转。 */
     TURRET_TRAVERSE,
     /** 方向机一级受损标记，绑定的炮塔保留 30% 回转速度。 */
-    TURRET_TRAVERSE_DAMAGED;
+    TURRET_TRAVERSE_DAMAGED,
+    /**
+     * 火控系统（FCS）——挂在 fire control 骨上，由通用 {@code min_damage} 累计伤害打坏。
+     *
+     * <p>失效后整车火控降级：稳定器强制 OFF、热成像/夜视不可用、弹道计算机与 CCIP 关闭、
+     * 炮塔准星固定在中央、光电焦点锁定与快速光电搜索禁用；维修恢复后自动复活。</p>
+     */
+    FCS;
 
     public boolean isTurretTraverse() {
         return this == TURRET_TRAVERSE || this == TURRET_TRAVERSE_DAMAGED;

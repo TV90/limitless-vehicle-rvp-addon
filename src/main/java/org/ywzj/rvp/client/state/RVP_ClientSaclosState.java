@@ -62,6 +62,14 @@ public final class RVP_ClientSaclosState {
         }
 
         updateVehicleContext(player.getVehicle());
+        if (LocalVehiclePlayer.instance.vehicle != null
+                && RVP_ClientFcsState.isDestroyed(LocalVehiclePlayer.instance.vehicle)) {
+            manualLaserOverride = null;
+            laserEnabled = false;
+            laserHudPos = null;
+            syncTargetingDisabled();
+            return;
+        }
         acquireTrackedMissile(player, mc.level);
         laserEnabled = resolveEffectiveLaserEnabled();
         if (laserEnabled) {
@@ -89,6 +97,10 @@ public final class RVP_ClientSaclosState {
 
     public static void toggleVehicleLaser(LocalPlayer player) {
         if (player == null || !LocalVehiclePlayer.instance.onVehicle() || RVP_ClientHitlState.isDesignateMode()) {
+            return;
+        }
+        if (LocalVehiclePlayer.instance.vehicle == null
+                || RVP_ClientFcsState.isDestroyed(LocalVehiclePlayer.instance.vehicle)) {
             return;
         }
         if (!canUseVehicleLaserToggle(resolveCurrentWeapon())) {
@@ -250,6 +262,10 @@ public final class RVP_ClientSaclosState {
             return missile instanceof RVP_BaseBullet bullet
                     && bullet.isAlive();
         }
+        if (LocalVehiclePlayer.instance.vehicle != null
+                && RVP_ClientFcsState.isDestroyed(LocalVehiclePlayer.instance.vehicle)) {
+            return false;
+        }
 
         if (trackedMissileId >= 0) {
             Entity missile = resolveTrackedMissile(mc, trackedMissileId);
@@ -263,6 +279,10 @@ public final class RVP_ClientSaclosState {
     public static boolean isLaserEnabled() {
         if (RVP_ClientHitlState.isDesignateMode()) {
             return getLaserHudPos() != null;
+        }
+        if (LocalVehiclePlayer.instance.vehicle != null
+                && RVP_ClientFcsState.isDestroyed(LocalVehiclePlayer.instance.vehicle)) {
+            return false;
         }
         return laserEnabled;
     }
@@ -305,6 +325,10 @@ public final class RVP_ClientSaclosState {
     }
 
     private static boolean resolveEffectiveLaserEnabled() {
+        if (LocalVehiclePlayer.instance.vehicle != null
+                && RVP_ClientFcsState.isDestroyed(LocalVehiclePlayer.instance.vehicle)) {
+            return false;
+        }
         AbstractVehicleWeapon<?> currentWeapon = resolveCurrentWeapon();
         if (!canUseVehicleLaserToggle(currentWeapon)) {
             return false;

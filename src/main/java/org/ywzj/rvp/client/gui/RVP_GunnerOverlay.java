@@ -7,25 +7,13 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.client.event.RenderGuiOverlayEvent;
-import net.minecraftforge.client.gui.overlay.VanillaGuiOverlay;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.common.Mod;
-import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 
-@Mod.EventBusSubscriber(value = Dist.CLIENT, modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
+/** 炮手 AI 状态行；由 {@link RVP_OverlayRegistry} 注册在 CHAT_PANEL 之下，和本体 HUD 同层。 */
 public class RVP_GunnerOverlay {
 
-    @SubscribeEvent
-    public static void onRenderOverlay(RenderGuiOverlayEvent.Post event) {
-        // RenderGuiOverlayEvent.Post 每帧对每个已注册 overlay 各触发一次（40+ 次），
-        // 只锚定每帧必渲染的原生 CHAT_PANEL 层执行一次，其余事件忽略（修复多弹/多实体时帧率腰斩）
-        if (event.getOverlay().id() != VanillaGuiOverlay.CHAT_PANEL.id()) {
-            return;
-        }
+    public static void render(GuiGraphics gg) {
         Minecraft mc = Minecraft.getInstance();
         LocalPlayer player = mc.player;
         if (player == null || mc.options.hideGui) {
@@ -35,7 +23,6 @@ public class RVP_GunnerOverlay {
             return;
         }
 
-        GuiGraphics gg = event.getGuiGraphics();
         Font font = mc.font;
         int x = 8;
         int y = 8;

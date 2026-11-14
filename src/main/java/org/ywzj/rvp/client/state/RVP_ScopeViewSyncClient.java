@@ -120,6 +120,14 @@ public final class RVP_ScopeViewSyncClient {
             station = s;
             vehicle = v;
         }
+        // FCS 失效：弹道计算机不可用，禁止准星弹道 march；交还本体直线落点（炮管指向）。
+        if (station != null && RVP_ClientFcsState.isDestroyed(station)) {
+            if (lastAdaptedKey != Long.MIN_VALUE) {
+                LAST_CROSSHAIR_HIT.remove(lastAdaptedKey);
+                lastAdaptedKey = Long.MIN_VALUE;
+            }
+            return;
+        }
         org.ywzj.rvp.weapon.data.RVP_WeaponData weaponData = station == null
                 ? null : resolveStationWeaponData(station);
         if (station == null || weaponData == null || !marchable(weaponData.getWeaponKind())) {

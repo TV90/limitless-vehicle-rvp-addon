@@ -20,8 +20,9 @@ import net.minecraft.world.phys.AABB;
 import net.minecraftforge.eventbus.api.EventPriority;
 import org.jetbrains.annotations.Nullable;
 import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.client.event.RenderGuiOverlayEvent;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
+import net.minecraftforge.client.event.InputEvent;
+import net.minecraftforge.client.event.ViewportEvent;
 import net.minecraftforge.client.gui.overlay.VanillaGuiOverlay;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -30,7 +31,6 @@ import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.all.RVP_Items;
 import org.ywzj.rvp.client.bridge.RVP_ClientActionsAccess;
 import org.ywzj.rvp.client.gui.RVP_RocketCcipOverlay;
-import org.ywzj.rvp.client.gui.RVP_HmdOverlay;
 import org.ywzj.rvp.client.laser.RVP_LaserWeapons;
 import org.ywzj.rvp.client.render.RVP_CustomMountRenderLogic;
 import org.ywzj.rvp.client.map.RVP_TacticalMapCache;
@@ -111,6 +111,8 @@ public class RVP_ClientEvents {
     private static int ywzj_rvp$markerRefreshTick;
     private static final List<VehicleMarker> ywzj_rvp$vehicleMarkers = new ArrayList<>();
     private static boolean ywzj_rvp$artilleryFireKeyDown;
+    /** 本帧 HITL 覆盖前的无倍率 FOV：HIGHEST 捕获、LOWEST 套用 HITL 倍率。 */
+    private static double ywzj_rvp$hitlBaseFov = Double.NaN;
 
     /** 当前操作站主武器客户端开火（炮兵地图左键与空格共用）。 */
     public static void fireCurrentWeaponClient() {
@@ -262,6 +264,47 @@ public class RVP_ClientEvents {
                 || org.ywzj.vehicle.all.AllKeys.TOGGLE_RADAR.matchesMouse(event.getKey())) {
             ywzj_rvp$onRadarActionPress();
         }
+    }
+
+    /**
+     * HITL 视角滚轮只调电视画面倍率，拦截本体 InputHandler 的滚轮切武器。
+     * HIGHEST 先于本体 NORMAL 处理；取消后本体不会再发切武器包，也不会切快捷栏。
+     */
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public static void onHitlScroll(InputEvent.MouseScrollingEvent event) {
+        if (!RVP_ClientHitlState.isActive() || event.getScrollDelta() == 0) {
+            return;
+        }
+        if (Minecraft.getInstance().screen != null) {
+            return;
+        }
+        RVP_ClientHitlState.adjustHitlZoom(event.getScrollDelta());
+        event.setCanceled(true);
+    }
+
+    /** HITL 覆盖前捕获本帧无倍率 FOV（HIGHEST 早于本体观瞄倍率处理）。 */
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public static void captureHitlBaseFov(ViewportEvent.ComputeFov event) {
+        if (!RVP_ClientHitlState.isActive() || !event.usedConfiguredFov()
+                || event.getCamera().getEntity() != Minecraft.getInstance().player) {
+            return;
+        }
+        ywzj_rvp$hitlBaseFov = event.getFOV();
+    }
+
+    /**
+     * HITL 画面按独立倍率输出：每次入镜固定 1×，不继承发射前观瞄/第三人称放大；
+     * 退出后本体仍按武器站原 zoom 计算，不继承 HITL 中滚轮调出的倍率。
+     */
+    @SubscribeEvent(priority = EventPriority.LOWEST)
+    public static void applyHitlFov(ViewportEvent.ComputeFov event) {
+        if (!RVP_ClientHitlState.isActive() || !event.usedConfiguredFov()
+                || event.getCamera().getEntity() != Minecraft.getInstance().player) {
+            return;
+        }
+        double baseFov = Double.isFinite(ywzj_rvp$hitlBaseFov) ? ywzj_rvp$hitlBaseFov : event.getFOV();
+        event.setFOV(org.ywzj.vehicle.util.MathUtil.magnificationToFov(
+                RVP_ClientHitlState.getHitlZoom(), baseFov));
     }
 
     /** [RVP] 雷达动作按下公共入口（键盘/鼠标两监听器汇聚）：坏雷达即时压回 + 置 pending 校平标记。 */
@@ -638,6 +681,14 @@ public class RVP_ClientEvents {
                 ywzj_rvp$clearBombCcipState();
             }
         }
+        // FCS 失效：观瞄准星由 RVP/本体路径固定在屏幕中心（第三人称小圈不改写 weaponHitPos，
+        // 仍按炮管直线落点绘制）；此处只禁用测距读数。
+        if (weaponUnit != null && org.ywzj.rvp.client.state.RVP_ClientFcsState.isDestroyed(weaponUnit)
+                && !RVP_ClientHitlState.isActive()) {
+            // 火控失效后准星测距不再给出有效值；RVP/本体准星显示 -- m。
+            LocalVehiclePlayer.instance.aimLocationDistance = Double.NaN;
+            LocalVehiclePlayer.instance.outOfRangeFinding = false;
+        }
 
         if (LocalVehiclePlayer.instance.onVehicle() || RVP_ClientHitlState.isDesignateMode()) {
             RVP_ClientSaclosState.tick(mc, player);
@@ -885,7 +936,8 @@ public class RVP_ClientEvents {
         if (!RVP_CrtUiLiteHandler.isActive()) {
             RVP_CrtUiLiteHandler.setActive(true);
         }
-        if (weaponUnit.withThermalImager() && LocalVehiclePlayer.instance.thermalImaging) {
+        if (weaponUnit.withThermalImager() && LocalVehiclePlayer.instance.thermalImaging
+                && !org.ywzj.rvp.client.state.RVP_ClientFcsState.isDestroyed(weaponUnit)) {
             if (!ThermalHandler.isActive()) {
                 ThermalHandler.setActive(true);
             }
@@ -919,7 +971,7 @@ public class RVP_ClientEvents {
             return;
         }
         WeaponUnit weaponUnit = lvp.getWeaponUnit();
-        if (weaponUnit == null) {
+        if (weaponUnit == null || org.ywzj.rvp.client.state.RVP_ClientFcsState.isDestroyed(weaponUnit)) {
             return;
         }
         boolean hasThermal = weaponUnit.withThermalImager();
@@ -962,6 +1014,12 @@ public class RVP_ClientEvents {
             RVP_NvgHandler.setActive(false);
             return;
         }
+        if (org.ywzj.rvp.client.state.RVP_ClientFcsState.isDestroyed(weaponUnit)) {
+            lvp.thermalImaging = false;
+            RVP_NvgState.reset();
+            RVP_NvgHandler.setActive(false);
+            return;
+        }
         boolean hasThermal = weaponUnit.withThermalImager();
         boolean hasNightVision = ywzj_rvp$withNightVision(weaponUnit);
         boolean nvg;
@@ -1000,6 +1058,13 @@ public class RVP_ClientEvents {
     private static void ywzj_rvp$updateBombCcip(AbstractVehicle vehicle, WeaponUnit weaponUnit,
                                                 RVP_WeaponBase weapon) {
         if (RVP_WeaponSensorHelper.effectiveSensorType(weaponUnit) != WeaponUnitData.FireControlSensorType.CCIP) {
+            return;
+        }
+        if (org.ywzj.rvp.client.state.RVP_ClientFcsState.isDestroyed(weaponUnit)) {
+            RVP_RocketCcipState.clear(vehicle.getId());
+            weaponUnit.weaponHitPosO = null;
+            weaponUnit.weaponHitPos = null;
+            ywzj_rvp$clearBombCcipState();
             return;
         }
         if (weapon.getData().usesGuidanceType(RVP_EnumGuidanceType.GPS) && RVP_ClientGPSState.isActive()) {
@@ -1169,18 +1234,6 @@ public class RVP_ClientEvents {
                 operatorId);
         if (RVP_ClientSaclosState.isSaclosWeapon(event.getWeapon())) {
             RVP_ClientSaclosState.onSaclosWeaponFired();
-        }
-    }
-
-    @SubscribeEvent
-    public static void onRenderGuiOverlayPost(RenderGuiOverlayEvent.Post event) {
-        // RenderGuiOverlayEvent.Post 每帧对每个已注册 overlay 各触发一次（40+ 次），
-        // 只锚定每帧必渲染的原生 CHAT_PANEL 层执行一次，其余事件忽略（修复多弹/多实体时帧率腰斩）
-        if (event.getOverlay().id() != VanillaGuiOverlay.CHAT_PANEL.id()) {
-            return;
-        }
-        if (RVP_ClientHmdState.getInstance().isHmdMode()) {
-            RVP_HmdOverlay.render(event.getGuiGraphics());
         }
     }
 

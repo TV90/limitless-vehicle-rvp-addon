@@ -28,6 +28,8 @@ public class RVP_OverlayCancelHandler {
     private static long lastProbeLog = Long.MIN_VALUE;
     private static final ResourceLocation VEHICLE_RADAR = new ResourceLocation("ywzj_vehicle", "vehicle_radar");
     private static final ResourceLocation VEHICLE_SCOPE = new ResourceLocation("ywzj_vehicle", "vehicle_scope");
+    private static final ResourceLocation VEHICLE_STATUS = new ResourceLocation("ywzj_vehicle", "vehicle_status");
+    private static final ResourceLocation VEHICLE_WEAPON = new ResourceLocation("ywzj_vehicle", "vehicle_weapon");
 
     @SubscribeEvent
     public static void onRenderOverlay(RenderGuiOverlayEvent.Pre event) {
@@ -51,6 +53,11 @@ public class RVP_OverlayCancelHandler {
             }
         }
         ResourceLocation id = event.getOverlay().id();
+        // HITL 电视画面只保留 RVP 仪表/提示：隐藏本体左下状态面板与右下武器栏。
+        if (RVP_ClientHitlState.isActive() && (id.equals(VEHICLE_STATUS) || id.equals(VEHICLE_WEAPON))) {
+            event.setCanceled(true);
+            return;
+        }
         if (!id.equals(VEHICLE_RADAR) && !id.equals(VEHICLE_SCOPE)) {
             return;
         }

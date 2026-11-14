@@ -346,7 +346,7 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
      *   2026-09-29 由 ×10 改固定+5，用户定版）、
      * 1/3 哑火、1/3 炸膛（炮管处爆炸特效 + 升级彻底损坏 + 战果通知）。站级判定，同武器站
      * 全部武器/弹种在服务端都必经本方法，切弹种无法绕过；gunner AI 同链路被拦。未配置
-     * BARREL 部件恒放行。
+     * BARREL 部件恒放行。导弹类武器（MISSILE）不炸膛：受损档只会成功或失败（2026-11-14 用户定版）。
      */
     protected boolean passesBarrelDamageGate(@Nullable LivingEntity operator) {
         AbstractVehicle vehicle = getVehicle();
@@ -378,18 +378,29 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
                 denyBarrelFire(operator, "ui.rvp.barrel_damaged_misfire");
                 return false;
             }
+            boolean missileWeapon = getData().getWeaponKind() == RVP_EnumWeaponKind.MISSILE;
             int roll = vehicle.level().random.nextInt(3);
-            org.ywzj.rvp.debug.RVP_BarrelDebug.log("受损射击 roll=" + roll + "（0=正常散大 1=哑火 2=炸膛）武器="
-                    + getData().getWeaponId() + " 骨=" + barrelBone);
+            org.ywzj.rvp.debug.RVP_BarrelDebug.log("受损射击 roll=" + roll
+                    + (missileWeapon ? "（0=正常散大 1=哑火 2=哑火（导弹不炸膛））" : "（0=正常散大 1=哑火 2=炸膛）")
+                    + "武器=" + getData().getWeaponId() + " 骨=" + barrelBone);
             if (roll == 0) {
                 // 正常射击但精度下降（2026-09-29 用户定版改法）：固定扩散 +5（extraSpread=5，
                 // 出弹时与原散布相加——原 ×10 放大对小散布武器惩罚过轻、大散布武器过重，
-                // 固定增量对全武器一致）
-                this.barrelDamageSpreadExtra = 5f;
+                // 固定增量对全武器一致）。导弹类只分成功/失败，成功按正常发射不再加散布。
+                if (!missileWeapon) {
+                    this.barrelDamageSpreadExtra = 5f;
+                }
                 return true;
             }
             if (roll == 1) {
                 // 哑火：不出弹 + 30t 射击封锁（防连射窗口连续 roll/哑火接炸膛）
+                RVP_VehicleHitboxFactorManager.INSTANCE.markBarrelMisfire(vehicle, barrelBone, gameTime, 30);
+                denyBarrelFire(operator, "ui.rvp.barrel_damaged_misfire");
+                return false;
+            }
+            // 导弹类不炸膛（2026-11-14 用户定版）：第三档改判为哑火失败，炮管不升级损坏，
+            // 结果只有“发射成功 / 发射失败”两种。
+            if (missileWeapon) {
                 RVP_VehicleHitboxFactorManager.INSTANCE.markBarrelMisfire(vehicle, barrelBone, gameTime, 30);
                 denyBarrelFire(operator, "ui.rvp.barrel_damaged_misfire");
                 return false;

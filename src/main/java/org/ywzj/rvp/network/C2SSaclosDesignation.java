@@ -5,6 +5,8 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.network.NetworkEvent;
 import org.ywzj.rvp.guidance.saclos.RVP_SaclosOperatorSession;
+import org.ywzj.rvp.vehicle.RVP_FcsState;
+import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 
 import java.util.function.Supplier;
 
@@ -62,6 +64,11 @@ public class C2SSaclosDesignation {
         ctx.enqueueWork(() -> {
             ServerPlayer player = ctx.getSender();
             if (player == null) {
+                return;
+            }
+            if (player.getVehicle() instanceof AbstractVehicle vehicle
+                    && RVP_FcsState.isDestroyed(vehicle)) {
+                RVP_SaclosOperatorSession.setDesignation(player.getUUID(), false, null, false);
                 return;
             }
             Vec3 point = msg.targeting ? new Vec3(msg.x, msg.y, msg.z) : null;

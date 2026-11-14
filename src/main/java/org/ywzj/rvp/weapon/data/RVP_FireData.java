@@ -105,6 +105,14 @@ public class RVP_FireData {
     @SerializedName("self_destruct_vehicle")
     private boolean selfDestructVehicle = false;
 
+    /**
+     * 载具被击毁时是否引爆这枚自爆炸弹，无单位，默认 false；仅 {@code rvp:bomb} 生效。
+     * true 时载具被其他伤害打爆后，服务端按本武器战斗部在原位补一次爆炸；不消耗弹药、
+     * 不回传乘客，也不参与主动自爆的冷却与热量结算。
+     */
+    @SerializedName("self_destruct_on_vehicle_destroy")
+    private boolean selfDestructOnVehicleDestroy = false;
+
     public RVP_EnumFireMode getFireMode() {
         return fireMode == null ? RVP_EnumFireMode.FULL_AUTO : fireMode;
     }
@@ -207,5 +215,10 @@ public class RVP_FireData {
     /** 是否请求通过 rvp:bomb 终结当前部署载具。 */
     public boolean isSelfDestructVehicle() {
         return selfDestructVehicle;
+    }
+
+    /** 载具被击毁时是否按本武器战斗部补发自爆。 */
+    public boolean isSelfDestructOnVehicleDestroy() {
+        return selfDestructOnVehicleDestroy;
     }
 }

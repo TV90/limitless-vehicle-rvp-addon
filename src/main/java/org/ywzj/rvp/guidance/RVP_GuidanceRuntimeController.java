@@ -3,6 +3,7 @@ package org.ywzj.rvp.guidance;
 import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.dircm.RVP_JamDeflectionHelper;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
+import org.ywzj.rvp.vehicle.RVP_FcsState;
 import org.ywzj.rvp.weapon.data.RVP_GuidanceData;
 import org.ywzj.rvp.weapon.data.RVP_Range;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
@@ -71,6 +72,11 @@ public final class RVP_GuidanceRuntimeController {
             return false;
         }
 
+        // 火控系统失效：依赖本车照射/指令链的弹种失去制导，直接按当前弹道惯性飞行。
+        if (fcsBlocksGuidance(projectile, active.guidanceType())) {
+            return false;
+        }
+
         RVP_RuntimeGuidanceSource source = RVP_RuntimeGuidanceSourceRegistry.get(active.guidanceType());
         if (source == null) {
             return false;
@@ -90,6 +96,16 @@ public final class RVP_GuidanceRuntimeController {
             return false;
         }
         return RVP_GuidanceRuntimeMath.applyIntent(context, intent);
+    }
+
+    static boolean isFcsDependentGuidance(RVP_EnumGuidanceType type) {
+        return type == RVP_EnumGuidanceType.LH || type == RVP_EnumGuidanceType.SALH
+                || type == RVP_EnumGuidanceType.LBR || type == RVP_EnumGuidanceType.SACLOS
+                || type == RVP_EnumGuidanceType.SARH;
+    }
+
+    private static boolean fcsBlocksGuidance(RVP_BaseBullet projectile, RVP_EnumGuidanceType type) {
+        return isFcsDependentGuidance(type) && RVP_FcsState.isDestroyed(projectile.getShooterVehicle());
     }
 
     /** 统一实体与通用制导的阶段更新，避免实体先切段绕过冷发射保护。 */

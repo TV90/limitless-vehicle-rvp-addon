@@ -47,7 +47,7 @@ public final class RVP_MachinegunLeadState {
      */
     @Nullable
     public static RVP_LeadSolution resolveCurrent(WeaponUnit weaponUnit, float partialTick) {
-        if (weaponUnit == null) {
+        if (weaponUnit == null || RVP_ClientFcsState.isDestroyed(weaponUnit)) {
             return null;
         }
         int key = key(weaponUnit);

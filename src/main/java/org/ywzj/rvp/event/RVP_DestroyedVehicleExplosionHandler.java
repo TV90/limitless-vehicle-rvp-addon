@@ -16,8 +16,10 @@ import org.ywzj.vehicle.entity.misc.VehiclePart;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.structure.VehicleCubeOBB;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -35,6 +37,9 @@ public final class RVP_DestroyedVehicleExplosionHandler {
 
     /** 当前服务端 tick 内进入载具伤害流程的候选载具，tick 末统一清理。 */
     private static final Map<UUID, AbstractVehicle> ATTACK_CANDIDATES = new HashMap<>();
+
+    /** 本 tick 识别为被击毁、待 tick 末补发自爆炸药的完整载具。 */
+    private static final List<AbstractVehicle> SELF_DESTRUCT_COOK_OFF = new ArrayList<>();
 
     /** 爆心与载具位置的平方距离容差，覆盖浮点位置传递误差但不扩大判定范围。 */
     private static final double POSITION_TOLERANCE_SQUARED = 1.0E-8D;
@@ -89,6 +94,8 @@ public final class RVP_DestroyedVehicleExplosionHandler {
         if (destroyedVehicle == null) {
             return;
         }
+        // 记录携带自爆炸药的击毁载具，延后到 tick 末引爆，避免在本次爆炸事件里嵌套起爆。
+        SELF_DESTRUCT_COOK_OFF.add(destroyedVehicle);
 
         // 调用本体载具接口读取主物理碰撞盒；击毁爆炸半径等于主 cube 纵向长度的一半。
         VehicleCubeOBB mainCube = destroyedVehicle.getMainCubeOBB();
@@ -115,6 +122,16 @@ public final class RVP_DestroyedVehicleExplosionHandler {
         if (event.phase != TickEvent.Phase.END) {
             return;
         }
+        // 击毁爆炸结算完成后再补发自爆炸药；补爆可能连锁击毁附近载具，最多处理 32 轮防扩散。
+        for (int pass = 0; pass < 32 && !SELF_DESTRUCT_COOK_OFF.isEmpty(); pass++) {
+            List<AbstractVehicle> batch = new ArrayList<>(SELF_DESTRUCT_COOK_OFF);
+            SELF_DESTRUCT_COOK_OFF.clear();
+            for (AbstractVehicle vehicle : batch) {
+                // 调用本项目自爆炸药服务，按该武器战斗部在原位补一次爆炸。
+                org.ywzj.rvp.weapon.core.RVP_VehicleSelfDestructService.detonateOnCarrierDestroyed(vehicle);
+            }
+        }
+        SELF_DESTRUCT_COOK_OFF.clear();
         // 清理本 tick 的候选表，避免下一个 tick 的普通爆炸复用旧状态。
         ATTACK_CANDIDATES.clear();
     }

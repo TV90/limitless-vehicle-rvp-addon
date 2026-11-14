@@ -10,6 +10,7 @@ import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.rvp.guidance.RVP_EnumHitlControlMode;
 import org.ywzj.rvp.guidance.RVP_CommandGuidanceAim;
+import org.ywzj.rvp.vehicle.RVP_FcsState;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
@@ -30,6 +31,9 @@ public final class RVP_SaclosDesignation {
         // TV 的实体/OBB 点只由制导源在光学检查通过后刷新；镜头退出也不绕过此门。
         if (isHitlDesignate(projectile)
                 || projectile.getRvpData() != null && projectile.getRvpData().isSaclosTvGuided()) return;
+        if (RVP_FcsState.isDestroyed(projectile.getShooterVehicle())) {
+            return;
+        }
         if (!RVP_SaclosOperatorSession.isLaserEnabled(projectile)) {
             return;
         }
@@ -68,6 +72,9 @@ public final class RVP_SaclosDesignation {
             return projectile.getTargetPos();
         }
 
+        if (RVP_FcsState.isDestroyed(projectile.getShooterVehicle())) {
+            return null;
+        }
         if (projectile.getOwner() instanceof LivingEntity operator) {
             Vec3 sessionPoint = RVP_SaclosOperatorSession.getDesignationPoint(operator.getUUID());
             if (sessionPoint != null) {
@@ -93,6 +100,9 @@ public final class RVP_SaclosDesignation {
      */
     @Nullable
     public static Vec3 resolveSynchronizedOperatorPoint(RVP_BaseBullet projectile) {
+        if (RVP_FcsState.isDestroyed(projectile.getShooterVehicle())) {
+            return null;
+        }
         if (!(projectile.getOwner() instanceof LivingEntity operator)) {
             return null;
         }

@@ -416,7 +416,7 @@ public class RVP_ClientHmdState {
             return false;
         }
         WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
-        if (!supportsEoHmd(weaponUnit)) {
+        if (!supportsEoHmd(weaponUnit) || RVP_ClientFcsState.isDestroyed(weaponUnit)) {
             return false;
         }
         channels.enableEo();
@@ -581,6 +581,13 @@ public class RVP_ClientHmdState {
         if (weaponUnit == null) {
             disableAll();
             return;
+        }
+        if (RVP_ClientFcsState.isDestroyed(weaponUnit)) {
+            disableEoHmd();
+            clearEoLock(weaponUnit);
+            if (!channels.isAnyActive()) {
+                return;
+            }
         }
 
         float aimPitch = LocalVehiclePlayer.instance.cameraAimRotX - LocalVehiclePlayer.CAMERA_UPWARD_ANGLE;

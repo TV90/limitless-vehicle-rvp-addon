@@ -58,6 +58,12 @@ public class RVP_OpticalWeaponUnit extends WeaponUnit {
     /** 使用既有武器站数据，不新增或迁移载具 schema。 */
     public RVP_OpticalWeaponUnit(int index, AbstractVehicle vehicle, WeaponUnitData data) { super(index, vehicle, data); }
 
+    /** FCS 失效时强制关闭稳定器，服务端与客户端使用同一失效判定。 */
+    @Override
+    public boolean withStabilizer() {
+        return super.withStabilizer() && !RVP_FcsState.isDestroyed(this);
+    }
+
     /** 只执行一次 RVP 运动，本体 tick 继续处理其他生命周期与结构刷新。 */
     @Override
     protected void tickRot() {

@@ -163,6 +163,7 @@ public final class RVP_AimPointResolver {
             case BARREL -> 1.0D;
             case TURRET_TRAVERSE -> 0.95D;
             case ENGINE -> 0.9D;
+            case FCS -> 0.8D;
             case RADAR -> 0.75D;
             case APS -> 0.65D;
             case ECM_ACTIVE, ECM_PASSIVE -> 0.6D;

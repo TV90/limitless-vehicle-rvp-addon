@@ -33,6 +33,9 @@ public final class RVP_FireControlStabilizerState {
         if (unit == null || !isEligible(unit)) {
             return Mode.SEMI_AUTO;
         }
+        if (RVP_ClientFcsState.isDestroyed(unit)) {
+            return Mode.OFF;
+        }
         Mode selected = MODES.get(unit);
         if (selected != null) {
             return selected;
@@ -42,11 +45,17 @@ public final class RVP_FireControlStabilizerState {
     }
 
     public static boolean canToggleMode(WeaponUnit unit) {
-        return Integer.bitCount(resolveToggleMask(unit)) > 1;
+        return !RVP_ClientFcsState.isDestroyed(unit) && Integer.bitCount(resolveToggleMask(unit)) > 1;
+    }
+
+    /** 不看 FCS 失效、只看武器站本身是否有可切换的火控模式（HUD 受损卡仍要显示）。 */
+    public static boolean hasMultipleFireControlModes(WeaponUnit unit) {
+        return unit != null && isEligible(unit) && Integer.bitCount(resolveAllowedMask(unit)) > 1;
     }
 
     private static int resolveToggleMask(@Nullable WeaponUnit unit) {
-        return unit != null && isEligible(unit) ? resolveAllowedMask(unit) : 0;
+        return unit != null && !RVP_ClientFcsState.isDestroyed(unit) && isEligible(unit)
+                ? resolveAllowedMask(unit) : 0;
     }
 
     /** 火控稳定器键按下时切换稳定模式。由按键消费方保证是 FIRE_CONTROL_STABILIZER 键。 */
@@ -140,6 +149,9 @@ public final class RVP_FireControlStabilizerState {
      * 当前武器不可解算）时预瞄圈并不显示，此时必须保留意图圈，否则屏幕上会一个瞄准参照都没有。</p>
      *
      * <p>非 RVP 武器站（无 RVP 数据扩展）恒 false —— 本体载具的 HUD 行为完全不变。</p>
+     *
+     * <p>FCS 失效不隐藏意图圈：只关闭弹道计算，意图圈仍按本体炮管指向绘制
+     * （见 {@code VehicleAimAtOverlaySeekerColorMixin} 的 FCS 回退）。</p>
      */
     public static boolean shouldHideVanillaAimCircle(@Nullable WeaponUnit unit) {
         if (unit == null || !isEligible(unit)) {

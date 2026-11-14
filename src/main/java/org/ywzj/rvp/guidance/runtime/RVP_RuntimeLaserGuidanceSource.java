@@ -8,6 +8,7 @@ import org.ywzj.rvp.guidance.RVP_GuidanceRuntimeContext;
 import org.ywzj.rvp.guidance.RVP_RuntimeGuidanceSource;
 import org.ywzj.rvp.guidance.saclos.RVP_SaclosDesignation;
 import org.ywzj.rvp.guidance.saclos.RVP_SaclosOperatorSession;
+import org.ywzj.rvp.vehicle.RVP_FcsState;
 
 /** Shared laser-spot guidance for LH and SALH. */
 public final class RVP_RuntimeLaserGuidanceSource implements RVP_RuntimeGuidanceSource {
@@ -28,7 +29,8 @@ public final class RVP_RuntimeLaserGuidanceSource implements RVP_RuntimeGuidance
 
     @Override
     public RVP_GuidanceIntent evaluate(RVP_GuidanceRuntimeContext context) {
-        if (!RVP_SaclosOperatorSession.isLaserEnabled(context.projectile())) {
+        if (RVP_FcsState.isDestroyed(context.projectile().getShooterVehicle())
+                || !RVP_SaclosOperatorSession.isLaserEnabled(context.projectile())) {
             return RVP_GuidanceIntent.failed(type);
         }
         Vec3 point = RVP_SaclosDesignation.resolveDesignationPoint(context.projectile());

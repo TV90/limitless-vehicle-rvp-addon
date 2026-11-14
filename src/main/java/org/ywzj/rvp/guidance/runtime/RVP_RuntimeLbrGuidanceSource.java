@@ -7,6 +7,7 @@ import org.ywzj.rvp.guidance.RVP_GuidanceIntent;
 import org.ywzj.rvp.guidance.RVP_GuidanceRuntimeContext;
 import org.ywzj.rvp.guidance.RVP_RuntimeGuidanceSource;
 import org.ywzj.rvp.guidance.saclos.RVP_SaclosDesignation;
+import org.ywzj.rvp.vehicle.RVP_FcsState;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
 /**
@@ -30,6 +31,9 @@ public final class RVP_RuntimeLbrGuidanceSource implements RVP_RuntimeGuidanceSo
 
     @Override
     public RVP_GuidanceIntent evaluate(RVP_GuidanceRuntimeContext context) {
+        if (RVP_FcsState.isDestroyed(context.projectile().getShooterVehicle())) {
+            return RVP_GuidanceIntent.failed(RVP_EnumGuidanceType.LBR);
+        }
         WeaponUnit shooterUnit = context.projectile().getShooterWeaponUnit();
         // 调用本项目武器站解析，确保 parent_weapon_unit_aim 子站使用根炮塔作为驾束起点。
         WeaponUnit aimUnit = RVP_CommandGuidanceAim.resolveOperatorAimUnit(shooterUnit);

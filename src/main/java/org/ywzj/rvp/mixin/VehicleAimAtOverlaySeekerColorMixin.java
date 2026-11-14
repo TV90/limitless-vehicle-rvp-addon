@@ -192,6 +192,11 @@ public class VehicleAimAtOverlaySeekerColorMixin {
         net.minecraft.world.phys.Vec3 actual = org.ywzj.rvp.client.state.RVP_ClientTurretTraverseSight
                 .actualHitScreenPosition(weaponUnit, partialTick);
         if (actual != null) return actual;
+        // FCS 失效：意图圈保留，但回退本体 aimScreenPosition（炮管直线指向），
+        // 不再走 disguiseAimWorldPos 的弹道 march/提前量。
+        if (org.ywzj.rvp.client.state.RVP_ClientFcsState.isDestroyed(weaponUnit)) {
+            return aimScreenPosition(weaponUnit, partialTick);
+        }
         if (org.ywzj.rvp.client.state.RVP_ScopeViewSyncClient.disguiseAimActive(weaponUnit)) {
             net.minecraft.world.phys.Vec3 cameraAim =
                     org.ywzj.rvp.client.state.RVP_ScopeViewSyncClient.disguiseAimWorldPos(weaponUnit, partialTick);

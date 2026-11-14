@@ -12,11 +12,6 @@ import net.minecraft.util.Mth;
 import net.minecraft.client.renderer.texture.TextureManager;
 import com.mojang.blaze3d.platform.NativeImage;
 import net.minecraft.world.phys.Vec3;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.client.event.RenderGuiOverlayEvent;
-import net.minecraftforge.client.gui.overlay.VanillaGuiOverlay;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.loading.FMLPaths;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.ext.VehicleRocketWeaponDataExt;
@@ -44,7 +39,7 @@ import java.util.ArrayList;
 import java.util.List;
 import org.slf4j.Logger;
 
-@Mod.EventBusSubscriber(value = Dist.CLIENT, modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
+/** 火箭弹/炸弹 CCIP 标记；由 {@link RVP_OverlayRegistry} 注册在 CHAT_PANEL 之下，和本体 HUD 同层。 */
 public final class RVP_RocketCcipOverlay {
     private static final Logger LOGGER = LogUtils.getLogger();
 
@@ -98,7 +93,7 @@ public final class RVP_RocketCcipOverlay {
             return null;
         }
         WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
-        if (weaponUnit == null) {
+        if (weaponUnit == null || org.ywzj.rvp.client.state.RVP_ClientFcsState.isDestroyed(weaponUnit)) {
             return null;
         }
         if (weaponUnit.getCurrentWeapon().isEmpty()) {
@@ -452,13 +447,7 @@ public final class RVP_RocketCcipOverlay {
         return null;
     }
 
-    @SubscribeEvent
-    public static void onRenderOverlay(RenderGuiOverlayEvent.Post event) {
-        // RenderGuiOverlayEvent.Post 每帧对每个已注册 overlay 各触发一次（40+ 次），
-        // 只锚定每帧必渲染的原生 CHAT_PANEL 层执行一次，其余事件忽略（修复多弹/多实体时帧率腰斩）
-        if (event.getOverlay().id() != VanillaGuiOverlay.CHAT_PANEL.id()) {
-            return;
-        }
+    public static void render(GuiGraphics gg) {
         if (!ywzj_rvp$enableForgeOverlayEvent) {
             return;
         }
@@ -480,7 +469,7 @@ public final class RVP_RocketCcipOverlay {
         int sh = mc.getWindow().getGuiScaledHeight();
         double x = ywzj_rvp$clamp(screenHitPos.x, 0.0, sw);
         double y = ywzj_rvp$clamp(screenHitPos.y, 0.0, sh);
-        drawAtScreen(event.getGuiGraphics(), x, y, partialTick, CCIP_SIZE);
+        drawAtScreen(gg, x, y, partialTick, CCIP_SIZE);
     }
 
     private static double ywzj_rvp$clamp(double v, double min, double max) {

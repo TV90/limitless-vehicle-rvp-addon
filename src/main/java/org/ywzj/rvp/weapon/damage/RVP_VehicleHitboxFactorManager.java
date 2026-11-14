@@ -930,6 +930,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             BoneModuleType.BARREL_DAMAGED,
             BoneModuleType.TURRET_TRAVERSE,
             BoneModuleType.TURRET_TRAVERSE_DAMAGED,
+            BoneModuleType.FCS,
             BoneModuleType.ENGINE,
             BoneModuleType.ENGINE_DAMAGED,
             BoneModuleType.RADAR,

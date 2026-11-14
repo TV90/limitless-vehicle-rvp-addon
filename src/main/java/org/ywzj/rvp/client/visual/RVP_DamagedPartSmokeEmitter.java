@@ -71,6 +71,8 @@ public final class RVP_DamagedPartSmokeEmitter {
     /** 瘫痪火焰每轮粒子数上下限（火焰+火星重粒子，密度低于黑烟）。 */
     private static final int FIRE_MIN_PER_OBB = 1;
     private static final int FIRE_MAX_PER_OBB = 5;
+    /** FCS 失效火花的额外稀疏概率：每轮只有部分周期出火花，避免变成持续喷溅。 */
+    private static final float FCS_SPARK_CHANCE = 0.35f;
 
     private static int tickCounter = 0;
 
@@ -135,6 +137,12 @@ public final class RVP_DamagedPartSmokeEmitter {
             }
             // [RVP] 部件冒烟选配（2026-09-28 用户定版）：bone_modules 条目 smoke 字段，
             // 缺省 true——显式 false 的部件失效不生成黑烟特效
+            // FCS 专用观感：失效后不冒黑烟，只在观瞄设备 OBB 内零星迸出火花。
+            if (types.contains(BoneModuleType.FCS)
+                    && !RVP_ClientBoneModuleState.isModuleActive(entityId, bone, BoneModuleType.FCS)) {
+                emitFcsSparks(vehicle, bone, random);
+                continue;
+            }
             if (!RVP_VehicleHitboxFactorManager.INSTANCE.isPartSmokeEnabled(vehicle, bone)) {
                 continue;
             }
@@ -189,6 +197,28 @@ public final class RVP_DamagedPartSmokeEmitter {
                         x * 0.25, 0.0, z * 0.25, 0.12f, 12);
             }
         }
+    }
+
+    /** FCS 失效火花：低概率在随机一块骨 OBB 内抛出一枚短命火星，不生成黑烟。 */
+    private static void emitFcsSparks(AbstractVehicle vehicle, String bone, RandomSource random) {
+        if (random.nextFloat() > FCS_SPARK_CHANCE) {
+            return;
+        }
+        List<OBB> obbs = resolveObbs(vehicle, bone);
+        if (obbs.isEmpty()) {
+            return;
+        }
+        OBB obb = obbs.get(random.nextInt(obbs.size()));
+        Vec3 point = randomPointIn(obb, random);
+        if (point == null) {
+            return;
+        }
+        ClientLevel level = (ClientLevel) vehicle.level();
+        double vx = (random.nextDouble() - 0.5) * 0.18;
+        double vy = 0.02 + random.nextDouble() * 0.08;
+        double vz = (random.nextDouble() - 0.5) * 0.18;
+        RVP_MchrFlareParticle.spawnSpark(Minecraft.getInstance().particleEngine, level,
+                point.x, point.y, point.z, vx, vy, vz, 0.1f, 8 + random.nextInt(7));
     }
 
     /** 黑烟：在失效骨的实时 OBB 内随机取样（MCHR 黑烟款 + 深度只测不写，体积越大粒数越多）。 */

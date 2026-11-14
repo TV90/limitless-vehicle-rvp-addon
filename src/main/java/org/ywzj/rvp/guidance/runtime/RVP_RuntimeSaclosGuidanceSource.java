@@ -16,6 +16,7 @@ import org.ywzj.rvp.guidance.saclos.RVP_SACLOSStablePIPAssist;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AeroSteeringLimits;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AeroSteeringSolution;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_BallisticTrajectoryMath;
+import org.ywzj.rvp.vehicle.RVP_FcsState;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
 /**
@@ -56,6 +57,10 @@ public final class RVP_RuntimeSaclosGuidanceSource implements RVP_RuntimeGuidanc
     @Override
     public RVP_GuidanceIntent evaluate(RVP_GuidanceRuntimeContext context) {
         RVP_BaseBullet projectile = context.projectile();
+        if (RVP_FcsState.isDestroyed(projectile.getShooterVehicle())) {
+            resetSaclosState(projectile);
+            return RVP_GuidanceIntent.failed(RVP_EnumGuidanceType.SACLOS);
+        }
         RVP_GuidanceActiveConfig active = context.active();
 
         WeaponUnit shooterUnit = projectile.getShooterWeaponUnit();

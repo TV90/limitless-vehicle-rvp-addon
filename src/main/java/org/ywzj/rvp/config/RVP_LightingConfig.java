@@ -86,7 +86,7 @@ public final class RVP_LightingConfig {
         VOLUMETRIC = client.comment("允许代码预设中的球形空气散射，默认关闭；不读取武器 JSON 光源配置。")
                 .define("volumetric", false);
         MAX_LIGHTS = client.comment("每帧光源上限，0 关闭。默认 8。") .defineInRange("maxLights", 8, 0, 8);
-        MAX_DISTANCE = client.comment("光源最大观察距离，单位格。默认 5012；旧配置文件需手动改成同一数值。") .defineInRange("maxDistance", 5012.0, 16, 32768);
+        MAX_DISTANCE = client.comment("光源最大观察距离，单位格。默认 256；旧配置文件需手动改成同一数值。") .defineInRange("maxDistance", 256.0, 16, 32768);
         INTENSITY = client.comment("屏幕光强度倍率，0 关闭。") .defineInRange("intensity", 1.0, 0, 2);
         AIR_BURST_CLEARANCE = client.comment("空中起爆离地高度门槛，单位格；默认 100，0 表示不限制（贴地爆炸也生成爆炸光源）。",
                         "服务端只下发爆心离地高度，是否建灯由本客户端门槛决定；只影响爆炸屏幕光源，粒子与声音不受影响。")
@@ -177,7 +177,7 @@ public final class RVP_LightingConfig {
     /** 返回客户端距离预算。 */
     public static double maxDistance() {
         // 调用放宽后的距离倍率，允许1～32768格，不影响喷焰独立的远距可见性。
-        return Math.max(1, Math.min(RVP_LightRuntimeTuning.MAX_TUNED_DISTANCE, (CLIENT_SPEC.isLoaded() ? MAX_DISTANCE.get() : 5012.0)
+        return Math.max(1, Math.min(RVP_LightRuntimeTuning.MAX_TUNED_DISTANCE, (CLIENT_SPEC.isLoaded() ? MAX_DISTANCE.get() : 256.0)
                 * RVP_LightRuntimeTuning.get(Group.global, Parameter.distanceScale)));
     }
     /** 返回客户端亮度倍率。 */

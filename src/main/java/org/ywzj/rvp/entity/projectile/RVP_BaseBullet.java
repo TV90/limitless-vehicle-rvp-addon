@@ -5456,9 +5456,13 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         // 爆炸 A（地形）：只破坏方块——引擎的 ≤32 即时 Grid 与 >32 核爆炸批量路径均由破坏半径驱动，
         // 实体伤害由 RVP_TerrainOnlyExplosion 窗口在 RVP_VehicleExplosion.hurt 里直接跳过。
         // [RVP] 飞行方向给墙后衰减的起点探针用（沿入射反方向贴入射面），必须在 explode() 前设置。
+        // [RVP] 爆炸直击实体：有射手载具时保持原口径；无载具投送（炮火支援/火力终端）
+        // 本体 DamageSystem 会因 getDirectEntity()==null 把整次爆炸按 0.2 结算，改为用弹主，
+        // 让终端呼叫与载具自射走同一条爆炸伤害路径。
+        Entity explosionDirectEntity = vehicle != null ? vehicle : (getOwner() != null ? getOwner() : this);
         RVP_VehicleExplosion terrainExplosion = null;
         if (splitDestroyRadius) {
-            terrainExplosion = new RVP_VehicleExplosion(level(), getOwner(), vehicle, pos, destroyRadiusCfg, 0f, true);
+            terrainExplosion = new RVP_VehicleExplosion(level(), getOwner(), explosionDirectEntity, pos, destroyRadiusCfg, 0f, true);
             terrainExplosion.setFlightDirection(getDeltaMovement());
         }
         // 供 lambda 捕获的最终引用（terrainExplosion 为条件赋值非事实最终，直接捕获编译不过）。
@@ -5469,7 +5473,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         // radius，destroy_radius 完全失效且（9M723 的 64）方块扫描/灼烧替换量是 A 的数倍
         //（2026-09-20 审计发现的实现与文档语义矛盾，也是">32 爆炸卡顿"的主因）。
         // 本体 explode() 的 if (destroyBlocks) 门控会跳过全部方块扫描/入队，B 只做杀伤与发包。
-        RVP_VehicleExplosion ex = new RVP_VehicleExplosion(level(), getOwner(), vehicle, pos,
+        RVP_VehicleExplosion ex = new RVP_VehicleExplosion(level(), getOwner(), explosionDirectEntity, pos,
                 radius, damage, explosion.destroyBlock && !disableTerrain && !splitDestroyRadius);
         ex.setFlightDirection(getDeltaMovement());
         // [RVP] 直击目标保底半伤：小半径高爆弹命中大载具时，爆心到载具锚点常超出半径，

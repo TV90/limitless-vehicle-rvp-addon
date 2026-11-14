@@ -18,12 +18,15 @@ public final class RVP_HitlInstrumentRenderer {
 
     /** 消费既有飞行和观瞄数据；本部件不查询区块、修改制导或发送网络包。 */
     public static void draw(GuiGraphics graphics, Font font, double speed, double altitude, double range,
-                            double seconds, double turnRate, String video, String control, String track, boolean airburst) {
+                            double seconds, double turnRate, String video, String control, String track,
+                            boolean airburst, float zoom) {
         float width = graphics.guiWidth(), height = graphics.guiHeight();
         if (width <= 0 || height <= 0) return;
         // 调用成对读数绘制，侧栏远离中央操作区域，宽屏仍按视口边缘定位。
         pair(graphics, font, width * 0.16F, height * 0.43F, "SPD", number(speed, "%.0f", " km/h"));
         pair(graphics, font, width * 0.16F, height * 0.55F, "ALT", number(altitude, "%.0f", " m"));
+        pair(graphics, font, width * 0.16F, height * 0.67F, "ZOOM",
+                "x" + String.format(Locale.ROOT, "%.1f", zoom));
         pair(graphics, font, width * 0.84F, height * 0.43F, "VID / CTL", video + " / " + control);
         pair(graphics, font, width * 0.84F, height * 0.55F, "TRK / TRN", track + " / " + number(turnRate, "%.1f", "°/s"));
         text(graphics, font, width * 0.5F, height * 0.78F, "RNG " + number(range, "%.0f", " m"));

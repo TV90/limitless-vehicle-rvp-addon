@@ -4,6 +4,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.renderer.RenderType;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
@@ -32,6 +33,7 @@ import org.ywzj.rvp.util.RVP_RadarContactHelper;
 import org.ywzj.rvp.weapon.core.RVP_WeaponSensorHelper;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.vehicle.client.gui.VehicleAimAtOverlay;
+import org.ywzj.vehicle.client.gui.VehicleHudLayout;
 import org.ywzj.vehicle.client.gui.VehicleScopeOverlay;
 import org.ywzj.vehicle.client.render.util.Color;
 import org.ywzj.vehicle.client.render.util.GuiHelper;
@@ -45,6 +47,7 @@ import org.ywzj.vehicle.entity.vehicle.RotaryWingVehicle;
 import org.ywzj.vehicle.entity.weapon.AmmoEntity;
 import org.ywzj.vehicle.util.RenderHelper;
 import org.ywzj.vehicle.util.VectorUtil;
+import org.ywzj.vehicle.util.VehicleHudText;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
@@ -234,10 +237,17 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
                     }
                     poseStack.popPose();
                     guiGraphics.drawCenteredString(Minecraft.getInstance().font,
-                            (LocalVehiclePlayer.instance.outOfRangeFinding ? ">" : "")
-                                    + (int) LocalVehiclePlayer.instance.aimLocationDistance + " m", 0, 40, color);
+                            org.ywzj.rvp.client.state.RVP_ClientFcsState.isDestroyed(weaponUnit)
+                                    ? "-- m"
+                                    : (LocalVehiclePlayer.instance.outOfRangeFinding ? ">" : "")
+                                            + (int) LocalVehiclePlayer.instance.aimLocationDistance + " m",
+                            0, 40, color);
                     guiGraphics.drawString(Minecraft.getInstance().font, "x" + String.format("%.1f", weaponUnit.getZoom()), 25, 16, color);
-                    guiGraphics.drawString(Minecraft.getInstance().font, weaponUnit.withStabilizer() ? Component.translatable("ui.stabilizer_on").getString() : "", 25, 28, color);
+                    guiGraphics.drawString(Minecraft.getInstance().font,
+                            weaponUnit.withStabilizer()
+                                    && !org.ywzj.rvp.client.state.RVP_ClientFcsState.isDestroyed(weaponUnit)
+                                    ? Component.translatable("ui.stabilizer_on").getString() : "",
+                            25, 28, color);
                     // 焦点锁定
                     if (weaponUnit.withFocusLocker()) {
                         Vec3 focusLockPos = weaponUnit.getFocusLockPos();
@@ -273,6 +283,11 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
 
     /** 求本帧实际弹着点的屏幕位置，不把焦点请求点冒充炮口实际落点。 */
     private static Vec3 crosshairScreenPosition(WeaponUnit weaponUnit, float partialTick) {
+        // FCS 失效：观瞄准星固定在屏幕中心（第三人称小圈才回炮管指向，2026-11-14 用户澄清）。
+        if (org.ywzj.rvp.client.state.RVP_ClientFcsState.isDestroyed(weaponUnit)) {
+            var window = Minecraft.getInstance().getWindow();
+            return new Vec3(window.getGuiScaledWidth() / 2.0, window.getGuiScaledHeight() / 2.0, 1.0);
+        }
         Vec3 worldPosition = weaponUnit.weaponHitPosO.lerp(weaponUnit.weaponHitPos,
                 Mth.clamp(partialTick, 0.0F, 1.0F));
         // 调用本体当前相机矩阵投影，与本帧独立观瞄和载具位置插值使用同一时间。
@@ -286,6 +301,19 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
         WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
         // 调用同一状态提示，无 UI 预设的本体 CRT 也能说明真实吊舱限制。
         renderOpticalStatus(weaponUnit, graphics, 0x55ff55);
+        if (weaponUnit != null && org.ywzj.rvp.client.state.RVP_ClientFcsState.isDestroyed(weaponUnit)) {
+            // FCS 失效：保持本体准星外观不变（用户实测损坏前后样式不能变），只把距离读数换成 -- m。
+            if (weaponUnit.getOpticalSightType() == WeaponUnitData.OpticalSightType.CRT) {
+                // 目的：观瞄准星钉屏幕中心（第三人称小圈才回炮管指向），样式保持本体不变。
+                var window = Minecraft.getInstance().getWindow();
+                renderBaseCrtCrosshair(graphics,
+                        new Vec3(window.getGuiScaledWidth() / 2.0, window.getGuiScaledHeight() / 2.0, 1.0),
+                        weaponUnit);
+            } else {
+                overlay.renderCrosshair(graphics, partialTick, vehicle);
+            }
+            return;
+        }
         if (weaponUnit == null || weaponUnit.getFocusLockPos() == null
                 || weaponUnit.getOpticalSightType() != WeaponUnitData.OpticalSightType.CRT) {
             // 调用本体原绘制；光学瞄具遮罩始终留在屏幕中心，不受 CRT 落点修正影响。
@@ -306,6 +334,105 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
             }
             // 调用本体 CRT 绘制，完整保留原准星、焦点提示与距离文字。
             overlay.renderCrosshair(graphics, partialTick, vehicle);
+        } finally {
+            poseStack.popPose();
+        }
+    }
+
+    /** 与本体 {@code VehicleScopeOverlay.CRT_RETICLE_SEGMENTS} 一致的线段数据（FCS 失效时保持原样式）。 */
+    private static final float[] BASE_CRT_RETICLE_SEGMENTS = {
+            -90, 0, -50, 0, 50, 0, 90, 0,
+            0, -90, 0, -50, 0, 50, 0, 90,
+            -24, 0, -6, 0, 6, 0, 24, 0,
+            0, -24, 0, -6, 0, 6, 0, 24,
+            -6, -1.5f, -6, 1.5f, 6, -1.5f, 6, 1.5f,
+            -1.5f, -6, 1.5f, -6, -1.5f, 6, 1.5f, 6
+    };
+    /** 与本体 {@code VehicleScopeOverlay.CRT_FOCUS_LOCK_SEGMENTS} 一致的焦点锁定线段。 */
+    private static final float[] BASE_CRT_FOCUS_LOCK_SEGMENTS = {
+            -27, -18, -16, -10, 16, -10, 27, -18,
+            -27, 18, -16, 10, 16, 10, 27, 18
+    };
+
+    /**
+     * FCS 失效的本体 CRT 准星：线段、字号全部沿用本体，只把距离读数换成 {@code -- m}。
+     *
+     * <p>用户实测要求损坏前后准星样式不能变化；此处不换成 RVP 十字，也不隐藏意图圈。
+     * 观瞄视角下位置固定在屏幕中心（不做弹道解算、不跟随炮管落点）；第三人称小圈
+     * 由本体 {@code VehicleAimAtOverlay} 按 {@code weaponHitPos} 绘制，回炮管指向。</p>
+     */
+    private static void renderBaseCrtCrosshair(GuiGraphics graphics, Vec3 screenPosition, WeaponUnit weaponUnit) {
+        PoseStack poseStack = graphics.pose();
+        poseStack.pushPose();
+        try {
+            poseStack.translate(screenPosition.x, screenPosition.y, 0);
+            boolean focusLocked = weaponUnit.withFocusLocker() && weaponUnit.getFocusLockPos() != null;
+            float scale = graphics.guiHeight() / VehicleHudLayout.HEIGHT;
+            float halfWidth = Math.max(0.5f, 0.75f / (scale * (float) Minecraft.getInstance().getWindow().getGuiScale()));
+            poseStack.pushPose();
+            try {
+                poseStack.scale(scale, scale, 1);
+                drawBaseCrtSegments(graphics, BASE_CRT_RETICLE_SEGMENTS, halfWidth);
+                if (focusLocked) {
+                    drawBaseCrtSegments(graphics, BASE_CRT_FOCUS_LOCK_SEGMENTS, halfWidth);
+                }
+                graphics.flush();
+            } finally {
+                poseStack.popPose();
+            }
+            float sightScale = graphics.guiHeight() / VehicleHudLayout.HEIGHT;
+            // 目的：FCS 失效后测距不可用，读数固定 -- m；其余文字保持本体位置与字号。
+            drawBaseSightText(graphics, "-- m", 0, 33 * sightScale, true);
+            drawBaseSightText(graphics, "x" + String.format("%.1f", weaponUnit.getZoom()),
+                    44 * sightScale, 14 * sightScale, false);
+            if (focusLocked) {
+                drawBaseSightText(graphics, Component.translatable("ui.focus_lock").getString(),
+                        44 * sightScale, 42 * sightScale, false);
+            }
+        } finally {
+            poseStack.popPose();
+        }
+    }
+
+    /** 与本体 {@code renderCrtSegments} 相同的逐段填充，保持线宽与端点一致。 */
+    private static void drawBaseCrtSegments(GuiGraphics graphics, float[] segments, float halfWidth) {
+        PoseStack poseStack = graphics.pose();
+        for (int i = 0; i < segments.length; i += 4) {
+            float x = segments[i];
+            float y = segments[i + 1];
+            float dx = segments[i + 2] - x;
+            float dy = segments[i + 3] - y;
+            float length = (float) Math.hypot(dx, dy);
+            poseStack.pushPose();
+            try {
+                poseStack.translate(x, y, 0);
+                poseStack.mulPose(Axis.ZP.rotation((float) Math.atan2(dy, dx)));
+                // 调用本体填充工具，线段颜色/图层与本体现有 CRT 准星相同。
+                RenderHelper.fill(graphics, RenderType.guiOverlay(), 0, -halfWidth,
+                        length, halfWidth, 0, color);
+            } finally {
+                poseStack.popPose();
+            }
+        }
+    }
+
+    /** 与本体 {@code renderSightText} 相同的缩放/对齐，避免损坏前后文字位置跳变。 */
+    private static void drawBaseSightText(GuiGraphics graphics, String text, float x, float y, boolean centered) {
+        if (text == null || text.isEmpty()) {
+            return;
+        }
+        PoseStack poseStack = graphics.pose();
+        poseStack.pushPose();
+        try {
+            poseStack.translate(x, y, 0);
+            float scale = graphics.guiHeight() / VehicleHudLayout.HEIGHT * 0.9f;
+            poseStack.scale(scale, scale, 1);
+            if (centered) {
+                // 调用本体 HUD 文本工具，保留原字体阴影与对齐。
+                VehicleHudText.drawCenteredString(graphics, text, 0, 0, color);
+            } else {
+                VehicleHudText.drawString(graphics, text, 0, 0, color);
+            }
         } finally {
             poseStack.popPose();
         }

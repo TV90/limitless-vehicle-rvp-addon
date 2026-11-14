@@ -135,9 +135,9 @@ public class RVP_ClientConfig {
                         "false 保留世界 dense 优化并恢复 AR 展开，展板恢复原 SBM 提交，用于对照或兼容回退。")
                 .define("sharedOpaqueMesh", true);
         acceleratedDenseMinVertices = builder
-                .comment("单个 mesh 的最小顶点记录数（不是面数）；默认 32768。",
+                .comment("单个 mesh 的最小顶点记录数（不是面数）；默认 8192。",
                         "小 mesh 继续遵从 AR 自身的 sparse/dense 策略，不改全局阈值。")
-                .defineInRange("acceleratedDenseMinVertices", 32768, 1024, 1000000);
+                .defineInRange("acceleratedDenseMinVertices", 8192, 1024, 1000000);
         builder.pop();
 
         builder.push("lod");
@@ -313,10 +313,10 @@ public class RVP_ClientConfig {
         return isAcceleratedDenseMeshEnabled() && INSTANCE.sharedOpaqueMesh.get();
     }
 
-    /** 返回单个 mesh 的顶点记录阈值；未加载配置时使用默认 32768。 */
+    /** 返回单个 mesh 的顶点记录阈值；未加载配置时使用默认 8192。 */
     public static int getAcceleratedDenseMinVertices() {
         return INSTANCE != null && CLIENT_SPEC != null && CLIENT_SPEC.isLoaded()
-                ? INSTANCE.acceleratedDenseMinVertices.get() : 32768;
+                ? INSTANCE.acceleratedDenseMinVertices.get() : 8192;
     }
 
     public static boolean isLodZoomEnabled() {

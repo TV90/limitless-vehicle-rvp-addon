@@ -4,11 +4,6 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.client.event.RenderGuiEvent;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.common.Mod;
-import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.client.state.RVP_ClientHitlCamera;
 import org.ywzj.rvp.client.state.RVP_ClientHitlState;
 import org.ywzj.rvp.client.state.RVP_ClientHitlUtil;
@@ -18,14 +13,13 @@ import org.ywzj.vehicle.util.VectorUtil;
 
 /**
  * TV SACLOS (DESIGNATE): crosshair projected from the same 3D aim point as designation.
+ * 由 {@link RVP_TVMissileOverlay} 在同一 HUD 层调用，保证和本体字体一样位于聊天框之下。
  */
-@Mod.EventBusSubscriber(value = Dist.CLIENT, modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class RVP_HitlDesignateOverlay {
 
     private RVP_HitlDesignateOverlay() {}
 
-    @SubscribeEvent
-    public static void onRenderGui(RenderGuiEvent.Post event) {
+    public static void render(GuiGraphics gg) {
         if (!RVP_ClientHitlState.isDesignateMode() || RVP_ClientHitlState.isHitlLinkBlocked()) {
             return;
         }
@@ -55,7 +49,6 @@ public final class RVP_HitlDesignateOverlay {
             return;
         }
 
-        GuiGraphics gg = event.getGuiGraphics();
         // 调用可动的断开短十字，四角框由固定参照层居中绘制，继续使用真实瞄准点投影及既有小范围离轴。
         RVP_HitlReticleRenderer.drawTvAim(gg, crosshair.x, crosshair.y);
 

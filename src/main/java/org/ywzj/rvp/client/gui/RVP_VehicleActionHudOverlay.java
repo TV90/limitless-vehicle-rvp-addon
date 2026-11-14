@@ -81,6 +81,7 @@ public final class RVP_VehicleActionHudOverlay implements IGuiOverlay {
         var state = RVP_ClientAuxiliaryHudState.get(vehicle.getUUID(), mc.level.getGameTime());
         var operator = LocalVehiclePlayer.instance;
         WeaponUnit unit = operator.onVehicle() && operator.vehicle == vehicle ? operator.getWeaponUnit() : null;
+        boolean fcsDamaged = unit != null && org.ywzj.rvp.client.state.RVP_ClientFcsState.isDestroyed(unit);
         // 开关类动作读取实际状态：开启时常亮，关闭时不亮（不再只靠按键瞬间的高亮）
         boolean seeker = unit != null && supportsSeeker(unit);
         boolean seekerActive = seeker && unit.isSeekerOn();
@@ -88,19 +89,28 @@ public final class RVP_VehicleActionHudOverlay implements IGuiOverlay {
         Action fireControlAction = null;
         boolean fireControlActive = false;
         if (unit != null && RVP_MachinegunLeadSolver.isCurrentRvpMachinegun(unit)
-                && RVP_FireControlStabilizerState.canToggleMode(unit) && !RVP_ClientGPSUtil.isGPSBombSelected()) {
-            RVP_FireControlStabilizerState.Mode mode = RVP_FireControlStabilizerState.getMode(unit);
-            fireControlAction = switch (mode) {
-                case STABLE -> Action.FIRE_CONTROL_STABLE;
-                case SEMI_AUTO -> Action.FIRE_CONTROL_SEMI_AUTO;
-                case OFF -> Action.FIRE_CONTROL_OFF;
-            };
-            fireControlActive = mode != RVP_FireControlStabilizerState.Mode.OFF;
+                && RVP_FireControlStabilizerState.hasMultipleFireControlModes(unit)
+                && !RVP_ClientGPSUtil.isGPSBombSelected()) {
+            if (fcsDamaged) {
+                fireControlAction = Action.FIRE_CONTROL_OFF;
+                fireControlActive = false;
+            } else {
+                RVP_FireControlStabilizerState.Mode mode = RVP_FireControlStabilizerState.getMode(unit);
+                fireControlAction = switch (mode) {
+                    case STABLE -> Action.FIRE_CONTROL_STABLE;
+                    case SEMI_AUTO -> Action.FIRE_CONTROL_SEMI_AUTO;
+                    case OFF -> Action.FIRE_CONTROL_OFF;
+                };
+                fireControlActive = mode != RVP_FireControlStabilizerState.Mode.OFF;
+            }
         }
         boolean quickLock = unit != null && RVP_ClientHmdState.supportsQuickLock(unit);
         RVP_ClientHmdState quickLockHmd = RVP_ClientHmdState.getInstance();
+        // 只有 EO 快速搜索受 FCS 影响；雷达头瞄仍走雷达自身状态。
+        boolean eoQuickLock = quickLock && quickLockHmd.getRadarHmdUnit(unit) == null;
         // 快速锁定图标只代表雷达/光电头瞄；IR 头瞄开启不能点亮它。
-        boolean quickLockActive = quickLock && (quickLockHmd.isRadarHmd() || quickLockHmd.isEoHmd());
+        boolean quickLockActive = quickLock && (!fcsDamaged || !eoQuickLock)
+                && (quickLockHmd.isRadarHmd() || quickLockHmd.isEoHmd());
         // GPS 标点在 FAST 模式下由开火键直接取点，R 键被禁用，因此不显示标点卡
         boolean gpsSelected = unit != null && RVP_ClientGPSUtil.isGPSBombSelected();
         RVP_ClientGPSState.Mode gpsMode = RVP_ClientGPSState.getMode();
@@ -133,7 +143,10 @@ public final class RVP_VehicleActionHudOverlay implements IGuiOverlay {
                     && ext.ywzj_rvp$withNightVision();
             if (hasThermal || hasNightVision) {
                 boolean scope = LocalVehiclePlayer.instance.viewType == LocalVehiclePlayer.ViewType.SCOPE;
-                if (scope && hasThermal) {
+                if (fcsDamaged) {
+                    visionAction = hasThermal ? Action.VISION_THERMAL : Action.VISION_NIGHT;
+                    visionActive = false;
+                } else if (scope && hasThermal) {
                     // 观瞄态有热成像：开关归本体 thermalImaging，夜视让位。
                     boolean thermal = LocalVehiclePlayer.instance.thermalImaging;
                     visionAction = thermal ? Action.VISION_THERMAL : Action.VISION_WHITE;
@@ -169,13 +182,15 @@ public final class RVP_VehicleActionHudOverlay implements IGuiOverlay {
         // 焦点锁定卡只在观瞄站带焦点锁定器且处于观瞄视角时出现；焦点锁住或已吸附载具时常亮
         boolean scopeView = LocalVehiclePlayer.instance.viewType == LocalVehiclePlayer.ViewType.SCOPE;
         boolean focusLock = unit != null && unit.withFocusLocker() && scopeView;
-        boolean focusLockActive = focusLock && (unit.getFocusLockPos() != null
+        boolean focusLockActive = focusLock && !fcsDamaged && (unit.getFocusLockPos() != null
                 || RVP_FocusLockSnapState.isSnapped(unit));
-        List<Card> cards = RVP_VehicleActionHudModel.sortForDisplay(cards(state,
-                new WeaponPrompts(seeker, seekerActive, fireControlAction, fireControlActive,
-                        quickLock, quickLockActive, gpsMark, gpsMarkActive, gpsModeAction, airburst, airburstActive,
-                        visionAction, visionActive),
-                new FlightPrompts(loiterApplicable, loitering, rotaryMode), mapAction, focusLock, focusLockActive));
+        List<Card> cards = RVP_VehicleActionHudModel.markFcsDamaged(
+                RVP_VehicleActionHudModel.sortForDisplay(cards(state,
+                        new WeaponPrompts(seeker, seekerActive, fireControlAction, fireControlActive,
+                                quickLock, quickLockActive, gpsMark, gpsMarkActive, gpsModeAction, airburst, airburstActive,
+                                visionAction, visionActive),
+                        new FlightPrompts(loiterApplicable, loitering, rotaryMode), mapAction, focusLock, focusLockActive)),
+                fcsDamaged, fcsDamaged && eoQuickLock);
         String[] keys = new String[BINDINGS.length];
         boolean[] pressed = new boolean[BINDINGS.length];
         for (Card card : cards) {
@@ -231,16 +246,21 @@ public final class RVP_VehicleActionHudOverlay implements IGuiOverlay {
     private static void drawCard(GuiGraphics graphics, Card card, String key, boolean pressed) {
         boolean deployed = card.phase() == Phase.DEPLOYED;
         boolean active = card.phase() == Phase.ACTIVE;
+        boolean damaged = card.phase() == Phase.DAMAGED;
         boolean bright = card.enabled() || deployed || active;
-        int border = pressed && card.enabled() ? 0xFFE2C774
+        int border = damaged ? 0xC4FF4040
+                : pressed && card.enabled() ? 0xFFE2C774
                 : deployed ? 0xC477A68A : active ? 0xC400E5FF : 0xA0526068;
-        graphics.fill(0, 0, CARD_WIDTH, CARD_HEIGHT, active ? 0xB3122A30 : 0xB3172127);
+        graphics.fill(0, 0, CARD_WIDTH, CARD_HEIGHT,
+                damaged ? 0xB33A1518 : active ? 0xB3122A30 : 0xB3172127);
         graphics.renderOutline(0, 0, CARD_WIDTH, CARD_HEIGHT, border);
         graphics.fill(1, 1, CARD_WIDTH - 1, 22, pressed && card.enabled() ? 0xDC5C563C : 0xD734424B);
         text(graphics, key, CARD_WIDTH / 2F, 3, 1.9F,
-                card.enabled() ? 0xFFE0C66D : 0xFF727A80, CARD_WIDTH - 6);
+                damaged ? 0xFFFF6060 : card.enabled() ? 0xFFE0C66D : 0xFF727A80, CARD_WIDTH - 6);
         RenderSystem.enableBlend(); RenderSystem.defaultBlendFunc();
-        graphics.setColor(bright ? 1F : .38F, bright ? 1F : .41F, bright ? 1F : .43F, 1F);
+        graphics.setColor(damaged ? 1F : bright ? 1F : .38F,
+                damaged ? .28F : bright ? 1F : .41F,
+                damaged ? .28F : bright ? 1F : .43F, 1F);
         // 图标统一 62px；键名与标签所有卡片同一字号，不再对通道卡单独放大。
         float iconSize = 62F;
         var pose = graphics.pose(); pose.pushPose();
@@ -255,7 +275,8 @@ public final class RVP_VehicleActionHudOverlay implements IGuiOverlay {
                         : active && card.action() == Action.LOITER ? "loiter_active"
                         : LABELS[card.action().ordinal()])).getString();
         text(graphics, label, CARD_WIDTH / 2F, 84F, 2.1F,
-                deployed ? 0xFFA2D5AF : active ? 0xFF7FF2FF : bright ? 0xFFE4E8E8 : 0xFF7A8080, CARD_WIDTH - 4);
+                damaged ? 0xFFFF5050 : deployed ? 0xFFA2D5AF : active ? 0xFF7FF2FF
+                        : bright ? 0xFFE4E8E8 : 0xFF7A8080, CARD_WIDTH - 4);
     }
 
     /** 长按键名和标签在卡内缩放，保留完整文字。 */

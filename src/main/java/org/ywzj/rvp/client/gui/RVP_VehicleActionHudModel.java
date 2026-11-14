@@ -50,7 +50,7 @@ public final class RVP_VehicleActionHudModel {
         /** 焦点锁定（R 键，需观瞄站带焦点锁定器且处于观瞄视角）。 */
         FOCUS_LOCK
     }
-    public enum Phase { READY, DISABLED, COOLING, DEPLOYED, ACTIVE }
+    public enum Phase { READY, DISABLED, COOLING, DEPLOYED, ACTIVE, DAMAGED }
     public record Card(Action action, Phase phase, boolean enabled, int cooldownSeconds) {}
 
     /**
@@ -136,6 +136,24 @@ public final class RVP_VehicleActionHudModel {
         List<Card> sorted = new ArrayList<>(cards);
         sorted.sort(java.util.Comparator.comparingInt(card -> displayPriority(card.action())));
         return sorted;
+    }
+
+    /** FCS 失效时把火控、视觉、焦点锁定与光电快速锁定卡转成红色受损态。 */
+    public static List<Card> markFcsDamaged(List<Card> cards, boolean damaged, boolean eoQuickLockDamaged) {
+        if (!damaged || cards.isEmpty()) {
+            return cards;
+        }
+        List<Card> out = new ArrayList<>(cards.size());
+        for (Card card : cards) {
+            boolean affected = switch (card.action()) {
+                case FIRE_CONTROL_STABLE, FIRE_CONTROL_SEMI_AUTO, FIRE_CONTROL_OFF,
+                        FOCUS_LOCK, VISION_WHITE, VISION_NIGHT, VISION_THERMAL -> true;
+                case QUICK_LOCK -> eoQuickLockDamaged;
+                default -> false;
+            };
+            out.add(affected ? new Card(card.action(), Phase.DAMAGED, false, 0) : card);
+        }
+        return out;
     }
 
     private static int displayPriority(Action action) {

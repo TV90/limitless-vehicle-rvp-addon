@@ -83,7 +83,7 @@ public class RVP_CommonConfig {
 
     /** 放置载具时是否自动补充创造弹药。 */
     private final ForgeConfigSpec.BooleanValue spawnVehicleWithCreativeAmmo;
-    /** 载具残骸保留时间，单位秒；默认值为 60 秒。 */
+    /** 载具残骸保留时间，单位秒；默认值为 20 秒。 */
     private final ForgeConfigSpec.IntValue wreckLifetimeSeconds;
     /** 是否启用服务端权威的载具超视距同步。 */
     private final ForgeConfigSpec.BooleanValue remoteVehicleRenderingEnabled;
@@ -148,8 +148,8 @@ public class RVP_CommonConfig {
         builder.pop();
         builder.push("vehicleLifecycle");
         wreckLifetimeSeconds = builder
-                .comment("载具残骸保留时间，单位秒；超过该时间后服务端移除残骸。默认：60")
-                .defineInRange("wreckLifetimeSeconds", 60, 0, Integer.MAX_VALUE);
+                .comment("载具残骸保留时间，单位秒；超过该时间后服务端移除残骸。默认：20")
+                .defineInRange("wreckLifetimeSeconds", 20, 0, Integer.MAX_VALUE);
         builder.pop();
 
         builder.push("remoteVehicleRendering");
@@ -218,9 +218,9 @@ public class RVP_CommonConfig {
         aircraftVisibleTargets = defineVehicleTypeList(builder, "aircraft",
                 List.of("helicopter", "aircraft", "ground_vehicles", "ships"));
         groundVehicleVisibleTargets = defineVehicleTypeList(builder, "ground_vehicles",
-                List.of("helicopter", "aircraft", "ground_vehicles", "ships"));
+                List.of("helicopter", "aircraft", "ships", "ground_vehicles"));
         shipsVisibleTargets = defineVehicleTypeList(builder, "ships",
-                List.of("helicopter", "aircraft", "ground_vehicles", "ships"));
+                List.of("helicopter", "aircraft", "ships", "ground_vehicles"));
         walkingPlayerVisibleTargets = defineVehicleTypeList(builder, "walking_players",
                 List.of("helicopter", "aircraft", "ground_vehicles", "ships"));
         builder.pop();
@@ -245,9 +245,9 @@ public class RVP_CommonConfig {
         return INSTANCE != null && SPEC != null && SPEC.isLoaded() ? INSTANCE.opticalSightAccelerationSeconds.get() : 0.1;
     }
 
-    /** 返回载具残骸保留时间，单位秒；配置尚未加载时回退到默认值 60 秒。 */
+    /** 返回载具残骸保留时间，单位秒；配置尚未加载时回退到默认值 20 秒。 */
     public static int getWreckLifetimeSeconds() {
-        return INSTANCE != null ? INSTANCE.wreckLifetimeSeconds.get() : 60;
+        return INSTANCE != null ? INSTANCE.wreckLifetimeSeconds.get() : 20;
     }
 
     /** 返回服务端是否启用载具超视距同步。 */

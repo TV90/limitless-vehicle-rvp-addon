@@ -78,6 +78,12 @@ public final class RVP_ClientFocusLock {
 
     /** 由已有 R 键入口在焦点切换完成后调用，首次选点即保留真实命中/未知距离之别。 */
     public static void onFocusLockChanged(WeaponUnit changedStation) {
+        if (RVP_ClientFcsState.isDestroyed(changedStation)) {
+            changedStation.setFocusLockPos(null);
+            LOCKS.remove(changedStation);
+            clear();
+            return;
+        }
         if (changedStation.getFocusLockPos() == null) {
             LOCKS.remove(changedStation);
             if (changedStation instanceof RVP_OpticalWeaponUnit optical) {
@@ -150,6 +156,11 @@ public final class RVP_ClientFocusLock {
         if (currentStation == null || currentStation.getFocusLockPos() == null) {
             return false;
         }
+        if (RVP_ClientFcsState.isDestroyed(currentStation)) {
+            currentStation.setFocusLockPos(null);
+            LOCKS.remove(currentStation);
+            return true;
+        }
         if (currentStation instanceof RVP_OpticalWeaponUnit && RVP_ClientOpticalSight.inputSuppressed(currentStation)) return true;
         if (currentStation instanceof RVP_OpticalWeaponUnit && yawInput == 0 && pitchInput == 0) return true;
         // 调用本体观瞄位置入口作首帧回退，已渲染后始终使用真实画面原点。
@@ -218,6 +229,12 @@ public final class RVP_ClientFocusLock {
         Minecraft minecraft = Minecraft.getInstance();
         // 调用上下文解析，只在本地操作者自己的第一人称观瞄中接管镜头。
         WeaponUnit currentStation = scopeStation(minecraft);
+        if (currentStation != null && RVP_ClientFcsState.isDestroyed(currentStation)) {
+            currentStation.setFocusLockPos(null);
+            LOCKS.remove(currentStation);
+            clear();
+            return;
+        }
         if (currentStation == null || event.getCamera().getEntity() != minecraft.player) {
             clear();
             return;
@@ -278,9 +295,15 @@ public final class RVP_ClientFocusLock {
     public static void onClientTick(TickEvent.ClientTickEvent event) {
         Minecraft minecraft = Minecraft.getInstance();
         if (event.phase == TickEvent.Phase.START) {
-            // 清理已解锁或旧世界的状态；暂停/切观瞄时仍保留有效焦点的真实命中语义。
-            LOCKS.entrySet().removeIf(entry -> entry.getKey().getVehicle().level() != minecraft.level
-                    || entry.getKey().getFocusLockPos() == null);
+            // 清理已解锁、旧世界或火控系统失效的状态；暂停/切观瞄时仍保留有效焦点的真实命中语义。
+            LOCKS.entrySet().removeIf(entry -> {
+                WeaponUnit unit = entry.getKey();
+                if (RVP_ClientFcsState.isDestroyed(unit)) {
+                    unit.setFocusLockPos(null);
+                    return true;
+                }
+                return unit.getVehicle().level() != minecraft.level || unit.getFocusLockPos() == null;
+            });
             // 调用吸附锁定校验，目标失效或锁定槽被改写时解除登记。
             RVP_FocusLockSnap.tickUpkeep();
             // 调用后台结果收取，仅在客户端线程校验并写回，绝不等待未完成查询。

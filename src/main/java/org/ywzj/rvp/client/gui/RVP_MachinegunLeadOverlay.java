@@ -29,6 +29,11 @@ public class RVP_MachinegunLeadOverlay implements IGuiOverlay {
             return;
         }
         WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
+        if (weaponUnit != null && org.ywzj.rvp.client.state.RVP_ClientFcsState.isDestroyed(weaponUnit)) {
+            RVP_MachinegunLeadState.clear(weaponUnit);
+            RVP_RightInfoStackOverlay.reportAhead(null);
+            return;
+        }
         RVP_WeaponData data = weaponUnit == null ? null : RVP_MachinegunLeadSolver.resolveCurrentWeaponData(weaponUnit);
         if (weaponUnit == null || data == null) {
             if (weaponUnit != null) {

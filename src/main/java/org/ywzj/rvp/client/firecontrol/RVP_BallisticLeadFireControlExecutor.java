@@ -6,6 +6,7 @@ import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.client.lead.RVP_LeadSolution;
 import org.ywzj.rvp.client.lead.RVP_MachinegunLeadSolver;
 import org.ywzj.rvp.client.state.RVP_AimAssistState;
+import org.ywzj.rvp.client.state.RVP_ClientFcsState;
 import org.ywzj.rvp.client.state.RVP_ClientProjectileRenderInterpolator;
 import org.ywzj.rvp.client.state.RVP_FireControlStabilizerState;
 import org.ywzj.rvp.client.state.RVP_MachinegunLeadState;
@@ -55,6 +56,12 @@ public final class RVP_BallisticLeadFireControlExecutor {
      * @return {@code true} 表示本次瞄准已由RVP处理；{@code false} 表示应调用本体 {@code aim}
      */
     public static boolean tryApply(WeaponUnit weaponUnit, Vec3 trackedTargetWorldPos) {
+        // 火控系统失效：不再驱动炮塔追提前量，保留玩家手动瞄准。
+        if (weaponUnit != null && RVP_ClientFcsState.isDestroyed(weaponUnit)) {
+            clearAimAssist(weaponUnit);
+            RVP_SemiAutoLeadTrimState.clear(weaponUnit);
+            return true;
+        }
         // 调用既有软航迹判定：导引头自动捕获仅供 HUD、发射与数据链使用，不得覆盖鼠标方向。
         // 必须先于模式解析执行，普通 RF 站未配置 rvp_rf 时也不能回退成本体强制瞄准。
         if (RVP_RadarRoleHelper.isAutomaticRfSeekerTrack(weaponUnit)) {

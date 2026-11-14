@@ -97,6 +97,10 @@ public final class RVP_CcipGroundMarkerOverlay {
             diag("noWeaponUnit", vehicle, null, null, null, 0.0F);
             return;
         }
+        if (org.ywzj.rvp.client.state.RVP_ClientFcsState.isDestroyed(operatorUnit)) {
+            diag("fcs_destroyed", vehicle, operatorUnit, null, null, 0.0F);
+            return;
+        }
         WeaponUnitData.FireControlSensorType sensor = RVP_WeaponSensorHelper.effectiveSensorType(operatorUnit);
         AbstractVehicleWeapon<?> primary = RVP_WeaponResolveHelper.currentPrimary(operatorUnit);
         if (sensor != WeaponUnitData.FireControlSensorType.CCIP) {

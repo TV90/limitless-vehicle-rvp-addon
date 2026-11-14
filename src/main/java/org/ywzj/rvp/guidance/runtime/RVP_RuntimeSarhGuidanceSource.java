@@ -7,6 +7,7 @@ import org.ywzj.rvp.guidance.RVP_GuidanceRuntimeContext;
 import org.ywzj.rvp.guidance.RVP_GuidanceTargetUtil;
 import org.ywzj.rvp.guidance.RVP_RuntimeGuidanceSource;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
+import org.ywzj.rvp.vehicle.RVP_FcsState;
 import org.ywzj.rvp.guidance.runtime.RVP_RuntimeSeekerSupport;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.rvp.weapon.core.RVP_WeaponLockStateTable;
@@ -33,6 +34,11 @@ public final class RVP_RuntimeSarhGuidanceSource implements RVP_RuntimeGuidanceS
 
     @Override
     public RVP_GuidanceIntent evaluate(RVP_GuidanceRuntimeContext context) {
+        // 火控失效：本车无法继续提供无线电照射，半主动弹失去制导。
+        if (RVP_FcsState.isDestroyed(context.projectile().getShooterVehicle())) {
+            context.projectile().clearTarget();
+            return RVP_GuidanceIntent.failed(RVP_EnumGuidanceType.SARH);
+        }
         // 主动ECM干扰：阻断半主动雷达照射（SARH 需照射源，干扰期视为无照射）
         if (context.projectile().ecmActiveJamRemainTick > 0) {
             context.projectile().clearTarget();

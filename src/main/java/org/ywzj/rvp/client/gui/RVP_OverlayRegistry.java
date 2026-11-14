@@ -3,6 +3,7 @@ package org.ywzj.rvp.client.gui;
 import com.mojang.logging.LogUtils;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.RegisterGuiOverlaysEvent;
+import net.minecraftforge.client.gui.overlay.IGuiOverlay;
 import net.minecraftforge.client.gui.overlay.VanillaGuiOverlay;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
@@ -60,5 +61,67 @@ public class RVP_OverlayRegistry {
         event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_lock_warning", new RVP_LockWarningOverlay());
         // 生物头顶伤害飘字：注册在最后（该层最上层），避免被命中展板/雷达面板压住。
         event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_damage_number", new RVP_DamageNumberOverlay());
+        // 以下原为 RenderGuiOverlayEvent.Post(CHAT_PANEL) 绘制：统一迁到本体 HUD 同款
+        // 「CHAT_PANEL 之下」图层，半透明聊天框叠上时和本体字体一起透出并被正常压暗。
+        event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_gps", new IGuiOverlay() {
+            @Override
+            public void render(net.minecraftforge.client.gui.overlay.ForgeGui gui, net.minecraft.client.gui.GuiGraphics graphics,
+                               float partialTick, int screenWidth, int screenHeight) {
+                RVP_GPSOverlay.render(graphics);
+            }
+        });
+        event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_gunner", new IGuiOverlay() {
+            @Override
+            public void render(net.minecraftforge.client.gui.overlay.ForgeGui gui, net.minecraft.client.gui.GuiGraphics graphics,
+                               float partialTick, int screenWidth, int screenHeight) {
+                RVP_GunnerOverlay.render(graphics);
+            }
+        });
+        event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_msl", new IGuiOverlay() {
+            @Override
+            public void render(net.minecraftforge.client.gui.overlay.ForgeGui gui, net.minecraft.client.gui.GuiGraphics graphics,
+                               float partialTick, int screenWidth, int screenHeight) {
+                RVP_MslOverlay.render(graphics, partialTick);
+            }
+        });
+        event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_rocket_ccip", new IGuiOverlay() {
+            @Override
+            public void render(net.minecraftforge.client.gui.overlay.ForgeGui gui, net.minecraft.client.gui.GuiGraphics graphics,
+                               float partialTick, int screenWidth, int screenHeight) {
+                RVP_RocketCcipOverlay.render(graphics);
+            }
+        });
+        event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_arm", new IGuiOverlay() {
+            @Override
+            public void render(net.minecraftforge.client.gui.overlay.ForgeGui gui, net.minecraft.client.gui.GuiGraphics graphics,
+                               float partialTick, int screenWidth, int screenHeight) {
+                RVP_ArmOverlay.render(graphics, partialTick);
+            }
+        });
+        event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_targeting_pod_marker", new IGuiOverlay() {
+            @Override
+            public void render(net.minecraftforge.client.gui.overlay.ForgeGui gui, net.minecraft.client.gui.GuiGraphics graphics,
+                               float partialTick, int screenWidth, int screenHeight) {
+                org.ywzj.rvp.client.render.RVP_TargetingPodMarkerRenderer.renderOverlay(graphics);
+            }
+        });
+        event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_hmd", new IGuiOverlay() {
+            @Override
+            public void render(net.minecraftforge.client.gui.overlay.ForgeGui gui, net.minecraft.client.gui.GuiGraphics graphics,
+                               float partialTick, int screenWidth, int screenHeight) {
+                if (org.ywzj.rvp.client.state.RVP_ClientHmdState.getInstance().isHmdMode()) {
+                    RVP_HmdOverlay.render(graphics);
+                }
+            }
+        });
+        event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_saclos_hint", new IGuiOverlay() {
+            @Override
+            public void render(net.minecraftforge.client.gui.overlay.ForgeGui gui, net.minecraft.client.gui.GuiGraphics graphics,
+                               float partialTick, int screenWidth, int screenHeight) {
+                RVP_SaclosOverlay.render(graphics);
+            }
+        });
+        // 人在回路电视 HUD：走本体同款 CHAT_PANEL 之下图层；注册在最后保持 HITL 画面在最上层。
+        event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_tv_missile", new RVP_TVMissileOverlay());
     }
 }

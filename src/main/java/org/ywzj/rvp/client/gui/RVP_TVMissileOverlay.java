@@ -5,18 +5,17 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.client.event.RenderGuiOverlayEvent;
-import net.minecraftforge.client.gui.overlay.VanillaGuiOverlay;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.common.Mod;
-import org.ywzj.rvp.RVP_MOD;
+import net.minecraftforge.client.gui.overlay.ForgeGui;
+import net.minecraftforge.client.gui.overlay.IGuiOverlay;
 import org.ywzj.rvp.client.state.RVP_ClientHitlState;
 import org.ywzj.rvp.client.state.RVP_ClientRemoteAmmoState;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 
-@Mod.EventBusSubscriber(value = Dist.CLIENT, modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
-public class RVP_TVMissileOverlay {
+/**
+ * 人在回路电视 HUD。与本体载具 HUD 一样注册在 {@code CHAT_PANEL} 之下，
+ * 半透明聊天框叠上来时仍按同一图层透出，不再被挡在对话框后面。
+ */
+public class RVP_TVMissileOverlay implements IGuiOverlay {
 
     /** 仅作视觉阻尼，不回写实际舵量。 */
     private static final RVP_HitlCursorMotion cursor = new RVP_HitlCursorMotion();
@@ -29,13 +28,8 @@ public class RVP_TVMissileOverlay {
     private static float lastPitch;
     private static float lastRateDegPerSec;
 
-    @SubscribeEvent
-    public static void onRenderOverlay(RenderGuiOverlayEvent.Post event) {
-        // RenderGuiOverlayEvent.Post 每帧对每个已注册 overlay 各触发一次（40+ 次），
-        // 只锚定每帧必渲染的原生 CHAT_PANEL 层执行一次，其余事件忽略（修复多弹/多实体时帧率腰斩）
-        if (event.getOverlay().id() != VanillaGuiOverlay.CHAT_PANEL.id()) {
-            return;
-        }
+    @Override
+    public void render(ForgeGui gui, GuiGraphics gg, float partialTick, int screenWidth, int screenHeight) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.options.hideGui || mc.player == null || mc.level == null) {
             reset();
@@ -44,7 +38,7 @@ public class RVP_TVMissileOverlay {
         // 调用独立终结提示；此时导弹控制与远程区块已释放，仍可完整覆盖返回母车的底层画面。
         if (RVP_ClientHitlState.isNoImage(mc.level)) {
             reset();
-            RVP_HitlVideoLossRenderer.drawCaption(event.getGuiGraphics(), mc.font);
+            RVP_HitlVideoLossRenderer.drawCaption(gg, mc.font);
             return;
         }
         if (!RVP_ClientHitlState.isActive()) {
@@ -61,7 +55,6 @@ public class RVP_TVMissileOverlay {
         if (lastMissileId != missile.getId()) { reset(); lastMissileId = missile.getId(); }
         updateRate(missile);
 
-        GuiGraphics gg = event.getGuiGraphics();
         Font font = mc.font;
         // 雪花背景已由最底层独立 overlay 绘制，此处只绘制相机仪表与失图文字。
         // 调用固定居中的装饰层；与可动准星、已有制导和离轴角限制相互独立。
@@ -93,7 +86,7 @@ public class RVP_TVMissileOverlay {
         // 调用统一缩放的紧凑侧栏；飞行时间复用生成包飞行刻与客户端后续刻的既有视觉时钟。
         RVP_HitlInstrumentRenderer.draw(gg, font, speedKmh, missile.getY(), range,
                 missile.getDisplayFlightTickCount() / 20.0, lastRateDegPerSec, video, control, track,
-                airburst);
+                airburst, RVP_ClientHitlState.getHitlZoom());
         boolean airburstNearby = airburst && hasNonSelfEntityWithin(mc, missile, 10.0D);
         RVP_HitlInstrumentRenderer.drawActionHints(gg, font,
                 RVP_ClientHitlState.isDesignateMode(), airburst,
@@ -101,6 +94,8 @@ public class RVP_TVMissileOverlay {
         if (RVP_ClientHitlState.isHitlLinkBlocked()) RVP_HitlVideoLossRenderer.drawCaption(gg, font);
         if (RVP_ClientHitlState.isMouseSteering() && !RVP_ClientHitlState.isHitlLinkBlocked()) drawSteeringCursor(gg);
         else { cursor.reset(); lastFrameNanos = 0; }
+        // 指令制导的动态瞄准/目标斜十字并回同一 HUD 层，和仪表一起走 CHAT_PANEL 之下的绘制顺序。
+        RVP_HitlDesignateOverlay.render(gg);
     }
 
     /** 指令线模式的视觉游标跟随既有舵量，并以临界阻尼跟随其原有回中过程。 */

@@ -106,6 +106,20 @@ public final class RVP_ClientBoneModuleState {
         if (event.getLevel().isClientSide()) clear();
     }
 
+    /** 该载具是否存在任意一个已失效的指定模块。 */
+    public static boolean hasInactiveModule(int entityId, BoneModuleType type) {
+        Map<String, Set<BoneModuleType>> boneMap = INACTIVE_MODULES.get(entityId);
+        if (boneMap == null || type == null) {
+            return false;
+        }
+        for (Set<BoneModuleType> types : boneMap.values()) {
+            if (types != null && types.contains(type)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** 骨块的某模块是否仍处于激活（未被消耗）。 */
     public static boolean isModuleActive(int entityId, String boneName, BoneModuleType type) {
         if (entityId == replayEntityId) return !replayInactive.getOrDefault(boneName, Set.of()).contains(type);
