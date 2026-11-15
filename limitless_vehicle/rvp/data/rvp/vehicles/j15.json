@@ -57,6 +57,7 @@
     ]
   },
   "landing_gear_part_id": "landing_gear",
+  "airbrake_part_id": "airbrake",
   "rvp_auto_landing_gear": true,
   "max_health": 500,
   "nctr_name": "S27",
@@ -76,8 +77,8 @@
     "sound_distance": 8
   },
   "energy_info": {
-    "energy_capacity": 0.25,
-    "energy_consumption_per_tick": 1e-05
+    "energy_capacity": 3200,
+    "energy_consumption_per_tick": 0.041666667
   },
   "defense_stats": {
     "damage_threshold": 0.1,
@@ -1021,6 +1022,14 @@
       "type": "ywzj_vehicle:landing_gear",
       "structure_bone": "landing_gear",
       "is_seat": false
+    },
+    {
+      "id": "airbrake",
+      "name": "airbrake",
+      "type": "ywzj_vehicle:airbrake",
+      "structure_bone": "wing_back",
+      "is_seat": false,
+      "drag_k": 2
     },
     {
       "id": "decoy_flare",

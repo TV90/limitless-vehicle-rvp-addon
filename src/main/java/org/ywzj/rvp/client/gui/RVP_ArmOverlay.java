@@ -12,6 +12,7 @@ import org.ywzj.vehicle.custom.part.data.RadarUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.RenderHelper;
 import org.ywzj.vehicle.util.VectorUtil;
+import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
 
@@ -100,6 +101,8 @@ public class RVP_ArmOverlay {
     /**
      * 解析锁定辐射源的雷达型号（radar_type，载具 JSON 雷达单元配置）。
      * 客户端：vehicleId → 实体 → 部件表按 radarIndex 找 {@link RadarUnit} → {@link RadarUnitData}。
+     * 超视距目标不在 ClientLevel 里，而是本体广播克隆（{@link LocalVehiclePlayer#serverEntities}），
+     * 与雷达/ARM 预选扫描同源，这里一并回退，否则 BVR 锁定不显示型号。
      * 解析失败 / 未配置 / ECM 伪脉冲（radarIndex=-1，无真实雷达）返回空串（不渲染文案）。
      */
     private static String resolveRadarType(int vehicleId, int radarIndex) {
@@ -108,6 +111,11 @@ public class RVP_ArmOverlay {
         }
         Entity entity = Minecraft.getInstance().level == null
                 ? null : Minecraft.getInstance().level.getEntity(vehicleId);
+        if (!(entity instanceof AbstractVehicle)) {
+            LocalVehiclePlayer.ServerEntity serverEntity = LocalVehiclePlayer.instance == null
+                    ? null : LocalVehiclePlayer.instance.serverEntities.get(vehicleId);
+            entity = serverEntity == null ? null : serverEntity.entity;
+        }
         if (!(entity instanceof AbstractVehicle vehicle)) {
             return "";
         }

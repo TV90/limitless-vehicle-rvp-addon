@@ -33,8 +33,8 @@
     "sound_distance": 30
   },
   "energy_info": {
-    "energy_capacity": 250,
-    "energy_consumption_per_tick": 0.0005
+    "energy_capacity": 1250,
+    "energy_consumption_per_tick": 0.0086805556
   },
   "physics_info": {
     "mass": 8700000,

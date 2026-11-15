@@ -60,9 +60,10 @@
     "guidance_target_distance_range": "[[1,inf]]"
   },
   "effects_data": {
-    "trajectory_particle": "minecraft:campfire_signal_smoke",
+    "trajectory_particle": "none",
     "impact_particle": "minecraft:block",
-    "explosion_particle": "minecraft:explosion_emitter"
+    "explosion_particle": "minecraft:explosion_emitter",
+    "missile_native_trail_enabled": false
   },
   "detonate_data": {
     "explosion_data": {

@@ -26,8 +26,8 @@
     "sound_distance": 7
   },
   "energy_info": {
-    "energy_capacity": 1,
-    "energy_consumption_per_tick": 1e-05
+    "energy_capacity": 800,
+    "energy_consumption_per_tick": 0.001944444
   },
   "physics_info": {
     "suspension_response": 0.25,

@@ -25,8 +25,8 @@
     "sound_distance": 7
   },
   "energy_info": {
-    "energy_capacity": 1,
-    "energy_consumption_per_tick": 1e-05
+    "energy_capacity": 1250,
+    "energy_consumption_per_tick": 0.003055556
   },
   "physics_info": {
     "destroy_explosion_velocity": 0.8,
@@ -49,6 +49,7 @@
     "turret_barrel": 20
   },
   "hitbox_damage_factor": {
+    "fcs": 0.6,
     "ERA9": 0.3,
     "ERA8": 0.3,
     "ERA7": 0.3,
@@ -63,7 +64,7 @@
     "Upper_front": 0.55,
     "Lower_front": 0.8,
     "Engine": 1.2,
-    "turretring": 0.9,
+    "turretring": 0.6,
     "turret": 0.6,
     "turret_barrel": 0.6,
     "missile_barrel": 1.3,
@@ -81,10 +82,30 @@
     "track_roller12": 0.4
   },
   "hitbox_explosion_damage_factor": {
+    "fcs": 2.0,
     "missile_barrel": 1.5,
     "turret": 1.5
   },
   "bone_modules": {
+    "smoke_barrel_l": {
+      "modules": [
+        "countermeasure"
+      ],
+      "min_damage": 20
+    },
+    "smoke_barrel_r": {
+      "modules": [
+        "countermeasure"
+      ],
+      "min_damage": 20
+    },
+    "fcs": {
+      "modules": [
+        "fcs"
+      ],
+      "min_damage": 100,
+      "smoke": false
+    },
     "turretring": {
       "modules": [
         "turret_traverse"
@@ -301,6 +322,30 @@
       }
     },
     {
+      "id": "turret_smoke_grenade_l",
+      "name": "part.ywzj_vehicle.turret_smoke_grenade",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "smoke_barrel_l",
+      "is_seat": false,
+      "base": "turret",
+      "rot_info": {
+        "x_rot_speed": 0,
+        "y_rot_speed": 0
+      }
+    },
+    {
+      "id": "turret_smoke_grenade_r",
+      "name": "part.ywzj_vehicle.turret_smoke_grenade",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "smoke_barrel_r",
+      "is_seat": false,
+      "base": "turret",
+      "rot_info": {
+        "x_rot_speed": 0,
+        "y_rot_speed": 0
+      }
+    },
+    {
       "id": "track",
       "name": "track",
       "type": "ywzj_vehicle:track",
@@ -491,9 +536,48 @@
       "max_compression": 0.2,
       "max_extension": 0.15,
       "max_droop": 0.15
+    },
+    {
+      "id": "fcs",
+      "name": "Optics",
+      "type": "ywzj_vehicle:generic",
+      "structure_bone": "fcs",
+      "is_seat": false
     }
   ],
+  "countermeasure": {
+    "smoke": {
+      "total": 4,
+      "per_round": 2,
+      "burst_rounds": 2,
+      "launch_interval_tick": 4,
+      "reload_tick": 250,
+      "smoke": {
+        "lifetime_tick": 100,
+        "radius": 10.0,
+        "speed": 1.0,
+        "gravity": 0.01,
+        "explode_tick": 10,
+        "rise_speed": 0.0,
+        "opacity": 1.0,
+        "drift": 0.0
+      },
+      "decoy": {
+        "glow_color": 16777215,
+        "halo_scale": 4.0
+      },
+      "launcher_parts": [
+        "turret_smoke_grenade_l",
+        "turret_smoke_grenade_r"
+      ],
+      "bone_modules": [
+        "smoke_barrel_l",
+        "smoke_barrel_r"
+      ]
+    }
+  },
   "hitbox_display_name": {
+    "fcs": "Optics",
     "vehicle_body": "Hull",
     "Upper_front": "Upper Glacis",
     "Lower_front": "Lower Glacis",
@@ -526,6 +610,7 @@
     "track_roller12": "Left Road Wheel 6"
   },
   "hitbox_display_name_CN": {
+    "fcs": "观瞄设备",
     "vehicle_body": "车体",
     "Upper_front": "首上",
     "Lower_front": "首下",

@@ -24,8 +24,8 @@
     "sound_distance": 7
   },
   "energy_info": {
-    "energy_capacity": 1,
-    "energy_consumption_per_tick": 1e-05
+    "energy_capacity": 1525,
+    "energy_consumption_per_tick": 0.004166667
   },
   "physics_info": {
     "suspension_response": 0.25,
@@ -46,6 +46,7 @@
     "turret_smoke_grenade_r_barrel": 20
   },
   "hitbox_damage_factor": {
+    "fcs": 0.43,
     "turretring": 0.9,
     "Engine": 1.3,
     "Upper_front": 0.6,
@@ -84,6 +85,7 @@
     "track_roller14": 0.4
   },
   "hitbox_explosion_damage_factor": {
+    "fcs": 2.0,
     "commander_machine_gun": 2.0,
     "commander_machine_gun_barrel": 2.0,
 
@@ -91,6 +93,13 @@
     "turret_top": 1.5
   },
   "bone_modules": {
+    "fcs": {
+      "modules": [
+        "fcs"
+      ],
+      "min_damage": 100,
+      "smoke": false
+    },
     "turretring": {
       "modules": [
         "turret_traverse"
@@ -804,9 +813,17 @@
       "type": "ywzj_vehicle:generic",
       "structure_bone": "turretring",
       "is_seat": false
+    },
+    {
+      "id": "fcs",
+      "name": "Optics",
+      "type": "ywzj_vehicle:generic",
+      "structure_bone": "fcs",
+      "is_seat": false
     }
   ],
   "hitbox_display_name": {
+    "fcs": "Optics",
     "turretring": "Turret Ring",
     "Engine": "Engine Bay",
     "Upper_front": "Upper Glacis",
@@ -844,6 +861,7 @@
     "track_roller14": "Left Road Wheel 7"
   },
   "hitbox_display_name_CN": {
+    "fcs": "观瞄设备",
     "turretring": "炮塔座圈",
     "Engine": "发动机舱",
     "Upper_front": "首上",

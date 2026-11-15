@@ -143,16 +143,10 @@
             "inherit_parent_velocity": true,
             "inherit_vehicle_velocity": false,
             "velocity_scale": 0.45,
-            "payloads_velocity": [
-              0.0,
-              -4.0,
-              0.0
-            ],
-            "payloads_velocity_factor": 0.15,
             "spread": {
               "mode": "canister",
               "canister_type": 1,
-              "canister_diff": 300.0,
+              "canister_diff": 25.0,
               "canister_distribution": "uniform",
               "canister_shape": "circle"
             }

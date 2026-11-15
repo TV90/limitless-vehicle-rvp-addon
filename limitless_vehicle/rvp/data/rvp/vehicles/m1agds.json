@@ -27,8 +27,8 @@
     "sound_distance": 7
   },
   "energy_info": {
-    "energy_capacity": 1,
-    "energy_consumption_per_tick": 1e-05
+    "energy_capacity": 1525,
+    "energy_consumption_per_tick": 0.004166667
   },
   "physics_info": {
     "suspension_response": 0.25,
@@ -48,6 +48,7 @@
     "turret_smoke_grenade_r_barrel": 20
   },
   "hitbox_damage_factor": {
+    "fcs": 0.4,
     "vehicle_body": 1.0,
     "track": 0.5,
     "Engine": 1.3,
@@ -83,11 +84,13 @@
     "track_roller14": 0.4
   },
   "hitbox_explosion_damage_factor": {
+    "fcs": 2.0,
     "Periscope": 1.5,
     "missile_barrel": 1.5,
     "turret_top": 1.5
   },
   "hitbox_display_name": {
+    "fcs": "Optics",
     "vehicle_body": "Hull Side",
     "track": "Track",
     "Engine": "Engine Bay",
@@ -123,6 +126,7 @@
     "track_roller14": "Left Road Wheel 7"
   },
   "hitbox_display_name_CN": {
+    "fcs": "观瞄设备",
     "vehicle_body": "车体侧面",
     "track": "履带",
     "Engine": "发动机舱",
@@ -158,6 +162,13 @@
     "track_roller14": "左七负重轮"
   },
   "bone_modules": {
+    "fcs": {
+      "modules": [
+        "fcs"
+      ],
+      "min_damage": 100,
+      "smoke": false
+    },
     "turretring": {
       "modules": [
         "turret_traverse"
@@ -711,6 +722,13 @@
       "max_compression": 0.2,
       "max_extension": 0.15,
       "max_droop": 0.15
+    },
+    {
+      "id": "fcs",
+      "name": "Optics",
+      "type": "ywzj_vehicle:generic",
+      "structure_bone": "fcs",
+      "is_seat": false
     }
   ]
 }

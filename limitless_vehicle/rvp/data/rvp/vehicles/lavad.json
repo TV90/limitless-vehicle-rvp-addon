@@ -33,8 +33,8 @@
     "sound_distance": 3
   },
   "energy_info": {
-    "energy_capacity": 1,
-    "energy_consumption_per_tick": 1e-05
+    "energy_capacity": 230,
+    "energy_consumption_per_tick": 0.000555556
   },
   "physics_info": {
     "destroy_explosion_velocity": 0.8,
@@ -55,6 +55,7 @@
     "turret_smoke_grenade_r_barrel": 20
   },
   "hitbox_damage_factor": {
+    "fcs": 0.8,
     "vehicle_body": 1.0,
     "lower_front": 0.8,
     "upper_front": 0.6,
@@ -78,11 +79,13 @@
     "turret_smoke_grenade_r_barrel": 0.4
   },
   "hitbox_explosion_damage_factor": {
+    "fcs": 2.0,
     "missile_barrel": 1.5,
     "rocket_barrel": 1.5,
     "turret": 1.5
   },
   "hitbox_display_name": {
+    "fcs": "Optics",
     "vehicle_body": "Hull",
     "lower_front": "Lower Glacis",
     "upper_front": "Upper Glacis",
@@ -416,6 +419,13 @@
         "x_rot_speed": 0,
         "y_rot_speed": 0
       }
+    },
+    {
+      "id": "fcs",
+      "name": "Optics",
+      "type": "ywzj_vehicle:generic",
+      "structure_bone": "fcs",
+      "is_seat": false
     }
   ],
   "ecm_active": {
@@ -425,6 +435,13 @@
     "vehicle_jam_radius": 0
   },
   "bone_modules": {
+    "fcs": {
+      "modules": [
+        "fcs"
+      ],
+      "min_damage": 100,
+      "smoke": false
+    },
     "turret": {
       "modules": ["turret_traverse"],
       "turret_traverse": {
@@ -491,6 +508,7 @@
     }
   },
   "hitbox_display_name_CN": {
+    "fcs": "观瞄设备",
     "vehicle_body": "车体",
     "lower_front": "首下",
     "upper_front": "首上",

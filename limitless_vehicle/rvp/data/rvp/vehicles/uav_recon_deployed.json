@@ -77,7 +77,8 @@
       "zoom_max": 8,
       "weapons": [
         "rvp:suav_targeting_pod_entity",
-        "rvp:suav_targeting_pod_block"
+        "rvp:suav_targeting_pod_block",
+        "rvp:call_fire_strike_cn"
       ]
     }
   ],

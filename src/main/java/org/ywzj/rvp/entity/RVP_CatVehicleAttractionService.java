@@ -16,16 +16,19 @@ import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.entity.vehicle.FixedWingVehicle;
 import org.ywzj.vehicle.entity.vehicle.RotaryWingVehicle;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 /**
  * [RVP] 原版猫被地面载具吸引的行为彩蛋：猫在 100 格内探测到地面载具（含停放的）时，
  * 会主动跑向车辆——车辆行驶中沿车头前方追跑，车辆停着则凑到车头正前方站立。
  *
- * <p>实现为无状态反向查询：载具数量远少于生物，故每台地面载具每 {@code #SCAN_INTERVAL_TICK}
- * 查一次周围 {@code #RANGE} 格内的 {@link Cat}，直接刷新它们的导航目标
- * （{@code getNavigation().moveTo}）——不注入 AI Goal、不保存任何状态，猫跑出范围或
- * 车辆消失后原版 AI（游荡/怕人）自动接管，零清理逻辑。仅服务端运行。</p>
+ * <p>每次"遇到车"是否触发吸引按 {@code #TRIGGER_CHANCE} 概率判定：命中后只要猫还在范围内就
+ * 持续追车；未命中则间隔 {@code #RETRY_TICKS} 后才重新判定（避免 10 tick 扫描把 30% 概率
+ * 滚成每秒近乎必中）。判定结果按猫 UUID 缓存在 {@code #INTERESTS}，所有条目带过期 tick，
+ * 猫离开范围/死亡后自动失效并被顺带清理。仅服务端运行。</p>
  */
 @Mod.EventBusSubscriber(modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class RVP_CatVehicleAttractionService {
@@ -44,6 +47,25 @@ public final class RVP_CatVehicleAttractionService {
     private static final double AHEAD_MAX = 25.0D;
     /** 静止车：猫站立点距车头包围盒的间隙（格）。 */
     private static final double PARKED_FRONT_GAP = 1.2D;
+    /** 彩蛋触发概率：每次遇到车只有 30% 的猫会被吸引。 */
+    private static final float TRIGGER_CHANCE = 0.30F;
+    /** 未触发时的重新判定间隔（tick）：30 秒。 */
+    private static final long RETRY_TICKS = 600L;
+    /** 已触发状态的保鲜期（tick）：猫在范围内会每轮刷新，离开 10 秒后失效。 */
+    private static final long ATTRACT_REFRESH_TICKS = 200L;
+
+    /** 每只猫的吸引判定状态（按 UUID；过期条目在扫描时清理，不长期驻留）。 */
+    private static final Map<UUID, InterestState> INTERESTS = new HashMap<>();
+
+    private static final class InterestState {
+        final boolean attracted;
+        long expireTick;
+
+        private InterestState(boolean attracted, long expireTick) {
+            this.attracted = attracted;
+            this.expireTick = expireTick;
+        }
+    }
 
     private RVP_CatVehicleAttractionService() {
     }
@@ -57,6 +79,8 @@ public final class RVP_CatVehicleAttractionService {
         if (server == null || server.getTickCount() % SCAN_INTERVAL_TICK != 0) {
             return;
         }
+        long now = server.getTickCount();
+        INTERESTS.values().removeIf(state -> state.expireTick < now);
         for (ServerLevel level : server.getAllLevels()) {
             for (Entity entity : level.getEntities().getAll()) {
                 if (!(entity instanceof AbstractVehicle vehicle) || isAirVehicle(vehicle)) {
@@ -71,6 +95,17 @@ public final class RVP_CatVehicleAttractionService {
                 Vec3 motion = vehicle.getDeltaMovement();
                 double speedKph = Math.hypot(motion.x, motion.z) * 20.0D * 3.6D;
                 for (Cat cat : cats) {
+                    InterestState state = INTERESTS.get(cat.getUUID());
+                    if (state == null) {
+                        boolean attracted = cat.getRandom().nextFloat() < TRIGGER_CHANCE;
+                        state = new InterestState(attracted,
+                                now + (attracted ? ATTRACT_REFRESH_TICKS : RETRY_TICKS));
+                        INTERESTS.put(cat.getUUID(), state);
+                    }
+                    if (!state.attracted) {
+                        continue;
+                    }
+                    state.expireTick = now + ATTRACT_REFRESH_TICKS;
                     Vec3 target = speedKph >= SPEED_KPH_MIN
                             ? movingFrontPoint(vehicle, cat, motion)
                             : parkedFrontPoint(vehicle, cat);

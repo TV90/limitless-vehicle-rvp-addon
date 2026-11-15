@@ -33,8 +33,8 @@
     "sound_distance": 3
   },
   "energy_info": {
-    "energy_capacity": 1,
-    "energy_consumption_per_tick": 1e-05
+    "energy_capacity": 300,
+    "energy_consumption_per_tick": 0.000763889
   },
   "physics_info": {
     "mass": 20000,
@@ -53,6 +53,7 @@
     "turret_smoke_grenade_r_barrel": 20
   },
   "hitbox_damage_factor": {
+    "fcs": 0.6,
     "vehicle_body": 1.0,
     "front": 0.5,
     "driver": 0.9,
@@ -74,6 +75,7 @@
     "wheel7": 0.4
   },
   "hitbox_explosion_damage_factor": {
+    "fcs": 2.0,
     "missile_barrel": 1.5,
     "turret": 1.5
   },
@@ -363,9 +365,23 @@
       "max_compression": 0.4,
       "max_extension": 0.22,
       "max_droop": 0.08
+    },
+    {
+      "id": "fcs",
+      "name": "Optics",
+      "type": "ywzj_vehicle:generic",
+      "structure_bone": "fcs",
+      "is_seat": false
     }
   ],
   "bone_modules": {
+    "fcs": {
+      "modules": [
+        "fcs"
+      ],
+      "min_damage": 100,
+      "smoke": false
+    },
     "turret": {
       "modules": ["turret_traverse"],
       "turret_traverse": {
@@ -439,6 +455,7 @@
     }
   },
   "hitbox_display_name": {
+    "fcs": "Optics",
     "vehicle_body": "Hull",
     "front": "Front Hull",
     "driver": "Driver Compartment",
@@ -460,6 +477,7 @@
     "wheel7": "Rear-Right Wheel"
   },
   "hitbox_display_name_CN": {
+    "fcs": "观瞄设备",
     "vehicle_body": "车体",
     "front": "车首",
     "driver": "驾驶舱",

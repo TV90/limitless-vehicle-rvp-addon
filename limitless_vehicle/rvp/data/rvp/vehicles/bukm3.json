@@ -28,8 +28,8 @@
     "third_person_lock_to_operator_aim": true
   },
   "energy_info": {
-    "energy_capacity": 1,
-    "energy_consumption_per_tick": 1e-05
+    "energy_capacity": 300,
+    "energy_consumption_per_tick": 0.000763889
   },
   "physics_info": {
     "suspension_response": 0.25,
@@ -46,6 +46,7 @@
     "smoke_barrel": 20
   },
   "hitbox_damage_factor": {
+    "fcs": 0.9,
     "vehicle_body": 1.0,
     "Upper_front": 0.8,
     "Lower_front": 0.9,
@@ -68,6 +69,7 @@
     "track_roller16": 0.4
   },
   "hitbox_explosion_damage_factor": {
+    "fcs": 2.0,
     "missile_barrel": 1.5,
     "turret": 1.5
   },
@@ -419,9 +421,23 @@
       "max_compression": 0.2,
       "max_extension": 0.15,
       "max_droop": 0.1
+    },
+    {
+      "id": "fcs",
+      "name": "Optics",
+      "type": "ywzj_vehicle:generic",
+      "structure_bone": "fcs",
+      "is_seat": false
     }
   ],
   "bone_modules": {
+    "fcs": {
+      "modules": [
+        "fcs"
+      ],
+      "min_damage": 100,
+      "smoke": false
+    },
     "turret": {
       "modules": ["turret_traverse"],
       "turret_traverse": {
@@ -469,6 +485,7 @@
     }
   },
   "hitbox_display_name": {
+    "fcs": "Optics",
     "vehicle_body": "Hull",
     "Upper_front": "Upper Glacis",
     "Lower_front": "Lower Glacis",
@@ -491,6 +508,7 @@
     "track_roller16": "Left Road Wheel 7"
   },
   "hitbox_display_name_CN": {
+    "fcs": "观瞄设备",
     "vehicle_body": "车体",
     "Upper_front": "首上",
     "Lower_front": "首下",

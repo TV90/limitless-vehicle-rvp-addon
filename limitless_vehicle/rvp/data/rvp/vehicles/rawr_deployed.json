@@ -22,7 +22,7 @@
   },
   "energy_info": {
     "energy_capacity": 1,
-    "energy_consumption_per_tick": 1e-05
+    "energy_consumption_per_tick": 2.7778e-05
   },
   "defense_stats": {
     "damage_threshold": 0

@@ -24,8 +24,8 @@
     "sound_distance": 7
   },
   "energy_info": {
-    "energy_capacity": 1,
-    "energy_consumption_per_tick": 1e-05
+    "energy_capacity": 1525,
+    "energy_consumption_per_tick": 0.004166667
   },
   "physics_info": {
     "suspension_response": 0.25,
@@ -47,6 +47,7 @@
     "turret_smoke_grenade_r_barrel": 20
   },
   "hitbox_damage_factor": {
+    "fcs": 0.43,
     "turretring": 0.9,
     "vehicle_body": 1.0,
     "track": 0.5,
@@ -88,6 +89,7 @@
     "track_roller14": 0.4
   },
   "hitbox_explosion_damage_factor": {
+    "fcs": 2.0,
     "commander_machine_gun": 2.0,
     "commander_machine_gun_barrel": 2.0,
 
@@ -95,6 +97,7 @@
     "turret_top": 1.5
   },
   "hitbox_display_name": {
+    "fcs": "Optics",
     "turretring": "Turret Ring",
     "vehicle_body": "Hull Side",
     "track": "Track",
@@ -142,6 +145,13 @@
     "vehicle_jam_radius": 0
   },
   "bone_modules": {
+    "fcs": {
+      "modules": [
+        "fcs"
+      ],
+      "min_damage": 100,
+      "smoke": false
+    },
     "turretring": {
       "modules": [
         "turret_traverse"
@@ -736,6 +746,13 @@
       "type": "ywzj_vehicle:generic",
       "structure_bone": "turretring",
       "is_seat": false
+    },
+    {
+      "id": "fcs",
+      "name": "Optics",
+      "type": "ywzj_vehicle:generic",
+      "structure_bone": "fcs",
+      "is_seat": false
     }
   ],
   "countermeasure": {
@@ -770,6 +787,7 @@
     }
   },
   "hitbox_display_name_CN": {
+    "fcs": "观瞄设备",
     "turretring": "炮塔座圈",
     "vehicle_body": "车体侧面",
     "track": "履带",
