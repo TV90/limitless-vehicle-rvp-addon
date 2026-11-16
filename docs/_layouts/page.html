@@ -1,0 +1,35 @@
+---
+layout: default
+---
+<div class="wiki-shell">
+  <aside class="wiki-sidebar">
+    <div class="sidebar-brand">RVP <span>WIKI</span></div>
+    <nav class="sidebar-nav">
+      <div class="sidebar-group">概览</div>
+      <a href="{{ '/index.html' | relative_url }}" class="{% if page.url == '/' or page.url == '/index.html' %}active{% endif %}">Wiki 首页</a>
+      <div class="sidebar-group">玩法</div>
+      <a href="{{ '/wiki/weapons.html' | relative_url }}" class="{% if page.url == '/wiki/weapons.html' %}active{% endif %}">武器系统</a>
+      <a href="{{ '/wiki/equipment.html' | relative_url }}" class="{% if page.url == '/wiki/equipment.html' %}active{% endif %}">辅助设备</a>
+      <a href="{{ '/wiki/damage.html' | relative_url }}" class="{% if page.url == '/wiki/damage.html' %}active{% endif %}">模块化损伤</a>
+      <a href="{{ '/wiki/uav.html' | relative_url }}" class="{% if page.url == '/wiki/uav.html' %}active{% endif %}">车载无人机</a>
+      <a href="{{ '/wiki/tactical-map.html' | relative_url }}" class="{% if page.url == '/wiki/tactical-map.html' %}active{% endif %}">战术地图</a>
+      <a href="{{ '/wiki/interface.html' | relative_url }}" class="{% if page.url == '/wiki/interface.html' %}active{% endif %}">界面与操作</a>
+      <a href="{{ '/wiki/ai-crew.html' | relative_url }}" class="{% if page.url == '/wiki/ai-crew.html' %}active{% endif %}">AI 乘员</a>
+      <div class="sidebar-group">参考</div>
+      <a href="{{ '/wiki/vehicles.html' | relative_url }}" class="{% if page.url == '/wiki/vehicles.html' %}active{% endif %}">载具</a>
+      <a href="{{ '/wiki/config.html' | relative_url }}" class="{% if page.url == '/wiki/config.html' %}active{% endif %}">配置与许可</a>
+    </nav>
+    <div class="sidebar-footer">
+      <a href="https://github.com/TV90/limitless-vehicle-rvp-addon/releases/tag/1.0.0_preview_0.6.2.1">下载 / Release ↗</a>
+    </div>
+  </aside>
+  <article class="wiki-content">
+    <header class="wiki-header">
+      <div class="wiki-kicker">Minecraft 1.20.1 · Forge · Limitless Vehicle</div>
+      <h1 class="wiki-title">{{ page.title | escape }}</h1>
+    </header>
+    <div class="wiki-body">
+      {{ content }}
+    </div>
+  </article>
+</div>
