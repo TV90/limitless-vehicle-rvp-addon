@@ -8,11 +8,11 @@
 
 当前版本 / Current version: `1.0.0_preview_0.6.2.1`
 
-[中文说明](README_ZH.md) | [English](README_EN.md) | [Wiki](https://tv90.github.io/limitless-vehicle-rvp-addon/) | [Download](https://github.com/TV90/limitless-vehicle-rvp-addon/releases/tag/1.0.0_preview_0.6.2.1)
+[中文说明](README_ZH.md) | [English](README_EN.md) | [Wiki](https://dtc10eeee.github.io/rvp-wiki/) | [Download](https://github.com/TV90/limitless-vehicle-rvp-addon/releases/tag/1.0.0_preview_0.6.2.1)
 
 ## Quick Links
 
-- [Wiki / 玩法百科](https://tv90.github.io/limitless-vehicle-rvp-addon/)
+- [Wiki / 玩法百科](https://dtc10eeee.github.io/rvp-wiki/)
 - [Release / 下载与安装](https://github.com/TV90/limitless-vehicle-rvp-addon/releases/tag/1.0.0_preview_0.6.2.1)
 - [中文 README](README_ZH.md)
 - [English README](README_EN.md)

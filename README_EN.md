@@ -6,7 +6,7 @@
 
 Current version: `1.0.0_preview_0.6.2.1`. Requires Limitless Vehicle `0.6.2.1`.
 
-[中文](README_ZH.md) | [Wiki](https://tv90.github.io/limitless-vehicle-rvp-addon/) | [Download](https://github.com/TV90/limitless-vehicle-rvp-addon/releases/tag/1.0.0_preview_0.6.2.1)
+[中文](README_ZH.md) | [Wiki](https://dtc10eeee.github.io/rvp-wiki/) | [Download](https://github.com/TV90/limitless-vehicle-rvp-addon/releases/tag/1.0.0_preview_0.6.2.1)
 
 ## Highlights
 
@@ -17,7 +17,7 @@ Current version: `1.0.0_preview_0.6.2.1`. Requires Limitless Vehicle `0.6.2.1`.
 - **Tactical map**: GPS designation, radar target list, artillery map, and mini artillery map.
 - **Interface and AI crew**: man-in-the-loop HUD, HMD, focus lock, warnings, CCIP, equipment panel, and gunner generator.
 
-Full weapon, equipment, damage, UAV, tactical-map, interface, and vehicle documentation is in the [Wiki](https://tv90.github.io/limitless-vehicle-rvp-addon/).
+Full weapon, equipment, damage, UAV, tactical-map, interface, and vehicle documentation is in the [Wiki](https://dtc10eeee.github.io/rvp-wiki/).
 
 ## Gallery
 
@@ -50,7 +50,7 @@ Client and server must use the same versions. To update, replace the RVP jar; wh
 
 The main pack contains 39 controllable vehicles: 6 tanks, 3 IFVs, 7 air-defense vehicles, 11 fighters, 4 attack helicopters, 4 UAVs, 2 destroyers, and 2 other vehicles.
 
-The F-14A and F-14D support variable-sweep wings. Fourteen air vehicles support custom pylons; some vehicles have weapon bays and variants. See the [Wiki vehicle page](https://tv90.github.io/limitless-vehicle-rvp-addon/wiki/vehicles.html) for the full list.
+The F-14A and F-14D support variable-sweep wings. Fourteen air vehicles support custom pylons; some vehicles have weapon bays and variants. See the [Wiki vehicle page](https://dtc10eeee.github.io/rvp-wiki/wiki/vehicles.html) for the full list.
 
 ## Configuration and Compatibility
 
@@ -68,7 +68,7 @@ The F-14A and F-14D support variable-sweep wings. Fourteen air vehicles support 
 - **Base project**: Limitless Vehicle (GPL-3.0) by YWZJ. RVP is a submod/add-on.
 - **Third-party code/assets**: some explosion, particle, and nuclear-visual code is referenced or ported from HBM's Nuclear Tech (GPL-3.0) and HBM's Nuclear Tech Mod: Rebirth (LGPL-3.0); the tactical map references Superb Warfare (GPL-3.0). The project is distributed under GPL-3.0.
 - **Vehicle pack authors**: DTC10, fishking0721, TV90, Walrus.
-- **Model sources**: ZTZ100 (59 战车, purchased), EBRC (Muhamad Mirza Arrafi, CC BY), S400 radar vehicle (HWHNL, CC BY-NC), T-90M (空中火车, purchased), M1A2 SEP/J-16/J-10C/J-20A/VT4/AbramsX (C5银河/冰是沉默的水, purchased). Full details are in the [Wiki license page](https://tv90.github.io/limitless-vehicle-rvp-addon/wiki/config.html).
+- **Model sources**: ZTZ100 (59 战车, purchased), EBRC (Muhamad Mirza Arrafi, CC BY), S400 radar vehicle (HWHNL, CC BY-NC), T-90M (空中火车, purchased), M1A2 SEP/J-16/J-10C/J-20A/VT4/AbramsX (C5银河/冰是沉默的水, purchased). Full details are in the [Wiki license page](https://dtc10eeee.github.io/rvp-wiki/wiki/config.html).
 
 ## Community
 

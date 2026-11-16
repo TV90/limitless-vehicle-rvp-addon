@@ -6,7 +6,7 @@
 
 当前版本：`1.0.0_preview_0.6.2.1`。需要 Limitless Vehicle `0.6.2.1`。
 
-[English](README_EN.md) | [Wiki 百科](https://tv90.github.io/limitless-vehicle-rvp-addon/) | [下载 Release](https://github.com/TV90/limitless-vehicle-rvp-addon/releases/tag/1.0.0_preview_0.6.2.1)
+[English](README_EN.md) | [Wiki 百科](https://dtc10eeee.github.io/rvp-wiki/) | [下载 Release](https://github.com/TV90/limitless-vehicle-rvp-addon/releases/tag/1.0.0_preview_0.6.2.1)
 
 ## 主要内容
 
@@ -17,7 +17,7 @@
 - **战术地图**：GPS 目标装订、雷达目标列表、炮兵地图与小型炮兵地图。
 - **界面与 AI 乘员**：人在回路 HUD、头瞄、焦点锁定、告警、CCIP、设备面板与炮手生成器。
 
-完整武器、设备、损伤、无人机、战术地图、界面与载具说明见 [Wiki](https://tv90.github.io/limitless-vehicle-rvp-addon/)。
+完整武器、设备、损伤、无人机、战术地图、界面与载具说明见 [Wiki](https://dtc10eeee.github.io/rvp-wiki/)。
 
 ## 画廊
 
@@ -50,7 +50,7 @@
 
 主包包含 39 台可操控载具：坦克 6、步战车 3、防空车 7、战斗机 11、武装直升机 4、无人机 4、驱逐舰 2、其余载具 2。
 
-F-14A 与 F-14D 支持可变后掠翼。14 台空中载具支持自定义挂架；部分载具配置武器舱和变体。完整清单见 [Wiki 载具页](https://tv90.github.io/limitless-vehicle-rvp-addon/wiki/vehicles.html)。
+F-14A 与 F-14D 支持可变后掠翼。14 台空中载具支持自定义挂架；部分载具配置武器舱和变体。完整清单见 [Wiki 载具页](https://dtc10eeee.github.io/rvp-wiki/wiki/vehicles.html)。
 
 ## 配置与兼容性
 
@@ -68,7 +68,7 @@ F-14A 与 F-14D 支持可变后掠翼。14 台空中载具支持自定义挂架�
 - **基座项目**：Limitless Vehicle（GPL-3.0），作者 YWZJ。RVP 是其 Submod/addon。
 - **第三方代码/素材**：部分爆炸、粒子与核爆视觉代码参考或移植自 HBM's Nuclear Tech（GPL-3.0）与 HBM's Nuclear Tech Mod: Rebirth（LGPL-3.0）；战术地图功能参考了卓越前线 Superb Warfare（GPL-3.0）。本项目整体以 GPL-3.0 开源分发。
 - **载具包作者**：DTC10、fishking0721、TV90、Walrus。
-- **模型来源**：ZTZ100（59 战车，已购买授权）、EBRC（Muhamad Mirza Arrafi，CC BY）、S400 雷达车（HWHNL，CC BY-NC）、T-90M（空中火车，已购买）、M1A2 SEP/J-16/J-10C/J-20A/VT4/AbramsX（C5银河/冰是沉默的水，已购买）。完整说明见 [Wiki 许可页](https://tv90.github.io/limitless-vehicle-rvp-addon/wiki/config.html)。
+- **模型来源**：ZTZ100（59 战车，已购买授权）、EBRC（Muhamad Mirza Arrafi，CC BY）、S400 雷达车（HWHNL，CC BY-NC）、T-90M（空中火车，已购买）、M1A2 SEP/J-16/J-10C/J-20A/VT4/AbramsX（C5银河/冰是沉默的水，已购买）。完整说明见 [Wiki 许可页](https://dtc10eeee.github.io/rvp-wiki/wiki/config.html)。
 
 ## 社区与反馈
 
