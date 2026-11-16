@@ -51,4 +51,3 @@ RVP code is distributed under **GPL-3.0**. Vehicle models, textures, and sounds 
 - GitHub: <https://github.com/TV90/limitless-vehicle-rvp-addon>
 - Gitee: <https://gitee.com/DTC10/limitless-vehicle-rvp-addon>
 - Discord: <https://discord.gg/tE7SXCPUGf>
-- 
