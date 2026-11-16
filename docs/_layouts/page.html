@@ -1,7 +1,7 @@
 ---
 layout: default
 ---
-{% assign is_en = page.url contains '/en/' %}
+{% assign is_en = page.lang == 'en' %}
 <div class="wiki-page">
   <nav class="wiki-nav">
     {% if is_en %}
