@@ -18,8 +18,8 @@ html {
 
 body {
   background:
-    radial-gradient(900px 500px at 85% -10%, rgba(224, 180, 92, 0.08), transparent 60%),
-    radial-gradient(700px 400px at -10% 30%, rgba(80, 140, 160, 0.08), transparent 60%),
+    radial-gradient(1000px 520px at 82% -8%, rgba(224, 180, 92, 0.075), transparent 62%),
+    radial-gradient(760px 420px at -8% 28%, rgba(80, 140, 160, 0.07), transparent 62%),
     $background-color;
   color: $text-color;
   font-family: "Segoe UI", "Noto Sans SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
@@ -48,7 +48,6 @@ body {
   padding: 14px 28px;
   display: flex;
   align-items: center;
-  gap: 28px;
 }
 
 .site-title,
@@ -71,155 +70,110 @@ body {
 }
 
 .site-nav {
-  float: none;
-  margin-left: auto;
-  line-height: 1;
-  background: transparent;
-  border: 0;
+  display: none !important;
 }
 
-.site-nav .page-link {
-  color: #aeb9c4;
-  font-size: 0.88rem;
-  margin-left: 20px;
-  text-decoration: none;
-  transition: color 0.18s ease;
-}
-
-.site-nav .page-link:hover,
-.site-nav .page-link:focus {
-  color: $brand-color;
-}
-
-.site-nav .menu-icon > svg path {
-  fill: #aeb9c4;
-}
-
-/* ---------- shell ---------- */
+/* ---------- wide page ---------- */
 .page-content {
-  max-width: 1240px;
-  padding: 34px 28px 60px;
+  max-width: 1280px;
+  padding: 0 28px 60px;
 }
 
-.wiki-shell {
-  display: grid;
-  grid-template-columns: 232px minmax(0, 1fr);
-  gap: 26px;
-  align-items: start;
+.wiki-page {
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 26px 0 0;
 }
 
-/* ---------- sidebar ---------- */
-.wiki-sidebar {
-  position: sticky;
-  top: 82px;
-  max-height: calc(100vh - 100px);
-  overflow: auto;
-  padding: 18px 14px;
-  background: rgba(17, 23, 28, 0.92);
+/* ---------- horizontal nav ---------- */
+.wiki-nav {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 2px;
+  padding: 10px 12px;
+  background: rgba(17, 23, 28, 0.9);
   border: 1px solid #242f38;
-  border-radius: 14px;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
-  scrollbar-width: thin;
-  scrollbar-color: #33414c transparent;
+  border-radius: 12px;
+  margin-bottom: 26px;
 }
 
-.sidebar-brand {
-  color: #f4f7fa;
-  font-weight: 750;
-  letter-spacing: 0.1em;
-  font-size: 1.02rem;
-  padding: 2px 10px 14px;
-  border-bottom: 1px solid #222c34;
-  margin-bottom: 10px;
-}
-
-.sidebar-brand span {
-  color: $brand-color;
-  font-size: 0.72em;
-  letter-spacing: 0.16em;
-}
-
-.sidebar-group {
-  color: #6f7d8a;
-  font-size: 0.7rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  padding: 14px 10px 6px;
-}
-
-.sidebar-nav a {
-  display: block;
-  color: #b9c4ce;
+.wiki-nav a {
+  color: #aeb9c4;
   text-decoration: none;
-  font-size: 0.9rem;
-  line-height: 1.35;
-  padding: 8px 10px;
-  border-left: 2px solid transparent;
-  border-radius: 0 7px 7px 0;
-  transition: background 0.16s ease, color 0.16s ease, border-color 0.16s ease;
+  font-size: 0.86rem;
+  line-height: 1.2;
+  padding: 7px 10px;
+  border-radius: 6px;
+  transition: background 0.16s ease, color 0.16s ease;
 }
 
-.sidebar-nav a:hover {
+.wiki-nav a:hover {
   color: #fff;
-  background: #1a232a;
-  border-left-color: #5e7484;
+  background: #1c252c;
 }
 
-.sidebar-nav a.active {
+.wiki-nav-spacer {
+  flex: 1 1 20px;
+}
+
+.wiki-nav .wiki-release {
   color: $brand-color;
-  background: rgba(224, 180, 92, 0.08);
-  border-left-color: $brand-color;
-  font-weight: 600;
+  border: 1px solid rgba(224, 180, 92, 0.35);
+  padding: 6px 10px;
 }
 
-.sidebar-footer {
-  margin-top: 16px;
-  padding: 12px 10px 2px;
-  border-top: 1px solid #222c34;
+.wiki-nav .wiki-release:hover {
+  background: rgba(224, 180, 92, 0.12);
+  color: $brand-color-light;
 }
 
-.sidebar-footer a {
-  color: #8b98a5;
-  font-size: 0.78rem;
-  text-decoration: none;
-}
-
-.sidebar-footer a:hover {
+.lang-current {
   color: $brand-color;
+  font-size: 0.8rem;
+  font-weight: 650;
+  padding: 6px 6px;
 }
 
-/* ---------- content card ---------- */
-.wiki-content {
-  min-width: 0;
-  background: linear-gradient(180deg, #12191e 0%, #0f151a 100%);
-  border: 1px solid #242f38;
-  border-radius: 16px;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.38);
-  padding: 34px 42px 44px;
+.wiki-nav .lang-switch {
+  font-size: 0.8rem;
+  color: #8593a0;
+  border: 1px solid #2c3943;
+  padding: 5px 8px;
 }
 
-.wiki-header {
-  margin-bottom: 24px;
-  padding-bottom: 18px;
-  border-bottom: 1px solid #24303a;
+/* ---------- hero ---------- */
+.wiki-hero {
+  padding: 18px 6px 26px;
 }
 
 .wiki-kicker {
   color: #7f8d99;
   font-size: 0.72rem;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.13em;
   text-transform: uppercase;
-  margin-bottom: 8px;
+  margin-bottom: 9px;
 }
 
 .wiki-title {
   color: #f4f7fa;
-  font-size: clamp(1.9rem, 3vw, 2.45rem);
-  line-height: 1.2;
-  letter-spacing: 0.01em;
+  font-size: clamp(2.15rem, 4vw, 3.1rem);
+  line-height: 1.16;
+  letter-spacing: 0.005em;
   margin: 0;
-  padding-left: 16px;
-  border-left: 4px solid $brand-color;
+  padding-left: 18px;
+  border-left: 5px solid $brand-color;
+}
+
+/* ---------- wide content ---------- */
+.wiki-body {
+  min-width: 0;
+  color: #c6d0d9;
+  background: linear-gradient(180deg, #12191e 0%, #0f151a 100%);
+  border: 1px solid #242f38;
+  border-radius: 16px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.34);
+  padding: 34px 44px 46px;
 }
 
 .wiki-body > h1:first-child {
@@ -237,7 +191,7 @@ body {
 }
 
 .wiki-body h2 {
-  font-size: 1.42rem;
+  font-size: 1.46rem;
   margin: 2.2rem 0 0.9rem;
   padding-bottom: 8px;
   border-bottom: 1px solid #26313b;
@@ -373,6 +327,37 @@ body {
   border-radius: 0 8px 8px 0;
 }
 
+/* ---------- gallery grid ---------- */
+.gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 20px 0 30px;
+}
+
+.gallery-grid figure {
+  margin: 0;
+  background: #0d1318;
+  border: 1px solid #27323b;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.gallery-grid img {
+  margin: 0;
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.gallery-grid figcaption {
+  padding: 9px 12px;
+  color: #9daab6;
+  font-size: 0.82rem;
+  border-top: 1px solid #202a33;
+}
+
 /* ---------- footer ---------- */
 .site-footer {
   background: #080c0f;
@@ -399,74 +384,46 @@ body {
     padding: 12px 18px;
   }
 
-  .site-nav {
-    margin-left: auto;
-  }
-
-  .site-nav .page-link {
-    margin-left: 12px;
-    font-size: 0.82rem;
-  }
-
   .page-content {
-    padding: 22px 16px 44px;
+    padding: 0 16px 44px;
   }
 
-  .wiki-shell {
-    grid-template-columns: 1fr;
-    gap: 18px;
+  .wiki-page {
+    padding-top: 18px;
   }
 
-  .wiki-sidebar {
-    position: static;
-    max-height: none;
-    padding: 14px 12px;
+  .wiki-nav {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    white-space: nowrap;
+    padding: 8px 10px;
   }
 
-  .sidebar-nav {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 2px 8px;
+  .wiki-nav-spacer {
+    flex: 0 0 8px;
   }
 
-  .sidebar-group {
-    grid-column: 1 / -1;
-  }
-
-  .wiki-content {
-    padding: 24px 18px 32px;
+  .wiki-body {
+    padding: 24px 20px 32px;
   }
 
   .wiki-title {
-    font-size: 1.75rem;
+    font-size: 1.9rem;
+  }
+
+  .gallery-grid {
+    grid-template-columns: 1fr;
   }
 }
 
 @media screen and (max-width: 600px) {
-  .site-nav {
-    position: absolute;
-    background: #0e1418;
-    border: 1px solid #26313a;
-    border-radius: 8px;
-    right: 14px;
-    top: 58px;
-  }
-
-  .site-nav .trigger {
-    background: #0e1418;
-  }
-
-  .wiki-header {
-    padding-bottom: 14px;
+  .wiki-title {
+    font-size: 1.65rem;
+    padding-left: 13px;
   }
 
   .wiki-body table {
     display: block;
     overflow-x: auto;
   }
-}
-
-/* Sidebar is the only navigation; hide Minima's duplicate header nav. */
-.site-nav {
-  display: none !important;
 }

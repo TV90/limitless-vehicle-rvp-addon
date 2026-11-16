@@ -18,16 +18,15 @@ title: RVP · RealVehiclePack
 
 ## 画廊
 
-| | |
-| --- | --- |
-| ![TV 人在回路](images/gallery/tv.webp) | ![反辐射导弹](images/gallery/arm.webp) |
-| **人在回路 TV 导弹** | **反辐射导弹** |
-| ![坦克](images/gallery/tanks.webp) | ![直升机](images/gallery/helicopters.webp) |
-| **地面载具** | **武装直升机** |
-| ![战斗机](images/gallery/jets.webp) | ![驱逐舰](images/gallery/destroyers.webp) |
-| **战斗机** | **驱逐舰编队** |
-| ![驱逐舰发射导弹](images/gallery/ship-launch.webp) | |
-| **舰载导弹发射** | |
+<div class="gallery-grid">
+  <figure><img src="images/gallery/tv.webp" alt="人在回路 TV 导弹"><figcaption>人在回路 TV 导弹</figcaption></figure>
+  <figure><img src="images/gallery/arm.webp" alt="反辐射导弹"><figcaption>反辐射导弹</figcaption></figure>
+  <figure><img src="images/gallery/tanks.webp" alt="地面载具"><figcaption>地面载具</figcaption></figure>
+  <figure><img src="images/gallery/helicopters.webp" alt="武装直升机"><figcaption>武装直升机</figcaption></figure>
+  <figure><img src="images/gallery/jets.webp" alt="战斗机"><figcaption>战斗机</figcaption></figure>
+  <figure><img src="images/gallery/destroyers.webp" alt="驱逐舰编队"><figcaption>驱逐舰编队</figcaption></figure>
+  <figure><img src="images/gallery/ship-launch.webp" alt="舰载导弹发射"><figcaption>舰载导弹发射</figcaption></figure>
+</div>
 
 ---
 
@@ -62,7 +61,7 @@ title: RVP · RealVehiclePack
 
 **RVP (Real Vehicle Pack)** is a large add-on for **Limitless Vehicle** on Minecraft 1.20.1 / Forge. It adds weapons, ammunition types, support equipment, and gameplay systems on top of the LV vehicle framework. Signature features include anti-radiation missiles, man-in-the-loop missiles, and extensive ammunition customization.
 
-See [README_EN.md](https://github.com/TV90/limitless-vehicle-rvp-addon/blob/master/README_EN.md) for the English overview.
+See [README_EN.md](https://github.com/TV90/limitless-vehicle-rvp-addon/blob/master/README_EN.md) for the English overview, or open the [English Wiki](en/index.html).
 
 ---
 
