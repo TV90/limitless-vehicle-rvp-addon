@@ -1,0 +1,15 @@
+title: RVP
+description: Real Vehicle Pack — a Limitless Vehicle addon for Minecraft 1.20.1 / Forge
+url: https://tv90.github.io
+baseurl: "/limitless-vehicle-rvp-addon"
+repository: TV90/limitless-vehicle-rvp-addon
+theme: minima
+markdown: kramdown
+show_excerpts: false
+header_pages:
+  - index.md
+  - wiki/weapons.md
+  - wiki/equipment.md
+  - wiki/vehicles.md
+  - wiki/tactical-map.md
+  - wiki/config.md
