@@ -10,6 +10,8 @@ lang: en
 
 Current version: `1.0.0_preview_0.6.2.1`. Requires Limitless Vehicle `0.6.2.1`.
 
+> The Wiki is the full manual (sections 1–16); the Release page is a condensed version (sections 1–8).
+
 - [GitHub](https://github.com/TV90/limitless-vehicle-rvp-addon)
 - [Download Release](https://github.com/TV90/limitless-vehicle-rvp-addon/releases/tag/1.0.0_preview_0.6.2.1)
 - [中文 Wiki](../index.html)

@@ -9,6 +9,8 @@ title: RVP · RealVehiclePack
 
 当前版本：`1.0.0_preview_0.6.2.1`。需要 Limitless Vehicle `0.6.2.1`。
 
+> Wiki 是完整手册，章节编号为 1–16；Release 页面是精简版，章节编号为 1–8。
+
 - [GitHub](https://github.com/TV90/limitless-vehicle-rvp-addon)
 - [下载 Release](https://github.com/TV90/limitless-vehicle-rvp-addon/releases/tag/1.0.0_preview_0.6.2.1)
 - [English README](https://github.com/TV90/limitless-vehicle-rvp-addon/blob/master/README_EN.md)
