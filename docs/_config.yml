@@ -6,10 +6,3 @@ repository: TV90/limitless-vehicle-rvp-addon
 theme: minima
 markdown: kramdown
 show_excerpts: false
-header_pages:
-  - index.md
-  - wiki/weapons.md
-  - wiki/equipment.md
-  - wiki/vehicles.md
-  - wiki/tactical-map.md
-  - wiki/config.md
