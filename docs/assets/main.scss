@@ -465,3 +465,8 @@ body {
     overflow-x: auto;
   }
 }
+
+/* Sidebar is the only navigation; hide Minima's duplicate header nav. */
+.site-nav {
+  display: none !important;
+}
