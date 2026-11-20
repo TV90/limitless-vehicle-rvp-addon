@@ -67,10 +67,8 @@ public class TVMissileVideoPostHandler implements ResourceManagerReloadListener 
             return;
         }
         try {
-            debugState("process:start");
             // 调用通用后处理计时，原处理链和步骤顺序保持不变。
             RVP_RenderPerformance.post(RVP_RenderStage.TV_VIDEO, bwChain, partialTick, lastWidth, lastHeight);
-            debugState("process:done");
         } catch (Exception e) {
             LOGGER.error("[RVP][TVMissile][BW] process failed", e);
             cleanup();
