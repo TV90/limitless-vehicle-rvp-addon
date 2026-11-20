@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class GameVehicleCountermeasureParseTest {
 
-    private static final String GAME_VEHICLE = "E:/client_ywzj - 副本/ywzj/.minecraft/versions/Optimized fps/limitless_vehicle/rvp/data/rvp/vehicles/f22a.json";
+    private static final String GAME_VEHICLE = "limitless_vehicle/rvp/data/rvp/vehicles/f22a.json";
 
     @Test
     void parseGameF22a() throws Exception {
