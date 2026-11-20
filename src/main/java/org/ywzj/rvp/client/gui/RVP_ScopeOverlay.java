@@ -53,8 +53,13 @@ import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.RotatableUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
+import org.ywzj.vehicle.vehicle.pojo.AimContext;
 import org.ywzj.vehicle.vehicle.structure.VehicleCubeOBB;
+import org.ywzj.vehicle.vehicle.weapon.VehicleCannon;
 import org.ywzj.vehicle.vehicle.weapon.VehicleMissile;
+import org.ywzj.vehicle.vehicle.weapon.VehicleMultiWeapons;
+
+import java.util.Locale;
 
 import static org.ywzj.vehicle.util.RenderHelper.drawRectByCorner;
 import static org.ywzj.vehicle.util.RenderHelper.drawSquare;
@@ -452,6 +457,54 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
         var mc = Minecraft.getInstance();
         if (!text.isEmpty()) graphics.drawString(mc.font, text,
                 mc.getWindow().getGuiScaledWidth() / 2 + 25, mc.getWindow().getGuiScaledHeight() / 2 + 52, color);
+    }
+
+    /**
+     * [RVP] 本体 0.6.3 把炮兵诸元从 {@code renderWeaponEngagementEnvelope} 拆成独立方法；
+     * 无 UI 预设时本项目取消本体 overlay 后需自行补画，保持 0.6.2.1 的观瞄信息。
+     */
+    public static void renderArtilleryReadout(GuiGraphics guiGraphics, AbstractVehicle vehicle) {
+        if (!(vehicle.getOwnOperatorUnit(LocalVehiclePlayer.instance.getPlayer()) instanceof WeaponUnit weaponUnit)) {
+            return;
+        }
+        weaponUnit.getCurrentWeapon().ifPresent(weapon -> {
+            var selectedWeapon = weapon instanceof VehicleMultiWeapons multiWeapons
+                    ? multiWeapons.getSelectedWeapon() : weapon;
+            if (!(selectedWeapon instanceof VehicleCannon cannon) || !cannon.getData().isArtillery()) {
+                return;
+            }
+            WeaponUnit aimingWeaponUnit = weapon.getWeaponUnit();
+            if (aimingWeaponUnit.isParentWeaponUnitAim()) {
+                aimingWeaponUnit = aimingWeaponUnit.getRootParentWeaponUnit();
+            }
+            AimContext aimContext = aimingWeaponUnit.aimContext();
+            float azimuth = Mth.wrapDegrees(aimContext.direction.y);
+            double range = weaponUnit.weaponHitRange;
+            try (VehicleHudLayout layout = VehicleHudLayout.begin(guiGraphics)) {
+                float left = Math.max(18, layout.width() / 2 - 180);
+                float top = VehicleHudLayout.HEIGHT / 2 - 108;
+                Component azimuthLabel = Component.translatable("ui.artillery.azimuth");
+                Component elevationLabel = Component.translatable("ui.artillery.elevation");
+                Component rangeLabel = Component.translatable("ui.artillery.range");
+                var font = Minecraft.getInstance().font;
+                float valueX = left + Math.max(font.width(azimuthLabel),
+                        Math.max(font.width(elevationLabel), font.width(rangeLabel))) + 10;
+                renderArtilleryRow(guiGraphics, azimuthLabel,
+                        String.format(Locale.ROOT, "%.1f°", azimuth), left, valueX, top);
+                renderArtilleryRow(guiGraphics, elevationLabel,
+                        String.format(Locale.ROOT, "%.1f°", -aimContext.direction.x),
+                        left, valueX, top + 14);
+                renderArtilleryRow(guiGraphics, rangeLabel,
+                        Double.isFinite(range) ? String.format(Locale.ROOT, "%.0f m", range) : "-- m",
+                        left, valueX, top + 28);
+            }
+        });
+    }
+
+    private static void renderArtilleryRow(GuiGraphics graphics, Component label, String value,
+                                           float left, float valueX, float top) {
+        VehicleHudText.drawString(graphics, label, left, top, 0xFFB8B8B8);
+        VehicleHudText.drawString(graphics, value, valueX, top, 0xFFF2F2F2);
     }
 
     public void renderWeaponEngagementEnvelope(GuiGraphics guiGraphics, float partialTick, int screenWidth, int screenHeight, AbstractVehicle vehicle) {

@@ -89,6 +89,8 @@ public class RVP_OverlayCancelHandler {
             float partialTick = event.getPartialTick();
             // 调用本项目兼容入口，保留本体样式并让无预设 CRT 焦点准星也按本帧世界落点投影。
             RVP_ScopeOverlay.renderVanillaCrosshair(scopeOverlay, graphics, partialTick, vehicle);
+            // 调用本项目炮兵诸元补画，对齐本体 0.6.3 从射界绘制中拆出的独立读数。
+            RVP_ScopeOverlay.renderArtilleryReadout(graphics, vehicle);
             // 调用本体射界绘制，保留原始布局及武器角度限制。
             scopeOverlay.renderWeaponEngagementEnvelope(graphics, partialTick,
                     graphics.guiWidth(), graphics.guiHeight(), vehicle);

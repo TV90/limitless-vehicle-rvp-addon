@@ -72,7 +72,7 @@ public final class RVP_RemoteAmmoVisualBroadcastService {
                     new S2CRemoteAmmoVisualSnapshot(player.serverLevel().dimension().location(),
                             eligible.stream().map(Entity::getId).collect(java.util.stream.Collectors.toSet()),
                             collectMotorBurnRemainingTicks(eligible)));
-            ServerBroadcastEntities packet = buildPacket(eligible);
+            ServerBroadcastEntities packet = buildPacket(player, eligible);
             if (!packet.entities.isEmpty()) {
                 // 调用本体网络通道，补充创建客户端尚未追踪的远程弹药克隆。
                 Channel.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), packet);
@@ -125,7 +125,7 @@ public final class RVP_RemoteAmmoVisualBroadcastService {
     }
 
     /** 构造全部已授权弹药的克隆数据，使本体导弹也能在实际卸载边界前准备好显示对象。 */
-    private static ServerBroadcastEntities buildPacket(List<Entity> eligible) {
+    private static ServerBroadcastEntities buildPacket(ServerPlayer player, List<Entity> eligible) {
         List<ServerBroadcastEntities.BroadcastEntity> entries = new ArrayList<>();
         for (Entity entity : eligible) {
             CompoundTag data = new CompoundTag();
@@ -136,9 +136,17 @@ public final class RVP_RemoteAmmoVisualBroadcastService {
             }
             entries.add(new ServerBroadcastEntities.BroadcastEntity(
                     entity.getId(), EntityType.getKey(entity.getType()), entity.position(),
-                    entity.getDeltaMovement(), data));
+                    entity.getDeltaMovement(), data,
+                    // [RVP] 弹药不参与本体 0.6.3 的超视距载具渲染快照，渲染数据留空。
+                    null));
         }
         ServerBroadcastEntities packet = new ServerBroadcastEntities();
+        // [RVP] 本体 0.6.3 收包端先按维度过滤，再进入超视距载具快照处理；弹药补充包必须补齐维度。
+        packet.dimension = player.serverLevel().dimension().location();
+        // [RVP] 仅用于补建弹药克隆，不参与本体超视距载具快照的时钟：
+        // 用最小值让 DistantVehicleRenderHandler 直接忽略本包，避免其用空渲染数据清空载具快照。
+        packet.tick = Long.MIN_VALUE;
+        packet.interval = SYNC_INTERVAL_TICK;
         packet.entities = entries;
         return packet;
     }
