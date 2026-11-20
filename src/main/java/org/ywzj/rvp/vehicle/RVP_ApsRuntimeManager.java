@@ -24,6 +24,7 @@ import org.ywzj.vehicle.network.message.ServerVehicleFire;
 
 import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
+import org.ywzj.vehicle.vehicle.structure.VehicleCubeOBB;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 import org.ywzj.vehicle.vehicle.weapon.VehicleGrenade;
 
@@ -160,7 +161,7 @@ public final class RVP_ApsRuntimeManager {
                 }
             }
             // 延迟到点后重新做扇区归属：期间该扇区模块可能已失效，失效则放弃本次拦截
-            ActiveApsModule module = resolveTargetModule(vehicle, activeModules, pendingTarget.position().subtract(vehicle.position()));
+            ActiveApsModule module = resolveTargetModule(vehicle, activeModules, pendingTarget.position());
             if (module == null) {
                 clearPendingTarget(state);
                 return;
@@ -289,17 +290,23 @@ public final class RVP_ApsRuntimeManager {
 
     /**
      * 判定目标弹体归属哪个存活模块的探测扇区：
-     * 目标相对车体位置需落在模块前向（{@code facing_part} + {@code facing_yaw}）的
+     * 以传感器骨块 cube 中心（无部件时回退车体原点）为探测起点，
+     * 目标落在模块前向（{@code facing_part} + {@code facing_yaw}）的
      * {@code scan_fov/2} 半角锥内，且距离 ≤ {@code detect_radius}。
      * 按骨块声明顺序返回第一个命中的模块；无命中扇区返回 null（左侧模块不拦右侧目标）。
      */
     private static @org.jetbrains.annotations.Nullable ActiveApsModule resolveTargetModule(
-            AbstractVehicle vehicle, List<ActiveApsModule> activeModules, Vec3 toTarget) {
-        if (toTarget == null || toTarget.lengthSqr() <= 1.0E-8) {
+            AbstractVehicle vehicle, List<ActiveApsModule> activeModules, Vec3 targetPos) {
+        if (targetPos == null) {
             return null;
         }
         for (ActiveApsModule module : activeModules) {
             BoneApsConfig cfg = module.config();
+            Vec3 origin = moduleOrigin(vehicle, module.boneName());
+            Vec3 toTarget = targetPos.subtract(origin);
+            if (toTarget.lengthSqr() <= 1.0E-8) {
+                continue;
+            }
             Vec3 front = RVP_JammingRuntime.resolveFacing(vehicle, cfg.facingPart(), cfg.facingYawDeg());
             if (front == null || front.lengthSqr() <= 1.0E-8) {
                 continue;
@@ -312,6 +319,24 @@ public final class RVP_ApsRuntimeManager {
             }
         }
         return null;
+    }
+
+    /**
+     * APS 探测器原点：优先取传感器部件最大 cube 的实时 OBB 中心；
+     * 结构未就绪或没有对应部件时回退该部件枢轴，最后回退载具原点。
+     * 与本体 {@code structure_bone + "_barrel"} 自动取 cube 的思路一致，但只用于 APS 传感器。
+     */
+    private static Vec3 moduleOrigin(AbstractVehicle vehicle, String boneName) {
+        PartUnit<?> partUnit = vehicle.getPartUnit(boneName).orElse(null);
+        if (partUnit != null) {
+            VehicleCubeOBB cube = partUnit.getLargestCube();
+            if (cube != null) {
+                var center = cube.obb().center();
+                return new Vec3(center.x, center.y, center.z);
+            }
+            return partUnit.worldPivotPosition();
+        }
+        return vehicle.position();
     }
 
     /* ==================== 目标发现与拦截 ==================== */
@@ -346,7 +371,7 @@ public final class RVP_ApsRuntimeManager {
         for (Entity entity : candidates) {
             Projectile projectile = (Projectile) entity;
             ActiveApsModule module = resolveTargetModule(vehicle, activeModules,
-                    projectile.position().subtract(vehicle.position()));
+                    projectile.position());
             if (module != null) {
                 return new ApsTarget(projectile, module);
             }
