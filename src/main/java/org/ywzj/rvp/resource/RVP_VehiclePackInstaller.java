@@ -86,11 +86,10 @@ public final class RVP_VehiclePackInstaller {
                 if (packMetaJar == null || packMetaJar.getVersion() == null) {
                     return true;
                 }
-                // 调用本项目版本策略（2026-10-13 改"不等于"）：载具包版本为复合形态
-                // （如 0.0.1_alpha_0.6.1 = mod 版本 + 本体适配版本），存在版本线重启，
-                // 字典序/语义化"小于才覆盖"都不适配（旧线 0.5.9 字典序反而大于新线 0.0.1_alpha_…）。
-                // 改为：磁盘版本与 jar 内版本不一致即备份重装——玩家目录的包始终跟随 jar 镜像。
-                if (packMetaExist.getVersion().equals(packMetaJar.getVersion())) {
+                // 调用本项目版本策略：版本串保留本体尾段（如 1.0.1_preview_0.6.2.1）
+                // 仅用于显示与追溯；校验只比较第一个下划线前的 RVP 版本段，
+                // 避免 master/next-version 切换时仅因本体尾段不同而重解压整包。
+                if (rvpVersion(packMetaExist.getVersion()).equals(rvpVersion(packMetaJar.getVersion()))) {
                     return true;
                 }
             }
@@ -105,6 +104,12 @@ public final class RVP_VehiclePackInstaller {
         GetJarResources.copyFolder(targetPath.toUri(), backupPath);
         GetJarResources.deleteFiles(targetPath);
         return false;
+    }
+
+    /** 取版本串中第一个下划线之前的 RVP 版本段；本体/阶段尾段不参与校验。 */
+    private static String rvpVersion(String version) {
+        int separator = version.indexOf('_');
+        return separator < 0 ? version : version.substring(0, separator);
     }
 
     private static void copyModDirectory(String sourcePath, Path targetPath) throws IOException, URISyntaxException {

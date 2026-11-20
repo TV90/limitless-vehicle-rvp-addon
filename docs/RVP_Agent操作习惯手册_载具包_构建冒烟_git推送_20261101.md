@@ -107,7 +107,7 @@
 - **一般性内容更新**（武器、载具包接口、通用 bug 修复、文档、版本号等）必须同时提交 master 与 next-version：先在 master 提交，再把同批提交 cherry-pick/合并到 next-version，保证两边内容一致。
 - 本体测试版转为正式版时，把 next-version 合并回 master；之后出现新的测试版本体，再开新的 next-version 周期。master 始终保留当前正式本体可用的实现，避免正式版用户拿到测试版 API 代码。
 - next-version 的提交信息必须写明**适配的本体版本**与**功能范围**；分支说明、文档和提交都要能看出它服务哪个测试版本体。
-- 载具包校验不绑定本体版本：`vehicle_pack.meta.json` 的 `version` 使用 RVP 版本（如 `1.0.1`），不再追加本体版本尾段；包元数据不再声明 `ywzj_vehicle` 依赖，RVP 安装器只比较 RVP 包版本。
+- 载具包校验不绑定本体版本：`vehicle_pack.meta.json` 的 `version` 保留本体版本尾段（如 `1.0.1_preview_0.6.2.1`）用于显示与追溯，但包元数据不再声明 `ywzj_vehicle` 依赖；RVP 安装器只比较第一个 `_` 之前的 RVP 版本段（如 `1.0.1`），不校验后面的阶段与本体版本。
 
 ## 4. 横向纪律（写文件/脚本类，服务于上面三主题）
 
