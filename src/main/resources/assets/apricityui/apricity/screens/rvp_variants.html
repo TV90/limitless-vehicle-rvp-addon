@@ -4,74 +4,152 @@
     <meta charset="utf-8">
     <meta name="aui-font-mode" content="web">
     <meta name="aui-viewport" content="mode=browser">
-    <link rel="stylesheet" href="/apricityui/theme/ore/ore.css">
     <style>
-        html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
-        .weapon-screen { color: var(--ore-ink); background: var(--ore-canvas); display: flex; flex-direction: column; font-family: OreRegular, "Microsoft YaHei"; }
-        body.ore-theme.weapon-screen .navbar-brand { font-size: 18px; line-height: 1.1; }
-        .weapon-screen .navbar { min-height: 38px; padding: 6px 10px 10px; flex: 0 0 auto; }
-        .weapon-screen .navbar-brand, .weapon-screen .card-header, .weapon-screen .button { font-family: OreDisplay, "Microsoft YaHei"; }
-        .weapon-workspace { display: flex; gap: 7px; padding: 7px; min-height: 0; flex: 1 1 auto; }
-        .weapon-panel { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
-        .selection-panel { width: 22%; flex: 0 0 22%; }
-        .weapon-list-panel { width: 28%; flex: 0 0 28%; }
-        .weapon-detail-column { min-width: 0; min-height: 0; flex: 1 1 auto; display: flex; flex-direction: column; gap: 7px; }
-        .preview-panel { min-height: 0; flex: 3 1 0; }
-        .description-panel { min-height: 90px; flex: 2 1 0; }
-        .weapon-screen .card-header { min-height: 30px; padding: 8px 9px; font-size: 11px; flex: 0 0 auto; }
-        .weapon-panel .card-body { min-height: 0; padding: 7px; display: flex; flex-direction: column; gap: 6px; overflow: hidden; }
-        .weapon-list { min-height: 0; overflow-y: auto; flex: 1 1 auto; }
-        .weapon-entry { min-height: 30px; padding: 6px 8px; box-sizing: border-box; border: 2px solid transparent; background: #363739; color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 5px; font-size: 16px; }
-        .weapon-entry + .weapon-entry { margin-top: 3px; }
-        .weapon-entry:hover, .weapon-entry:focus { border-color: #85878b; background: #4a4b4e; }
-        .weapon-entry.active { border-color: var(--ore-gold); background: #514a35; }
-        .weapon-entry.active.ammo-active { border-color: #4caf50; background: #2e4a35; }
-        .weapon-entry.active.pylon-active { border-color: var(--ore-gold); background: #514a35; }
-        .weapon-entry-name { min-width: 0; overflow: hidden; white-space: nowrap; }
-        .weapon-entry-count { color: var(--ore-ink-muted); flex: 0 0 auto; font-size: 12px; }
-        .empty-state { padding: 9px 6px; color: var(--ore-ink-muted); font-size: 10px; text-align: center; }
-        .preview-panel .card-body { position: relative; padding: 0; background: #252628; overflow: hidden; flex: 1 1 auto; }
-        .preview-viewport { position: absolute; inset: 6px; border: 2px solid #56585b; background: #303133; box-shadow: inset 3px 3px #222325, inset -3px -3px #444649; }
-        #weapon-vehicle-preview { position: absolute; inset: 8px; cursor: grab; }
-        #weapon-vehicle-preview.dragging { cursor: grabbing; }
-        .description-panel .card-body { display: block; width: 100%; min-width: 0; min-height: 0; max-width: 100%; box-sizing: border-box; overflow-x: hidden; overflow-y: auto; color: var(--ore-ink-muted); font-family: OreRegular, "Microsoft YaHei"; font-size: 14px; line-height: 1.35; letter-spacing: 0; text-align: left; white-space: normal; }
-        /* Match the full-size machine screen controls. */
-        .preview-viewport { inset: 5px; }
-        .weapon-entry { min-height: 32px; padding: 5px 7px; }
-        .description-panel { min-height: 82px; }
-        .weapon-screen .close-button { width: 30px; height: 26px; min-height: 26px; padding: 3px 7px 7px; font-size: 14px; line-height: 1; flex: 0 0 30px; }
-        @media (max-width: 560px) { .selection-panel { width: 24%; flex-basis: 24%; } .weapon-list-panel { width: 29%; flex-basis: 29%; } }
+        * { box-sizing: border-box; }
+        html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background-color: transparent; }
+        body { font-family: "Microsoft YaHei", "Segoe UI", sans-serif; color: #f4f6f7; font-size: 14px; }
+        button, input { font-family: "Microsoft YaHei", "Segoe UI", sans-serif; font-size: inherit; }
+        button { cursor: pointer; text-align: left; color: inherit; }
+        .top { position: absolute; left: 18.4%; top: 2.4%; width: 63.3%; height: 4.2%; display: flex; align-items: stretch; }
+        #vehicle-title, .section-label, .tab, .bar, .foot { border-radius: 0; text-align: center; font-size: 19px; line-height: 1.13; }
+        #vehicle-title, .section-label { display: flex; align-items: center; justify-content: center; min-width: 0; white-space: nowrap; overflow: hidden; padding: 1px 12px; border: 0; }
+        #vehicle-title { flex: 0 1 44%; justify-content: flex-start; font-weight: bold; }
+        .section-label { flex: 1 1 56%; color: #d5d6d3; border-left: 1px solid #827b67; }
+        .section-label, .tab, .foot { background-color: #242428; background-image: linear-gradient(180deg, #35363b 0%, #25262b 42%, #16161b 100%); }
+        .side { position: absolute; left: 0.9%; top: 9.8%; width: 23.7%; max-height: 83%; display: flex; flex-direction: column; }
+        .tabs { display: flex; width: 100%; gap: 2px; flex: 0 0 auto; padding: 0 1px 4px; border-bottom: 1px solid rgba(216,219,219,0.58); }
+        .tab { position: relative; flex: 1 1 0; height: 38px; padding: 2px 5px; border: 0; color: #dededc; font-weight: bold; clip-path: polygon(0 30%, 4% 0, 100% 0, 100% 100%, 0 100%); }
+        .tab, .foot { display: flex; justify-content: center; align-items: center; }
+        .tab-notch { position: absolute; top: 1px; right: 1px; width: 13px; height: 13px; background-color: #ad813d; clip-path: polygon(0 0, 100% 0, 100% 100%); }
+        .tab.current .tab-notch { display: none; }
+        .slots, .choices { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow-y: auto; }
+        .slots { flex: 0 1 auto; }
+        .slot, .option { display: flex; width: 100%; min-width: 0; flex: 0 0 auto; margin: 0; padding: 0; border-radius: 0; color: #faf9f5; background-color: transparent; text-shadow: none; }
+        .slot { flex-direction: column; align-items: stretch; margin-top: 4px; border: 1px solid rgba(178,170,150,0.76); box-shadow: 0 0 2px rgba(19,18,21,0.42); }
+        .caption, .load { display: flex; width: 100%; min-width: 0; min-height: 30px; align-items: center; }
+        .caption, .load, .option, .damage-target, .aui-select-option { background-color: #23252a; background-image: linear-gradient(180deg, rgba(49,51,56,0.98), rgba(27,29,33,0.98) 58%, rgba(31,32,37,0.96)); }
+        .caption, .value, .option-name { overflow: hidden; white-space: nowrap; font-size: 19px; line-height: 1.13; }
+        .ticker-frame { display: flex; justify-content: flex-start; align-items: center; min-width: 0; overflow: hidden; white-space: nowrap; text-align: left; }
+        .ticker-text { display: block; flex: 0 0 auto; white-space: nowrap; font-size: inherit; font-weight: inherit; pointer-events: none; }
+        .caption { padding: 3px 8px; color: #eeeDEa; }
+        .load { border-top: 1px solid rgba(171,170,164,0.55); }
+        .value { flex: 1 1 auto; min-width: 0; padding: 3px 8px; }
+        .bay, .plaque, .option-art, .detail-art { display: flex; justify-content: center; align-items: center; overflow: hidden; }
+        .bay { flex: 0 0 25%; height: 29px; border-left: 1px solid rgba(209,196,161,0.68); }
+        .plaque { display: none; height: 128px; width: 100%; border-top: 1px solid rgba(158,159,160,0.50); }
+        .slot.active .plaque { display: flex; background-image: linear-gradient(180deg, #f9f9f7, #e7e8e8 70%, #cfd0d3); }
+        .slot.active .bay { display: none; }
+        .option-panel { position: absolute; left: 25.5%; top: 16.2%; width: 23.9%; max-height: 71%; display: flex; flex-direction: column; }
+        .choices { flex: 0 1 auto; }
+        .option { align-items: center; min-height: 36px; border: 0; border-bottom: 1px solid rgba(96,95,92,0.72); }
+        .option-art { flex: 0 0 25%; height: 30px; }
+        .option-name { flex: 1 1 auto; min-width: 0; padding: 4px 6px; }
+        /* ApricityUI 将键盘高亮写进行内背景色，弹出行没有独立的焦点属性。 */
+        .slot:hover .caption, .slot:hover .load, .option:hover, .tab:hover, .foot:hover, .damage-target:hover,
+        .aui-select-option:hover, .aui-select-option[style*="#1967d2"] { background-image: linear-gradient(180deg, #55585e, #363940 65%, #303137); }
+        #vehicle-title, .bar, .tab.current, .slot.active .caption, .slot.active .load, .option.active, .foot:focus-visible, .aui-select-option[aria-selected="true"] {
+            color: #15171b; background-color: #e3e4e3;
+            background-image: linear-gradient(180deg, #fafaf8 0%, #f0f0ee 40%, #d7d8db 80%, #c7c8cb 100%);
+        }
+        .slot.active .caption, .option.active .option-name { font-weight: bold; }
+        .slot.active .load { border-top-color: rgba(151,151,148,0.45); }
+        .slot:focus-visible, .option:focus-visible, .tab:focus-visible { outline: 1px solid #c7aa70; }
+        .bar { flex: 0 0 auto; min-height: 31px; padding: 5px 8px; text-align: left; font-weight: bold; }
+        .art-mark { position: relative; display: block; width: 44px; height: 23px; }
+        .mark-back, .mark-front { position: absolute; display: block; width: 69%; height: 56%; border: 1.5px solid #e2e4e5; border-radius: 2px; }
+        .mark-back { top: 11%; left: 8%; border-right: 0; border-bottom: 0; }
+        .mark-front { top: 31%; left: 23%; }
+        .plaque .art-mark, .detail-art .art-mark { width: 116px; height: 62px; }
+        .plaque .mark-back, .plaque .mark-front, .detail-art .mark-back, .detail-art .mark-front { border-width: 3px; border-radius: 4px; }
+        .slot.active .mark-back, .slot.active .mark-front, .option.active .mark-back, .option.active .mark-front { border-color: #323437; }
+        .art-image { display: block; width: 82%; height: 84%; object-fit: contain; }
+        .plaque .art-image, .detail-art .art-image { width: 70%; height: 82%; }
+        .art-chip { width: 68%; height: 52%; border: 1px solid rgba(214,214,209,0.48); }
+        .plaque .art-chip { width: 35%; height: 37%; }
+        .detail { position: absolute; right: 1.8%; top: 12.4%; width: 23.9%; height: 80.7%; overflow-y: auto; padding: 13px 17px;
+            border: 0; outline: 0; box-shadow: none; background-color: transparent; backdrop-filter: blur(7px);
+            background-image: linear-gradient(180deg, rgba(26,28,35,0.82), rgba(33,34,43,0.69) 35%, rgba(38,36,45,0.54) 72%, rgba(37,32,40,0.46));
+        }
+        #detail-title { margin: 0 0 6px; overflow-wrap: anywhere; font-size: 24px; line-height: 1.18; font-weight: bold; color: #fff; }
+        .detail-art { width: 100%; height: 97px; margin-bottom: 6px; }
+        #detail-copy { color: #f0f0ed; font-size: 18px; line-height: 1.32; overflow-wrap: anywhere; }
+        #facts { margin-top: 7px; }
+        .fact { display: flex; justify-content: space-between; align-items: center; gap: 6px; min-height: 28px; padding: 4px 0; border-top: 1px solid rgba(219,217,210,0.20); }
+        .fact-name { color: #d5d5d3; font-size: 15px; }
+        .fact-value { color: #fff; font-size: 17px; font-weight: bold; text-align: right; min-width: 0; overflow-wrap: anywhere; }
+        .power-label { display: flex; align-items: center; gap: 15px; min-width: 0; }
+        .power-label .fact-name { flex: 0 0 auto; }
+        .damage-target { width: 112px; min-width: 0; height: 24px; padding: 2px 6px; font-family: inherit; font-size: 13px; cursor: pointer;
+            color: #faf9f5; border: 1px solid rgba(178,170,150,0.76); border-radius: 0; }
+        .damage-target:focus-visible { outline: 1px solid #c7aa70; }
+        /* 原生弹层挂在本页面的 body 下，样式覆盖仅限这份模板。 */
+        .aui-select-popup { padding: 0 !important; background-color: #23252a !important; border: 1px solid #817c70 !important; border-radius: 0 !important; }
+        .aui-select-option { color: #faf9f5 !important; background-color: #23252a !important; border-bottom: 1px solid rgba(96,95,92,0.72); cursor: pointer !important; }
+        .aui-select-option[aria-selected="true"] { color: #15171b !important; background-color: #e3e4e3 !important; font-weight: bold !important; }
+        .damage-sources { margin: 0 0 4px; }
+        .damage-source { display: flex; justify-content: space-between; gap: 5px; padding: 1px 0 1px 7px;
+            color: #d4d3d0; font-size: 13px; font-style: italic; }
+        .damage-source-name { min-width: 0; word-break: break-all; font-style: italic; }
+        .damage-source-value { text-align: right; white-space: nowrap; font-style: italic; }
+        .fact-heading { margin-top: 8px; padding: 5px 0; color: #fff; font-size: 16px; font-weight: bold; border-top: 1px solid rgba(219,217,210,0.20); }
+        .mobility-row, .damage-row { display: flex; align-items: center; width: 100%; min-height: 24px; }
+        .mobility-label, .damage-distance { width: 25%; flex: 0 0 25%; color: #d5d5d3; font-size: 14px; }
+        .meter-track { display: flex; align-items: center; flex: 1 1 0; min-width: 0; height: 4px; background-color: rgba(224,223,219,0.22); }
+        .meter-fill { height: 4px; background-color: #e0dfd9; }
+        .meter-value { width: 31%; flex: 0 0 31%; text-align: right; color: #fff; font-size: 14px; }
+        .damage-row { border-bottom: 1px solid rgba(219,217,210,0.12); color: #f2f1ed; }
+        .damage-cell { width: 18.75%; flex: 0 0 18.75%; min-width: 0; text-align: center; font-size: 14px; }
+        .damage-header .damage-cell, .damage-header .damage-distance { color: #c5c5c3; }
+        .ricochet { color: #dfc99b; }
+        #aux-actions { margin-top: 10px; }
+        #aux-state, #aux-unavailable { font-size: 16px; line-height: 1.3; margin: 5px 0; overflow-wrap: anywhere; }
+        .option[aria-current="true"] .option-art { border-left: 3px solid #b69a64; }
+        .search { width: 100%; padding: 5px 7px; flex: 0 0 auto; background-color: #202126; color: #fff; border: 0; border-bottom: 1px solid #5b5c60; }
+        .empty, .smoke { padding: 7px 8px; background-color: rgba(32,32,38,0.94); color: #e8e8e6; font-size: 12px; }
+        .rgb { display: flex; align-items: center; gap: 5px; padding: 4px 0; }
+        .rgb input[type=range] { flex: 1 1 0; min-width: 0; }
+        .rgb input[type=number] { width: 39px; flex: 0 0 39px; background-color: #101519; color: #fff; border: 1px solid #75818a; }
+        #swatch { margin-top: 3px; height: 9px; border: 1px solid #88949d; }
+        .footer { position: absolute; left: 1%; right: 1.8%; bottom: 0.8%; height: 40px; }
+        .foot { position: absolute; bottom: 0; width: 182px; height: 39px; padding: 3px 8px; font-size: 17px; color: #f1f1ee; border: 1px solid rgba(162,154,136,0.70); box-shadow: 0 0 2px rgba(12,12,16,0.42); }
+        #reset-view { left: 0; }
+        #close-button { right: 0; }
+        .hidden { display: none; }
+        .compact .caption, .compact .value, .compact .option-name, .compact .tab, .compact #detail-copy { font-size: 22px; }
+        .compact .caption, .compact .load { min-height: 33px; }
+        .compact .option { min-height: 39px; }
+        .compact .plaque { height: 112px; }
+        .compact #vehicle-title, .compact #detail-title { font-size: 25px; }
+        .compact .fact-name, .compact .foot, .compact .section-label { font-size: 19px; }
+        .compact .power-label { gap: 19px; }
+        @media (max-height: 520px) {
+            .tab, .foot { height: 27px; }
+            .caption, .load, .option { min-height: 22px; }
+            .plaque { height: 55px; }
+        }
     </style>
-    <link rel="stylesheet" href="screen-common.css">
 </head>
-<body class="ore-theme weapon-screen">
-    <nav class="navbar"><div class="navbar-brand"><translation>gui.ywzj_rvp.variants.title</translation></div><button id="close-button" class="close-button button button-danger" type="button">X</button></nav>
-    <main class="weapon-workspace">
-        <aside class="card card-accent-green weapon-panel selection-panel" style="display:flex;flex-direction:column">
-            <div class="card-header" style="background:#1e3a2e; border-left:3px solid #4caf50">自定义弹种</div>
-            <div class="card-body" style="flex:0 0 auto; min-height:90px; max-height:45%; background:#1e2e22; border-bottom:1px solid var(--ore-edge)">
-                <div id="ammoStationList" class="weapon-list"></div>
-                <div id="station-empty" class="empty-state hidden"><translation>gui.ywzj_rvp.variants.no_station</translation></div>
-            </div>
-            <div class="card-header card-accent-gold" style="background:#3a3320; border-left:3px solid var(--ore-gold); border-top:1px solid var(--ore-edge)">自定义挂架</div>
-            <div class="card-body" style="flex:1 1 auto; background:#2e2a1e">
-                <div id="pylonStationList" class="weapon-list"></div>
-            </div>
-        </aside>
-        <aside class="card card-accent-gold weapon-panel weapon-list-panel">
-            <div class="card-header"><span id="selected-part-name">可选弹种 / 挂架</span></div>
-            <div class="card-body"><div id="weapon-list" class="weapon-list"></div><div id="weapon-list-empty" class="empty-state hidden"><translation>gui.ywzj_rvp.variants.no_weapon</translation></div></div>
-        </aside>
-        <div class="weapon-detail-column">
-            <section class="card card-accent-purple weapon-panel preview-panel">
-                <div class="card-header"><span><translation>screen.vehicle_weapon_select.preview</translation></span><span class="badge badge-purple">3D</span></div>
-                <div class="card-body"><div class="preview-viewport"><div id="weapon-vehicle-preview"></div></div></div>
-            </section>
-            <section class="card card-accent-purple weapon-panel description-panel">
-                <div class="card-header"><translation>screen.vehicle_weapon_select.description</translation></div>
-                <div id="selected-weapon-description" class="card-body"><translation>screen.no_description</translation></div>
-            </section>
+<body id="workshop">
+    <header class="top"><button id="vehicle-title" type="button"></button><div class="section-label"><translation>gui.ywzj_rvp.workshop.title</translation></div></header>
+    <aside id="navigation" class="side">
+        <div class="tabs"><button id="profile-tab" class="tab" type="button"><span><translation>screen.vehicle_modding_tool.profile</translation></span><span class="tab-notch"></span></button><button id="equipment-tab" class="tab" type="button"><span><translation>gui.ywzj_rvp.workshop.equipment</translation></span><span class="tab-notch"></span></button></div>
+        <div id="slots" class="slots"></div>
+    </aside>
+    <section id="options" class="option-panel hidden">
+        <div id="options-title" class="bar"></div>
+        <input id="paint-search" class="search hidden" type="text">
+        <div id="choices" class="choices"></div>
+        <div id="no-results" class="empty hidden"><translation>screen.vehicle_modding_tool.no_results</translation></div>
+        <div id="smoke" class="smoke hidden">
+            <div class="rgb"><span>R</span><input id="r-range" type="range" min="0" max="255"><input id="r-value" type="number" min="0" max="255"></div>
+            <div class="rgb"><span>G</span><input id="g-range" type="range" min="0" max="255"><input id="g-value" type="number" min="0" max="255"></div>
+            <div class="rgb"><span>B</span><input id="b-range" type="range" min="0" max="255"><input id="b-value" type="number" min="0" max="255"></div>
+            <div id="swatch"></div>
         </div>
-    </main>
+    </section>
+    <aside id="detail" class="detail"><div id="detail-title"></div><div id="detail-art" class="detail-art hidden"></div><div id="detail-copy"></div><div id="facts"></div>
+        <div id="aux-actions" class="hidden"><div id="aux-unavailable" class="hidden"><translation>gui.ywzj_rvp.auxiliary.preview_unavailable</translation></div><div id="aux-state"></div></div>
+    </aside>
+    <footer class="footer"><button id="reset-view" class="foot" type="button"><span><translation>gui.ywzj_rvp.workshop.reset</translation></span></button><button id="close-button" class="foot" type="button"><span><translation>gui.done</translation></span></button></footer>
 </body>
 </html>

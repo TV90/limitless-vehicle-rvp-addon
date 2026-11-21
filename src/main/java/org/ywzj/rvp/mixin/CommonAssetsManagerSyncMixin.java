@@ -133,6 +133,8 @@ public abstract class CommonAssetsManagerSyncMixin {
             StructureModelManager.fromNetwork(structureModels);
             VehicleWeaponManager.fromNetwork(vehicleWeapons);
             VehicleDataManager.fromNetwork(vehicleData);
+            // 面板保留同一批原始 JSON 的字段存在性；沿用现有同步包与客户端加载顺序。
+            org.ywzj.rvp.config.RVP_WorkshopData.replace(vehicleData, vehicleWeapons);
         } catch (Exception exception) {
             YwzjVehicle.LOGGER.error("Failed to read common assets from network", exception);
         }
