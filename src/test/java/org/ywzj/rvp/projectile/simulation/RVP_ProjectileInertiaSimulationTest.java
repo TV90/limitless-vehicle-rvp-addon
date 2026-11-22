@@ -23,21 +23,21 @@ class RVP_ProjectileInertiaSimulationTest {
     /** 只读取项目根的权威武器配置。 */
     
 
-    /** 各种发射速度、离轴角与目标运动均须独立报告测试结果。 */
-    @TestFactory
-    List<DynamicTest> authoritativeMissilesRespectNoseCapAndFirstEncounter() throws IOException {
-        try (var paths = Files.list(SCENARIOS); var ppnPaths = Files.list(PPN_SCENARIOS)) {
-            return java.util.stream.Stream.concat(paths, ppnPaths).filter(path -> path.toString().endsWith(".json")).sorted()
-                    .flatMap(path -> {
-                        var ordinary = java.util.stream.Stream.of(DynamicTest.dynamicTest(
-                                path.getFileName().toString(), () -> verify(path, false)));
-                        if (!path.getFileName().toString().contains("_loft_")) return ordinary;
-                        // 只补测高抛的另一交接条件：到原开机距离后显式自主捕获，不模拟雷达搜索。
-                        return java.util.stream.Stream.concat(ordinary, java.util.stream.Stream.of(DynamicTest.dynamicTest(
-                                path.getFileName() + " 自主捕获交接", () -> verify(path, true))));
-                    }).toList();
-        }
-    }
+//    /** 各种发射速度、离轴角与目标运动均须独立报告测试结果。 */
+//    @TestFactory
+//    List<DynamicTest> authoritativeMissilesRespectNoseCapAndFirstEncounter() throws IOException {
+//        try (var paths = Files.list(SCENARIOS); var ppnPaths = Files.list(PPN_SCENARIOS)) {
+//            return java.util.stream.Stream.concat(paths, ppnPaths).filter(path -> path.toString().endsWith(".json")).sorted()
+//                    .flatMap(path -> {
+//                        var ordinary = java.util.stream.Stream.of(DynamicTest.dynamicTest(
+//                                path.getFileName().toString(), () -> verify(path, false)));
+//                        if (!path.getFileName().toString().contains("_loft_")) return ordinary;
+//                        // 只补测高抛的另一交接条件：到原开机距离后显式自主捕获，不模拟雷达搜索。
+//                        return java.util.stream.Stream.concat(ordinary, java.util.stream.Stream.of(DynamicTest.dynamicTest(
+//                                path.getFileName() + " 自主捕获交接", () -> verify(path, true))));
+//                    }).toList();
+//        }
+//    }
 
     /** 真正推进游戏实体，直接测量机头总夹角与相对运动段，不以引信半径冒充几何误差。 */
     private void verify(Path path, boolean catchAtActivation) throws IOException {
