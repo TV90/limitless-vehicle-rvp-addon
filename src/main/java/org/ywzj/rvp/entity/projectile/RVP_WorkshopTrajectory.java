@@ -18,9 +18,8 @@ import java.util.List;
 
 /** 改装档案的分帧试飞。只驱动未注册的展示实体的运动入口，不向世界生成弹体或运行碰撞、伤害、音效。 */
 public final class RVP_WorkshopTrajectory {
-    /** 三个预览场景，距离单位为格，发射平台速度由界面另选。 */
-    public record Scene(int height, int range) {}
-    public static final List<Scene> SCENES = List.of(new Scene(256, 1000), new Scene(256, 150), new Scene(768, 1000));
+    /** 预览目标与横轴的固定距离，单位为格。 */
+    public static final int RANGE = 1500;
     /** 采样速度为格/刻，累计航程为格。 */
     public record Point(double distance, double speed, int pulse) {}
     /** 事件名称是界面的翻译键；位置来自同一刻的实际采样。 */
@@ -38,22 +37,24 @@ public final class RVP_WorkshopTrajectory {
     private double peak, distance;
     private Curve result;
 
-    public RVP_WorkshopTrajectory(Level level, RVP_WeaponData data, Scene scene, int carrierMps) {
+    /** 发射高度采用世界 Y，载机速度采用格/刻，试飞平台朝向目标。 */
+    public RVP_WorkshopTrajectory(Level level, RVP_WeaponData data, int altitude, double carrierSpeed) {
         var kind = data.getWeaponKind();
         delayFuse = data.getDelayFuse();
-        distanceLimit = data.getProjectileData().resolveSelfDestructDistance(kind);
+        double fuseDistance = data.getProjectileData().resolveSelfDestructDistance(kind);
+        distanceLimit = fuseDistance > 0 ? Math.min(fuseDistance, RANGE) : RANGE;
         body = RVP_ProjectileEntityFactory.create(kind, null, level, data);
-        var start = new Vec3(0, scene.height(), 0);
+        var start = new Vec3(0, altitude, 0);
         var aim = new RVP_BaseBullet.AimRot(0, 0);
         // 与游戏发射顺序一致，平台速度在实体自身出膛初始化之后叠加。
         body.initFromWeapon(data, kind, null, null, start, aim, new Vec3(0, 0, data.resolveMuzzleSpeed(kind)));
         target = new Marker(EntityType.MARKER, level);
-        var point = start.add(0, 0, scene.range());
+        var point = start.add(0, 0, RANGE);
         target.setPos(point);
         target.setBoundingBox(new AABB(point, point).inflate(2));
         body.setGuidanceTargetPos(point);
         if (data.getGuidanceData().getGuidanceType() != RVP_EnumGuidanceType.GPS) body.setTargetEntity(target);
-        Vec3 carrier = data.isInheritVehicleVelocity() ? new Vec3(0, 0, carrierMps / 20.0) : Vec3.ZERO;
+        Vec3 carrier = data.isInheritVehicleVelocity() ? new Vec3(0, 0, carrierSpeed) : Vec3.ZERO;
         body.captureLaunchVehicleVelocity(carrier);
         body.setDeltaMovement(body.getDeltaMovement().add(carrier));
         body.finalizeSpawnOrientation(aim);
@@ -105,13 +106,14 @@ public final class RVP_WorkshopTrajectory {
             if (!Double.isFinite(length) || !Double.isFinite(speed)) {
                 end = "invalid";
             } else {
-                boolean atDistanceLimit = distanceLimit > 0 && distance + length >= distanceLimit;
+                boolean atDistanceLimit = distance + length >= distanceLimit;
                 distance = atDistanceLimit ? distanceLimit : distance + length;
                 sample();
                 // 两格停止球使用线段最近点，高速弹可以在一刻内穿过它。
                 Vec3 offset = target.position().subtract(before);
                 double t = length > 0 ? Math.min(1, Math.max(0, offset.dot(step) / step.lengthSqr())) : 0;
-                if (atDistanceLimit || offset.subtract(step.scale(t)).lengthSqr() <= 4 || after.y <= 64 || body.life < 0 || !body.isAlive()) end = "end";
+                // 试飞使用 Y=0 的参考地面，最低的 10 m 档可正常采样。
+                if (atDistanceLimit || offset.subtract(step.scale(t)).lengthSqr() <= 4 || after.y <= 0 || body.life < 0 || !body.isAlive()) end = "end";
                 else if (body.tickCount >= 600) end = "timeout";
             }
             if (end != null) return finish(end);

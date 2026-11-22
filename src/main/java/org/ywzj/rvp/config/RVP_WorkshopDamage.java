@@ -112,7 +112,12 @@ public final class RVP_WorkshopDamage {
         }
 
         public boolean hasTableDamage() {
-            return !airOnly && (hasDirect() || stages.stream().anyMatch(stage -> stage.explosion() != null));
+            return hasTableDamage(false);
+        }
+
+        /** 空射对空弹可查看实体伤害表，地面发射的纯对空弹沿用速度预览。 */
+        public boolean hasTableDamage(boolean airLaunched) {
+            return (!airOnly || airLaunched) && (hasDirect() || stages.stream().anyMatch(stage -> stage.explosion() != null));
         }
 
         public double power(String target) {

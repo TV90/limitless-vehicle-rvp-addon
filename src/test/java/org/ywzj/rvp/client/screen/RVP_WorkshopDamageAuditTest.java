@@ -28,6 +28,7 @@ import org.ywzj.rvp.entity.projectile.RVP_WorkshopTrajectory;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.custom.serialize.GsonUtil;
 import org.ywzj.vehicle.custom.weapon.data.BaseVehicleWeaponData;
+import org.ywzj.vehicle.entity.vehicle.FixedWingVehicle;
 import org.ywzj.vehicle.entity.vehicle.TrackedVehicle;
 
 import java.io.IOException;
@@ -167,6 +168,8 @@ class RVP_WorkshopDamageAuditTest {
     @Test void blockSelectionShowsItsOwnRadiusAndTriggersAndCanSwitchBack() throws Exception {
         open("special_triggers");
         selectTarget((Select) byId("target"), RVP_WorkshopDamage.BLOCK);
+        assertFalse(visible(byId("grid")));
+        assertNull(byId("explanation"));
         assertEquals(List.of("命中方块", "穿透方块后", "被拦截"),
                 byId("context").querySelectorAll("option").stream().map(Element::getTextContent).toList());
         assertEquals("24", byId("power-value").getTextContent());
@@ -177,12 +180,16 @@ class RVP_WorkshopDamageAuditTest {
 
         var id = ResourceLocation.tryParse("rvp:z10_fs70b_sub");
         var round = packProjectile(id);
-        render(id, RVP_WorkshopDamage.read(id, round, child -> null),
-                RVP_WorkshopDamage.read(id, round, child -> null, true));
+        var blockImpact = RVP_WorkshopDamage.read(id, round, child -> null, true).get(0);
+        render(id, RVP_WorkshopDamage.read(id, round, child -> null), List.of(blockImpact));
         assertEquals("3 m", shownText("radius"));
         selectTarget((Select) byId("target"), RVP_WorkshopDamage.BLOCK);
         assertEquals("1 m", shownText("radius"));
         assertEquals("方块破坏半径", byId("radius-row").querySelector(".fact-name").getTextContent());
+        assertNull(byId("context"));
+        assertTrue(byId("controls").querySelectorAll(".fact-name").stream()
+                .noneMatch(label -> "情形".equals(label.getTextContent())));
+        assertFalse(visible(byId("grid")));
         selectTarget((Select) byId("target"), RVP_WorkshopDamage.PLAYER);
         assertEquals("3 m", shownText("radius"));
         assertEquals("爆炸半径", byId("radius-row").querySelector(".fact-name").getTextContent());
@@ -199,13 +206,43 @@ class RVP_WorkshopDamageAuditTest {
             render(id("fuses"), contexts, RVP_WorkshopDamage.read(id("fuses"), p, PROJECTILES::get, true));
             for (var entry : Map.of("delay", delay == 10 ? "0.5 s" : "4.5 s", "distance", "512 m", "bounce_delay", "0.4 s").entrySet()) {
                 selectTarget((Select) byId("context"), entry.getKey());
-                assertTrue(byId("explanation").getTextContent().endsWith(entry.getValue()), entry.toString());
+                assertTrue(byId("context").querySelectorAll("option").stream()
+                        .anyMatch(option -> entry.getKey().equals(option.getAttribute("value"))
+                                && option.getTextContent().endsWith(" " + entry.getValue())), entry.toString());
+                assertNull(byId("explanation"));
             }
         }
     }
 
-    @Test void aim260UsesRecordedGameSpeedAndMenuControls() throws Exception {
+    @Test void airLaunchedMissileShowsEntityTableButBlockAndGroundLaunchHideIt() throws Exception {
+        var id = ResourceLocation.tryParse("rvp:f22a_aim260a");
+        var projectile = packProjectile(id);
+        var scenarios = RVP_WorkshopDamage.read(id, projectile, child -> null);
+        var blocks = RVP_WorkshopDamage.read(id, projectile, child -> null, true);
+        var priorVehicle = RVP_ProjectileSimulationBootstrap.read(RVP_AuiVariantScreen.class, screen, "vehicle");
+        try {
+            var plane = RVP_ProjectileSimulationBootstrap.environment(FixedWingVehicle.class);
+            RVP_ProjectileSimulationBootstrap.write(RVP_AuiVariantScreen.class, screen, "vehicle", plane);
+            render(id, scenarios, blocks);
+            assertEquals("280", capture("impact", RVP_WorkshopDamage.DEFAULT_VEHICLE).matrix().get(2).get(1));
+            selectTarget((Select) byId("target"), RVP_WorkshopDamage.BLOCK);
+            assertFalse(visible(byId("grid")));
+            selectTarget((Select) byId("target"), RVP_WorkshopDamage.DEFAULT_VEHICLE);
+            assertTrue(visible(byId("grid")));
+            var ground = RVP_ProjectileSimulationBootstrap.environment(TrackedVehicle.class);
+            RVP_ProjectileSimulationBootstrap.write(RVP_AuiVariantScreen.class, screen, "vehicle", ground);
+            render(id, scenarios, blocks);
+            assertFalse(visible(byId("grid")));
+        } finally {
+            RVP_ProjectileSimulationBootstrap.write(RVP_AuiVariantScreen.class, screen, "vehicle", priorVehicle);
+        }
+    }
+
+    @Test void aim260UsesFixedDistanceAltitudeAndCarrierSpeedControls() throws Exception {
         var weapon = packProjectile(ResourceLocation.tryParse("rvp:f22a_aim260a"));
+        var carrier = RVP_WorkshopData.vehicle(JsonParser.parseString(Files.readString(
+                Path.of("limitless_vehicle", "rvp", "data", "rvp", "vehicles", "f22a.json"))).getAsJsonObject());
+        double maxSpeed = carrier.mobility().get("airspeed");
         var level = RVP_ProjectileSimulationLevel.create(64, null);
         RVP_ProjectileSimulationBootstrap.write(net.minecraft.world.level.Level.class, level, "random",
                 net.minecraft.util.RandomSource.create(1));
@@ -214,44 +251,80 @@ class RVP_WorkshopDamageAuditTest {
         RVP_ProjectileSimulationBootstrap.write(RVP_AuiVariantScreen.class, screen, "vehicle", vehicle);
         var curves = new HashMap<Integer, RVP_WorkshopTrajectory.Curve>();
         RVP_ProjectileSimulationBootstrap.write(RVP_AuiVariantScreen.class, screen, "curves", curves);
-        var speed = RVP_AuiVariantScreen.class.getDeclaredMethod("speedDetails", JsonObject.class, BaseVehicleWeaponData.class);
+        var speed = RVP_AuiVariantScreen.class.getDeclaredMethod("speedDetails", JsonObject.class, BaseVehicleWeaponData.class,
+                RVP_WorkshopData.Vehicle.class);
         var tick = RVP_AuiVariantScreen.class.getDeclaredMethod("tickSpeed");
+        var paint = RVP_AuiVariantScreen.class.getDeclaredMethod("paintSpeedPlot");
         speed.setAccessible(true);
         tick.setAccessible(true);
+        paint.setAccessible(true);
         var facts = document.getElementById("facts");
         facts.setTextContent("");
-        speed.invoke(screen, weapon.raw(), weapon.resolved());
+        speed.invoke(screen, weapon.raw(), weapon.resolved(), carrier);
         assertEquals("true", document.getElementById("speed-toggle").getAttribute("aria-expanded"));
+        assertEquals("飞行速度", document.getElementById("speed-toggle").querySelector(".fact-name").getTextContent());
+        Select altitudes = (Select) document.getElementById("speed-altitude");
+        assertEquals(List.of(10, 100, 500, 1000, 1500, 2000, 2500).stream().map(h -> "发射高度 " + h + " m").toList(),
+                altitudes.querySelectorAll("option").stream().map(Element::getTextContent).toList());
+        Select carriers = (Select) document.getElementById("speed-carrier");
+        var options = carriers.querySelectorAll("option");
+        assertEquals(4, options.size());
+        for (int i = 0; i < options.size(); i++) {
+            String name = options.get(i).getTextContent();
+            assertEquals(maxSpeed * 72 * i / 3, Double.parseDouble(name.substring(3, name.length() - 4)), 0.051);
+        }
         for (int i = 0; curves.isEmpty() && i < 605; i++) tick.invoke(screen);
-        var curve = curves.get(20);
+        var curve = curves.get(400);
         assertNotNull(curve);
-        assertEquals(114.1192, curve.peak() * 20, 0.01);
-        assertEquals(1040.46, curve.points().get(curve.points().size() - 1).distance(), 0.1);
-        assertEquals(List.of("ignition", "burnout", "ignition2", "end"), curve.marks().stream().map(RVP_WorkshopTrajectory.Mark::key).toList());
-        assertEquals(655.1, curve.points().get(curve.marks().get(2).sample()).distance(), 0.2);
-        assertEquals("410.8 KPH", document.getElementById("speed-peak").getTextContent());
+        assertEquals(0.1, curve.points().get(0).speed(), 1e-5);
+        assertEquals(1500, curve.points().get(curve.points().size() - 1).distance(), 2.1);
+        assertTrue(curve.marks().stream().anyMatch(mark -> mark.key().equals("ignition2")));
+        String initialSpeed = document.getElementById("speed-range").getTextContent();
+        assertTrue(initialSpeed.startsWith("7.2～") && initialSpeed.endsWith(" KPH"));
         assertTrue(facts.querySelectorAll(".fact-value").stream().map(Element::getTextContent).toList()
-                .containsAll(List.of("7.2 KPH", "3290 → 1600 / 428 N", "0–1500 m / 12°", "26.1 G")));
+                .containsAll(List.of("7.2 KPH", "0–1500 m / 12°", "26.1 G")));
         assertTrue(facts.querySelectorAll(".fact-name").stream().noneMatch(e -> e.getTextContent().contains("限速")));
         Canvas canvas = (Canvas) document.getElementById("speed-chart");
         Path image = Path.of("build/reports/workshop-compact-integration/aim260-speed.png");
-        Files.createDirectories(image.getParent());
-        javax.imageio.ImageIO.write(canvas.getSurface(), "png", image.toFile());
-        selectTarget((Select) document.getElementById("speed-scene"), "1");
-        selectTarget((Select) document.getElementById("speed-carrier"), "40");
-        for (int i = 0; !curves.containsKey(140) && i < 605; i++) tick.invoke(screen);
-        assertEquals(List.of("ignition", "end"), curves.get(140).marks().stream().map(RVP_WorkshopTrajectory.Mark::key).toList());
-        selectTarget((Select) document.getElementById("speed-scene"), "0");
-        selectTarget((Select) document.getElementById("speed-carrier"), "20");
-        assertSame(curve, curves.get(20));
-        assertEquals("410.8 KPH", document.getElementById("speed-peak").getTextContent());
+        var viewport = document.getViewport();
+        try {
+            RVP_ProjectileSimulationBootstrap.write(Document.class, document, "viewport",
+                    new ApricityViewport(1600, 900, 1f, 2));
+            document.commitPendingStyleRecalcForRender();
+            document.getPaintList();
+            var chart = canvas.getBoundingClientRect();
+            paint.invoke(screen);
+            assertTrue(chart.width > 120);
+            assertEquals(chart.width * 2, canvas.getSurface().getWidth(), 1);
+            assertEquals(chart.height * 2, canvas.getSurface().getHeight(), 1);
+            Files.createDirectories(image.getParent());
+            javax.imageio.ImageIO.write(canvas.getSurface(), "png", image.toFile());
+        } finally {
+            RVP_ProjectileSimulationBootstrap.write(Document.class, document, "viewport", viewport);
+        }
+        selectTarget(altitudes, "10");
+        selectTarget(carriers, "3");
+        for (int i = 0; !curves.containsKey(43) && i < 605; i++) tick.invoke(screen);
+        var low = curves.get(43);
+        assertNotNull(low);
+        assertTrue(low.points().size() > 20, "10 m 档不会在首刻被地面截断");
+        assertEquals(maxSpeed + 0.1, low.points().get(0).speed(), 1e-5);
+        assertTrue(low.points().get(low.points().size() - 1).distance() <= 1500);
+        String range = document.getElementById("speed-range").getTextContent();
+        assertEquals(low.points().get(0).speed() * 72, Double.parseDouble(range.split("～")[0]), 0.051);
+        assertEquals(low.peak() * 72, Double.parseDouble(range.split("～")[1].replace(" KPH", "")), 0.051);
+        selectTarget(altitudes, "100");
+        selectTarget(carriers, "0");
+        assertSame(curve, curves.get(400));
+        assertEquals(initialSpeed, document.getElementById("speed-range").getTextContent());
         var surface = packProjectile(ResourceLocation.tryParse("rvp:ea18g_agm65f"));
         facts.setTextContent("");
-        speed.invoke(screen, surface.raw(), surface.resolved());
+        speed.invoke(screen, surface.raw(), surface.resolved(), null);
         assertEquals("false", document.getElementById("speed-toggle").getAttribute("aria-expanded"));
+        assertNull(document.getElementById("speed-carrier"));
         var cannon = packProjectile(ResourceLocation.tryParse("rvp:f22a_m61a1"));
         facts.setTextContent("");
-        speed.invoke(screen, cannon.raw(), cannon.resolved());
+        speed.invoke(screen, cannon.raw(), cannon.resolved(), carrier);
         assertEquals("320 m/s", facts.querySelector(".fact-value").getTextContent());
         assertNull(document.getElementById("speed-toggle"));
     }
@@ -261,16 +334,15 @@ class RVP_WorkshopDamageAuditTest {
         var level = RVP_ProjectileSimulationLevel.create(64, null);
         RVP_ProjectileSimulationBootstrap.write(net.minecraft.world.level.Level.class, level, "random",
                 net.minecraft.util.RandomSource.create(1));
-        var scene = RVP_WorkshopTrajectory.SCENES.get(0);
         raw.getAsJsonObject("projectile_data").addProperty("self_destruct_distance", 2.5);
         var data = projectile(raw).resolved();
         data.setWeaponKind(org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind.MISSILE);
-        var distance = new RVP_WorkshopTrajectory(level, data, scene, 20).advance(Long.MAX_VALUE);
+        var distance = new RVP_WorkshopTrajectory(level, data, 100, 1).advance(Long.MAX_VALUE);
         assertEquals(2.5, distance.points().get(distance.points().size() - 1).distance());
         raw.getAsJsonObject("fuse_data").addProperty("delay_tick", 1);
         data = projectile(raw).resolved();
         data.setWeaponKind(org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind.MISSILE);
-        var timed = new RVP_WorkshopTrajectory(level, data, scene, 20).advance(Long.MAX_VALUE);
+        var timed = new RVP_WorkshopTrajectory(level, data, 100, 1).advance(Long.MAX_VALUE);
         assertEquals(1, timed.points().size());
         assertEquals(0.0, timed.points().get(0).distance());
     }
@@ -320,8 +392,17 @@ class RVP_WorkshopDamageAuditTest {
         assertEquals("默认", target.querySelectorAll("option").get(0).getTextContent());
         Select context = (Select) byId("context");
         assertEquals(scenarios.size() > 1, context != null);
-        if (context != null) assertEquals(scenarios.stream().map(scenario -> CONTEXT_NAMES.get(scenario.context().key())).toList(),
-                context.querySelectorAll("option").stream().map(Element::getTextContent).toList());
+        if (context != null) {
+            var options = context.querySelectorAll("option");
+            assertEquals(scenarios.size(), options.size());
+            for (int i = 0; i < scenarios.size(); i++) {
+                var scenario = scenarios.get(i);
+                String nameOnly = CONTEXT_NAMES.get(scenario.context().key());
+                String label = options.get(i).getTextContent();
+                if (scenario.threshold() == null) assertEquals(nameOnly, label);
+                else assertTrue(label.startsWith(nameOnly + " "));
+            }
+        }
         var snapshots = new ArrayList<View>();
         for (int i = 0; i < scenarios.size(); i++) {
             String key = scenarios.get(i).context().key();
