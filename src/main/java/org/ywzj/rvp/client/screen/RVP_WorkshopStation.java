@@ -1,10 +1,15 @@
 package org.ywzj.rvp.client.screen;
 
 import net.minecraft.client.resources.language.I18n;
+import net.minecraft.resources.ResourceLocation;
 import org.ywzj.rvp.config.RVP_CustomMountConfigCache;
 import org.ywzj.rvp.config.RVP_VehicleExtendedConfigManager;
 import org.ywzj.rvp.network.C2SSelectModdingSubWeapon;
 import org.ywzj.rvp.network.RVP_Network;
+import org.ywzj.rvp.util.RVP_WeaponResolveHelper;
+import org.ywzj.rvp.vehicle.BoneApsConfig;
+import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
+import org.ywzj.vehicle.custom.weapon.data.VehicleGrenadeWeaponData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.network.Channel;
 import org.ywzj.vehicle.network.message.ClientVehicleSelectPartWeapon;
@@ -19,17 +24,28 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 一个可选择的改装栏。unit 为所属站，group 为配置寻址的多弹种组（本体顶层选择时为空），
  * slot / groupIndex 是原网络包使用的外层槽和组序号，title 是本地化的栏名。
  */
-record RVP_WorkshopStation(WeaponUnit unit, VehicleMultiWeapons group, int slot, int groupIndex, String title) {
+record RVP_WorkshopStation(WeaponUnit unit, VehicleMultiWeapons group, int slot, int groupIndex, String title,
+                           AbstractVehicleWeapon<?> fixedWeapon) {
+
+    private record InstalledWeapon(WeaponUnit unit, ResourceLocation id) {
+        InstalledWeapon(AbstractVehicleWeapon<?> weapon) {
+            this(weapon.getWeaponUnit(), weapon.getData().getWeaponId());
+        }
+    }
 
     /** 从当前实体已装配的武器和挂架配置构建列表，保持服务端的槽位和子弹种顺序。 */
     static List<RVP_WorkshopStation> collect(AbstractVehicle vehicle) {
         var stations = new ArrayList<RVP_WorkshopStation>();
         var configs = RVP_VehicleExtendedConfigManager.INSTANCE;
+        var aps = RVP_VehicleHitboxFactorManager.INSTANCE.resolveApsDevices(vehicle);
+        Set<String> apsLaunchers = aps == null ? Set.of() : aps.values().stream()
+                .map(BoneApsConfig::launcherPart).collect(Collectors.toSet());
         Set<String> groupedUnits = new HashSet<>();
         var groups = configs.getModdingGroupEntries(vehicle);
         // 菜单按包内槽位编排；同一站的编号与其网络槽位保持一致。
@@ -39,6 +55,7 @@ record RVP_WorkshopStation(WeaponUnit unit, VehicleMultiWeapons group, int slot,
         for (var entry : groups) counts.merge(entry.partId(), 1, Integer::sum);
         var ordinals = new HashMap<String, Integer>();
         for (var entry : groups) {
+            if (apsLaunchers.contains(entry.partId())) continue;
             if (!(vehicle.getPartUnit(entry.partId()).orElse(null) instanceof WeaponUnit unit)
                     || entry.weaponIndex() < 0 || entry.weaponIndex() >= unit.weapons.size()) continue;
             VehicleMultiWeapons group;
@@ -54,7 +71,7 @@ record RVP_WorkshopStation(WeaponUnit unit, VehicleMultiWeapons group, int slot,
             if (group == null || group.getSubWeapons().isEmpty()) continue;
             stations.add(new RVP_WorkshopStation(unit, group, entry.weaponIndex(), entry.groupIndex(),
                     groupTitle(entry.groupId(), unit, counts.get(entry.partId()),
-                            ordinals.merge(entry.partId(), 1, Integer::sum))));
+                            ordinals.merge(entry.partId(), 1, Integer::sum)), null));
             groupedUnits.add(unit.getId());
         }
         Set<String> pylons = new HashSet<>();
@@ -62,15 +79,37 @@ record RVP_WorkshopStation(WeaponUnit unit, VehicleMultiWeapons group, int slot,
             if (mount.weaponId() != null) pylons.add(mount.partUnitId());
         }
         for (var part : vehicle.getPartUnits()) {
-            if (!(part instanceof WeaponUnit unit) || unit.weapons.isEmpty()) continue;
+            if (!(part instanceof WeaponUnit unit) || unit.weapons.isEmpty() || apsLaunchers.contains(unit.getId())) continue;
             // 配置挂架也允许浏览单个挂点。本体可改站保留顶层选择，避免把多弹种的承载槽重复列出。
             if (!pylons.contains(unit.getId()) && !(unit.isInteractive() && unit.weapons.size() > 1
                     && !groupedUnits.contains(unit.getId()))) continue;
-            stations.add(new RVP_WorkshopStation(unit, null, -1, -1, unitTitle(unit)));
+            stations.add(new RVP_WorkshopStation(unit, null, -1, -1, unitTitle(unit), null));
+        }
+        var listed = new HashSet<InstalledWeapon>();
+        for (var station : stations) {
+            for (int index = 0; index < station.size(); index++) {
+                var weapon = RVP_WeaponResolveHelper.unwrap(station.weapon(index));
+                if (weapon != null) listed.add(new InstalledWeapon(weapon));
+            }
+        }
+        // 索引包含主槽、副槽和独立槽。APS 属于自动设备，代理和发射器均不生成装备栏。
+        for (var part : vehicle.getPartUnits()) {
+            if (!(part instanceof WeaponUnit unit)) continue;
+            for (var indexed : unit.getIndexedWeapons()) {
+                var weapon = RVP_WeaponResolveHelper.unwrap(indexed);
+                if (weapon == null || isAps(weapon, apsLaunchers) || !listed.add(new InstalledWeapon(weapon))) continue;
+                var mount = weapon.getWeaponUnit();
+                stations.add(new RVP_WorkshopStation(mount, null, -1, -1, unitTitle(mount), weapon));
+            }
         }
         // 主站、副站和其他席位按载具定义的部件顺序展示，不依赖哈希表遍历顺序。
         stations.sort(Comparator.comparingInt(station -> station.unit().getIndex()));
         return stations;
+    }
+
+    private static boolean isAps(AbstractVehicleWeapon<?> weapon, Set<String> launchers) {
+        return launchers.contains(weapon.getWeaponUnit().getId())
+                || weapon.getData() instanceof VehicleGrenadeWeaponData grenade && "aps".equals(grenade.getGrenade());
     }
 
     private static String groupTitle(String id, WeaponUnit unit, int count, int ordinal) {
@@ -89,15 +128,18 @@ record RVP_WorkshopStation(WeaponUnit unit, VehicleMultiWeapons group, int slot,
     }
 
     int size() {
+        if (fixedWeapon != null) return 1;
         return group == null ? unit.weapons.size() : group.getSubWeapons().size();
     }
 
     AbstractVehicleWeapon<?> weapon(int index) {
+        if (fixedWeapon != null) return fixedWeapon;
         // 本体顶层项按原选单展开代理，分组项按子弹种下标寻址。
         return group == null ? unit.proxyWeapon(unit.weapons.get(index)) : group.getSubWeapons().get(index);
     }
 
     int equipped() {
+        if (size() == 1) return 0;
         return group == null ? unit.getCurrentWeaponIndex() : group.getSelectedIndex();
     }
 

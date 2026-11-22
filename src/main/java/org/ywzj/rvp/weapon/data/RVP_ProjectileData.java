@@ -409,6 +409,25 @@ public class RVP_ProjectileData {
         return turningFactor != null && !turningFactor.isEmpty();
     }
 
+    /** 档案按配置区段的起止点取实际可达最大值，避免遍历每个飞行刻或计入被覆盖的区段。 */
+    public float maximumTurningFactor(int life) {
+        if (!hasTurningFactor()) return 0;
+        float maximum = 0;
+        for (var range : turningFactor.keySet()) {
+            if (range == null) continue;
+            for (var interval : range.intervals()) {
+                long start = interval.lower() == null ? 0 : Math.max(0, interval.lower());
+                long after = interval.upper() == null ? Long.MAX_VALUE : (long) interval.upper() + 1;
+                for (long tick : new long[]{start, after}) {
+                    if (tick < 0 || tick > life) continue;
+                    Float value = resolveTurningFactor((int) tick);
+                    if (value != null) maximum = Math.max(maximum, value);
+                }
+            }
+        }
+        return maximum;
+    }
+
     public Float resolveTurningFactor(int flightTick) {
         if (!hasTurningFactor()) {
             return null;

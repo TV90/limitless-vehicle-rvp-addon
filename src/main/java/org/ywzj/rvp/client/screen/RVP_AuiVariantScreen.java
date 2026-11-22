@@ -1,6 +1,7 @@
 package org.ywzj.rvp.client.screen;
 
 import com.sighs.apricityui.element.Select;
+import com.sighs.apricityui.element.Canvas;
 import com.sighs.apricityui.init.Document;
 import com.sighs.apricityui.init.Element;
 import com.sighs.apricityui.layout.Box;
@@ -21,7 +22,12 @@ import com.google.gson.JsonObject;
 import org.ywzj.rvp.config.RVP_VehicleExtendedConfigManager;
 import org.ywzj.rvp.config.RVP_WorkshopDamage;
 import org.ywzj.rvp.config.RVP_WorkshopData;
+import org.ywzj.rvp.config.RVP_WorkshopBallistics;
+import org.ywzj.rvp.entity.projectile.RVP_WorkshopTrajectory;
+import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
+import org.ywzj.vehicle.custom.weapon.data.BaseVehicleWeaponData;
+import org.ywzj.vehicle.custom.weapon.data.VehicleMissileWeaponData;
 import org.ywzj.rvp.weapon.submunition.RVP_SubmunitionSpawner;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
@@ -30,10 +36,12 @@ import org.ywzj.vehicle.all.AllConfigs;
 import org.ywzj.vehicle.client.resource.ClientAssetsManager;
 import org.ywzj.vehicle.client.resource.vehicle.BaseDisplay;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
+import org.ywzj.vehicle.entity.vehicle.FixedWingVehicle;
 import org.ywzj.vehicle.network.Channel;
 import org.ywzj.vehicle.network.message.ClientVehicleChangeDisplay;
 import org.ywzj.vehicle.util.AuiTextHelper;
 
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -92,13 +100,27 @@ public class RVP_AuiVariantScreen extends ApricityScreen {
     private RVP_WorkshopData stats;
     /** 预览伤害的目标，随页面切换和候选武器悬停保留。 */
     private String damageTarget = RVP_WorkshopDamage.DEFAULT_VEHICLE;
+    /** 同一武器的情形与展开状态在详情重新加载时保留。 */
+    private ResourceLocation damageWeapon;
+    private RVP_WorkshopDamage.Context damageContext;
+    private boolean damageExpanded;
+    /** 仅缓存当前选中武器的九种条件；服务端重载或换武器后丢弃。 */
+    private final Map<Integer, RVP_WorkshopTrajectory.Curve> curves = new HashMap<>();
+    private RVP_WeaponData flightWeapon;
+    private RVP_WorkshopData flightData;
+    private RVP_WorkshopTrajectory sampling;
+    private boolean speedExpanded, speedVisible;
+    /** 场景序号及独立的平台速度，单位 m/s。 */
+    private int sceneIndex, carrierMps = 20;
+    /** 伤害卡只直接显示最前面的两条来源。 */
+    private static final int COLLAPSED_SOURCES = 2;
     /** 两类武器共用的距离（米）与入射角（度），表格始终保持此顺序。 */
     private static final int[] DISTANCES = {10, 100, 500, 1000, 1500, 2000};
     private static final int[] ANGLES = {0, 30, 60, 80};
     private static final String FIELD = "gui.ywzj_rvp.workshop.field.";
     /** 外观行，显示当前涂装。 */
     private SlotRow paintRow;
-    /** 烟雾行，显示当前颜色。 */
+    /** 固定翼飞机的烟雾行，显示当前颜色。 */
     private SlotRow smokeRow;
 
     public RVP_AuiVariantScreen(AbstractVehicle vehicle, Screen parent) {
@@ -150,7 +172,13 @@ public class RVP_AuiVariantScreen extends ApricityScreen {
             }));
         }
         paintRow = row(slots, I18n.get("gui.ywzj_rvp.workshop.paint"), () -> open(Panel.PAINT));
-        smokeRow = row(slots, I18n.get("ui.aerobatic_smoke"), () -> open(Panel.SMOKE));
+        if (vehicle instanceof FixedWingVehicle) {
+            smokeRow = row(slots, I18n.get("ui.aerobatic_smoke"), () -> open(Panel.SMOKE));
+            // 复用本体的烟雾颜色配置。
+            bindColor("r", AllConfigs.common.aerobaticSmokeR);
+            bindColor("g", AllConfigs.common.aerobaticSmokeG);
+            bindColor("b", AllConfigs.common.aerobaticSmokeB);
+        }
         if (!auxiliary.options.isEmpty()) {
             if (panel != Panel.AUXILIARY) auxiliary.enter();
             auxiliaryRow = row(slots, I18n.get("gui.ywzj_rvp.auxiliary.entry"), () -> open(Panel.AUXILIARY));
@@ -168,10 +196,6 @@ public class RVP_AuiVariantScreen extends ApricityScreen {
         search.setValue(filter);
         search.addEventListener("input", event -> filterPaint(search.getValue()));
         search.addEventListener("change", event -> filterPaint(search.getValue()));
-        // 烟雾仍写入本体的三个配置项，与原工具使用相同的取值范围。
-        bindColor("r", AllConfigs.common.aerobaticSmokeR);
-        bindColor("g", AllConfigs.common.aerobaticSmokeG);
-        bindColor("b", AllConfigs.common.aerobaticSmokeB);
         open(panel);
     }
 
@@ -407,12 +431,15 @@ public class RVP_AuiVariantScreen extends ApricityScreen {
     }
 
     private void equipWeapon(int index) {
+        var station = stations.get(stationIndex);
+        // 单项固定武器可以查看档案。点击时没有待提交的改装。
+        if (station.size() <= 1) return;
         // 打开档案与浏览说明不受限，提交时重新检查车辆速度和乘员。
         if (!RVP_VehicleExtendedConfigManager.INSTANCE.canModVehicle(vehicle)) {
             if (minecraft.player != null) minecraft.player.displayClientMessage(Component.translatable("message.ywzj_rvp.modding_blocked"), true);
             return;
         }
-        stations.get(stationIndex).equip(vehicle, index);
+        station.equip(vehicle, index);
         pendingStation = stationIndex;
         pendingWeapon = index;
         pendingWeaponTicks = 40;
@@ -478,6 +505,10 @@ public class RVP_AuiVariantScreen extends ApricityScreen {
         stats = RVP_WorkshopData.current();
         // 原生下拉菜单在文档顶层，替换武器详情前先关闭旧菜单。
         if (el("damage-target") instanceof Select select) select.closePopup();
+        if (el("damage-context") instanceof Select select) select.closePopup();
+        if (el("speed-scene") instanceof Select select) select.closePopup();
+        if (el("speed-carrier") instanceof Select select) select.closePopup();
+        speedVisible = false;
         el("facts").setTextContent("");
         show("detail-art", panel == Panel.WEAPON && index >= 0 && index < stations.get(stationIndex).size());
         if (panel == Panel.WEAPON && index >= 0 && index < stations.get(stationIndex).size()) {
@@ -574,6 +605,22 @@ public class RVP_AuiVariantScreen extends ApricityScreen {
                 RVP_WorkshopData.text(raw, "description"), RVP_WorkshopData.text(raw, "description_CN"));
         if (raw == null) return;
         var data = RVP_WorkshopData.weapon(raw, weapon.getData());
+        // 弹容量由当前武器站覆写。显示和单发判定共用实际可装填的容量。
+        int capacity = weapon.getMaxCapacity();
+        weaponFacts(data, capacity, data.capacity() != null || weapon.getWeaponUnit().getAmmoCapacity() != -1);
+        speedDetails(raw, weapon.getData());
+        // 从正式子弹药索引读取解析数据，原文用于保留缺项。
+        var projectile = new RVP_WorkshopDamage.Projectile(raw, weapon.getData() instanceof RVP_WeaponData rvp ? rvp : null);
+        java.util.function.Function<ResourceLocation, RVP_WorkshopDamage.Projectile> lookup = childId ->
+                new RVP_WorkshopDamage.Projectile(stats.weapon(childId), RVP_SubmunitionSpawner.loadWeaponData(childId));
+        var scenarios = RVP_WorkshopDamage.read(id, projectile, lookup);
+        var blocks = RVP_WorkshopDamage.read(id, projectile, lookup, true);
+        if (!scenarios.isEmpty() || blocks.stream().anyMatch(s -> s.shot().hasPower() || s.shot().radius() != null
+                || !s.shot().effects().isEmpty())) damageDetails(id, scenarios, blocks);
+    }
+
+    /** 武器站的实际容量为 1 时，保留口径等数据并省略发射模式和射速。 */
+    private void weaponFacts(RVP_WorkshopData.Weapon data, int capacity, boolean showCapacity) {
         if (data.guided()) {
             var stages = new ArrayList<String>();
             if (!data.guidance().isBlank()) stages.add(enumLabel("guidance", data.guidance()));
@@ -581,19 +628,13 @@ public class RVP_AuiVariantScreen extends ApricityScreen {
             if (!stages.isEmpty()) fact(FIELD + "guidance", String.join(" → ", stages));
         } else {
             numeric("caliber", data.caliber(), " mm");
-            if (!data.fireMode().isBlank()) fact(FIELD + "mode", enumLabel("mode", data.fireMode()));
-            numeric("rpm", data.rpm(), " RPM");
+            if (capacity != 1) {
+                if (!data.fireMode().isBlank()) fact(FIELD + "mode", enumLabel("mode", data.fireMode()));
+                numeric("rpm", data.rpm(), " RPM");
+            }
         }
-        // 武器站可指定独立弹容量；使用当前候选实例，与实际装填取值一致。
-        if (data.capacity() != null || weapon.getWeaponUnit().getAmmoCapacity() != -1)
-            numeric("capacity", (double) weapon.getMaxCapacity(), "");
+        if (showCapacity) numeric("capacity", (double) capacity, "");
         numeric("reload", data.reloadSeconds(), " s");
-        // 组合已选武器和实际装载的子弹药索引，同时读取同步原文，保留缺项语义。
-        var projectile = new RVP_WorkshopDamage.Projectile(raw, weapon.getData() instanceof RVP_WeaponData rvp ? rvp : null);
-        var damage = RVP_WorkshopDamage.read(id, projectile, childId -> new RVP_WorkshopDamage.Projectile(
-                stats.weapon(childId), RVP_SubmunitionSpawner.loadWeaponData(childId)));
-        numeric("radius", damage.radius(), " m");
-        if (damage.hasPower()) damageDetails(damage);
     }
 
     private String enumLabel(String field, String raw) {
@@ -610,62 +651,323 @@ public class RVP_AuiVariantScreen extends ApricityScreen {
                 .stripTrailingZeros().toPlainString();
     }
 
-    private void damageDetails(RVP_WorkshopDamage.Shot damage) {
-        Element power = child(el("facts"), "div", "fact", "");
-        Element label = child(power, "div", "power-label", "");
-        child(label, "span", "fact-name", I18n.get(FIELD + "power"));
-        // 显式挂载原生 Select，让弹出层、键盘和 change 走 ApricityUI 控件行为。
-        Select select = new Select(doc);
-        select.setClassName("damage-target");
-        Element target = label.appendChild(select);
-        target.setAttribute("id", "damage-target");
-        target.setAttribute("aria-label", I18n.get(FIELD + "target"));
+    /** 武器初速和设计参数直接取当前弹药；曲线从展示实体采样，两者分别保留出膛和平台速度语义。 */
+    private void speedDetails(JsonObject raw, BaseVehicleWeaponData resolved) {
+        var data = resolved instanceof RVP_WeaponData rvp ? rvp : null;
+        boolean missile = resolved instanceof VehicleMissileWeaponData || data != null && data.getWeaponKind() == RVP_EnumWeaponKind.MISSILE;
+        Double speed = RVP_WorkshopBallistics.muzzle(raw, resolved);
+        if (speed != null) fact(FIELD + "muzzle", speedText(speed, missile));
+        if (flightWeapon != data || flightData != stats) {
+            flightWeapon = data;
+            flightData = stats;
+            curves.clear();
+            sampling = null;
+            sceneIndex = 0;
+            carrierMps = 20;
+            speedExpanded = RVP_WorkshopDamage.isAirOnlyMissile(data);
+        }
+        if (data != null && data.usesPropulsion()) {
+            Element line = child(el("facts"), "div", "fact", "");
+            child(line, "span", "fact-name", I18n.get(FIELD + "forces"));
+            child(line, "span", "fact-value", "").setAttribute("id", "speed-forces");
+            updateForces();
+        } else {
+            var base = RVP_WorkshopBallistics.baseForces(raw, resolved);
+            if (base != null) fact(FIELD + "forces", forceText(base));
+        }
+        String range = "", angle = "";
+        var guidance = RVP_WorkshopData.object(raw, "guidance_data");
+        if (data != null && guidance != null) {
+            var lock = data.getGuidanceData().getLockTargetDistanceRange();
+            if (guidance.has("lock_target_distance_range") && lock != null) {
+                var intervals = new ArrayList<String>();
+                for (var interval : lock.intervals()) {
+                    String from = interval.lower() == null ? "0" : format(interval.lower());
+                    String to = interval.upper() == null ? "∞" : format(interval.upper());
+                    intervals.add(from + "–" + to);
+                }
+                if (!intervals.isEmpty()) range = String.join(", ", intervals) + " m";
+            }
+            if (RVP_WorkshopData.number(guidance, "max_lock_angle") != null)
+                angle = data.getGuidanceData().getMaxLockAngle() + "°";
+        } else if (resolved instanceof VehicleMissileWeaponData base && RVP_WorkshopData.number(raw, "seeker_fov") != null) {
+            angle = format(base.getSeekerFov()) + "°";
+        }
+        if (!range.isEmpty() && !angle.isEmpty()) fact(FIELD + "lock_fov", range + " / " + angle);
+        else if (!range.isEmpty()) fact(FIELD + "lock_range", range);
+        else if (!angle.isEmpty()) fact(FIELD + "fov", angle);
+        Double gs = RVP_WorkshopBallistics.maxG(raw, resolved);
+        if (gs != null) numeric("max_g", Math.round(gs * 10) / 10.0, " G");
+        if (data == null || !data.usesPropulsion() && !RVP_WorkshopDamage.isAirOnlyMissile(data)) return;
+        speedVisible = true;
+
+        Element toggle = child(el("facts"), "button", "fact speed-toggle", "");
+        toggle.setAttribute("id", "speed-toggle");
+        toggle.setAttribute("type", "button");
+        toggle.setAttribute("aria-controls", "speed-panel");
+        Element label = child(toggle, "span", "speed-label", "");
+        child(label, "span", "fact-name", I18n.get(FIELD + "peak"));
+        child(label, "span", "damage-chevron", "").setAttribute("aria-hidden", "true");
+        child(toggle, "span", "fact-value", "").setAttribute("id", "speed-peak");
+        Element area = child(el("facts"), "div", "speed-panel", "");
+        area.setAttribute("id", "speed-panel");
+        Element controls = child(area, "div", "speed-selects", "");
+        Select scene = nativeSelect(controls, "speed-scene", I18n.get(FIELD + "speed.scene"));
+        for (int i = 0; i < RVP_WorkshopTrajectory.SCENES.size(); i++) {
+            var s = RVP_WorkshopTrajectory.SCENES.get(i);
+            damageOption(scene, String.valueOf(i), "Y=" + s.height() + " / " + s.range() + " m");
+        }
+        scene.setValue(Integer.toString(sceneIndex));
+        Select carrier = nativeSelect(controls, "speed-carrier", I18n.get(FIELD + "speed.carrier"));
+        for (int v : List.of(20, 40, 60))
+            damageOption(carrier, Integer.toString(v), I18n.get(FIELD + "speed.platform") + " " + v + " m/s");
+        carrier.setValue(Integer.toString(carrierMps));
+        Canvas graph = (Canvas) area.appendChild(new Canvas(doc));
+        graph.setClassName("speed-chart");
+        graph.setAttribute("id", "speed-chart");
+        graph.setAttribute("role", "img");
+        graph.setAttribute("aria-label", I18n.get(FIELD + "speed.distance") + " / " + I18n.get(FIELD + "speed.axis"));
+        graph.setWidth(RVP_WorkshopSpeedPlot.WIDTH);
+        graph.setHeight(RVP_WorkshopSpeedPlot.HEIGHT);
+        scene.addEventListener("change", e -> {
+            sceneIndex = Integer.parseInt(scene.getValue());
+            sampling = null;
+            updateForces();
+            updateSpeedPlot();
+        });
+        carrier.addEventListener("change", e -> {
+            carrierMps = Integer.parseInt(carrier.getValue());
+            sampling = null;
+            updateSpeedPlot();
+        });
+        toggle.addEventListener("click", e -> {
+            if (speedExpanded) {
+                scene.closePopup();
+                carrier.closePopup();
+            }
+            speedExpanded = !speedExpanded;
+            updateSpeedPlot();
+        });
+        updateSpeedPlot();
+    }
+
+    private static String speedText(double blocksPerTick, boolean missile) {
+        return format(Math.round(blocksPerTick * (missile ? 72 : 20) * 10) / 10.0) + (missile ? " KPH" : " m/s");
+    }
+
+    private void updateForces() {
+        if (flightWeapon == null || !flightWeapon.usesPropulsion()) return;
+        var f = RVP_WorkshopBallistics.forces(flightWeapon, RVP_WorkshopTrajectory.SCENES.get(sceneIndex).height());
+        el("speed-forces").setTextContent(forceText(f));
+    }
+
+    private static String forceText(RVP_WorkshopBallistics.Forces f) {
+        return Math.round(f.first()) + (f.second() == null ? "" : " → " + Math.round(f.second()))
+                + " / " + Math.round(f.drag()) + " N";
+    }
+
+    private int curveKey() {
+        return sceneIndex * 100 + (flightWeapon.isInheritVehicleVelocity() ? carrierMps : 0);
+    }
+
+    private void updateSpeedPlot() {
+        el("speed-toggle").setAttribute("aria-expanded", Boolean.toString(speedExpanded));
+        show("speed-panel", speedExpanded);
+        var curve = curves.get(curveKey());
+        boolean missile = flightWeapon.getWeaponKind() == RVP_EnumWeaponKind.MISSILE;
+        el("speed-peak").setTextContent(curve == null ? "…" : speedText(curve.peak(), missile));
+        show("speed-chart", curve != null);
+        if (curve != null && speedExpanded) RVP_WorkshopSpeedPlot.draw((Canvas) el("speed-chart"), curve, missile);
+        if (curve == null && sampling == null)
+            sampling = new RVP_WorkshopTrajectory(vehicle.level(), flightWeapon, RVP_WorkshopTrajectory.SCENES.get(sceneIndex), carrierMps);
+    }
+
+    private void damageDetails(ResourceLocation weapon, List<RVP_WorkshopDamage.Scenario> entities,
+                               List<RVP_WorkshopDamage.Scenario> blocks) {
+        if (!weapon.equals(damageWeapon)) {
+            damageWeapon = weapon;
+            damageContext = null;
+            damageExpanded = false;
+        }
+        if (entities.isEmpty()) damageTarget = RVP_WorkshopDamage.BLOCK;
+        boolean block = RVP_WorkshopDamage.BLOCK.equals(damageTarget);
+        var scenarios = block ? blocks : entities;
+        var initial = scenarios.stream().filter(scenario -> scenario.context() == damageContext)
+                .findFirst().orElse(scenarios.get(0));
+        damageContext = initial.context();
+        Element panel = child(el("facts"), "section", "damage-details", "");
+        panel.setAttribute("aria-label", I18n.get(FIELD + "damage_details"));
+        Element controls = damageElement(panel, "div", "damage-controls", "controls", "");
+        Element labels = child(controls, "div", "damage-control-labels", "");
+        Element inputs = child(controls, "div", "damage-control-selects", "");
+        damageElement(labels, "span", "fact-name", "power-name", I18n.get(FIELD + "power"));
+        Select target = damageSelect(inputs, "target", I18n.get(FIELD + "target"));
+        Element total = damageElement(controls, "span", "fact-value damage-total", "power-value", "");
+        total.setAttribute("aria-live", "polite");
+        total.setAttribute("aria-label", I18n.get(FIELD + "current_power"));
 
         // 同时列出当前载具包中的类型、装甲分类和此弹药独有的倍率键。
         var types = new TreeSet<>(stats.vehicleTypes());
-        types.addAll(damage.vehicleTypes());
-        var targets = new ArrayList<>(List.of(RVP_WorkshopDamage.DEFAULT_VEHICLE, RVP_WorkshopDamage.PLAYER,
-                RVP_WorkshopDamage.LIVING));
-        types.stream().filter(type -> type.contains(":") && ResourceLocation.tryParse(type) != null).forEach(targets::add);
+        scenarios.forEach(scenario -> types.addAll(scenario.shot().vehicleTypes()));
+        var targets = new ArrayList<String>();
+        if (!entities.isEmpty()) {
+            targets.addAll(List.of(RVP_WorkshopDamage.DEFAULT_VEHICLE, RVP_WorkshopDamage.PLAYER, RVP_WorkshopDamage.LIVING));
+            types.stream().filter(type -> type.contains(":") && ResourceLocation.tryParse(type) != null).forEach(targets::add);
+        }
+        targets.add(RVP_WorkshopDamage.BLOCK);
         for (String kind : targets) {
             String key = FIELD + "target." + kind.replace(':', '.').replace('/', '.');
-            Element option = child(target, "option", "", I18n.exists(key) ? I18n.get(key) : kind);
-            option.setAttribute("value", kind);
+            damageOption(target, kind, I18n.exists(key) ? I18n.get(key) : kind);
         }
         if (!targets.contains(damageTarget)) damageTarget = RVP_WorkshopDamage.DEFAULT_VEHICLE;
         target.setValue(damageTarget);
 
-        Element total = child(power, "span", "fact-value", "");
-        Element sources = child(el("facts"), "div", "damage-sources", "");
-        Element table = damage.hasDirect() ? child(el("facts"), "div", "penetration", "") : null;
-        updateDamage(damage, total, sources, table);
+        boolean showContext = scenarios.size() > 1 || damageContext != RVP_WorkshopDamage.Context.IMPACT;
+        if (showContext) {
+            String label = I18n.get(FIELD + "context");
+            child(labels, "span", "fact-name", label);
+            if (scenarios.size() > 1) {
+                Select selector = damageSelect(inputs, "context", label);
+                for (var scenario : scenarios)
+                    damageOption(selector, scenario.context().key(), contextName(scenario.context()));
+                selector.setValue(damageContext.key());
+                selector.addEventListener("change", ignored -> {
+                    damageContext = scenarios.stream().map(RVP_WorkshopDamage.Scenario::context)
+                            .filter(value -> value.key().equals(selector.getValue())).findFirst().orElse(initial.context());
+                    damageExpanded = false;
+                    updateDamage(scenarios);
+                });
+            } else {
+                child(inputs, "span", "damage-fixed-context", contextName(damageContext));
+            }
+        }
+
+        damageElement(panel, "div", "context-copy", "explanation", "");
+        Element sources = damageElement(panel, "div", "damage-sources", "sources", "");
+        sources.setAttribute("aria-label", I18n.get(FIELD + "sources"));
+        Element more = damageElement(panel, "button", "damage-more", "more", "");
+        more.setAttribute("type", "button");
+        more.setAttribute("aria-controls", "damage-sources");
+        child(more, "span", "damage-chevron", "").setAttribute("aria-hidden", "true");
+        more.addEventListener("click", ignored -> {
+            damageExpanded = !damageExpanded;
+            updateDamageSources(currentShot(scenarios));
+        });
+        damageFact(panel, "radius");
+        damageFact(panel, "effects");
+        damageElement(panel, "div", "penetration", "grid", "")
+                .setAttribute("aria-label", I18n.get(FIELD + "impact_table"));
         target.addEventListener("change", ignored -> {
             damageTarget = target.getValue();
-            // 原地刷新数字和表格，保留选择控件与档案滚动位置。
-            updateDamage(damage, total, sources, table);
+            if (block != RVP_WorkshopDamage.BLOCK.equals(damageTarget)) {
+                if (el("damage-context") instanceof Select select) select.closePopup();
+                panel.remove();
+                damageExpanded = false;
+                damageDetails(weapon, entities, blocks);
+            } else updateDamage(scenarios);
         });
+        updateDamage(scenarios);
     }
 
-    private void updateDamage(RVP_WorkshopDamage.Shot damage, Element total, Element sources, Element table) {
-        total.setTextContent(format(damage.power(damageTarget)));
+    private Element damageElement(Element parent, String tag, String css, String id, String text) {
+        Element element = child(parent, tag, css, text);
+        element.setAttribute("id", "damage-" + id);
+        return element;
+    }
+
+    private Select damageSelect(Element parent, String id, String label) {
+        return nativeSelect(parent, "damage-" + id, label);
+    }
+
+    private Select nativeSelect(Element parent, String id, String label) {
+        // 显式挂载 ApricityUI 的原生控件，沿用键盘及弹出层行为。
+        Select select = new Select(doc);
+        select.setClassName("damage-select");
+        select.setAttribute("id", id);
+        select.setAttribute("aria-label", label);
+        return (Select) parent.appendChild(select);
+    }
+
+    private void damageOption(Select select, String value, String label) {
+        child(select, "option", "", label).setAttribute("value", value);
+    }
+
+    private String contextName(RVP_WorkshopDamage.Context context) { return I18n.get(FIELD + "context." + context.key()); }
+
+    private void damageFact(Element parent, String name) {
+        Element row = damageElement(parent, "div", "fact damage-stat", name + "-row", "");
+        String label = name.equals("radius") && RVP_WorkshopDamage.BLOCK.equals(damageTarget) ? "block_radius" : name;
+        child(row, "span", "fact-name", I18n.get(FIELD + label));
+        damageElement(row, "span", "fact-value", name, "");
+    }
+
+    private RVP_WorkshopDamage.Shot currentShot(List<RVP_WorkshopDamage.Scenario> scenarios) {
+        return scenarios.stream().filter(scenario -> scenario.context() == damageContext).findFirst().orElseThrow().shot();
+    }
+
+    private void updateDamage(List<RVP_WorkshopDamage.Scenario> scenarios) {
+        var damage = currentShot(scenarios);
+        boolean power = damage.hasPower();
+        el("damage-controls").setClassName("damage-controls");
+        show("damage-power-name", true);
+        show("damage-target", true);
+        show("damage-power-value", power);
+        el("damage-power-value").setTextContent(power ? format(damage.power(damageTarget)) : "");
+        updateDamageSources(damage);
+        var active = scenarios.stream().filter(s -> s.context() == damageContext).findFirst().orElseThrow();
+        String explanation = damageContext == RVP_WorkshopDamage.Context.IMPACT ? ""
+                : I18n.get(FIELD + "explain." + damageContext.key());
+        if (active.threshold() != null) explanation += "  " + format(active.threshold())
+                + (damageContext == RVP_WorkshopDamage.Context.DISTANCE ? " m" : " s");
+        el("damage-explanation").setTextContent(explanation);
+        show("damage-explanation", !explanation.isEmpty());
+        Double radius = damage.radius(damageTarget);
+        updateDamageFact("radius", radius == null ? "" : format(radius) + " m");
+        updateDamageFact("effects", String.join(I18n.get(FIELD + "effects.separator"),
+                damage.effects().stream().map(effect -> I18n.get(FIELD + "effects." + effect)).toList()));
+        Element grid = el("damage-grid");
+        boolean showGrid = damage.hasTableDamage();
+        show("damage-grid", showGrid);
+        if (showGrid) damageTable(grid, damage);
+        else grid.setTextContent("");
+    }
+
+    private void updateDamageFact(String name, String value) {
+        el("damage-" + name + "-row").setClassName("fact damage-stat" + (value.isEmpty() ? " hidden" : ""));
+        el("damage-" + name).setTextContent(value);
+    }
+
+    private void updateDamageSources(RVP_WorkshopDamage.Shot damage) {
+        Element sources = el("damage-sources");
         sources.setTextContent("");
-        long remaining = damage.stages().stream().filter(RVP_WorkshopDamage.Stage::hasDamage).count();
-        for (int i = 0; i < damage.stages().size(); i++) {
-            var stage = damage.stages().get(i);
-            if (!stage.hasDamage()) continue;
-            String key = damage.stages().size() == 1 ? "damage_source"
-                    : i == 0 ? "damage_source.first" : "damage_source.followup";
+        var rows = damage.stages().stream().filter(RVP_WorkshopDamage.Stage::hasDamage).toList();
+        int visible = damageExpanded ? rows.size() : Math.min(COLLAPSED_SOURCES, rows.size());
+        for (int i = 0; i < visible; i++) {
+            var stage = rows.get(i);
             Element line = child(sources, "div", "damage-source", "");
-            String branch = --remaining == 0 ? "└─ " : "├─ ";
-            child(line, "span", "damage-source-name", branch + I18n.get(FIELD + key));
-            String amount = format(stage.directFor(damageTarget)) + "/" + format(stage.explosionFor(damageTarget));
-            child(line, "span", "damage-source-value", stage.count() > 1 ? amount + " ×" + stage.count() : amount);
+            Element label = child(line, "span", "damage-source-label", "");
+            child(label, "span", "damage-source-branch", i + 1 == rows.size() ? "└─" : "├─")
+                    .setAttribute("aria-hidden", "true");
+            String name = stage.source() == RVP_WorkshopDamage.Source.ROOT
+                    ? "" : I18n.get(FIELD + "source." + stage.source().key()) + " ";
+            boolean direct = stage.direct() != null;
+            boolean blast = stage.explosion() != null;
+            String type = stage.source() == RVP_WorkshopDamage.Source.PROXIMITY ? "proximity"
+                    : direct && blast ? "both" : direct ? "direct" : "blast";
+            child(label, "span", "damage-source-name", name + I18n.get(FIELD + "damage_type." + type));
+            String amount = direct ? format(stage.directFor(damageTarget)) : "";
+            if (blast) amount += (direct ? " / " : "") + format(stage.explosionFor(damageTarget));
+            if (stage.count().compareTo(BigInteger.ONE) > 0) amount += " ×" + stage.count();
+            child(line, "span", "damage-source-value", amount);
         }
-        if (table != null) penetration(table, damage);
+        Element more = el("damage-more");
+        more.setClassName("damage-more" + (rows.size() > COLLAPSED_SOURCES ? "" : " hidden"));
+        more.setAttribute("aria-expanded", Boolean.toString(damageExpanded && rows.size() > COLLAPSED_SOURCES));
+        more.setAttribute("aria-label", I18n.get(FIELD + (damageExpanded ? "collapse" : "expand")));
     }
 
-    /** 每格显示所有能命中的直击合计。跳弹格只显示文字。 */
-    private void penetration(Element table, RVP_WorkshopDamage.Shot shot) {
+    /** 每格显示直击与爆炸合计，跳弹用文字表示。 */
+    private void damageTable(Element table, RVP_WorkshopDamage.Shot shot) {
         table.setTextContent("");
         Element header = child(table, "div", "damage-row damage-header", "");
         child(header, "span", "damage-distance", I18n.get(FIELD + "distance"));
@@ -713,15 +1015,29 @@ public class RVP_AuiVariantScreen extends ApricityScreen {
     }
 
     private void updateSwatch() {
+        if (smokeRow == null) return;
         String color = rgbText();
         setRow(smokeRow, color, color, panel == Panel.SMOKE);
         el("swatch").setInlineStyleProperty("background-color", color);
+    }
+
+    private void tickSpeed() {
+        if (speedVisible && sampling != null) {
+            // 只在菜单客户端刻采样。切换条件会取消上一项，每帧渲染仅显示缓存位图。
+            var curve = sampling.advance(1_500_000);
+            if (curve != null) {
+                curves.put(curveKey(), curve);
+                sampling = null;
+                updateSpeedPlot();
+            }
+        }
     }
 
     @Override
     public void tick() {
         super.tick();
         if (doc == null) return;
+        tickSpeed();
         if (!auxiliary.options.isEmpty()) {
             if (panel == Panel.AUXILIARY && (vehicle.isRemoved() || vehicle.level() != minecraft.level)) {
                 onClose();
@@ -762,6 +1078,7 @@ public class RVP_AuiVariantScreen extends ApricityScreen {
     private boolean overScene(double x, double y) {
         // 菜单可浮到卡片外，仍让 ApricityUI 处理选项、滚动和外部点击。
         return doc != null && !(el("damage-target") instanceof Select select && select.isPopupOpen())
+                && !(el("damage-context") instanceof Select context && context.isPopupOpen())
                 && !over("navigation", x, y) && (panel == Panel.PROFILE || !over("options", x, y))
                 && !over("detail", x, y) && !over("vehicle-title", x, y)
                 && !over("reset-view", x, y) && !over("close-button", x, y);

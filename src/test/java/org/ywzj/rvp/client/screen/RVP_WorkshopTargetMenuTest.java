@@ -24,18 +24,18 @@ class RVP_WorkshopTargetMenuTest {
         }
         Document doc = Document.create(template);
         Element label = doc.getElementById("facts").appendChild(doc.createElement("div"));
-        label.setClassName("power-label");
+        label.setClassName("damage-controls");
         Element name = label.appendChild(doc.createElement("span"));
         name.setClassName("fact-name");
         name.setTextContent("威力");
         Select select = (Select) label.appendChild(new Select(doc));
-        select.setClassName("damage-target");
-        for (String type : new String[]{"默认载具", "玩家", "生物"}) {
+        select.setClassName("damage-select");
+        for (String type : new String[]{"默认", "玩家", "生物"}) {
             Element option = select.appendChild(doc.createElement("option"));
             option.setAttribute("value", type);
             option.setTextContent(type);
         }
-        select.setValue("默认载具");
+        select.setValue("默认");
         doc.commitPendingStyleRecalcForRender();
         assertEquals(name.getComputedStyle().fontSize, label.getComputedStyle().gap);
         select.handleClickDefault();
@@ -54,7 +54,7 @@ class RVP_WorkshopTargetMenuTest {
             // 原生列表单独维护键盘指向行；移动时应可见，回车才改变选项。
             assertTrue(press(select, GLFW.GLFW_KEY_DOWN));
             doc.commitPendingStyleRecalcForRender();
-            assertEquals("默认载具", select.getValue());
+            assertEquals("默认", select.getValue());
             assertNotEquals(closed.backgroundImage, rows.get(1).getComputedStyle().backgroundImage);
             assertTrue(press(select, GLFW.GLFW_KEY_ENTER));
             assertEquals("玩家", select.getValue());
