@@ -25,8 +25,22 @@ public final class RVP_GroupedWeaponSlotAssembler {
     private RVP_GroupedWeaponSlotAssembler() {}
 
     public static boolean shouldHandle(WeaponUnit weaponUnit) {
-        return weaponUnit != null && RVP_VehicleExtendedConfigManager.INSTANCE.hasGroupedWeaponSlots(
-                weaponUnit.getVehicle(), weaponUnit.getId());
+        if (weaponUnit == null || weaponUnit.getData() == null) {
+            return false;
+        }
+        // 沿用 RVP 分组配置，也接管以子武器站为来源的副武器槽。
+        if (RVP_VehicleExtendedConfigManager.INSTANCE.hasGroupedWeaponSlots(weaponUnit.getVehicle(), weaponUnit.getId())) {
+            return true;
+        }
+        // 根据本体解析后的武器条目识别关联槽，适用于没有主武器合并组的配置。
+        List<WeaponInfo> infos = weaponUnit.getData().getWeapons();
+        return infos != null && infos.stream().anyMatch(RVP_GroupedWeaponSlotAssembler::isLinkedSecondary);
+    }
+
+    private static boolean isLinkedSecondary(@Nullable WeaponInfo info) {
+        // 弹舱门控绑定在原槽索引，带弹舱的条目沿用现有发包路径。
+        return info != null && info.secondary && info.partUnitId != null && info.weaponBayUnitId == null
+                && info.id == null && (info.ids == null || info.ids.isEmpty());
     }
 
     public static void assemble(WeaponUnit weaponUnit, Map<String, PartUnit<?>> partUnitsView, AbstractVehicle vehicle) {
@@ -35,6 +49,12 @@ public final class RVP_GroupedWeaponSlotAssembler {
         weaponUnit.independentWeapons.clear();
         weaponUnit.indexedWeapons.clear();
         weaponUnit.weaponBayUnits.clear();
+        // 普通武器站第一次接入这个装配器时，延续本体独立槽的齐射配置。
+        boolean standalone = !RVP_VehicleExtendedConfigManager.INSTANCE.hasGroupedWeaponSlots(
+                weaponUnit.getVehicle(), weaponUnit.getId());
+        if (standalone) {
+            weaponUnit.fullSalvoWeapons.clear();
+        }
 
         linkSubParts(weaponUnit, partUnitsView);
 
@@ -54,6 +74,9 @@ public final class RVP_GroupedWeaponSlotAssembler {
                 weaponUnit.weapons.add(built.weapon());
             }
             weaponUnit.indexedWeapons.add(built.weapon());
+            if (standalone && slot.primary().fullSalvo) {
+                weaponUnit.fullSalvoWeapons.add(built.weapon());
+            }
             if (built.weaponBayUnit() != null) {
                 weaponUnit.weaponBayUnits.put(built.weapon(), built.weaponBayUnit());
             }
@@ -181,17 +204,14 @@ public final class RVP_GroupedWeaponSlotAssembler {
         }
 
         if (info.id == null) {
-            if (info.partUnitId != null
-                    && partUnitsView.get(info.partUnitId) instanceof WeaponUnit agentWeaponUnit
-                    && agentWeaponUnit != root) {
-                if (agentWeaponUnit.getParentWeaponUnit() == null) {
-                    agentWeaponUnit.setParentWeaponUnit(root);
-                }
-                root.addSubWeaponUnit(agentWeaponUnit);
-                VehicleWeaponAgent weaponAgent = new VehicleWeaponAgent(vehicle, agentWeaponUnit, index);
-                return new BuiltWeapon(weaponAgent, weaponBayUnit, info.secondary, independent);
+            if (mountUnit == root) {
+                return null;
             }
-            return null;
+            // resolveMountUnit 已建立母子关系。副槽使用可转发开火的代理，主槽沿用本体代理。
+            VehicleWeaponAgent agent = isLinkedSecondary(info)
+                    ? new RVP_LinkedSecondaryWeapon(vehicle, mountUnit, index)
+                    : new VehicleWeaponAgent(vehicle, mountUnit, index);
+            return new BuiltWeapon(agent, weaponBayUnit, info.secondary, false);
         }
 
         VehicleWeaponIndex<?, ?> weaponIndex = CommonAssetsManager.vehicleWeaponManager().getIndex(info.id).orElse(null);

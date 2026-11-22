@@ -86,8 +86,10 @@ public final class RVP_WeaponFireController {
         boolean chargeOwnInput = false;
         if (LocalVehiclePlayer.instance != null && LocalVehiclePlayer.instance.onVehicle()) {
             WeaponUnit operatedUnit = LocalVehiclePlayer.instance.getWeaponUnit();
-            chargeOwnInput = operatedUnit == weapon.getWeaponUnit()
-                    && RVP_WeaponResolveHelper.currentPrimary(operatedUnit) == weapon;
+            // 取操作站的当前副武器，允许选中的子站改件按副键积累蓄力和转管状态。
+            chargeOwnInput = (operatedUnit == weapon.getWeaponUnit()
+                    && RVP_WeaponResolveHelper.currentPrimary(operatedUnit) == weapon)
+                    || RVP_WeaponResolveHelper.currentSecondary(operatedUnit) == weapon;
         }
 
         RVP_FireData fire = weapon.getData().getFireData();
@@ -481,6 +483,11 @@ public final class RVP_WeaponFireController {
     @OnlyIn(Dist.CLIENT)
     private boolean isFireKeyDown() {
         var unit = weapon.getWeaponUnit();
+        // 子站把改件视为本地主武器。先按母站的副槽归属读取正确的开火键。
+        var root = unit.getRootParentWeaponUnit();
+        if (root != unit && RVP_WeaponResolveHelper.currentSecondary(root) == weapon) {
+            return AllKeys.SECONDARY_WEAPON_SHOOT.isDown();
+        }
         // 经解包比较当前选中武器：getCurrentWeapon()/getCurrentSecondaryWeapon() 返回的可能是
         // Multi/Agent 包装对象，恒等比较恒假 → 主选中的 railgun 会落进兜底分支，把同轴机枪的
         // 副键输入当成自己的开火输入（2026-09-19 同轴蓄力回归根因，0917 修复只改了 chargeOwnInput
