@@ -52,8 +52,11 @@ public final class RVP_GuidanceRuntimeController {
         if (projectile.isTerminalSeekerHandoffPending()) {
             var previousEntity = projectile.getTargetEntity();
             Vec3 previousPoint = projectile.getTargetPos();
-            captured = org.ywzj.rvp.guidance.runtime.RVP_RuntimeTerminalSeekerHandoff.acquire(
-                    new RVP_GuidanceRuntimeContext(projectile, data, active));
+            var terminalContext = new RVP_GuidanceRuntimeContext(projectile, data, active);
+            // 档案试飞的主段和末段都只观察场景目标，避免末段切换时搜到玩家世界里的其他实体。
+            captured = observation == null
+                    ? org.ywzj.rvp.guidance.runtime.RVP_RuntimeTerminalSeekerHandoff.acquire(terminalContext)
+                    : observation.apply(terminalContext);
             if (projectile.isRemoved()) return false;
             if (captured.success()) {
                 projectile.markTerminalSeekerCaptured();

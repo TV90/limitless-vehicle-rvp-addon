@@ -1,0 +1,391 @@
+{
+  "weapons": {
+    "impact": {
+      "type": "rvp:rocket",
+      "collision_data": {"direct_damage": 15},
+      "detonate_data": {"explosion_data": {"explode": true, "damage": 20, "radius": 3}}
+    },
+    "airburst": {
+      "type": "rvp:rocket",
+      "collision_data": {"direct_damage": 15, "bounce": 1, "bounce_on_vehicle": true, "bounce_incidence_angle": 80},
+      "fuse_data": {"programmable_airburst": true, "airburst_explosion_damage": 75, "airburst_explosion_radius": 8},
+      "detonate_data": {"explosion_data": {"explode": true, "damage": 20, "radius": 3}}
+    },
+    "airburst_zero": {
+      "type": "rvp:rocket",
+      "fuse_data": {"programmable_airburst": true, "airburst_explosion_damage": 0, "airburst_explosion_radius": 0},
+      "detonate_data": {"explosion_data": {"explode": true, "damage": 20, "radius": 3}}
+    },
+    "proximity": {
+      "type": "rvp:rocket",
+      "collision_data": {"direct_damage": 25},
+      "fuse_data": {
+        "proximity_radius": 12, "proximity_fuse_tick": 4, "proximity_fuse_require_radar_lock": true,
+        "proximity_fuse_damage": 55, "proximity_fuse_explosion_damage": 72, "proximity_fuse_explosion_radius": 9
+      },
+      "detonate_data": {"explosion_data": {"explode": true, "damage": 20, "radius": 3}}
+    },
+    "proximity_only": {
+      "type": "rvp:rocket",
+      "fuse_data": {"proximity_radius": 6, "proximity_fuse_damage": 42}
+    },
+    "ground_timer_life": {
+      "type": "rvp:rocket",
+      "life": 90,
+      "fuse_data": {"delay_tick": 35, "ground_proximity_fuse_distance": 4, "ground_proximity_fuse_arm_tick": 8,
+                    "detonate_on_life_end": true},
+      "detonate_data": {"explosion_data": {"explode": true, "damage": 27, "radius": 4}},
+      "submunition_data": {"releases": [
+        {"triggers": ["on_fuse"], "release_events": 1, "payloads": [{"kind": "rvp_weapon", "weapon_id": "workshop_test:cloud", "count": 2}]}
+      ]}
+    },
+    "water": {
+      "type": "rvp:torpedo",
+      "collision_data": {"damage_decay":[{"domain":"distance","type":"linear","start_distance":0,"end_distance":100,"end_factor":0.5}]},
+      "detonate_data": {"explosion_data": {"explode": true, "damage": 14, "radius": 3, "damage_in_water": 55, "radius_in_water": 9}}
+    },
+    "effects": {
+      "type": "rvp:rocket",
+      "detonate_data": {
+        "ignite_entity_data": {"seconds": 4},
+        "potion_cloud_data": {"effect": "minecraft:poison", "duration_ticks": 20, "cloud_duration_ticks": 60, "radius": 4},
+        "lightning_data": {"damage": true}
+      }
+    },
+    "dart": {
+      "type": "rvp:rocket",
+      "collision_data": {
+        "direct_damage": 6,
+        "direct_damage_factor": {"vehicles": {"ywzj_vehicle:tracked_vehicle": 0.5}},
+        "damage_decay": [{"domain": "distance", "type": "linear", "start_distance": 0, "end_distance": 100, "end_factor": 0.5}]
+      },
+      "submunition_data": {"releases": [
+        {"triggers": ["on_entity_hit"], "release_events": 1, "payloads": [{"kind": "rvp_weapon", "weapon_id": "workshop_test:spark", "count": 2}]}
+      ]}
+    },
+    "spark": {
+      "type": "rvp:rocket",
+      "collision_data": {"direct_damage": 2},
+      "detonate_data": {"explosion_data": {"explode": true, "damage": 1, "radius": 2}}
+    },
+    "cloud": {
+      "type": "rvp:rocket",
+      "detonate_data": {"explosion_data": {"explode": true, "damage": 3, "radius": 7}}
+    },
+    "chip": {
+      "type": "rvp:rocket",
+      "collision_data": {
+        "direct_damage": 10, "bounce": 1, "bounce_on_vehicle": true, "bounce_incidence_angle": 60,
+        "direct_damage_factor": {"vehicles": {"ywzj_vehicle:tracked_vehicle": 2, "workshop_test:composite": 0}},
+        "damage_decay": [{"domain": "distance", "type": "linear", "start_distance": 0, "end_distance": 100, "end_factor": 0}]
+      },
+      "detonate_data": {"explosion_data": {"explode": true, "damage": 4, "radius": 5}}
+    },
+    "mixed": {
+      "type": "rvp:rocket",
+      "collision_data": {
+        "direct_damage": 40, "bounce": 1, "bounce_on_vehicle": true, "bounce_incidence_angle": 80,
+        "direct_damage_factor": {"player": 0.25, "vehicles": {"ywzj_vehicle:tracked_vehicle": 0.5, "workshop_test:composite": 0.25}},
+        "damage_decay": [
+          {"domain": "distance", "type": "linear", "start_distance": 0, "end_distance": 100, "end_factor": 0.5},
+          {"domain": "angle", "type": "linear", "start_distance": 0, "end_distance": 30, "end_factor": 0.5}
+        ]
+      },
+      "detonate_data": {"explosion_data": {"explode": true, "damage": 20, "radius": 4,
+        "explosion_damage_factor": {"vehicles": {"ywzj_vehicle:tracked_vehicle": 2}}}},
+      "submunition_data": {"releases": [
+        {"triggers": ["in_flight"], "release_events": 3, "per_tick": 2, "interval_tick": 2, "payloads": [
+          {"kind": "rvp_weapon", "weapon_id": "workshop_test:dart", "count": 2, "allow_submunition": true},
+          {"kind": "rvp_weapon", "weapon_id": "workshop_test:cloud", "count": 1}
+        ]},
+        {"triggers": ["on_entity_hit"], "release_events": 1, "payloads": [
+          {"kind": "rvp_weapon", "weapon_id": "workshop_test:chip", "count": 3, "suppress_explosion": true}
+        ]}
+      ]}
+    },
+    "airburst_payloads": {
+      "type": "rvp:rocket",
+      "collision_data": {"direct_damage": 10},
+      "fuse_data": {"programmable_airburst": true, "airburst_explosion_damage": 64, "airburst_explosion_radius": 8},
+      "detonate_data": {"explosion_data": {"explode": true, "damage": 27, "radius": 4}},
+      "submunition_data": {"releases": [
+        {"triggers": ["on_fuse"], "release_events": 1, "payloads": [
+          {"kind": "rvp_weapon", "weapon_id": "workshop_test:dart", "count": 2},
+          {"kind": "rvp_weapon", "weapon_id": "workshop_test:cloud", "count": 1}
+        ]}
+      ]}
+    },
+    "exclusive": {
+      "type": "rvp:rocket",
+      "collision_data": {"direct_damage": 30},
+      "fuse_data": {"programmable_airburst": true, "delay_tick": 10, "airburst_explosion_damage": 39, "airburst_explosion_radius": 8},
+      "detonate_data": {"explosion_data": {"explode": true, "damage": 12, "radius": 2}},
+      "submunition_data": {"releases": [
+        {"triggers": ["on_entity_hit"], "release_events": 1, "parent_action": "discard_after_release",
+          "payloads": [{"kind": "rvp_weapon", "weapon_id": "workshop_test:dart", "count": 2}]},
+        {"triggers": ["on_fuse"], "release_events": 1, "payloads": [{"kind": "rvp_weapon", "weapon_id": "workshop_test:cloud", "count": 1}]}
+      ]}
+    },
+    "shared_triggers": {
+      "type": "rvp:rocket",
+      "collision_data": {"direct_damage": 14, "bounce": 1, "bounce_on_vehicle": true, "bounce_incidence_angle": 80},
+      "fuse_data": {"delay_tick": 30},
+      "submunition_data": {"releases": [
+        {"triggers": ["in_flight", "on_impact", "on_fuse"], "release_events": 1,
+          "payloads": [{"kind": "rvp_weapon", "weapon_id": "workshop_test:dart", "count": 1}]}
+      ]}
+    },
+    "special_triggers": {
+      "type": "rvp:rocket",
+      "collision_data": {"direct_damage": 25, "wall_penetration": 2},
+      "detonate_data": {"explosion_data": {"explode": true, "damage": 9, "radius": 2}},
+      "submunition_data": {"releases": [
+        {"triggers": ["on_impact"], "release_events": 1, "payloads": [{"kind": "rvp_weapon", "weapon_id": "workshop_test:dart", "count": 1}]},
+        {"triggers": ["on_block_hit"], "release_events": 1, "payloads": [{"kind": "rvp_weapon", "weapon_id": "workshop_test:cloud", "count": 3}]},
+        {"triggers": ["on_penetrate"], "release_events": 1, "payloads": [{"kind": "rvp_weapon", "weapon_id": "workshop_test:spark", "count": 2}]},
+        {"triggers": ["on_aps_intercept"], "release_events": 1, "payloads": [{"kind": "rvp_weapon", "weapon_id": "workshop_test:chip", "count": 5}]}
+      ]}
+    },
+    "late_wave": {
+      "type": "rvp:rocket",
+      "fuse_data": {"delay_tick": 5},
+      "detonate_data": {"explosion_data": {"explode": true, "damage": 8, "radius": 2}},
+      "submunition_data": {"releases": [
+        {"triggers": ["in_flight"], "delay_tick": 20, "release_events": 1,
+          "payloads": [{"kind": "rvp_weapon", "weapon_id": "workshop_test:dart", "count": 4}]}
+      ]}
+    },
+    "first_wave": {
+      "type": "rvp:rocket",
+      "detonate_data": {"explosion_data": {"explode": true, "damage": 22, "radius": 4}},
+      "submunition_data": {"releases": [
+        {"triggers": ["in_flight"], "release_events": 6, "interval_tick": 2, "per_tick": 2, "parent_action": "discard_on_first_spawn",
+          "payloads": [{"kind": "rvp_weapon", "weapon_id": "workshop_test:cloud", "count": 3}]}
+      ]}
+    },
+    "implicit_events": {
+      "type": "rvp:rocket",
+      "collision_data": {"direct_damage": 4},
+      "submunition_data": {"releases": [
+        {"triggers": ["on_entity_hit"], "release_events": 0, "payloads": [
+          {"kind": "rvp_weapon", "weapon_id": "workshop_test:dart", "count": 2},
+          {"kind": "rvp_weapon", "weapon_id": "workshop_test:cloud", "count": 3}
+        ]}
+      ]}
+    },
+    "canister": {
+      "type": "rvp:rocket",
+      "fire_data": {"canister_count": 4, "canister_burst_count": 2, "burst_count": 3},
+      "collision_data": {
+        "direct_damage": 5, "bounce": 1, "bounce_on_vehicle": true, "bounce_incidence_angle": 60,
+        "damage_decay": [
+          {"domain": "distance", "type": "linear", "start_distance": 0, "end_distance": 100, "end_factor": 0.5},
+          {"domain": "angle", "type": "linear", "start_distance": 0, "end_distance": 30, "end_factor": 0.5}
+        ]
+      }
+    },
+    "invalid_payloads": {
+      "type": "rvp:rocket",
+      "detonate_data": {"explosion_data": {"explode": true, "damage": 8, "radius": 2}},
+      "submunition_data": {"releases": [
+        {"triggers": ["on_entity_hit"], "release_events": 1, "payloads": [
+          {"kind": "rvp_weapon", "weapon_id": "workshop_test:missing", "count": 9},
+          {"kind": "rvp_weapon", "weapon_id": "workshop_test:cloud", "count": 0},
+          {"kind": "rvp_weapon", "weapon_id": "workshop_test:cloud", "count": -2},
+          {"kind": "entity", "entity_type": "minecraft:area_effect_cloud", "count": 4},
+          {"kind": "rvp_weapon", "weapon_id": "workshop_test:dart", "count": 2, "allow_submunition": false, "damage_multiplier": 0}
+        ]}
+      ]}
+    },
+    "cycle": {
+      "type": "rvp:rocket",
+      "collision_data": {"direct_damage": 3},
+      "submunition_data": {"releases": [
+        {"triggers": ["on_entity_hit"], "release_events": 1,
+          "payloads": [{"kind": "rvp_weapon", "weapon_id": "workshop_test:cycle", "count": 2, "allow_submunition": true}]}
+      ]}
+    },
+    "overflow": {
+      "type": "rvp:rocket",
+      "collision_data": {"direct_damage": 1},
+      "submunition_data": {"releases": [
+        {"triggers": ["on_entity_hit"], "release_events": 1,
+          "payloads": [{"kind": "rvp_weapon", "weapon_id": "workshop_test:overflow", "count": 60000, "allow_submunition": true}]}
+      ]}
+    },
+    "zero": {
+      "type": "rvp:rocket",
+      "collision_data": {"direct_damage": 0},
+      "detonate_data": {"explosion_data": {"explode": true, "damage": 0, "radius": 0}}
+    },
+    "radius_only": {
+      "type": "rvp:rocket",
+      "detonate_data": {"explosion_data": {"explode": true, "radius": 4}}
+    },
+    "disabled_blast": {
+      "type": "rvp:rocket",
+      "damage": 7,
+      "fuse_data": {"programmable_airburst": true, "airburst_explosion_damage": 64, "airburst_explosion_radius": 8},
+      "detonate_data": {"explosion_data": {"explode": false, "damage": 40, "radius": 6}}
+    }
+  },
+  "scenarios": [
+    {
+      "id": "mixed", "title": "飞行布撒、命中释放与多级载荷", "group": "多种子弹药", "status": "partial",
+      "input": "母弹命中释放 3 个子体。另有飞行布撒，每批 2 次，配置为 3 次，运行时共派发 4 次。飞行子体命中后还能再分出子体。",
+      "finding": "5 行伤害和各目标倍率都能显示。4 个后段使用相同标签，界面看不出它们的弹种、触发方式或父子关系。",
+      "expected": {"power": "198", "radius": "7 m", "rows": ["40/20", "6/0 ×8", "2/1 ×16", "0/3 ×4", "10/0 ×3"],
+                   "cells": {"100/0": "106", "100/30": "96", "100/60": "66", "100/80": "56", "2000/0": "106"}},
+      "targets": {
+        "player": {"power": "168", "cells": {"100/0": "91", "100/80": "91"}},
+        "living": {"power": "198", "cells": {"100/80": "106"}},
+        "ywzj_vehicle:tracked_vehicle": {"power": "204", "rows": ["20/40", "3/0 ×8", "2/1 ×16", "0/3 ×4", "20/0 ×3"], "cells": {"100/0": "114", "100/80": "44"}},
+        "workshop_test:composite": {"power": "138", "cells": {"100/0": "61"}}
+      }
+    },
+    {
+      "id": "impact", "title": "普通碰撞对照", "group": "伤害来源", "status": "match",
+      "input": "直击 15，爆炸 20，半径 3 m。配置未提供衰减或跳弹。",
+      "finding": "单一来源只写「直击/爆炸」。全部 24 格都用基础直击 15。",
+      "expected": {"power": "35", "radius": "3 m", "rows": ["15/20"], "allCells": "15"}
+    },
+    {
+      "id": "airburst", "title": "可编程空爆覆盖值", "group": "伤害来源", "status": "gap",
+      "input": "碰撞爆炸 20、半径 3 m。配置空爆为 75、半径 8 m，母弹基础直击 15。",
+      "finding": "实际面板与普通碰撞对照相同。游戏的空爆解析器取 75 和 8 m，空爆本身不结算母弹碰撞直击。",
+      "resolved": {"airburstDamage": 75, "airburstRadius": 8},
+      "expected": {"power": "35", "radius": "3 m", "rows": ["15/20"], "allCells": "15"}
+    },
+    {
+      "id": "airburst_zero", "title": "空爆覆盖为零", "group": "伤害来源", "status": "gap",
+      "input": "普通爆炸 20、3 m，空爆的伤害和半径显式写为零。",
+      "finding": "真实配置解析保留空爆的两个零值。面板仍显示普通爆炸的 20 和 3 m。",
+      "resolved": {"airburstDamage": 0, "airburstRadius": 0},
+      "expected": {"power": "20", "radius": "3 m", "rows": ["0/20"], "noMatrix": true}
+    },
+    {
+      "id": "proximity", "title": "近炸触发目标与波及目标", "group": "伤害来源", "status": "gap",
+      "input": "需雷达锁定，触发半径为 12 m。触发目标的近炸基准为 55，区域近炸为 72、9 m。普通爆炸为 20、3 m。",
+      "finding": "面板仍显示直击 25 加普通爆炸 20 和半径 3 m。游戏对已经结算近炸的触发目标排除同一次范围伤害。",
+      "resolved": {"proximityDirect": 55, "proximityBlast": 72, "proximityBlastRadius": 9, "proximityTriggerRadius": 12},
+      "expected": {"power": "45", "radius": "3 m", "rows": ["25/20"], "allCells": "25"}
+    },
+    {
+      "id": "proximity_only", "title": "仅有近炸触发伤害", "group": "伤害来源", "status": "gap",
+      "input": "仅配置近炸触发半径 6 m、触发目标伤害 42。没有普通直击或爆炸。",
+      "finding": "近炸解析值为 42，当前面板没有威力行、伤害来源行和表格。",
+      "resolved": {"proximityDirect": 42, "proximityTriggerRadius": 6},
+      "expected": {"rows": [], "noMatrix": true}
+    },
+    {
+      "id": "ground_timer_life", "title": "近地、延时与寿命结束", "group": "引信与触发", "status": "partial",
+      "input": "装有近地引信、定时引信和寿尽自爆。三者都可进入同一个 on_fuse 释放波次。",
+      "finding": "普通爆炸和 2 个子体都列出，触发高度、计时与具体引爆原因无法从这两行区分。",
+      "resolved": {"delayTick": 35, "groundDistance": 4, "lifeEnd": true},
+      "expected": {"power": "33", "radius": "7 m", "rows": ["0/27", "0/3 ×2"], "noMatrix": true}
+    },
+    {
+      "id": "water", "title": "水下爆炸覆盖值", "group": "伤害来源", "status": "gap",
+      "input": "基础爆炸 14、3 m，水下覆盖为 55、9 m。",
+      "finding": "面板只读基础爆炸。游戏在水下爆心处使用独立的伤害和半径。",
+      "resolved": {"waterDamage": 55, "waterRadius": 9},
+      "expected": {"power": "14", "radius": "3 m", "rows": ["0/14"], "noMatrix": true}
+    },
+    {
+      "id": "effects", "title": "点燃、药水云和闪电", "group": "伤害来源", "status": "gap",
+      "input": "仅配置点燃 4 秒、伤害型药水云和闪电。",
+      "finding": "运行数据识别这三种效果。当前面板没有对应字段，也不会把持续伤害猜成一个总值。",
+      "resolved": {"ignite": true, "potionCloud": true, "lightning": true},
+      "expected": {"rows": [], "noMatrix": true}
+    },
+    {
+      "id": "airburst_payloads", "title": "空爆同时释放两类子体", "group": "引信与触发", "status": "partial",
+      "input": "空爆可释放 2 个直击子体及 1 个爆炸子体。母弹有独立空爆伤害 64、半径 8 m。",
+      "finding": "两种子体均能列出。母弹行使用普通直击和普通爆炸，半径来自已纳入的普通爆炸配置。",
+      "resolved": {"airburstDamage": 64, "airburstRadius": 8},
+      "expected": {"power": "52", "radius": "7 m", "rows": ["10/27", "6/0 ×2", "0/3"], "cells": {"100/0": "16"}}
+    },
+    {
+      "id": "exclusive", "title": "撞击和引信走不同的释放路径", "group": "引信与触发", "status": "gap",
+      "input": "命中时释放两个直击子体并移除母弹。引信先触发时释放爆炸子体并保留母弹引爆。",
+      "finding": "面板把两条路径合计为 45，且把母弹爆炸统一按零处理。按配置分别看，命中分支基准为 30 加 12，空爆走 39 加 3，定时爆炸走 12 加 3。",
+      "resolved": {"airburstDamage": 39, "airburstRadius": 8, "delayTick": 10},
+      "expected": {"power": "45", "radius": "7 m", "rows": ["30/0", "6/0 ×2", "0/3"], "allCells": "42"}
+    },
+    {
+      "id": "shared_triggers", "title": "同一波支持飞行、命中和引信", "group": "引信与触发", "status": "gap",
+      "input": "同一波次允许飞行中释放或在撞击、引信时释放。母弹从 80° 开始跳弹。",
+      "finding": "面板把整波一律视为命中后才释放。100 m 的后段跳过距离衰减，80° 列连可能已在空中释放的子体也一并扣掉。",
+      "expected": {"power": "20", "rows": ["14/0", "6/0"], "cells": {"100/0": "20", "100/80": "跳弹"}}
+    },
+    {
+      "id": "special_triggers", "title": "撞击、触地、穿墙与被拦截", "group": "引信与触发", "status": "gap",
+      "input": "通用撞击释放 1 个子体。另有仅撞方块、穿透方块、被主动防护拦截三条独立波次。",
+      "finding": "只列出通用撞击子体。其余三条触发波次保存在武器配置里，但不会进入当前档案。",
+      "expected": {"power": "40", "radius": "2 m", "rows": ["25/9", "6/0"], "allCells": "31"}
+    },
+    {
+      "id": "late_wave", "title": "定时引爆早于飞行布撒", "group": "引信与触发", "status": "gap",
+      "input": "第 5 刻母弹定时引爆，第 20 刻才开始飞行布撒。",
+      "finding": "面板仍计入 4 个迟到的子体，总值显示 32。按这条定时引爆路径，母弹在布撒前已结束，配置爆炸基准为 8。",
+      "resolved": {"delayTick": 5},
+      "expected": {"power": "32", "radius": "2 m", "rows": ["0/8", "6/0 ×4"], "cells": {"100/0": "12"}}
+    },
+    {
+      "id": "first_wave", "title": "首批放出后移除母弹", "group": "多种子弹药", "status": "match",
+      "input": "设 6 次释放，每批 2 次，每次 3 个子体。第一批释放后立即移除母弹。",
+      "finding": "只累计首批 6 个子体。母弹爆炸未进入合计，面板半径取子体的 7 m。",
+      "expected": {"power": "18", "radius": "7 m", "rows": ["0/3 ×6"], "noMatrix": true}
+    },
+    {
+      "id": "implicit_events", "title": "波次为零时按默认规则推导", "group": "多种子弹药", "status": "match",
+      "input": "同一波的载荷数量为 2 和 3。事件数填 0，解析器使用载荷数相加得到 5 次。",
+      "finding": "两个子体的数量分别为 10 和 15。命中发生后发出的直击子体在表格中不重复扣母弹飞行距离。",
+      "expected": {"power": "109", "radius": "7 m", "rows": ["4/0", "6/0 ×10", "0/3 ×15"], "allCells": "64"}
+    },
+    {
+      "id": "canister", "title": "霰弹、连射和部分入射角", "group": "多种子弹药", "status": "match",
+      "input": "4 颗一组、同一发共 2 组。开火按键另外排队 3 发。60° 达到载具跳弹阈值。",
+      "finding": "威力按一发扣弹计 8 颗乘 5。100 m 正面为 20，30° 为 10。玩家不走载具的角度衰减和跳弹规则。",
+      "expected": {"power": "40", "rows": ["5/0 ×8"], "cells": {"100/0": "20", "100/30": "10", "100/60": "跳弹", "2000/80": "跳弹"}},
+      "targets": {"player": {"power": "40", "cells": {"100/80": "20"}}}
+    },
+    {
+      "id": "invalid_payloads", "title": "缺失引用、零数量、实体与倍率下限", "group": "边界", "status": "partial",
+      "input": "包含缺失的弹药 ID、零和负数载荷、实体载荷，以及两颗禁止继续分裂且伤害倍率为零的子体。",
+      "finding": "前四类不会新增来源行，允许的两颗子体各保留运行时的 0.01 伤害下限。面板没有缺失载荷提示。",
+      "expected": {"power": "8.02", "radius": "2 m", "rows": ["0/8", "0.01/0 ×2"], "allCells": "0.02"}
+    },
+    {
+      "id": "cycle", "title": "子弹药引用自身", "group": "边界", "status": "match",
+      "input": "每层生成 2 个同类型子体，并允许子体继续释放。",
+      "finding": "预览遵循游戏的 4 层子体上限，共计 31 发，连同母弹显示 5 行。递归在上限处结束。",
+      "expected": {"power": "93", "rows": ["3/0", "3/0 ×2", "3/0 ×4", "3/0 ×8", "3/0 ×16"], "allCells": "93"}
+    },
+    {
+      "id": "overflow", "title": "极端载荷数量溢出", "group": "边界", "status": "gap",
+      "input": "纯测试样本。单次一发正伤害，4 层子体每层配置 60000 个。只调用面板计算。",
+      "finding": "最深一层的数量越过有符号 64 位整数范围。当前合计会变成负数，最后一行的倍数也消失。",
+      "expected": {"powerNegative": true, "rows": ["1/0", "1/0 ×60000", "1/0 ×3600000000", "1/0 ×216000000000000", "1/0"], "allCellsSameAsPower": true}
+    },
+    {
+      "id": "zero", "title": "显式零伤害与零半径", "group": "边界", "status": "match",
+      "input": "直击、爆炸和半径都明确写为零。",
+      "finding": "威力、半径和表中数值都显示为 0。与缺省字段的样本形成对照。",
+      "expected": {"power": "0", "radius": "0 m", "rows": ["0/0"], "allCells": "0"}
+    },
+    {
+      "id": "radius_only", "title": "只有半径字段", "group": "边界", "status": "match",
+      "input": "爆炸半径写为 4 m，伤害未填。",
+      "finding": "只出现半径一行。面板保留配置中显式提供的参数。",
+      "expected": {"radius": "4 m", "rows": [], "noMatrix": true}
+    },
+    {
+      "id": "disabled_blast", "title": "有爆炸数据但开关关闭", "group": "边界", "status": "match",
+      "input": "普通爆炸与空爆覆盖值都有数值，但 explode 为 false。旧式顶层 damage 为 7。",
+      "finding": "只展示直击 7。游戏引爆先检查爆炸开关，再读取空爆覆盖值。",
+      "resolved": {"airburstDamage": 64, "airburstRadius": 8},
+      "expected": {"power": "7", "rows": ["7/0"], "allCells": "7"}
+    }
+  ]
+}

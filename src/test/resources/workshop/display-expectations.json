@@ -1,0 +1,82 @@
+{
+  "mixed": {
+    "impact": {"power":"198","radius":"7 m","rows":["40 / 20","6 ×8","2 / 1 ×16","3 ×4","10 ×3"],"labels":["直击／爆炸","子级弹头 直击","次级子弹头 直击／爆炸","子级弹药 爆炸","后级装药 直击"],"cells":{"100/0":"144","100/30":"134","100/60":"104","100/80":"84"},"tracked":"204","player":"168"}
+  },
+  "impact": {
+    "impact": {"power":"35","radius":"3 m","rows":["15 / 20"],"all":"35"}
+  },
+  "airburst": {
+    "impact": {"power":"35","radius":"3 m","cells":{"100/0":"35","100/80":"跳弹"}},
+    "airburst": {"power":"75","radius":"8 m","rows":["75"],"all":"75"}
+  },
+  "airburst_zero": {
+    "impact": {"power":"20","radius":"3 m","all":"20"},
+    "airburst": {"power":"0","radius":"0 m","all":"0"}
+  },
+  "proximity": {
+    "impact": {"power":"45","radius":"3 m","all":"45"},
+    "proximity": {"power":"55","rows":["55"],"labels":["近炸触发 近炸"],"noMatrix":true}
+  },
+  "proximity_only": {
+    "proximity": {"power":"42","noMatrix":true}
+  },
+  "ground_timer_life": {
+    "impact": {"power":"27","radius":"4 m","all":"27"},
+    "delay": {"power":"33","radius":"7 m","rows":["27","3 ×2"],"all":"33"}
+  },
+  "water": {
+    "normal_blast": {"power":"14","radius":"3 m","cells":{"100/0":"7","100/80":"7"}},
+    "underwater": {"power":"55","radius":"9 m","all":"55"}
+  },
+  "effects": {
+    "impact": {"effects":"点燃、药水云、闪电","noMatrix":true}
+  },
+  "airburst_payloads": {
+    "impact": {"power":"37","radius":"4 m","all":"37"},
+    "airburst": {"power":"79","radius":"8 m","rows":["64","6 ×2","3"],"cells":{"100/0":"73"}}
+  },
+  "exclusive": {
+    "impact": {"power":"42","rows":["30","6 ×2"],"labels":["直击","后级装药 直击"],"all":"42","tracked":"36"},
+    "airburst": {"power":"42","radius":"8 m","rows":["39","3"],"labels":["爆炸","子级弹药 爆炸"],"all":"42"},
+    "delay": {"power":"15","radius":"7 m","rows":["12","3"],"all":"15"}
+  },
+  "shared_triggers": {
+    "impact": {"power":"20","cells":{"100/0":"17","100/80":"3"}},
+    "delay": {"power":"6","cells":{"100/0":"3"}}
+  },
+  "special_triggers": {
+    "impact": {"power":"40","radius":"2 m","rows":["25 / 9","6"],"all":"40"},
+    "intercept": {"power":"79","radius":"5 m","rows":["9","10 / 4 ×5"],"cells":{"10/0":"72","100/0":"9","100/60":"跳弹"}}
+  },
+  "late_wave": {
+    "impact": {"power":"8","radius":"2 m","rows":["8"],"all":"8"},
+    "delay": {"power":"8","radius":"2 m","rows":["8"],"all":"8"}
+  },
+  "first_wave": {
+    "impact": {"power":"18","radius":"7 m","rows":["3 ×6"],"all":"18"}
+  },
+  "implicit_events": {
+    "impact": {"power":"109","radius":"7 m","rows":["4","6 ×10","3 ×15"],"all":"109"}
+  },
+  "canister": {
+    "impact": {"power":"40","rows":["5 ×8"],"cells":{"100/0":"20","100/30":"10","100/60":"跳弹","2000/80":"跳弹"}}
+  },
+  "invalid_payloads": {
+    "impact": {"power":"8.02","radius":"2 m","rows":["8","0.01 ×2"],"all":"8.02"}
+  },
+  "cycle": {
+    "impact": {"power":"93","rows":["3","3 ×2","3 ×4","3 ×8","3 ×16"],"all":"93"}
+  },
+  "overflow": {
+    "impact": {"largePower":true,"rows":["1","1 ×60000","1 ×3600000000","1 ×216000000000000","1 ×12960000000000000000"]}
+  },
+  "zero": {
+    "impact": {"power":"0","radius":"0 m","rows":["0 / 0"],"all":"0"}
+  },
+  "radius_only": {
+    "impact": {"radius":"4 m","noMatrix":true}
+  },
+  "disabled_blast": {
+    "impact": {"power":"7","rows":["7"],"all":"7"}
+  }
+}

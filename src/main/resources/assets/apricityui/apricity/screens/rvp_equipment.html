@@ -1,144 +1,102 @@
 <!doctype html>
-<!--
-  RVP 辅助设备面板（O 键打开，RVP_EquipPanelScreen）
-  布局 v4：左上=俯视图（#skeleton-stage 卡体本身作原生渲染锚点，Java 侧 scissor 内绘制）；
-          左下=快速维修顺序设置（爆反/辅助设备双队列，自绘下拉切换；无开始按钮）；
-          右半页=同屏四栏目 2×2 等高网格，行=序号/别名/状态（失效红框置顶，点击入队）。
-  实测修正（2026-09-26）：
-    1. 字号全面调大并加粗（AUI 的 OTF 平滑字体小字号发虚；viewport 锁 zoom=1 防
-       Ctrl+滚轮残留缩放造成的模糊——若仍模糊先清 config/apricityui/viewport-zoom.properties）；
-    2. 俯视图锚点弃用 inset 简写（AUI 不支持导致锚点 0×0 不渲染），直接绑定有确定尺寸的卡体；
-    3. 栏目头改为单文本节点（AUI 下"文本+子元素"混排会重叠），汇总并入标题文本；
-    4. 高频抖动根治在 Java 侧签名比对（本模板无脚本）。
--->
 <html>
 <head>
     <meta charset="utf-8">
     <meta name="aui-font-mode" content="web">
     <meta name="aui-viewport" content="mode=browser, zoom=1, min-zoom=1, max-zoom=1, user-scalable=false">
-    <link rel="stylesheet" href="/apricityui/theme/ore/ore.css">
     <style>
-        html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
-        .equip-screen { color: var(--ore-ink); background: var(--ore-canvas); display: flex; flex-direction: column; font-family: OreRegular, "Microsoft YaHei"; font-size: 14px; font-weight: bold; }
-        .equip-screen .navbar { min-height: 40px; padding: 6px 10px; flex: 0 0 auto; align-items: center; display: flex; justify-content: space-between; }
-        .equip-screen .navbar-brand, .equip-screen .card-header, .equip-screen .button { font-family: OreDisplay, "Microsoft YaHei"; }
-        .equip-screen .navbar-brand { font-size: 21px; font-weight: bold; }
-        .nav-right { display: flex; align-items: center; gap: 10px; }
-        .hp-text { font-size: 14px; font-weight: bold; color: var(--ore-ink); }
-        .hp-bar { width: 150px; height: 12px; background: #26272a; border: 1px solid var(--ore-edge); box-sizing: border-box; }
-        .hp-fill { height: 100%; background: var(--ore-success); }
-        .equip-screen .close-button { width: 32px; height: 28px; min-height: 28px; padding: 3px 7px 7px; font-size: 15px; line-height: 1; flex: 0 0 32px; }
-
-        .equip-workspace { display: flex; gap: 7px; padding: 7px; min-height: 0; flex: 1 1 auto; }
-        .left-column { flex: 0 0 40%; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 7px; }
-        .right-column { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
-        .equip-screen .card-header { min-height: 30px; padding: 7px 9px; font-size: 15px; font-weight: bold; flex: 0 0 auto; }
-        .equip-screen .card-body { padding: 6px 7px; }
-        .cat-sum { font-size: 14px; color: var(--ore-ink-muted); }
-
-        /* 右半页：同屏四栏目（2×2 等高）；单卡内部滚动；栏目总数超出靠外层滚轮 */
-        .cat-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-wrap: wrap; gap: 7px; align-content: flex-start; }
-        .cat-card { flex: 0 0 48%; max-width: 48%; height: 47%; box-sizing: border-box; display: flex; flex-direction: column; min-height: 0; }
-        .cat-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; }
-
-        /* 设备行：序号 / 别名（无别名回退骨名）/ 状态；失效置顶由 Java 排序保证 */
-        .mod-row { display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 2px 8px; box-sizing: border-box; font-size: 15px; font-weight: bold; cursor: pointer; flex: 0 0 auto; }
-        .mod-row.ok { border: 2px solid rgba(105,173,69,0.6); background: rgba(105,173,69,0.08); }
-        .mod-row.bad { border: 2px solid var(--ore-danger); background: rgba(212,91,80,0.10); }
-        /* 部分受损黄（2026-09-29 用户定版：坏一边=受损），置于 ok/bad 之后保证覆盖生效绿 */
-        .mod-row.damaged { border: 2px solid #d4c44f; background: rgba(212,196,79,0.10); }
-        .row-idx { flex: 0 0 22px; color: var(--ore-ink-muted); font-size: 13px; text-align: right; }
-        .row-alias { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; }
-        .row-extra { flex: 0 0 auto; font-size: 14px; color: var(--ore-ink-muted); }
-        .row-state { flex: 0 0 auto; font-size: 12px; font-weight: bold; padding: 1px 7px; border: 1px solid; }
-        .row-state.ok { color: var(--ore-success); border-color: var(--ore-success); }
-        .row-state.bad { color: var(--ore-danger); border-color: var(--ore-danger); }
-        /* 状态徽标受损黄，同上置于 ok/bad 之后 */
-        .row-state.damaged { color: #d4c44f; border-color: #d4c44f; }
-
-        /* 左下：快速维修顺序设置（双队列 + 自绘下拉；无开始按钮）；俯视图缩到左上 45% 高后占满剩余。
-            ★.card 在 ore 主题下不是 flex，必须显式加 display:flex 才能让 card-body/queue-list 撑满 */
-        .maint-panel { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
-        .maint-panel .card-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 5px; }
-        .repair-forecast { font-size: 14px; color: var(--ore-ink); }
-        .queue-picker { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ore-ink); }
-        .queue-select { flex: 1 1 auto; position: relative; height: 28px; box-sizing: border-box; display: flex; align-items: center; padding: 0 10px; font-size: 14px; font-weight: bold; background: #33353a; color: var(--ore-ink); border: 1px solid var(--ore-edge); cursor: pointer; user-select: none; }
-        .queue-select-value { flex: 1 1 auto; overflow: hidden; white-space: nowrap; }
-        .queue-select-arrow { flex: 0 0 auto; font-size: 12px; color: var(--ore-ink-muted); }
-        .queue-menu { position: absolute; left: -1px; right: -1px; top: 27px; z-index: 30; background: #33353a; border: 1px solid var(--ore-edge); box-sizing: border-box; }
-        .queue-option { min-height: 28px; padding: 5px 10px; font-size: 14px; cursor: pointer; }
-        .queue-option:hover { background: #4a4b4e; }
-        .queue-option.active { background: #514a35; border-left: 2px solid var(--ore-gold); }
-        .queue-list { flex: 1 1 auto; min-height: 100px; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; box-sizing: border-box; border: 1px solid var(--ore-edge); background: rgba(0,0,0,0.14); padding: 3px; }
-        .queue-items { display: flex; flex-direction: column; gap: 3px; }
-        .queue-row { display: flex; align-items: center; gap: 8px; min-height: 26px; padding: 2px 8px; font-size: 14px; font-weight: bold; border: 1px solid var(--ore-gold); background: rgba(240,185,45,0.08); flex: 0 0 auto; }
-        .queue-idx { color: var(--ore-gold); font-size: 13px; flex: 0 0 auto; }
-        .queue-own { color: var(--ore-ink-muted); font-size: 13px; flex: 0 0 auto; }
-        .queue-x { margin-left: auto; color: var(--ore-ink-muted); cursor: pointer; padding: 0 5px; flex: 0 0 auto; }
-        .queue-empty { font-size: 14px; color: var(--ore-ink-muted); padding: 5px 6px; }
-        .queue-hint { font-size: 13px; color: var(--ore-ink-muted); line-height: 1.4; }
-
-        /* 左上：俯视图（#skeleton-canvas 仅作原生 scissor 绘制的布局锚点，无子元素——
-            Java 侧在 AUI super.render 之后按本矩形 × renderScale 原生绘制 OBB 俯视图；
-            只占左上角 45% 高，维修顺序栏占左列剩余） */
-        .skeleton-panel { flex: 0 0 45%; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-        .skeleton-stage-wrap { position: relative; flex: 1 1 auto; min-height: 0; background: #252628; border: 2px solid #56585b; box-shadow: inset 3px 3px #222325, inset -3px -3px #444649; overflow: hidden; }
-        .skeleton-canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
-        .sk-legend { position: absolute; right: 8px; top: 6px; display: flex; gap: 10px; font-size: 13px; color: var(--ore-ink-muted); }
-        .sk-legend i { display: inline-block; width: 10px; height: 10px; border: 1px solid #141517; box-sizing: border-box; vertical-align: -1px; margin-right: 3px; }
+        * { box-sizing:border-box; }
+        html, body { width:100%; height:100%; margin:0; background-color:transparent; overflow:hidden; }
+        body { display:flex; align-items:center; justify-content:center; font-family:"Microsoft YaHei","Segoe UI",sans-serif; color:#f4f4f2; font-size:17px; }
+        button { padding:0; margin:0; border:0; border-radius:0; color:inherit; font-family:inherit; font-size:inherit; text-align:left; cursor:pointer; }
+        .frame { font-size:var(--eq-base,17px); width:86%; max-width:1520px; height:72%; max-height:780px; display:flex; flex-direction:column; gap:7px; }
+        .head, .head-end, .columns, .tabs, .category, .part, .legend, .queue-row { display:flex; align-items:center; }
+        .head { height:43px; flex:0 0 43px; width:100%; }
+        .dark, .category, .tab, .close, .queue-row {
+            background-color:transparent; background-image:linear-gradient(180deg,rgba(47,48,53,.83) 0%,rgba(30,31,36,.77) 45%,rgba(18,19,24,.75) 100%); }
+        .silver, .category.selected, .tab.selected { color:#191b1e; background-color:transparent;
+            background-image:linear-gradient(180deg,rgba(250,250,248,.93) 0%,rgba(240,240,238,.91) 40%,rgba(215,216,219,.89) 80%,rgba(199,200,203,.88) 100%); }
+        .title-tab { height:100%; flex:0 0 auto; display:flex; align-items:center; padding:0 20px; font-weight:bold; font-size:var(--eq-title,22px);
+            clip-path:polygon(0 30%,9px 0,100% 0,100% 100%,0 100%); }
+        #vehicle-name { flex:1 1 auto; min-width:0; margin:0 12px; overflow:hidden; white-space:nowrap; font-size:var(--eq-title,22px); }
+        .head-end { flex:0 0 auto; gap:9px; height:100%; padding-right:5px; }
+        #hp-text { font-size:var(--eq-detail,15px); white-space:nowrap; }
+        .hp-track { width:76px; height:4px; background-color:#62636a; }
+        #hp-fill { height:100%; background-color:#eeeee9; }
+        .close { width:35px; height:31px; text-align:center; border:1px solid #726e64; font-size:var(--eq-title,22px); }
+        .columns { flex:1 1 auto; min-height:0; width:100%; align-items:stretch; gap:7px; }
+        .col { display:flex; flex-direction:column; min-height:0; min-width:0; overflow:hidden;
+            background-color:transparent; background-image:linear-gradient(180deg,rgba(20,22,29,.60),rgba(24,24,32,.50)); }
+        .parts { flex:0 0 30%; }
+        .drawing { flex:1 1 0; }
+        .repair { flex:0 0 28%; }
+        .label { min-height:31px; flex:0 0 auto; padding:5px 10px; font-size:var(--eq-heading,19px); font-weight:bold; }
+        .rule { border-bottom:1px solid rgba(199,194,179,.47); }
+        .scroll { min-height:0; overflow-y:auto; overflow-x:hidden; }
+        #categories { flex:0 1 38%; border-bottom:1px solid #928a78; }
+        .category, .part, .queue-row { width:100%; min-width:0; min-height:33px; padding:4px 8px; gap:5px; border-bottom:1px solid rgba(194,190,179,.27); }
+        .category:not(.selected), .queue-row { background-image:linear-gradient(180deg,rgba(51,52,59,.51),rgba(22,23,28,.34)); }
+        .category.selected { font-weight:bold; }
+        .category:hover, .tab:hover, .close:hover, .part.action:hover, .queue-x:hover { background-image:linear-gradient(180deg,#55585e,#35373c); color:#fff; }
+        .category.selected:hover, .tab.selected:hover { background-image:linear-gradient(180deg,#fff,#d4d5da); color:#16171a; }
+        .name { flex:1 1 auto; min-width:0; overflow-wrap:anywhere; }
+        .summary { flex:0 0 auto; font-size:var(--eq-detail,15px); }
+        #parts-list, #queue-list { flex:1 1 0; display:flex; flex-direction:column; }
+        .part, .queue-row { flex:0 0 auto; }
+        .part { cursor:default; background-color:rgba(18,19,24,.18); }
+        .part.action { cursor:pointer; }
+        .idx { width:20px; flex:0 0 20px; text-align:center; color:#bebebc; font-size:var(--eq-detail,15px); }
+        .part-name { flex:1 1 auto; min-width:0; white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.15; }
+        .hint, .empty { color:#c6c7c8; font-size:var(--eq-detail,15px); }
+        .status { flex:0 0 auto; font-size:var(--eq-detail,15px); }
+        .damaged { color:#f2bd73; } .bad { color:#ff9c91; }
+        .canvas-wrap { position:relative; flex:1 1 auto; min-height:0; margin:8px; }
+        #skeleton-canvas { position:absolute; left:0; top:0; width:100%; height:100%; }
+        .legend { flex:0 0 auto; justify-content:center; gap:12px; padding:6px 0; font-size:var(--eq-detail,15px); }
+        .key { display:flex; align-items:center; gap:4px; white-space:nowrap; }
+        .swatch { width:8px; height:8px; border:1px solid #eee; }
+        .swatch.worn { border-color:#ff9900; } .swatch.failed { border-color:#ff4d43; }
+        .tabs { flex:0 0 auto; gap:2px; padding:6px; }
+        .tab { display:flex; align-items:center; justify-content:center; flex:1 1 0; min-width:0; height:30px; text-align:center; border-bottom:1px solid #9c9480; }
+        .queue-row { min-height:30px; }
+        .queue-x { flex:0 0 30px; height:25px; background-color:transparent; color:#eee; text-align:center; }
+        .empty, .hint, #repair-forecast { padding:6px 9px; line-height:1.35; overflow-wrap:anywhere; }
+        .repair-foot { flex:0 0 auto; border-top:1px solid rgba(200,193,175,.4); }
+        #repair-forecast { font-size:var(--eq-detail,15px); } .hint { padding-top:0; }
+        .frame.compact { width:94%; height:81%; max-height:none; }
+        .compact .head { height:52px; flex-basis:52px; }
+        .compact .tab, .compact .close { height:40px; }
+        .compact .part-name { line-height:1.2; }
+        .hidden { display:none; }
+        @media (max-width:760px) {
+            .frame { width:96%; } .title-tab { padding:0 9px; } .hp-track { display:none; }
+            .parts { flex-basis:32%; } .repair { flex-basis:29%; }
+            .category, .part, .queue-row { padding:3px 4px; } .legend { gap:5px; }
+        }
+        @media (max-height:510px) {
+            .frame { height:84%; gap:3px; } .head { height:30px; flex-basis:30px; } .label { min-height:22px; padding:2px 6px; }
+            .category, .part, .tab, .queue-row { min-height:21px; } .hint { font-size:14px; } .tabs { padding:3px; }
+        }
     </style>
 </head>
-<body class="ore-theme equip-screen">
-    <nav class="navbar">
-        <div class="navbar-brand" id="panel-title"><translation>gui.ywzj_rvp.equipment.title</translation></div>
-        <div class="nav-right">
-            <span id="hp-text" class="hp-text"></span>
-            <div class="hp-bar"><div id="hp-fill" class="hp-fill"></div></div>
-            <button id="close-button" class="close-button button button-danger" type="button">X</button>
-        </div>
-    </nav>
-    <main class="equip-workspace">
-        <!-- 左列：上=俯视图，下=维修顺序设置 -->
-        <div class="left-column">
-            <aside class="card card-accent-green skeleton-panel">
-                <div class="card-header" style="background:#1e3a2e; border-left:3px solid #4caf50">
-                    <span id="skeleton-header-text"></span>
-                </div>
-                <div id="skeleton-stage" class="card-body skeleton-stage-wrap" style="padding:0">
-                    <div id="skeleton-canvas" class="skeleton-canvas"></div>
-                    <div class="sk-legend">
-                        <span><i style="background:transparent;border:1px solid #ffffff"></i><translation>gui.ywzj_rvp.equipment.state_ok</translation></span>
-                        <span><i style="background:rgba(255,153,0,.5);border:1px solid #ff9900"></i><translation>gui.ywzj_rvp.equipment.state_damaged</translation></span>
-                        <span><i style="background:rgba(255,0,0,.5);border:1px solid #ff0000"></i><translation>gui.ywzj_rvp.equipment.state_bad</translation></span>
-                    </div>
-                </div>
-            </aside>
-            <aside id="maint-panel" class="card card-accent-gold maint-panel">
-                <div class="card-header"><translation>gui.ywzj_rvp.equipment.repair_order</translation></div>
-                <div class="card-body">
-                    <div id="repair-forecast" class="repair-forecast"></div>
-                    <div class="queue-picker">
-                        <span><translation>gui.ywzj_rvp.equipment.queue</translation></span>
-                        <div id="queue-picker" class="queue-select">
-                            <span id="queue-picker-value" class="queue-select-value"><translation>gui.ywzj_rvp.equipment.queue_era</translation></span>
-                            <span class="queue-select-arrow">▼</span>
-                            <div id="queue-menu" class="queue-menu hidden">
-                                <div class="queue-option active" data-queue="era"><translation>gui.ywzj_rvp.equipment.queue_era</translation></div>
-                                <div class="queue-option" data-queue="dev"><translation>gui.ywzj_rvp.equipment.queue_dev</translation></div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="queue-list">
-                        <div id="queue-era-list" class="queue-items"></div>
-                        <div id="queue-dev-list" class="queue-items hidden"></div>
-                    </div>
-                    <div class="queue-hint"><translation>gui.ywzj_rvp.equipment.queue_hint</translation></div>
-                </div>
-            </aside>
-        </div>
-        <!-- 右半页：同屏四栏目（2×2 等高），Java 动态构建 -->
-        <div class="right-column">
-            <div id="category-scroll" class="cat-scroll"></div>
+<body>
+    <main class="frame" id="equipment-frame">
+        <header class="head dark"><div class="title-tab silver"><translation>gui.ywzj_rvp.equipment.title</translation></div>
+            <div id="vehicle-name"></div><div class="head-end"><span id="hp-text"></span><div class="hp-track"><div id="hp-fill"></div></div>
+            <button id="close-button" class="close" type="button" aria-label="Close">×</button></div></header>
+        <div class="columns">
+            <section class="col parts"><div class="label dark rule"><translation>gui.ywzj_rvp.equipment.parts</translation></div>
+                <div id="categories" class="scroll"></div><div id="parts-list" class="scroll"></div></section>
+            <section class="col drawing"><div class="label dark rule"><translation>gui.ywzj_rvp.equipment.skeleton</translation></div>
+                <div class="canvas-wrap"><div id="skeleton-canvas"></div></div>
+                <div class="legend"><span class="key"><i class="swatch"></i><translation>gui.ywzj_rvp.equipment.state_ok</translation></span>
+                    <span class="key"><i class="swatch worn"></i><translation>gui.ywzj_rvp.equipment.state_damaged</translation></span>
+                    <span class="key"><i class="swatch failed"></i><translation>gui.ywzj_rvp.equipment.state_bad</translation></span></div></section>
+            <section id="maint-panel" class="col repair"><div class="label silver"><translation>gui.ywzj_rvp.equipment.repair_order</translation></div>
+                <div class="tabs"><button id="era-tab" type="button" class="tab"><translation>gui.ywzj_rvp.equipment.era_tab</translation></button>
+                    <button id="dev-tab" type="button" class="tab"><translation>gui.ywzj_rvp.equipment.device_tab</translation></button></div>
+                <div id="queue-list" class="scroll"></div><footer class="repair-foot"><div id="repair-forecast"></div>
+                <div class="hint"><translation>gui.ywzj_rvp.equipment.queue_hint</translation></div></footer></section>
         </div>
     </main>
 </body>
