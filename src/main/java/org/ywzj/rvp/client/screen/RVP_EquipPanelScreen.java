@@ -1,85 +1,43 @@
 package org.ywzj.rvp.client.screen;
 
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.sighs.apricityui.init.Document;
+import com.sighs.apricityui.init.Element;
+import com.sighs.apricityui.screen.ApricityScreen;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.resources.language.I18n;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
+import org.ywzj.rvp.client.screen.RVP_EquipPanelData.Category;
+import org.ywzj.rvp.client.screen.RVP_EquipPanelData.Row;
 import org.ywzj.rvp.client.state.RVP_ClientBoneModuleState;
 import org.ywzj.rvp.client.state.RVP_ClientRepairOrderState;
+import org.ywzj.rvp.client.state.RVP_ClientRepairOrderState.Order;
 import org.ywzj.rvp.maintenance.network.C2SSetRepairOrder;
 import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.vehicle.BoneModuleType;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 
-import com.sighs.apricityui.init.Document;
-import com.sighs.apricityui.init.Element;
-import com.sighs.apricityui.screen.ApricityScreen;
-
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
-/**
- * 辅助设备面板（AUI ApricityScreen，O 键打开，布局=2026-09-25 v4 定稿）：
- * <ul>
- *   <li>左上俯视图：HTML 放占位锚点，{@link RVP_EquipSkeletonRenderer} 在 AUI
- *       {@code super.render} 之后的原生 scissor 内每帧绘制（本体观瞄 OBB 俯视图同款画法：
- *       实时姿态+炮塔朝上；坐标换算用项目唯一合法公式
- *       {@code getBoundingClientRect × renderScale}，深度抬 z=400 盖过 AUI 文档元素深度
- *       ——此前三次"原生不可见"的根因即 GuiGraphics.fill 的 z=0 被 AUI 深度剔除）；</li>
- *   <li>左下快速维修顺序设置：爆反/辅助设备双队列（自绘下拉切换，规避 AUI 对原生
- *       {@code <select>} 支持未知），点击右侧失效行入队、✕ 移除；编辑即经
- *       {@link C2SSetRepairOrder} 上行，触发维修仍由玩家用快修工具完成（无开始按钮）；
- *       载具未配置快修时整栏隐藏（可用性由快修模块决定）；</li>
- *   <li>右半页：按设备类型分栏（同屏四栏目 2×2 等高，卡内滚动+外层滚动），
- *       行 = 序号（载具数据顺序）+ 别名（无别名回退骨名）+ 状态，失效行置顶、红框，
- *       生效绿框；栏目按"无设备不画"门控。</li>
- * </ul>
- * 数据全部来自客户端现成缓存（骨模块配置 + S2C 快照），零新增 S2C 包；
- * 动态状态每 10 render 帧节流重建（约 0.5s 内跟上 ERA 被打掉等变化）。
- */
+/** 透明的三栏辅助设备面板。部件、俯视图和维修队列共用同一辆车的状态。 */
 @OnlyIn(Dist.CLIENT)
 public class RVP_EquipPanelScreen extends ApricityScreen {
-
-    /** AUI 模板逻辑路径（相对 assets/apricityui/apricity/）。 */
-    private static final String TEMPLATE = "screens/rvp_equipment.html";
-
+    /** 当前查看的载具。 */
     private final AbstractVehicle vehicle;
-
+    /** AUI 在窗口缩放时重新挂载的页面与原生绘制锚点。 */
     private Document document;
-    private Element panelTitle;
-    private Element hpText;
-    private Element hpFill;
-    /** 俯视图画布锚点：原生 scissor 绘制区域由它的布局矩形 × renderScale 换算。 */
     private Element skeletonCanvas;
-    private Element skeletonHeaderText;
-    private Element categoryScroll;
-    private Element maintPanel;
-    private Element queuePicker;
-    private Element queuePickerValue;
-    private Element queueMenu;
-    private Element queueEraList;
-    private Element queueDevList;
-    /** 预计维修量提示行（"预计维修 x 块爆反 · x 个辅助设备"）。 */
-    private Element repairForecast;
-    /** 当前查看的维修队列（era=爆反 / dev=辅助设备）。 */
-    private String selectedQueue = RVP_EquipPanelData.QUEUE_ERA;
-    /** 下拉菜单展开态。 */
-    private boolean queueMenuOpen;
-    /** render 帧计数：节流刷新动态区。 */
-    private int refreshCounter;
-    /** 动态区签名：内容未变化时跳过 DOM 重建（根治高频抖动——重建会重置滚动/悬停态）。 */
-    private String lastDynamicSignature = "";
-    /** 行内容签名：updateDynamicRows 上次写入的全部行状态（不变则零 DOM 写入，2026-09-29）。 */
-    private String lastRowSignature = null;
-    /** 队列 DOM 签名：era#dev 骨名序列（不变则跳过 replaceChildren 重建，2026-09-29）。 */
-    private String lastQueueSignature = null;
-    /** 骨名→模块类型分类表：随 refreshDynamic 10 帧节流刷新，用于设备栏目和状态签名。 */
-    private Map<String, Set<BoneModuleType>> cachedModules = Map.of();
+    /** 上次显示的部件、维修顺序，均为值快照。 */
+    private List<Category> categories = List.of();
+    private Order displayedOrder;
+    /** 翻页、缩放时保留用户正在查看的分类和队列。 */
+    private String categoryTitle = "";
+    private boolean showEra = true;
+    /** 将取数限制为每五个游戏刻一次。 */
+    private int refreshTicks;
     /** 俯视图画布矩形采用值（GUI 像素坐标）：scissor 与绘制区域来源。 */
     private int skeletonRectX0, skeletonRectY0, skeletonRectX1, skeletonRectY1;
     /** 是否已有稳定有效的画布矩形采用值（首帧/布局未完成前为 false，跳过俯视图绘制）。 */
@@ -90,9 +48,8 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
     private boolean skeletonRectFreshValid;
 
     public RVP_EquipPanelScreen(AbstractVehicle vehicle) {
-        super(TEMPLATE);
+        super("screens/rvp_equipment.html");
         this.vehicle = vehicle;
-        // 与 RVP_AuiVariantScreen 同款：不暂停游戏、无默认遮罩
         setPauseGame(false);
         setShowDefaultBackground(false);
     }
@@ -100,384 +57,181 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
     @Override
     protected void init() {
         super.init();
-        // resize / 首次打开都会重建 Document：每次全量重取引用（勿跨 init 缓存 Element）
         document = getLinkedDocument();
-        if (document == null) {
-            return;
-        }
-        panelTitle = document.getElementById("panel-title");
-        hpText = document.getElementById("hp-text");
-        hpFill = document.getElementById("hp-fill");
-        skeletonCanvas = document.getElementById("skeleton-canvas");
-        skeletonHeaderText = document.getElementById("skeleton-header-text");
-        categoryScroll = document.getElementById("category-scroll");
-        maintPanel = document.getElementById("maint-panel");
-        queuePicker = document.getElementById("queue-picker");
-        queuePickerValue = document.getElementById("queue-picker-value");
-        queueMenu = document.getElementById("queue-menu");
-        queueEraList = document.getElementById("queue-era-list");
-        queueDevList = document.getElementById("queue-dev-list");
-        repairForecast = document.getElementById("repair-forecast");
+        if (document == null) return;
+        // AUI 会按虚拟视口缩放；小窗口按实际屏幕像素补足中文字号。
+        double pixelScale = document.getViewport().renderScale() * minecraft.getWindow().getGuiScale();
+        Element frame = el("equipment-frame");
+        frame.setClassName(pixelScale < .90 ? "frame compact" : "frame");
+        double factor = Math.max(1, .94 / pixelScale);
+        frame.setInlineStyleProperty("--eq-base", Math.round(17 * factor) + "px");
+        frame.setInlineStyleProperty("--eq-detail", Math.round(15 * factor) + "px");
+        frame.setInlineStyleProperty("--eq-heading", Math.round(19 * factor) + "px");
+        frame.setInlineStyleProperty("--eq-title", Math.round(22 * factor) + "px");
+        skeletonCanvas = el("skeleton-canvas");
+        skeletonRectValid = skeletonRectFreshValid = false;
+        el("vehicle-name").setTextContent(vehicle.getDisplayName().getString());
+        el("close-button").setAttribute("aria-label", I18n.get("gui.done"));
+        el("close-button").addEventListener("click", event -> onClose());
+        el("era-tab").addEventListener("click", event -> selectQueue(true));
+        el("dev-tab").addEventListener("click", event -> selectQueue(false));
+        // 每次挂载都构建新 DOM，状态相同也不能复用上一个 Document 的元素。
+        refresh(true);
+    }
 
-        Element closeButton = document.getElementById("close-button");
-        if (closeButton != null) {
-            closeButton.addEventListener("click", event -> onClose());
+    private Element el(String id) { return document.getElementById(id); }
+
+    @Override
+    public void tick() {
+        super.tick();
+        if (document != null && ++refreshTicks >= 5) {
+            refreshTicks = 0;
+            refresh(false);
         }
-        if (queueMenu != null) {
-            // 自绘下拉：菜单项点击 = 切换队列（点击事件在 AUI 已验证可用，故不用原生 select）
-            for (Element option : queueMenu.querySelectorAll(".queue-option")) {
-                String key = option.getAttribute("data-queue");
-                option.addEventListener("click", event -> {
-                    event.stopPropagation();
-                    selectQueue(key);
-                });
-            }
-        }
-        if (queuePicker != null) {
-            queuePicker.addEventListener("click", event -> toggleQueueMenu());
-        }
-        rebuildAll();
     }
 
     @Override
-    public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
-        // [RVP] 俯视图画布矩形帧首预读（2026-09-29 回血闪烁根治）：此刻是上一帧 AUI commit
-        // 完成后的自洽态，committed 矩形必有效。回血期 refreshDynamic 的 setTextContent/
-        // markDirty(RELAYOUT) 会当场沿祖先链失效 layoutVersion、commit 时递归清全文档
-        // position 缓存——在其后读 rect 会命中"擦了一半"的中间态（#skeleton-canvas 是
-        // 100%×100% 空锚点 div，百分比尺寸瞬时塌陷为 0）→ rect.width<=8 跳帧 = 闪烁。
-        querySkeletonCanvasRect();
-        // [RVP] 动态 DOM 更新（replaceChildren/setTextContent）后**零刷新调用**——AUI 渲染
-        // 每帧读 DOM 当前态，天然生效（2026-09-28 对齐本体改装屏 buildDisplayCatalog 同款
-        // 零调用模式）。此前 resize()/Document.refresh() 都是全量重布局，为"左右闪"根因。
-        // 窗口缩放仍由 Minecraft 触发 init/resize 全量路径，不受影响。
-        super.render(guiGraphics, mouseX, mouseY, partialTick);
-        // 节流刷新动态状态（栏目行失效态/血量/队列），签名未变化时零 DOM 操作
-        if (++refreshCounter >= 10) {
-            refreshCounter = 0;
-            refreshDynamic();
-        }
-        // 俯视图：AUI 文档上屏后的原生 scissor 绘制（每帧重绘，实时姿态）
-        renderSkeletonNative(guiGraphics, partialTick);
+    public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        if (document != null) querySkeletonCanvasRect();
+        super.render(graphics, mouseX, mouseY, partialTick);
+        renderSkeletonNative(graphics, partialTick);
     }
 
-    @Override
-    public void onClose() {
-        super.onClose();
+    private static void text(Element element, String value) {
+        if (!value.equals(element.getTextContent())) element.setTextContent(value);
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // DOM 构建
-    // ─────────────────────────────────────────────────────────────
-
-    /** 全量重建：标题/血量/维修栏可用性/栏目/队列。 */
-    /** 全量重建：标题/血量/俯视图/维修栏可用性/栏目/队列，并记录动态区签名（init 与开屏时调用）。 */
-    private void rebuildAll() {
-        if (document == null) {
-            return;
-        }
-        // [RVP] DOM 写入等值守卫的签名重置（2026-09-29）：init 会重建 Document（模板队列表
-        // 为空、行元素全新），旧签名会让守卫误判"没变"而跳过写入 → 必须先清
-        lastQueueSignature = null;
-        lastRowSignature = null;
-        if (panelTitle != null) {
-            panelTitle.setTextContent(I18n.get("gui.ywzj_rvp.equipment.title")
-                    + " · " + vehicle.getDisplayName().getString());
-        }
-        if (skeletonHeaderText != null) {
-            // 单文本节点：AUI 下"文本 + 子元素"混排会重叠，汇总信息并入同一节点
-            skeletonHeaderText.setTextContent(I18n.get("gui.ywzj_rvp.equipment.skeleton"));
-        }
-        updateHp();
-        // 维修顺序栏可用性：未配置快修的载具整栏隐藏（由快修模块决定）
-        if (maintPanel != null) {
-            boolean visible = RVP_EquipPanelData.hasMaintenance(vehicle);
-            maintPanel.setClassName("card card-accent-gold maint-panel" + (visible ? "" : " hidden"));
-        }
-        // init 每次都会重建 Document：分类表先刷新（俯视图逐帧原生绘制消费）
-        cachedModules = RVP_EquipPanelData.boneModules(vehicle);
-        rebuildCategories();
-        rebuildQueues();
-        applyQueueVisibility();
-        lastDynamicSignature = buildDynamicSignature();
+    private Element append(Element parent, String tag, String style, String value) {
+        Element node = document.createElement(tag);
+        node.setClassName(style);
+        if (!value.isEmpty()) node.setTextContent(value);
+        // AUI 挂载 div 等元素时会返回新的具体节点，后续子项和监听器须绑定到它。
+        return parent.appendChild(node);
     }
 
-    /** 节流刷新：分类表/血量/栏目/队列按内容签名门控（未变化时重建会重置滚动/悬停态 → 高频抖动）；
-     *  俯视图已改原生每帧重绘，不再走 DOM。markDirty 只标真正变化的容器（2026-09-29 回血
-     *  闪烁减量：markDirty(RELAYOUT) 的 commit 会沿祖先链递归清全文档 position 缓存，无谓
-     *  标脏 = 回血期每轮全文档布局失效）。 */
-    private void refreshDynamic() {
-        cachedModules = RVP_EquipPanelData.boneModules(vehicle);
-        String signature = buildDynamicSignature();
-        if (signature.equals(lastDynamicSignature)) {
-            return;
-        }
-        lastDynamicSignature = signature;
-        // [RVP] 运行中原地更新已建行（别名/附加/状态/失效样式）+ 容器 markDirty 上屏——
-        // 不 replaceChildren 重建（重建帧 = 闪烁）、不 resize（AUI 重建 Document 同闪）。
-        boolean hpChanged = updateHp();
-        boolean rowsChanged = updateDynamicRows();
-        rebuildQueues();
-        if (rowsChanged && categoryScroll != null) {
-            document.markDirty(categoryScroll,
-                    com.sighs.apricityui.render.Drawer.RELAYOUT | com.sighs.apricityui.render.Drawer.REPAINT);
-        }
-        if (hpChanged) {
-            if (hpText != null) {
-                document.markDirty(hpText,
-                        com.sighs.apricityui.render.Drawer.RELAYOUT | com.sighs.apricityui.render.Drawer.REPAINT);
+    private String label(String key, Object... args) {
+        return I18n.get("gui.ywzj_rvp.equipment." + key, args);
+    }
+
+    /** 读取部件快照一次。车体单独回血不会重新构建或重置滚动列表。 */
+    private void refresh(boolean mounted) {
+        text(el("hp-text"), label("hull") + " " + (int) vehicle.getHealth() + "/" + (int) vehicle.getMaxHealth());
+        String width = Math.round(100 * Math.max(0, Math.min(1, vehicle.getHealth() / Math.max(1, vehicle.getMaxHealth())))) + "%";
+        Element bar = el("hp-fill");
+        if (!width.equals(bar.getInlineStylePropertyValue("width"))) bar.setInlineStyleProperty("width", width);
+        List<Category> next = RVP_EquipPanelData.buildCategories(vehicle);
+        boolean changed = mounted || !next.equals(categories);
+        if (changed) {
+            categories = next;
+            if (categories.stream().noneMatch(c -> c.title().equals(categoryTitle))) {
+                categoryTitle = categories.isEmpty() ? "" : categories.get(0).title();
             }
-            if (hpFill != null) {
-                document.markDirty(hpFill,
-                        com.sighs.apricityui.render.Drawer.RELAYOUT | com.sighs.apricityui.render.Drawer.REPAINT);
-            }
+            drawCategories();
         }
-    }
-
-    /**
-     * [RVP] 运行中原地更新已建行（2026-09-28）：别名/附加/状态/失效样式按固定子序写入
-     * （rebuildCategories 首建时缓存的行 Element，键 = 栏目|骨名）。
-     *
-     * <p>2026-09-29 回血闪烁减量：先按目标行内容算签名，与上次一致直接跳过（回血期只有
-     * 血量在变、行内容不变）——每次写入都会沿祖先链失效布局缓存，签名门控把无谓无效化
-     * 清零；内容真变时全量重写并返回 true（调用方据此 markDirty categoryScroll）。</p>
-     */
-    private boolean updateDynamicRows() {
-        StringBuilder signature = new StringBuilder(256);
-        for (RVP_EquipPanelData.Category category : RVP_EquipPanelData.buildCategories(vehicle)) {
-            String cardKey = category.title();
-            for (RVP_EquipPanelData.Row row : category.rows()) {
-                signature.append(cardKey).append('|').append(row.boneName()).append(':')
-                        .append(row.alias()).append('|').append(row.extra()).append('|')
-                        .append(row.active() ? 'a' : 'b')
-                        .append(row.damaged() ? 'd' : '-').append(';');
-            }
-        }
-        String rowSignature = signature.toString();
-        if (rowSignature.equals(lastRowSignature)) {
-            return false;
-        }
-        lastRowSignature = rowSignature;
-        for (RVP_EquipPanelData.Category category : RVP_EquipPanelData.buildCategories(vehicle)) {
-            String cardKey = category.title();
-            for (RVP_EquipPanelData.Row row : category.rows()) {
-                Element rowDiv = rowElementsByKey.get(cardKey + "|" + row.boneName());
-                if (rowDiv == null || rowDiv.children.size() < 4) {
-                    continue;
-                }
-                rowDiv.setClassName(rowClassName(row));
-                rowDiv.children.get(1).setTextContent(row.alias());
-                rowDiv.children.get(2).setTextContent(row.extra() == null ? "" : row.extra());
-                rowDiv.children.get(3).setClassName("row-state " + rowStateClass(row));
-                rowDiv.children.get(3).setTextContent(I18n.get(rowStateLang(row)));
-            }
-        }
-        return true;
-    }
-
-    /** 动态区内容签名：整车血量 + 各栏目行生效态 + 两条维修队列。 */
-    private String buildDynamicSignature() {
-        StringBuilder sb = new StringBuilder(256);
-        sb.append('H').append((int) vehicle.getHealth()).append('/');
-        for (RVP_EquipPanelData.Category category : RVP_EquipPanelData.buildCategories(vehicle)) {
-            sb.append(category.summary()).append(';');
-            for (RVP_EquipPanelData.Row row : category.rows()) {
-                sb.append(row.index()).append(row.active() ? 'a' : 'b')
-                    .append(row.damaged() ? 'd' : '-');
-            }
-            sb.append('|');
-        }
-        RVP_ClientRepairOrderState.Order order = RVP_ClientRepairOrderState.get(vehicle.getId());
-        sb.append("Q").append(String.join(",", order.eraBones()))
-                .append("#").append(String.join(",", order.deviceBones()));
-        // [RVP] 引擎受损档位入签名（2026-09-27）：受损标注（extra 文本）变化时触发面板重绘——
-        // 否则受损后行内容变了但签名未变，面板永不刷新受损标注
-        var engineBones = RVP_VehicleHitboxFactorManager.INSTANCE.resolveEngineModules(vehicle);
-        if (engineBones != null) {
-            for (String bone : engineBones.keySet()) {
-                sb.append('E').append(bone).append(':')
-                        .append(org.ywzj.rvp.client.state.RVP_ClientEngineDamageState.getStage(vehicle.getId(), bone));
-            }
-        }
-        // [RVP] 模块虚拟血量入签名（2026-09-28 全模块累计化）：累计值变化触发面板重绘
-        //（取配置骨并集，避免依赖栏目结构）
-        var modules = RVP_VehicleHitboxFactorManager.INSTANCE.resolveBoneModules(vehicle);
-        if (modules != null) {
-            for (String bone : modules.keySet()) {
-                sb.append('D').append(bone).append(':')
-                        .append((int) org.ywzj.rvp.client.state.RVP_ClientBoneDamageProgress
-                                .getAccumulated(vehicle.getId(), bone));
-            }
-        }
-        return sb.toString();
-    }
-
-    /** 顶栏整车血量。等值守卫（2026-09-29）：内容未变不写（setTextContent 当场沿祖先链
-     *  失效布局缓存，回血期高频刷新下无谓写入是闪烁减量重点）。返回是否发生了写入。 */
-    private boolean updateHp() {
-        float health = vehicle.getHealth();
-        float maxHealth = vehicle.getMaxHealth();
-        boolean changed = false;
-        if (hpText != null) {
-            String text = I18n.get("gui.ywzj_rvp.equipment.hull")
-                    + " " + (int) health + "/" + (int) maxHealth;
-            if (!text.equals(hpText.getTextContent())) {
-                hpText.setTextContent(text);
-                changed = true;
-            }
-        }
-        if (hpFill != null && maxHealth > 0) {
-            int pct = (int) Math.max(0, Math.min(100, health / maxHealth * 100f));
-            String width = pct + "%";
-            if (!width.equals(hpFill.getInlineStylePropertyValue("width"))) {
-                hpFill.setInlineStyleProperty("width", width);
-                changed = true;
-            }
-        }
-        return changed;
-    }
-
-    /** 右半页栏目：同屏四卡 2×2，由数据模型逐行构建。 */
-    /** 栏目行缓存：栏目 key + 骨名 → 行 div（运行中原地更新，不重建）。 */
-    private final Map<String, Element> catBodyByKey = new HashMap<>();
-    private final Map<String, Element> rowElementsByKey = new HashMap<>();
-
-    private void rebuildCategories() {
-        if (categoryScroll == null || document == null) {
-            return;
-        }
-        // [RVP] 首建守卫（2026-09-28 修左右闪/行全空）：栏目行只在首次构建一次并缓存行
-        // Element；运行中状态变化由 refreshDynamic → updateDynamicRows **原地更新**（文本/
-        // 类名/markDirty 上屏）——replaceChildren 全量重建帧是闪烁与空白来源，彻底移除。
-        if (!catBodyByKey.isEmpty()) {
-            return;
-        }
-        List<RVP_EquipPanelData.Category> categories = RVP_EquipPanelData.buildCategories(vehicle);
-        boolean first = true;
-        for (RVP_EquipPanelData.Category category : categories) {
-            String cardKey = category.title();
-            Element card = document.createElement("section");
-            card.setClassName("card cat-card" + (first ? " card-accent-green" : ""));
-            first = false;
-            // 标题与汇总并入同一文本节点：AUI 下"文本 + 子元素"混排渲染会重叠
-            Element header = document.createElement("div");
-            header.setClassName("card-header");
-            header.setTextContent(category.title() + "　" + category.summary());
-            Element body = document.createElement("div");
-            body.setClassName("card-body cat-body");
-            for (RVP_EquipPanelData.Row row : category.rows()) {
-                Element rowDiv = buildRow(row);
-                rowElementsByKey.put(cardKey + "|" + row.boneName(), rowDiv);
-                body.appendChild(rowDiv);
-            }
-            card.appendChild(header);
-            card.appendChild(body);
-            categoryScroll.appendChild(card);
-            catBodyByKey.put(cardKey, body);
-        }
-    }
-
-    /** 行三态类名（2026-09-29）：生效绿 / 失效红 / 部分受损黄（damaged 仅 active 时有意义）。 */
-    private static String rowClassName(RVP_EquipPanelData.Row row) {
-        if (!row.active()) {
-            return "mod-row bad";
-        }
-        return row.damaged() ? "mod-row ok damaged" : "mod-row ok";
-    }
-
-    /** 状态徽标类名：三态同 {@link #rowClassName}。 */
-    private static String rowStateClass(RVP_EquipPanelData.Row row) {
-        if (!row.active()) {
-            return "bad";
-        }
-        return row.damaged() ? "damaged" : "ok";
-    }
-
-    /** 状态徽标文案 key：生效 / 失效 / 受损（部分失效，2026-09-29 用户定版）。 */
-    private static String rowStateLang(RVP_EquipPanelData.Row row) {
-        if (!row.active()) {
-            return "gui.ywzj_rvp.equipment.state_bad";
-        }
-        return row.damaged()
-                ? "gui.ywzj_rvp.equipment.state_damaged"
-                : "gui.ywzj_rvp.equipment.state_ok";
-    }
-
-    /** 单行：序号 / 别名（+行尾附加文本）/ 状态徽标；失效且可入队的行绑定点击入队。 */
-    private Element buildRow(RVP_EquipPanelData.Row row) {
-        Element div = document.createElement("div");
-        div.setClassName(rowClassName(row));
-        Element idx = document.createElement("span");
-        idx.setClassName("row-idx");
-        idx.setTextContent(String.valueOf(row.index()));
-        div.appendChild(idx);
-        Element alias = document.createElement("span");
-        alias.setClassName("row-alias");
-        alias.setTextContent(row.alias());
-        div.appendChild(alias);
-        if (row.extra() != null) {
-            Element extra = document.createElement("span");
-            extra.setClassName("row-extra");
-            extra.setTextContent(row.extra());
-            div.appendChild(extra);
-        }
-        Element state = document.createElement("span");
-        state.setClassName("row-state " + rowStateClass(row));
-        state.setTextContent(I18n.get(rowStateLang(row)));
-        div.appendChild(state);
-        // 失效或受损（炮管/引擎受损档在失效表中）都可入队；addToQueue 内有 queueEntryStillFailed 二次校验
-        if ((!row.active() || row.damaged()) && row.queueKey() != null) {
-            div.addEventListener("click", event -> addToQueue(row.queueKey(), row.boneName(), row.alias()));
-        }
-        return div;
-    }
-
-    // ─────────────────────────────────────────────────────────────
-    // 维修顺序队列（爆反 / 辅助设备）
-    // ─────────────────────────────────────────────────────────────
-
-    /** 队列区重建：两条队列各自渲染为"#顺序号 自身序号 别名 ✕"行，空队列显示占位提示。
-     *  2026-09-29 回血闪烁减量：prune 校验每轮照跑（已修好踢除需即时同步服务端），但
-     *  fillQueueList 的 replaceChildren 重建按队列签名门控——replaceChildren 会沿祖先链
-     *  清布局缓存（回血期每轮 refreshDynamic 都进这里，无谓重建是无效化大头）。 */
-    private void rebuildQueues() {
-        if (document == null) {
-            return;
-        }
-        // 骨名 → 栏目自身序号：同名部件（如 6 块"车体侧爆反"）靠自身序号区分对应关系
-        Map<String, Integer> ownIndexByBone = new HashMap<>();
-        for (RVP_EquipPanelData.Category category : RVP_EquipPanelData.buildCategories(vehicle)) {
-            for (RVP_EquipPanelData.Row row : category.rows()) {
-                if (row.boneName() != null) {
-                    ownIndexByBone.putIfAbsent(row.boneName(), row.index());
-                }
-            }
-        }
-        RVP_ClientRepairOrderState.Order order = RVP_ClientRepairOrderState.get(vehicle.getId());
+        boolean repair = RVP_EquipPanelData.hasMaintenance(vehicle);
+        String cls = repair ? "col repair" : "col repair hidden";
+        if (!cls.equals(el("maint-panel").getAttribute("class"))) el("maint-panel").setClassName(cls);
+        if (!repair) return;
+        Order order = RVP_ClientRepairOrderState.get(vehicle.getId());
         List<String> era = new ArrayList<>(order.eraBones());
         List<String> dev = new ArrayList<>(order.deviceBones());
-        // [RVP] 已修好的部件/爆反自动踢出待修列表（客户端踢除后即上行同步服务端副本）：
-        // 捆绑口径按骨级判定——骨上仍有任意失效可修模块就算待修，全修好才移除
-        boolean pruned = era.removeIf(bone -> !queueEntryStillFailed(bone));
-        pruned |= dev.removeIf(bone -> !queueEntryStillFailed(bone));
-        if (pruned) {
-            RVP_ClientRepairOrderState.set(vehicle.getId(), era, dev);
-            syncOrderToServer();
-            order = RVP_ClientRepairOrderState.get(vehicle.getId());
-        }
-        String signature = String.join(",", order.eraBones()) + "#" + String.join(",", order.deviceBones());
-        if (!signature.equals(lastQueueSignature)) {
-            lastQueueSignature = signature;
-            fillQueueList(queueEraList, order.eraBones(), ownIndexByBone);
-            fillQueueList(queueDevList, order.deviceBones(), ownIndexByBone);
-        }
-        updateForecast();
+        boolean pruned = era.removeIf(b -> !queueEntryStillFailed(b));
+        pruned |= dev.removeIf(b -> !queueEntryStillFailed(b));
+        if (pruned) order = saveOrder(era, dev);
+        if (changed || !order.equals(displayedOrder)) drawQueue(order);
+        var forecast = RVP_EquipPanelData.repairForecast(vehicle);
+        text(el("repair-forecast"), label("forecast", forecast.eraQuota(), (int) Math.ceil(forecast.deviceExpected()),
+                forecast.deviceDestroyed(), forecast.deviceChancePercent()));
     }
 
-    /**
-     * 队列项是否仍处于待修状态（捆绑口径按骨级判定）：骨上任意可修模块
-     * （不含 MAINTENANCE/TRACK——前者永不失效、后者无可修消费点）仍失效即保留。
-     */
+    /** 类别栏和部件列表独立滚动，选择分类后回到该分类第一项。 */
+    private void drawCategories() {
+        Element nav = el("categories");
+        Element list = el("parts-list");
+        nav.replaceChildren();
+        list.replaceChildren();
+        if (categories.isEmpty()) append(list, "div", "empty", label("empty_parts"));
+        for (Category category : categories) {
+            boolean current = category.title().equals(categoryTitle);
+            Element tab = append(nav, "button", current ? "category selected" : "category", "");
+            tab.setAttribute("aria-pressed", Boolean.toString(current));
+            append(tab, "span", "name", category.title());
+            append(tab, "span", "summary", category.summary());
+            tab.addEventListener("click", event -> {
+                if (category.title().equals(categoryTitle)) return;
+                categoryTitle = category.title();
+                drawCategories();
+                list.setScrollTop(0);
+            });
+            if (!current) continue;
+            for (Row row : category.rows()) {
+                boolean actionable = row.queueKey() != null && (!row.active() || row.damaged())
+                        && RVP_EquipPanelData.hasMaintenance(vehicle);
+                Element item = append(list, actionable ? "button" : "div", actionable ? "part action" : "part", "");
+                append(item, "span", "idx", String.valueOf(row.index()));
+                String alias = "__vehicle__".equals(row.alias()) ? category.title() : row.alias();
+                String detail = row.extra() == null ? "" : row.extra();
+                append(item, "span", "part-name", detail.isBlank() ? alias : alias + "\n" + detail);
+                String state = row.damaged() ? "damaged" : row.active() ? "ok" : "bad";
+                append(item, "span", "status " + state, label("state_" + state));
+                if (actionable) item.addEventListener("click", event -> editQueue(
+                        RVP_EquipPanelData.QUEUE_ERA.equals(row.queueKey()), row.boneName(), true));
+            }
+        }
+    }
+
+    private void selectQueue(boolean era) {
+        if (era == showEra) return;
+        showEra = era;
+        drawQueue(RVP_ClientRepairOrderState.get(vehicle.getId()));
+        el("queue-list").setScrollTop(0);
+    }
+
+    private void drawQueue(Order order) {
+        displayedOrder = order;
+        el("era-tab").setClassName(showEra ? "tab selected" : "tab");
+        el("dev-tab").setClassName(showEra ? "tab" : "tab selected");
+        el("era-tab").setAttribute("aria-pressed", Boolean.toString(showEra));
+        el("dev-tab").setAttribute("aria-pressed", Boolean.toString(!showEra));
+        Element list = el("queue-list");
+        list.replaceChildren();
+        List<String> bones = showEra ? order.eraBones() : order.deviceBones();
+        if (bones.isEmpty()) append(list, "div", "empty", label("queue_empty"));
+        for (int i = 0; i < bones.size(); i++) {
+            String bone = bones.get(i);
+            Element item = append(list, "div", "queue-row", "");
+            append(item, "span", "idx", Integer.toString(i + 1));
+            Row part = categories.stream().flatMap(c -> c.rows().stream())
+                    .filter(row -> bone.equals(row.boneName())).findFirst().orElse(null);
+            String name = RVP_VehicleHitboxFactorManager.INSTANCE.resolveHitboxDisplayNameLocalized(vehicle, bone);
+            append(item, "span", "name", part == null ? name : "#" + part.index() + " " + name);
+            Element remove = append(item, "button", "queue-x", "×");
+            remove.setAttribute("aria-label", I18n.get("selectWorld.delete") + " " + name);
+            remove.addEventListener("click", event -> editQueue(showEra, bone, false));
+        }
+    }
+
+    private void editQueue(boolean eraQueue, String bone, boolean add) {
+        if (add && !queueEntryStillFailed(bone)) return;
+        Order order = RVP_ClientRepairOrderState.get(vehicle.getId());
+        List<String> era = new ArrayList<>(order.eraBones()), dev = new ArrayList<>(order.deviceBones());
+        List<String> target = eraQueue ? era : dev;
+        if (add) {
+            if (target.size() >= 64 || target.contains(bone)) return;
+            target.add(bone);
+        } else if (!target.remove(bone)) return;
+        showEra = eraQueue;
+        drawQueue(saveOrder(era, dev));
+    }
+
+    /** 本地立即回显，同一条原有网络消息保存两组队列。 */
+    private Order saveOrder(List<String> era, List<String> dev) {
+        RVP_ClientRepairOrderState.set(vehicle.getId(), era, dev);
+        Order order = RVP_ClientRepairOrderState.get(vehicle.getId());
+        RVP_Network.CHANNEL.sendToServer(new C2SSetRepairOrder(vehicle.getId(), order.eraBones(), order.deviceBones()));
+        return order;
+    }
+
     private boolean queueEntryStillFailed(String bone) {
         var types = RVP_EquipPanelData.boneModules(vehicle).get(bone);
         if (types == null) {
@@ -493,156 +247,6 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
         }
         return false;
     }
-
-    private void fillQueueList(Element container, List<String> bones, Map<String, Integer> ownIndexByBone) {
-        if (container == null || document == null) {
-            return;
-        }
-        container.replaceChildren();
-        if (bones.isEmpty()) {
-            Element empty = document.createElement("div");
-            empty.setClassName("queue-empty");
-            empty.setTextContent(I18n.get("gui.ywzj_rvp.equipment.queue_empty"));
-            container.appendChild(empty);
-            return;
-        }
-        int index = 1;
-        for (String bone : bones) {
-            Element row = document.createElement("div");
-            row.setClassName("queue-row");
-            Element idx = document.createElement("span");
-            idx.setClassName("queue-idx");
-            // #N = 修复顺序序号；后面跟部件在自身栏目的序号（同名部件靠它区分）
-            idx.setTextContent("#" + index++);
-            row.appendChild(idx);
-            Element own = document.createElement("span");
-            own.setClassName("queue-own");
-            Integer ownIndex = ownIndexByBone.get(bone);
-            own.setTextContent(ownIndex == null ? "?" : String.valueOf(ownIndex));
-            row.appendChild(own);
-            Element alias = document.createElement("span");
-            // 队列行同样只显示别名（无别名回退骨名）；去重按骨名 id 在状态表内完成
-            alias.setTextContent(RVP_VehicleHitboxFactorManager.INSTANCE.resolveHitboxDisplayNameLocalized(vehicle, bone));
-            row.appendChild(alias);
-            Element remove = document.createElement("span");
-            remove.setClassName("queue-x");
-            remove.setTextContent("✕");
-            String boneName = bone;
-            remove.addEventListener("click", event -> removeFromQueue(queueKeyOfContainer(container), boneName));
-            row.appendChild(remove);
-            container.appendChild(row);
-        }
-    }
-
-    /** 由容器元素反查队列键（era/dev）。 */
-    private String queueKeyOfContainer(Element container) {
-        return container == queueEraList ? RVP_EquipPanelData.QUEUE_ERA : RVP_EquipPanelData.QUEUE_DEV;
-    }
-
-    /** 预计维修量提示行：ERA 为配额确定值；辅助设备为概率制——期望修复数向上取整（维修以
-     *  整台为单位，"预计修 0.3 台"不成立；用户 2026-09-27 定版），括号保留失效数与单台概率。 */
-    private void updateForecast() {
-        if (repairForecast == null) {
-            return;
-        }
-        RVP_EquipPanelData.Forecast forecast = RVP_EquipPanelData.repairForecast(vehicle);
-        // 期望修复数向上取整（1 台×25% → 1；6 台×25% 期望 1.5 → 2）：保守估计，即"修完
-        // 全部失效设备最多需要的快修次数"量级
-        int expected = (int) Math.ceil(forecast.deviceExpected());
-        String text = I18n.get("gui.ywzj_rvp.equipment.forecast",
-                forecast.eraQuota(), expected, forecast.deviceDestroyed(), forecast.deviceChancePercent());
-        // 等值守卫（2026-09-29）：预计维修量在回血期不随血量变化，重复写入即无谓失效布局
-        if (!text.equals(repairForecast.getTextContent())) {
-            repairForecast.setTextContent(text);
-        }
-    }
-
-    /** 点击失效行加入对应队列：本地先行更新（即时反馈）再上行服务端。 */
-    private void addToQueue(String queueKey, String bone, String alias) {
-        // 未失效/已被修好的目标不准入队（行渲染有 ~0.5s 节流，点击瞬间二次校验骨上确实仍有失效模块）
-        if (!queueEntryStillFailed(bone)) {
-            return;
-        }
-        RVP_ClientRepairOrderState.Order order = RVP_ClientRepairOrderState.get(vehicle.getId());
-        List<String> era = new ArrayList<>(order.eraBones());
-        List<String> dev = new ArrayList<>(order.deviceBones());
-        List<String> target = queueKey.equals(RVP_EquipPanelData.QUEUE_ERA) ? era : dev;
-        if (target.contains(bone) || target.size() >= 64) {
-            return;
-        }
-        target.add(bone);
-        RVP_ClientRepairOrderState.set(vehicle.getId(), era, dev);
-        syncOrderToServer();
-        refreshDynamic();
-    }
-
-    /** ✕ 移除队列项。 */
-    private void removeFromQueue(String queueKey, String bone) {
-        RVP_ClientRepairOrderState.Order order = RVP_ClientRepairOrderState.get(vehicle.getId());
-        List<String> era = new ArrayList<>(order.eraBones());
-        List<String> dev = new ArrayList<>(order.deviceBones());
-        (queueKey.equals(RVP_EquipPanelData.QUEUE_ERA) ? era : dev).remove(bone);
-        RVP_ClientRepairOrderState.set(vehicle.getId(), era, dev);
-        syncOrderToServer();
-        refreshDynamic();
-    }
-
-    /** 编辑即上行：服务端按载具记入 RVP_RepairOrderTable（车组共享，快修触发时消费）。 */
-    private void syncOrderToServer() {
-        RVP_ClientRepairOrderState.Order order = RVP_ClientRepairOrderState.get(vehicle.getId());
-        RVP_Network.CHANNEL.sendToServer(
-                new C2SSetRepairOrder(vehicle.getId(), order.eraBones(), order.deviceBones()));
-    }
-
-    // ─────────────────────────────────────────────────────────────
-    // 自绘下拉与俯视图
-    // ─────────────────────────────────────────────────────────────
-
-    private void toggleQueueMenu() {
-        queueMenuOpen = !queueMenuOpen;
-        applyQueueMenu();
-    }
-
-    private void selectQueue(String key) {
-        selectedQueue = key;
-        queueMenuOpen = false;
-        if (queuePickerValue != null) {
-            queuePickerValue.setTextContent(I18n.get(key.equals(RVP_EquipPanelData.QUEUE_ERA)
-                    ? "gui.ywzj_rvp.equipment.queue_era"
-                    : "gui.ywzj_rvp.equipment.queue_dev"));
-        }
-        if (queueMenu != null) {
-            for (Element option : queueMenu.querySelectorAll(".queue-option")) {
-                String optionKey = option.getAttribute("data-queue");
-                option.setClassName("queue-option" + (optionKey.equals(key) ? " active" : ""));
-            }
-        }
-        applyQueueVisibility();
-        applyQueueMenu();
-    }
-
-    /** 下拉菜单展开/收起。 */
-    private void applyQueueMenu() {
-        if (queueMenu != null) {
-            queueMenu.setClassName("queue-menu" + (queueMenuOpen ? "" : " hidden"));
-        }
-    }
-
-    /** 两条队列列表按当前选中项显示其一。 */
-    private void applyQueueVisibility() {
-        if (queueEraList != null) {
-            queueEraList.setClassName("queue-items"
-                    + (selectedQueue.equals(RVP_EquipPanelData.QUEUE_ERA) ? "" : " hidden"));
-        }
-        if (queueDevList != null) {
-            queueDevList.setClassName("queue-items"
-                    + (selectedQueue.equals(RVP_EquipPanelData.QUEUE_DEV) ? "" : " hidden"));
-        }
-    }
-
-    // ─────────────────────────────────────────────────────────────
-    // 俯视图（原生 scissor 绘制，div 注入路径已废弃——见 RVP_EquipSkeletonRenderer）
-    // ─────────────────────────────────────────────────────────────
 
     /** 在现有 AUI 画布内调用本体俯视图；保留 scissor、稳定画布和原生绘制时序。 */
     private void renderSkeletonNative(GuiGraphics guiGraphics, float partialTick) {

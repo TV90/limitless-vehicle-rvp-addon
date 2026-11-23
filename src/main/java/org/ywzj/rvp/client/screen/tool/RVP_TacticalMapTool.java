@@ -10,6 +10,8 @@ public interface RVP_TacticalMapTool {
     /** 地图客户端 Tick；工具只读取客户端快照，不推进权威任务。 */ void tick(RVP_TacticalMapHost host);
     /** 处理鼠标按下；返回 true 时阻止地图默认左键行为。 */
     boolean mouseClicked(RVP_TacticalMapHost host, double mouseX, double mouseY, int button);
+    /** 工具的可滚动列表优先消费滚轮；其他区域交给地图。 */
+    default boolean mouseScrolled(RVP_TacticalMapHost host, double x, double y, double delta) { return false; }
     /** 处理鼠标拖动；返回 true 时阻止地图平移。 */
     boolean mouseDragged(RVP_TacticalMapHost host, double mouseX, double mouseY,
                          int button, double dragX, double dragY);

@@ -1,6 +1,6 @@
 package org.ywzj.rvp.client.screen.tool;
 
-import net.minecraft.client.Minecraft;
+import org.ywzj.rvp.client.screen.RVP_MapChrome;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -10,7 +10,6 @@ import org.ywzj.rvp.network.firesupport.C2SSavePodFireSupportSelection;
 import org.ywzj.rvp.weapon.data.RVP_PodFireSupportEntryData;
 
 import java.util.List;
-import java.util.Locale;
 
 /**
  * 坐标指示吊舱的战术地图火力配置工具（2026-10-13 坐标指示吊舱×火力支援整合）。
@@ -21,10 +20,15 @@ import java.util.Locale;
  */
 public class RVP_PodFireSupportMapTool implements RVP_TacticalMapTool {
 
-    /** 侧栏主题色（与终端工具同款暖金）。 */
-    private static final int ACCENT = 0xFFD9A544;
-    /** 条目行高。 */
+    /** 第一条可见选项，工具条和保存区不随它滚动。 */
+    private int firstRow;
+    /** 每个选项的 GUI 行高。 */
     private static final int ROW_HEIGHT = 18;
+
+    private RVP_MapChrome.ListArea rows(RVP_TacticalMapHost host) {
+        return new RVP_MapChrome.ListArea(host.mapTop()+31, host.mapBottom()-72, ROW_HEIGHT);
+    }
+    private int saveY(RVP_TacticalMapHost host) { return host.mapBottom()-25; }
 
     /** 吊舱武器 path（保存包键）。 */
     private final String weaponPath;
@@ -59,30 +63,29 @@ public class RVP_PodFireSupportMapTool implements RVP_TacticalMapTool {
 
     @Override
     public boolean mouseClicked(RVP_TacticalMapHost host, double mouseX, double mouseY, int button) {
-        if (button != 0) return false;
-        int left = host.sideLeft() + 7;
-        int right = host.sideRight() - 7;
-        int top = host.mapTop() + 31;
-        // 条目单选列表点击
-        for (int i = 0; i < entries.size(); i++) {
-            int rowTop = top + i * ROW_HEIGHT;
-            if (mouseX >= left && mouseX <= right && mouseY >= rowTop && mouseY < rowTop + ROW_HEIGHT - 2) {
-                RVP_PodFireSupportEntryData entry = entries.get(i);
-                // 调用本项目选择状态：再点已选项 = 取消选择（保存空值即清除）。
-                draftEntryId = entry.getId().equals(draftEntryId) ? "" : entry.getId();
-                return true;
-            }
+        if (button != 0 || mouseX < host.sideLeft()+7 || mouseX >= host.sideRight()-7) return false;
+        RVP_MapChrome.ListArea list = rows(host);
+        firstRow = list.clamp(firstRow, entries.size());
+        int index = list.rowAt(mouseY, firstRow, entries.size());
+        if (index >= 0) {
+            String id = entries.get(index).getId();
+            draftEntryId = id.equals(draftEntryId) ? "" : id;
+            return true;
         }
-        // 保存按钮（与 renderOverlay 同几何：savedTop = top + 条目列表高，按钮在其下 28px——
-        // 2026-10-25 修复点击区/绘制区错开 18px 导致可见按钮点不到、选择永远保存不进服务器）。
-        int savedTop = top + entries.size() * ROW_HEIGHT;
-        int buttonTop = savedTop + 28;
-        if (mouseX >= left && mouseX <= right && mouseY >= buttonTop && mouseY <= buttonTop + 18) {
-            // 调用本项目网络通道：上行保存请求（服务端校验条目存在后持久化并 ACK）。
+        if (mouseY >= saveY(host) && mouseY < saveY(host)+19) {
+            // 使用原有保存包，将界面草稿交给服务端校验。
             RVP_Network.CHANNEL.sendToServer(new C2SSavePodFireSupportSelection(weaponPath, draftEntryId));
             return true;
         }
         return false;
+    }
+
+    @Override
+    public boolean mouseScrolled(RVP_TacticalMapHost host, double x, double y, double delta) {
+        RVP_MapChrome.ListArea list = rows(host);
+        if (x < host.sideLeft() || x >= host.sideRight() || y < list.top() || y >= list.bottom()) return false;
+        firstRow = list.clamp(firstRow - (int)Math.signum(delta), entries.size());
+        return true;
     }
 
     @Override
@@ -99,51 +102,28 @@ public class RVP_PodFireSupportMapTool implements RVP_TacticalMapTool {
     @Override
     public void renderOverlay(RVP_TacticalMapHost host, GuiGraphics graphics,
                               int mouseX, int mouseY, float partialTick) {
-        int left = host.sideLeft() + 7;
-        int right = host.sideRight() - 7;
-        int top = host.mapTop() + 31;
-        // 标题（对齐终端工具：mapTop+7 起 18px 高的侧栏头）
-        graphics.fill(left, host.mapTop() + 7, right, host.mapTop() + 25, 0xDD111820);
-        graphics.fill(left, host.mapTop() + 7, right, host.mapTop() + 8, ACCENT);
-        graphics.drawString(host.font(), tr("gui.ywzj_rvp.pod_fire_support.title"), left + 5,
-                host.mapTop() + 12, 0xFFFFFFFF, false);
-        // 条目单选列表
-        for (int i = 0; i < entries.size(); i++) {
-            RVP_PodFireSupportEntryData entry = entries.get(i);
-            int rowTop = top + i * ROW_HEIGHT;
+        int left = host.sideLeft()+7, right = host.sideRight()-7, width = right-left;
+        int header = host.mapTop()+6;
+        RVP_MapChrome.title(graphics, host.font(), tr("gui.ywzj_rvp.pod_fire_support.title"), left,header,right,header+20);
+        RVP_MapChrome.ListArea list = rows(host);
+        firstRow = list.clamp(firstRow, entries.size());
+        for (int i=firstRow; i<Math.min(entries.size(), firstRow+list.visible()); i++) {
+            var entry = entries.get(i);
+            int y = list.y(i,firstRow);
             boolean selected = entry.getId().equals(draftEntryId);
-            boolean hover = mouseX >= left && mouseX <= right && mouseY >= rowTop && mouseY < rowTop + ROW_HEIGHT - 2;
-            graphics.fill(left, rowTop, right, rowTop + ROW_HEIGHT - 2,
-                    selected ? 0xFF5F4D2E : (hover ? 0xFF3A3F46 : 0xFF30343A));
-            graphics.fill(left, rowTop, left + 2, rowTop + ROW_HEIGHT - 2,
-                    selected ? ACCENT : 0xFF666A70);
-            graphics.drawString(host.font(), entry.getDisplayCn(), left + 8, rowTop + 5,
-                    selected ? 0xFFFFFFFF : 0xFFC6CBD1, false);
-            if (selected) {
-                graphics.drawString(host.font(), "●", right - 12, rowTop + 5, ACCENT, false);
-            }
+            boolean hover = mouseX >= left && mouseX < right && mouseY >= y && mouseY < y+ROW_HEIGHT;
+            RVP_MapChrome.strip(graphics,left,y,right,y+ROW_HEIGHT,selected,hover);
+            RVP_MapChrome.line(graphics, host.font(),entry.getDisplayCn(),left+5,y+5,width-10,selected ? RVP_MapChrome.INK : RVP_MapChrome.TEXT);
         }
-        // 当前已保存选择（服务端权威回显）
+        int save = saveY(host);
         String saved = RVP_ClientPodFireSupportState.INSTANCE.getSelection(weaponPath);
-        String savedText = saved == null || saved.isBlank()
-                ? tr("gui.ywzj_rvp.pod_fire_support.saved_none")
-                : displayNameOf(saved);
-        int savedTop = top + entries.size() * ROW_HEIGHT;
-        graphics.drawString(host.font(), tr("gui.ywzj_rvp.pod_fire_support.saved"),
-                left, savedTop + 2, 0xFF90959B, false);
-        graphics.drawString(host.font(), savedText, left, savedTop + 12, ACCENT, false);
-        // 保存按钮
-        int buttonTop = savedTop + 28;
-        graphics.fill(left, buttonTop, right, buttonTop + 18, 0xFF5F4D2E);
-        graphics.fill(left, buttonTop, right, buttonTop + 1, ACCENT);
+        String value = saved == null || saved.isBlank() ? tr("gui.ywzj_rvp.pod_fire_support.saved_none") : displayNameOf(saved);
+        RVP_MapChrome.line(graphics,host.font(),tr("gui.ywzj_rvp.pod_fire_support.saved")+value,left,save-42,width,RVP_MapChrome.TEXT);
+        var hint = host.font().split(Component.translatable("gui.ywzj_rvp.pod_fire_support.hint"),width);
+        for (int i=0; i<Math.min(3,hint.size()); i++) graphics.drawString(host.font(),hint.get(i),left,save-31+i*10,RVP_MapChrome.MUTED,false);
+        RVP_MapChrome.strip(graphics,left,save,right,save+19,true,false);
         String label = tr("gui.ywzj_rvp.pod_fire_support.save");
-        Minecraft minecraft = Minecraft.getInstance();
-        graphics.drawString(minecraft.font, label,
-                left + Math.max(4, (right - left - minecraft.font.width(label)) / 2), buttonTop + 5,
-                0xFFFFFFFF, false);
-        // 底部提示：打击由吊舱标记自动触发
-        graphics.drawString(host.font(), tr("gui.ywzj_rvp.pod_fire_support.hint"),
-                left, buttonTop + 24, 0xFF90959B, false);
+        RVP_MapChrome.buttonLabel(graphics, host.font(), net.minecraft.network.chat.Component.literal(label), left, save, right, save + 19, RVP_MapChrome.INK);
     }
 
     @Override

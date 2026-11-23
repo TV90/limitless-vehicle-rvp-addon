@@ -99,6 +99,7 @@ import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
+import org.ywzj.vehicle.vehicle.weapon.VehicleMultiWeapons;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
@@ -114,7 +115,7 @@ public class RVP_ClientEvents {
     /** 本帧 HITL 覆盖前的无倍率 FOV：HIGHEST 捕获、LOWEST 套用 HITL 倍率。 */
     private static double ywzj_rvp$hitlBaseFov = Double.NaN;
 
-    /** 当前操作站主武器客户端开火（炮兵地图左键与空格共用）。 */
+    /** 地图发射按钮、炮兵地图左键与空格共用当前操作席的普通开火入口。 */
     public static void fireCurrentWeaponClient() {
         if (LocalVehiclePlayer.instance == null) {
             return;
@@ -124,7 +125,9 @@ public class RVP_ClientEvents {
             return;
         }
         weaponUnit.getCurrentWeapon().ifPresent(currentWeapon -> {
-            if (currentWeapon instanceof RVP_WeaponBase rvpWeapon) {
+            // 组合槽在自己的 doClientShoot 中向选中项检查按键；仍由原槽提交本次发射。
+            AbstractVehicleWeapon<?> input = currentWeapon instanceof VehicleMultiWeapons group ? group.getSelectedWeapon() : currentWeapon;
+            if (input instanceof RVP_WeaponBase rvpWeapon && !rvpWeapon.isReloading() && rvpWeapon.hasAmmo()) {
                 rvpWeapon.queueProgrammaticShot();
             }
             currentWeapon.doClientShoot();

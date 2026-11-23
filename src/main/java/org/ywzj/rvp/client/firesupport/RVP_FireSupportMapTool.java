@@ -15,6 +15,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.all.RVP_Items;
 import org.ywzj.rvp.client.screen.tool.RVP_TacticalMapHost;
+import org.ywzj.rvp.client.screen.RVP_MapChrome;
 import org.ywzj.rvp.client.screen.tool.RVP_TacticalMapTool;
 import org.ywzj.rvp.firesupport.pattern.RVP_FireSupportPatternTypes;
 import org.ywzj.rvp.firesupport.server.RVP_FireSupportMissionState;
@@ -28,10 +29,12 @@ import org.ywzj.rvp.network.RVP_Network;
 /** 炮火终端战术地图工具：动态选择、参数控件、落区预览、提交和权威状态展示。 */
 public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
     /** 工具稳定 ID。 */ private static final ResourceLocation ID = new ResourceLocation("ywzj_rvp", "fire_support");
-    /** 侧栏强调色。 */ private static final int ACCENT = 0xFFE7B85C;
+    /** 侧栏强调色。 */ private static final int ACCENT = RVP_MapChrome.ACCENT;
     /** 每个交互行高度，单位 GUI 像素。 */ private static final int ROW_HEIGHT = 18;
     /** 方向手柄命中半径，单位 GUI 像素。 */ private static final double HANDLE_RADIUS = 9.0;
     /** 下拉项高度，单位 GUI 像素。 */ private static final int DROPDOWN_ROW_HEIGHT = 16;
+    /** 侧栏表单和展开选项分别滚动，底栏动作由宿主边界定位。 */
+    private int firstRow, firstChoice;
     /** 上次解析的服务端 profile revision。 */ private long loadedRevision = Long.MIN_VALUE;
     /** 当前解析成功的客户端 profile 列表。 */ private List<RVP_ClientFireSupportProfile> profiles = List.of();
     /** profile 解析失败时的可见诊断。 */ private String profileError = "";
@@ -88,7 +91,10 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
     public boolean mouseClicked(RVP_TacticalMapHost host, double mouseX, double mouseY, int button) {
         if (button != 0) return false;
         if (insideSidebar(host, mouseX, mouseY)) {
-            if (handleDropdownClick(host, mouseX, mouseY)) return true;
+            if (openChoice >= 0) {
+                if (!handleDropdownClick(host, mouseX, mouseY)) openChoice = -1;
+                return true;
+            }
             handleSidebarClick(host, mouseX, mouseY);
             return true;
         }
@@ -140,7 +146,9 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
     @Override
     public void renderOverlay(RVP_TacticalMapHost host, GuiGraphics graphics,
                               int mouseX, int mouseY, float partialTick) {
+        graphics.enableScissor(host.mapLeft(), host.mapTop(), host.mapRight(), host.mapBottom());
         renderPreview(host, graphics);
+        graphics.disableScissor();
         renderSidebar(host, graphics, mouseX, mouseY);
     }
 
@@ -292,47 +300,42 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
         renderInboundDirection(host, graphics);
     }
 
-    private void renderSidebar(RVP_TacticalMapHost host, GuiGraphics graphics, int mouseX, int mouseY) {
-        int left = host.sideLeft() + 7;
-        int right = host.sideRight() - 7;
-        int y = host.mapTop() + 7;
-        graphics.fill(left, y, right, y + 18, 0xDD111820);
-        graphics.fill(left, y, right, y + 1, ACCENT);
-        graphics.drawString(host.font(), tr("gui.ywzj_rvp.fire_support.title"), left + 5, y + 5, 0xFFFFFFFF, false);
-        y += 24;
-        if (!profileError.isEmpty()) {
-            drawTrimmed(host, graphics, profileError, left, y, right - left, 0xFFFF7777);
+    private RVP_MapChrome.ListArea form(RVP_TacticalMapHost host) {
+        return new RVP_MapChrome.ListArea(host.mapTop()+31, host.mapBottom()-77, ROW_HEIGHT);
+    }
+    private int formCount() { return 4 + (pattern() == null ? 0 : pattern().parameters().size()); }
+    private int actionY(RVP_TacticalMapHost host) { return host.mapBottom()-25; }
+
+    private void renderSidebar(RVP_TacticalMapHost host, GuiGraphics graphics, int mx, int my) {
+        int left = host.sideLeft()+7, right = host.sideRight()-7, header = host.mapTop()+6;
+        RVP_MapChrome.title(graphics, host.font(),tr("gui.ywzj_rvp.fire_support.title"),left,header,right,header+20);
+        RVP_MapChrome.ListArea body = form(host);
+        if (!profileError.isEmpty() || profiles.isEmpty()) {
+            String message = profileError.isEmpty() ? tr("gui.ywzj_rvp.fire_support.waiting_profile") : profileError;
+            graphics.drawWordWrap(host.font(), Component.literal(message), left+3, body.top(), right-left-6, RVP_MapChrome.MUTED);
             return;
         }
-        if (profiles.isEmpty()) {
-            drawTrimmed(host, graphics, tr("gui.ywzj_rvp.fire_support.waiting_profile"), left, y,
-                    right - left, 0xFFFFCC77);
-            return;
-        }
-        y = drawValueRow(host, graphics, left, right, y, tr("gui.ywzj_rvp.fire_support.profile"),
-                profile() == null ? "-" : label(profile().translationKey()), mouseX, mouseY);
-        y = drawChoice(host, graphics, left, right, y, tr("gui.ywzj_rvp.fire_support.munition"), munition() == null ? "-" : label(munition().translationKey()), mouseX, mouseY);
-        y = drawChoice(host, graphics, left, right, y, tr("gui.ywzj_rvp.fire_support.fire_mode"), mode() == null ? "-" : label(mode().translationKey()), mouseX, mouseY);
-        y = drawChoice(host, graphics, left, right, y, tr("gui.ywzj_rvp.fire_support.pattern"), pattern() == null ? "-" : label(pattern().translationKey()), mouseX, mouseY);
-        RVP_ClientFireSupportProfile.Pattern pattern = pattern();
-        if (pattern != null) {
-            for (RVP_ClientFireSupportProfile.Parameter spec : pattern.parameters().values()) {
-                y = drawParameter(host, graphics, left, right, y, spec, mouseX, mouseY);
-            }
-        }
-        // 仅调整地图插件视觉：方位仍由地图上的方向手柄和内部草稿保留，不在侧栏显示为选项。
-        drawButton(graphics, left, y, right, y + 16, true, tr("gui.ywzj_rvp.fire_support.reset_parameters"), mouseX, mouseY);
-        y += 21;
-        int[] preview = previewPlan();
-        drawTrimmed(host, graphics, tr("gui.ywzj_rvp.fire_support.estimate", preview[0], preview[1], format(preview[2] / 20.0)),
-                left, y + 3, right - left, 0xFFB9C5D1);
+        firstRow = body.clamp(firstRow,formCount());
+        int y = body.y(0,firstRow);
+        graphics.enableScissor(left,body.top(),right,body.top()+body.visible()*ROW_HEIGHT);
+        RVP_MapChrome.strip(graphics, left, y, right, y + ROW_HEIGHT - 1, false, false);
+        drawTrimmed(host, graphics, tr("gui.ywzj_rvp.fire_support.profile") + "  " + label(profile().translationKey()),
+                left + 5, y + 4, right - left - 10, RVP_MapChrome.TEXT);
         y += ROW_HEIGHT;
-        S2CFireSupportMissionUpdate mission = trackedMission();
-        drawButton(graphics, left, y, right, y + 18, primaryActionEnabled(mission),
-                primaryActionLabel(mission), mouseX, mouseY);
-        y += 23;
-        renderMissionStatus(host, graphics, left, right, y, mouseX, mouseY);
-        renderChoiceDropdown(host, graphics, mouseX, mouseY);
+        y = drawChoice(host,graphics,left,right,y,tr("gui.ywzj_rvp.fire_support.munition"),munition()==null ? "–" : label(munition().translationKey()),mx,my);
+        y = drawChoice(host,graphics,left,right,y,tr("gui.ywzj_rvp.fire_support.fire_mode"),mode()==null ? "–" : label(mode().translationKey()),mx,my);
+        y = drawChoice(host,graphics,left,right,y,tr("gui.ywzj_rvp.fire_support.pattern"),pattern()==null ? "–" : label(pattern().translationKey()),mx,my);
+        if (pattern()!=null) for (var spec : pattern().parameters().values()) y=drawParameter(host,graphics,left,right,y,spec,mx,my);
+        graphics.disableScissor();
+        int footer = actionY(host), middle = (left+right)/2;
+        int[] preview = previewPlan();
+        drawTrimmed(host,graphics,tr("gui.ywzj_rvp.fire_support.estimate",preview[0],preview[1],format(preview[2]/20.0)),
+                left,footer-49,right-left,RVP_MapChrome.MUTED);
+        renderMissionStatus(host,graphics,left,right,footer-37,mx,my);
+        drawButton(graphics,left,footer,middle-1,footer+19,true,tr("gui.ywzj_rvp.fire_support.reset_parameters"),mx,my);
+        var mission=trackedMission();
+        drawButton(graphics,middle+1,footer,right,footer+19,primaryActionEnabled(mission),primaryActionLabel(mission),mx,my);
+        renderChoiceDropdown(host,graphics,mx,my);
     }
 
     private void renderMissionStatus(RVP_TacticalMapHost host, GuiGraphics graphics, int left, int right,
@@ -365,28 +368,22 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
     }
 
     private void handleSidebarClick(RVP_TacticalMapHost host, double mouseX, double mouseY) {
-        int y = host.mapTop() + 31;
-        if (rowHit(y, mouseY)) { return; }
-        y += ROW_HEIGHT;
-        RVP_ClientFireSupportProfile profile = profile();
-        if (rowHit(y, mouseY)) { handleChoiceRow(host, mouseX, 1); return; }
-        y += ROW_HEIGHT;
-        if (rowHit(y, mouseY)) { handleChoiceRow(host, mouseX, 2); return; }
-        y += ROW_HEIGHT;
-        if (rowHit(y, mouseY)) { handleChoiceRow(host, mouseX, 3); return; }
-        y += ROW_HEIGHT;
-        RVP_ClientFireSupportProfile.Pattern pattern = pattern();
-        if (pattern != null) {
-            for (RVP_ClientFireSupportProfile.Parameter spec : pattern.parameters().values()) {
-                if (rowHit(y, mouseY)) { adjustParameterFromPointer(host, spec, mouseX); rememberDraft(); return; }
-                y += ROW_HEIGHT;
-            }
+        if (profiles.isEmpty() || !profileError.isEmpty() || mouseX < host.sideLeft()+7 || mouseX >= host.sideRight()-7) return;
+        var body = form(host);
+        int index = body.rowAt(mouseY,body.clamp(firstRow,formCount()),formCount());
+        if (index >= 1 && index <= 3) { handleChoiceRow(host,mouseX,index); return; }
+        if (index >= 4 && pattern()!=null) {
+            var spec = new ArrayList<>(pattern().parameters().values()).get(index-4);
+            adjustParameterFromPointer(host,spec,mouseX);
+            rememberDraft();
+            return;
         }
-        // 仅调整地图插件视觉：方位仍由地图上的方向手柄和内部草稿保留，不在侧栏显示为选项。
-        if (mouseY >= y && mouseY <= y + 16) { resetParameters(); return; }
-        y += 21 + ROW_HEIGHT;
-        S2CFireSupportMissionUpdate mission = trackedMission();
-        if (mouseY >= y && mouseY <= y + 18) {
+        if (mouseY >= actionY(host) && mouseY < actionY(host)+19) {
+            int middle = (host.sideLeft()+host.sideRight())/2;
+            if (mouseX < middle-1) { resetParameters(); return; }
+            if (mouseX < middle+1) return;
+            S2CFireSupportMissionUpdate mission = trackedMission();
+            if (!primaryActionEnabled(mission)) return;
             if (mission != null && (mission.state() == RVP_FireSupportMissionState.CALLING
                     || mission.state() == RVP_FireSupportMissionState.STRIKING)) {
                 submitCeaseFire();
@@ -565,7 +562,7 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
     private int drawParameter(RVP_TacticalMapHost host, GuiGraphics graphics, int left, int right, int y,
                               RVP_ClientFireSupportProfile.Parameter spec, int mouseX, int mouseY) {
         boolean hover = mouseY >= y && mouseY < y + ROW_HEIGHT && mouseX >= left && mouseX <= right;
-        graphics.fill(left, y, right, y + ROW_HEIGHT - 2, hover ? 0x99405261 : 0x77182029);
+        RVP_MapChrome.strip(graphics,left,y,right,y+ROW_HEIGHT-1,false,hover);
         double value = parameterValues.getOrDefault(spec.key(), spec.defaultValue());
         int trackLeft = left + 74;
         int trackRight = right - 18;
@@ -585,7 +582,7 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
     private int drawValueRow(RVP_TacticalMapHost host, GuiGraphics graphics, int left, int right, int y,
                              String name, String value, int mouseX, int mouseY) {
         boolean hover = mouseY >= y && mouseY < y + ROW_HEIGHT && mouseX >= left && mouseX <= right;
-        graphics.fill(left, y, right, y + ROW_HEIGHT - 2, hover ? 0x99405261 : 0x77182029);
+        RVP_MapChrome.strip(graphics,left,y,right,y+ROW_HEIGHT-1,false,hover);
         graphics.drawString(host.font(), "‹", left + 4, y + 4, ACCENT, false);
         graphics.drawString(host.font(), "›", right - 9, y + 4, ACCENT, false);
         drawTrimmed(host, graphics, name + "  " + value, left + 15, y + 4, right - left - 30, 0xFFE8EEF5);
@@ -595,16 +592,15 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
     private void drawButton(GuiGraphics graphics, int left, int top, int right, int bottom, boolean active,
                             String label, int mouseX, int mouseY) {
         boolean hover = active && mouseX >= left && mouseX <= right && mouseY >= top && mouseY <= bottom;
-        graphics.fill(left, top, right, bottom, active ? (hover ? 0xFF8A6D36 : 0xFF5F4D2E) : 0xFF30343A);
-        graphics.fill(left, top, right, top + 1, active ? ACCENT : 0xFF666A70);
+        RVP_MapChrome.strip(graphics,left,top,right,bottom,active,hover);
         Minecraft minecraft = Minecraft.getInstance();
-        int x = left + Math.max(4, (right - left - minecraft.font.width(label)) / 2);
-        graphics.drawString(minecraft.font, label, x, top + 5, active ? 0xFFFFFFFF : 0xFF90959B, false);
+        RVP_MapChrome.buttonLabel(graphics, minecraft.font, Component.literal(label), left, top, right, bottom,
+                active ? RVP_MapChrome.INK : RVP_MapChrome.MUTED);
     }
 
     private void drawTrimmed(RVP_TacticalMapHost host, GuiGraphics graphics, String text,
                              int x, int y, int width, int color) {
-        graphics.drawString(host.font(), host.font().plainSubstrByWidth(text, Math.max(8, width)), x, y, color, false);
+        RVP_MapChrome.line(graphics, host.font(), text, x, y, width, color);
     }
 
     private void adjustParameter(RVP_ClientFireSupportProfile.Parameter spec, int direction) {
@@ -660,6 +656,7 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
         int right = host.sideRight() - 7;
         if (mouseX > left + 14 && mouseX < right - 14) {
             openChoice = openChoice == choice ? -1 : choice;
+            firstChoice = 0;
             return;
         }
         int direction = side(host, mouseX);
@@ -676,41 +673,47 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
         rememberDraft();
     }
 
-    private boolean handleDropdownClick(RVP_TacticalMapHost host, double mouseX, double mouseY) {
-        if (openChoice < 0) return false;
-        List<String> labels = choiceLabels(openChoice);
-        int top = dropdownTop(host, labels.size());
-        int left = host.sideLeft() + 7;
-        int right = host.sideRight() - 7;
-        if (mouseX < left || mouseX > right || mouseY < top || mouseY >= top + labels.size() * DROPDOWN_ROW_HEIGHT) return false;
-        selectChoice(openChoice, Mth.clamp((int) ((mouseY - top) / DROPDOWN_ROW_HEIGHT), 0, labels.size() - 1));
-        openChoice = -1;
+    private RVP_MapChrome.ListArea choices(RVP_TacticalMapHost host, int count) {
+        var form = form(host);
+        int h = Math.min(count, Math.max(1,(form.bottom()-form.top())/DROPDOWN_ROW_HEIGHT))*DROPDOWN_ROW_HEIGHT;
+        int top = Mth.clamp(form.y(openChoice+1,firstRow),form.top(),Math.max(form.top(),form.bottom()-h));
+        return new RVP_MapChrome.ListArea(top, top+h, DROPDOWN_ROW_HEIGHT);
+    }
+
+    @Override
+    public boolean mouseScrolled(RVP_TacticalMapHost host,double x,double y,double delta) {
+        if (!insideSidebar(host,x,y)) return false;
+        if (openChoice >= 0) {
+            int count=choiceLabels(openChoice).size();
+            firstChoice=choices(host,count).clamp(firstChoice-(int)Math.signum(delta),count);
+        } else if (y >= form(host).top() && y < form(host).bottom()) {
+            firstRow=form(host).clamp(firstRow-(int)Math.signum(delta),formCount());
+        }
+        return true;
+    }
+
+    private boolean handleDropdownClick(RVP_TacticalMapHost host,double x,double y) {
+        int count=choiceLabels(openChoice).size();
+        int i=choices(host,count).rowAt(y,firstChoice,count);
+        if (i<0 || x<host.sideLeft()+7 || x>=host.sideRight()-7) return false;
+        selectChoice(openChoice,i);
+        openChoice=-1;
         rememberDraft();
         return true;
     }
 
-    private void renderChoiceDropdown(RVP_TacticalMapHost host, GuiGraphics graphics, int mouseX, int mouseY) {
-        if (openChoice < 0) return;
-        List<String> labels = choiceLabels(openChoice);
-        if (labels.isEmpty()) return;
-        int left = host.sideLeft() + 7;
-        int right = host.sideRight() - 7;
-        int top = dropdownTop(host, labels.size());
-        graphics.pose().pushPose();
-        graphics.pose().translate(0, 0, 400);
-        for (int index = 0; index < labels.size(); index++) {
-            int rowTop = top + index * DROPDOWN_ROW_HEIGHT;
-            boolean hover = mouseX >= left && mouseX <= right && mouseY >= rowTop && mouseY < rowTop + DROPDOWN_ROW_HEIGHT;
-            graphics.fill(left, rowTop, right, rowTop + DROPDOWN_ROW_HEIGHT, hover ? 0xFF6D5733 : 0xF21A222C);
-            graphics.fill(left, rowTop, left + 1, rowTop + DROPDOWN_ROW_HEIGHT, ACCENT);
-            drawTrimmed(host, graphics, labels.get(index), left + 5, rowTop + 4, right - left - 10, 0xFFFFFFFF);
+    private void renderChoiceDropdown(RVP_TacticalMapHost host,GuiGraphics g,int mx,int my) {
+        if (openChoice<0) return;
+        List<String> labels=choiceLabels(openChoice);
+        var rows=choices(host,labels.size());
+        firstChoice=rows.clamp(firstChoice,labels.size());
+        int left=host.sideLeft()+7,right=host.sideRight()-7;
+        for (int i=firstChoice;i<Math.min(labels.size(),firstChoice+rows.visible());i++) {
+            int y=rows.y(i,firstChoice);
+            boolean hover=mx>=left && mx<right && my>=y && my<y+rows.step();
+            RVP_MapChrome.strip(g,left,y,right,y+rows.step(),hover,false);
+            drawTrimmed(host,g,labels.get(i),left+5,y+4,right-left-10,hover ? RVP_MapChrome.INK : RVP_MapChrome.TEXT);
         }
-        graphics.pose().popPose();
-    }
-
-    private int dropdownTop(RVP_TacticalMapHost host, int itemCount) {
-        int desired = host.mapTop() + 31 + (openChoice + 1) * ROW_HEIGHT;
-        return Math.max(host.mapTop() + 2, Math.min(desired, host.mapBottom() - itemCount * DROPDOWN_ROW_HEIGHT - 2));
     }
 
     private List<String> choiceLabels(int choice) {
@@ -816,7 +819,6 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
     private boolean hasDirectionalPattern() { return pattern() != null && parameterValues.containsKey("length_m"); }
     private boolean insideMap(RVP_TacticalMapHost host, double x, double y) { return x >= host.mapLeft() && x <= host.mapRight() && y >= host.mapTop() && y <= host.mapBottom(); }
     private boolean insideSidebar(RVP_TacticalMapHost host, double x, double y) { return x >= host.sideLeft() && x <= host.sideRight() && y >= host.mapTop() && y <= host.mapBottom(); }
-    private boolean rowHit(int y, double mouseY) { return mouseY >= y && mouseY < y + ROW_HEIGHT; }
     private int side(RVP_TacticalMapHost host, double mouseX) { return mouseX < (host.sideLeft() + host.sideRight()) * 0.5 ? -1 : 1; }
     private int cycle(int value, int size, int direction) { return size <= 0 ? 0 : Math.floorMod(value + direction, size); }
     private int clampIndex(int value, int size) { return size <= 0 ? 0 : Mth.clamp(value, 0, size - 1); }
