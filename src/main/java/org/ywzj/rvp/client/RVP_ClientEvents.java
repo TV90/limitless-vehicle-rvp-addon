@@ -1218,6 +1218,19 @@ public class RVP_ClientEvents {
         RenderSystem.disableBlend();
     }
 
+    /** 多弹种包装经本体发射入口开火时，补上普通 RVP 武器已有的 FAST 标点逻辑。 */
+    @SubscribeEvent(priority = EventPriority.LOWEST)
+    public static void onWrappedGpsFire(VehicleFireEvent.Pre event) {
+        if (!event.isClientSide() || event.getWeapon() instanceof RVP_WeaponBase) return;
+        // 开火门控通过后，对实际选中的子武器检查 GPS 模式和可用弹药。
+        if (RVP_WeaponResolveHelper.unwrap(event.getWeapon()) instanceof RVP_WeaponBase weapon
+                && RVP_ClientGPSUtil.isFastActiveFor(weapon)
+                && weapon.hasAmmo() && !weapon.isCoolingDown() && !weapon.isReloading()
+                && !RVP_ClientGPSUtil.tryFastGpsMark()) {
+            event.setCanceled(true);
+        }
+    }
+
     @SubscribeEvent
     public static void onVehicleFirePost(VehicleFireEvent.Post event) {
         if (!event.isClientSide()) {

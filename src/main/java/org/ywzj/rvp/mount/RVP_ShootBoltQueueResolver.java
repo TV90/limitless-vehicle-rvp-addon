@@ -13,6 +13,8 @@ import org.joml.Quaternionf;
 import org.joml.Vector3f;
 import org.ywzj.rvp.mixin.accessor.BaseVehicleDataAccessor;
 import org.ywzj.rvp.config.RVP_CustomMountConfig;
+import org.ywzj.rvp.config.RVP_LauncherDeployConfig;
+import org.ywzj.rvp.config.RVP_LauncherDeployConfigCache;
 import org.ywzj.rvp.config.RVP_CustomMountConfigCache;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
 import org.ywzj.vehicle.custom.vehicle.BaseVehicleData;
@@ -23,6 +25,7 @@ import org.ywzj.vehicle.vehicle.pojo.Bolt;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.structure.VehicleCubeGroup;
+import org.ywzj.vehicle.vehicle.structure.VehicleCubeOBB;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
@@ -30,9 +33,11 @@ import net.minecraftforge.fml.util.ObfuscationReflectionHelper;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -91,7 +96,26 @@ public final class RVP_ShootBoltQueueResolver {
      * [RVP] 单站出弹队列集：{@code union} 为整站并集（模板 bolts 与未配置武器的回退），
      * {@code byWeapon} 为按武器拆分后的独立队列。
      */
-    public record StationBoltQueues(List<Bolt> union, Map<ResourceLocation, List<Bolt>> byWeapon) {
+    public record StationBoltQueues(List<Bolt> union, Map<ResourceLocation, List<Bolt>> byWeapon,
+                                    Map<ResourceLocation, BarrelGroup> barrelGroupsByWeapon) {
+
+        public StationBoltQueues(List<Bolt> union, Map<ResourceLocation, List<Bolt>> byWeapon) {
+            this(union, byWeapon, Map.of());
+        }
+
+        /** 未收到选弹时使用声明的首套结构；已知武器必须精确匹配。 */
+        @Nullable
+        public BarrelGroup barrelGroupFor(@Nullable ResourceLocation weaponId) {
+            if (barrelGroupsByWeapon.isEmpty()) return null;
+            return weaponId == null ? barrelGroupsByWeapon.values().iterator().next()
+                    : barrelGroupsByWeapon.get(weaponId);
+        }
+
+        /** 供具名 OBB 读取该炮管骨的运行时结构组。 */
+        @Nullable
+        public BarrelGroup barrelGroupNamed(String name) {
+            return barrelGroupsByWeapon.values().stream().filter(group -> group.name().equals(name)).findFirst().orElse(null);
+        }
 
         /** 取该武器的出弹队列；无独立配置时回退整站并集。 */
         public List<Bolt> boltsFor(@Nullable ResourceLocation weaponId) {
@@ -102,6 +126,18 @@ public final class RVP_ShootBoltQueueResolver {
                 }
             }
             return union;
+        }
+    }
+
+    /** 一个独立炮管子骨的出弹顺序和受击模板。子骨下标与本体复制结构组的顺序一致。 */
+    public record BarrelGroup(String name, int pitchIndex, int childIndex, List<Bolt> bolts, List<VehicleCubeOBB> templates) {
+        @Nullable
+        public VehicleCubeGroup liveGroup(WeaponUnit unit) {
+            // 调用本体公开的结构组，按模型层级取俯仰骨与炮管子骨。
+            VehicleCubeGroup parent = unit.getStructureGroup();
+            if (parent == null || pitchIndex >= parent.children.size()) return null;
+            VehicleCubeGroup pitch = parent.children.get(pitchIndex);
+            return childIndex < pitch.children.size() ? pitch.children.get(childIndex) : null;
         }
     }
 
@@ -137,7 +173,10 @@ public final class RVP_ShootBoltQueueResolver {
             ResourceLocation vehicleId = entry.getKey();
             // 目的：读取本载具的挂架条目；未配置自定义挂架的载具直接跳过
             List<RVP_CustomMountConfig> configs = RVP_CustomMountConfigCache.get(vehicleId);
-            if (configs.isEmpty()) {
+            // 部署架可以只从现有结构 Cube 取出弹点，无需注册额外的可渲染挂架。
+            List<RVP_LauncherDeployConfig> launchers = RVP_LauncherDeployConfigCache.get(vehicleId).stream()
+                    .filter(launcher -> !launcher.barrelBonesByWeapon().isEmpty()).toList();
+            if (configs.isEmpty() && launchers.isEmpty()) {
                 continue;
             }
             BaseVehicleData<?> data = CommonAssetsManager.vehicleDataManager().getVehicleData(vehicleId).orElse(null);
@@ -145,27 +184,37 @@ public final class RVP_ShootBoltQueueResolver {
                 LOGGER.warn("[RVP] 出弹点数据层写入跳过：载具数据缺失 vehicle={}", vehicleId);
                 continue;
             }
+            // 调用本体模板访问入口，与挂架出弹点共用同一份结构模型。
+            List<PartUnitEntry<?, ?>> parts = ((BaseVehicleDataAccessor) (Object) data).ywzj_rvp$getParts();
             JsonObject root = GsonHelper.convertToJsonObject(entry.getValue(), "vehicle data");
-            // 目的：解析部件表（part id → structure_bone，锚定骨 = structure_bone + "_barrel"）
-            Map<String, String> stationBones = parseStationBones(root);
             BedrockModel model = resolveStructureModel(root, vehicleId);
             if (model == null) {
                 continue;
             }
+            Map<String, StationBoltQueues> vehicleQueues = new HashMap<>();
+            for (RVP_LauncherDeployConfig launcher : launchers) {
+                collectLauncherBolts(vehicleId, launcher, parts, model, vehicleQueues);
+            }
+            if (!vehicleQueues.isEmpty()) {
+                allQueues.put(vehicleId, Map.copyOf(vehicleQueues));
+            }
+            if (configs.isEmpty()) {
+                continue;
+            }
+            // 目的：解析部件表（part id → structure_bone，锚定骨 = structure_bone + "_barrel"）
+            Map<String, String> stationBones = parseStationBones(root);
             // 目的：按武器站聚合出弹骨条目（仅含配置了 shoot_structure_bones 的条目）
             Map<String, List<RVP_CustomMountConfig>> byStation = groupByStation(configs);
             if (byStation.isEmpty()) {
                 continue;
             }
-            Map<String, StationBoltQueues> vehicleQueues = new HashMap<>();
-            // 目的：遍历部件模板（accessor 读 protected parts），命中站 id 的写入出弹 bolts
-            List<PartUnitEntry<?, ?>> parts = ((BaseVehicleDataAccessor) (Object) data).ywzj_rvp$getParts();
+            // 遍历部件模板，按原通道写入独立的可渲染挂架出弹点。
             for (PartUnitEntry<?, ?> partEntry : parts) {
                 if (!(partEntry.data() instanceof WeaponUnitData weaponData)) {
                     continue;
                 }
                 List<RVP_CustomMountConfig> stationConfigs = byStation.get(weaponData.getId());
-                if (stationConfigs == null) {
+                if (stationConfigs == null || vehicleQueues.containsKey(weaponData.getId())) {
                     continue;
                 }
                 String structureBone = stationBones.getOrDefault(weaponData.getId(), "");
@@ -224,6 +273,62 @@ public final class RVP_ShootBoltQueueResolver {
         cacheVersion++;
         if (appliedStations > 0) {
             LOGGER.info("[RVP] 出弹点数据层写入完成：站 {} 个", appliedStations);
+        }
+    }
+
+    /** 从独立的具名炮管子骨生成出弹队列与实时受击盒的模板。 */
+    private static void collectLauncherBolts(ResourceLocation vehicleId, RVP_LauncherDeployConfig launcher,
+                                             List<PartUnitEntry<?, ?>> parts, BedrockModel model,
+                                             Map<String, StationBoltQueues> queues) {
+        String station = launcher.pitchPartUnitId();
+        for (PartUnitEntry<?, ?> entry : parts) {
+            if (!(entry.data() instanceof WeaponUnitData data) || !station.equals(data.getId())) {
+                continue;
+            }
+            List<Bolt> template = data.getBolts();
+            VehicleCubeGroup pitch = data.getRawXTurnGroup();
+            String structure = data.getStructureBone();
+            BedrockBone base = model.getBoneMap().get(structure);
+            BedrockBone anchor = model.getBoneMap().get(structure + "_barrel");
+            int pitchIndex = base == null || anchor == null ? -1 : new ArrayList<>(base.getChildren()).indexOf(anchor);
+            if (template == null || pitch == null || pitchIndex < 0 || !anchor.cubes.isEmpty()) {
+                LOGGER.warn("[RVP] 分组炮管需要单独的空俯仰锚骨 vehicle={} station={}", vehicleId, station);
+                return;
+            }
+            List<BedrockBone> children = new ArrayList<>(anchor.getChildren());
+            Map<String, BarrelGroup> groups = new LinkedHashMap<>();
+            Map<ResourceLocation, BarrelGroup> byWeapon = new LinkedHashMap<>();
+            for (var selection : launcher.barrelBonesByWeapon().entrySet()) {
+                String name = selection.getValue();
+                BarrelGroup group = groups.get(name);
+                if (group == null) {
+                    BedrockBone bone = model.getBoneMap().get(name);
+                    int index = children.indexOf(bone);
+                    if (bone == null || index < 0 || index >= pitch.children.size() || bone.cubes.isEmpty()) {
+                        LOGGER.warn("[RVP] 炮管子骨缺失 vehicle={} station={} bone={}", vehicleId, station, name);
+                        return;
+                    }
+                    List<Bolt> bolts = new ArrayList<>();
+                    Vec3 offset = new Vec3(bone.x / 16.0, bone.y / 16.0, bone.z / 16.0);
+                    // 调用共用的 Cube→Bolt 换算，保留炮管子骨相对俯仰锚点的偏移和旋转。
+                    appendBoneBolts(bone, anchor, offset, bolts, model);
+                    List<VehicleCubeOBB> shapes = pitch.children.get(index).cubeOBBs;
+                    if (bolts.size() != shapes.size()) {
+                        LOGGER.warn("[RVP] 炮管发射点与受击盒数量不符 vehicle={} station={} bone={}", vehicleId, station, name);
+                        return;
+                    }
+                    group = new BarrelGroup(name, pitchIndex, index, List.copyOf(bolts), List.copyOf(shapes));
+                    groups.put(name, group);
+                }
+                byWeapon.put(selection.getKey(), group);
+            }
+            List<Bolt> fallback = groups.values().iterator().next().bolts();
+            template.clear();
+            template.addAll(fallback);
+            queues.put(station, new StationBoltQueues(fallback, Map.of(), Collections.unmodifiableMap(byWeapon)));
+            LOGGER.info("[RVP] 炮管构型已加载 vehicle={} station={} weaponVariants={} groups={}",
+                    vehicleId, station, byWeapon.size(), groups.keySet());
+            return;
         }
     }
 

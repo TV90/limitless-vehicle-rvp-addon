@@ -72,8 +72,9 @@ public final class RVP_LightReloadCommand {
                 RVP_WingSweepConfigManager.INSTANCE.reloadFrom(clientResources);
             });
             MinecraftServer server = context.getSource().getServer();
-            // 数据侧全量：结构模型 + 武器 + 载具 JSON；RVP 钩子经 VehicleDataManagerMixin（apply TAIL）自动重建
+            // 先重载本体索引，再从同一轮数据重建按弹种分流的出弹点。
             CommonAssetsManager.INSTANCE.reload(server.getResourceManager());
+            org.ywzj.rvp.config.RVP_VehicleSupplementListener.INSTANCE.reloadFrom(server.getResourceManager());
             // [RVP] 2026-10-02 补漏：RVP 三个 AddReloadListenerEvent 数据管理器（载具扩展配置/命中倍率/
             // 后掠翼）只随 vanilla /reload（数据包重载）刷新，本体 CommonAssetsManager.reload 不触发它们
             // ——轻量重载必须在服务端段显式补跑，否则 /rvp reload 后服务端配置仍是旧值

@@ -229,22 +229,10 @@ public final class LauncherDeployStateMachine {
         return switch (state.state) {
             case CLOSED -> config.stowedPitch();
             case OPEN -> config.deployedPitch();
-            case DEPLOYING -> lerp(
-                    config.stowedPitch(),
-                    config.deployedPitch(),
-                    config.deployTimeTick() <= 0 ? 1.0f : (float) state.progressTick / config.deployTimeTick()
-            );
-            case RETRACTING -> lerp(
-                    config.deployedPitch(),
-                    config.stowedPitch(),
-                    config.retractTimeTick() <= 0 ? 1.0f : (float) state.progressTick / config.retractTimeTick()
-            );
+            // 调用配置的曲线取样，使碰撞盒随显示动画的开盖和抬升节奏移动。
+            case DEPLOYING -> config.pitchAt((float) state.progressTick / config.deployTimeTick());
+            case RETRACTING -> config.pitchAt(1.0F - (float) state.progressTick / config.retractTimeTick());
         };
-    }
-
-    private static float lerp(float start, float end, float progress) {
-        progress = Math.max(0.0f, Math.min(1.0f, progress));
-        return start + (end - start) * progress;
     }
 
     private static int mapDeployToRetractProgress(RVP_LauncherDeployConfig config, int deployProgressTick) {

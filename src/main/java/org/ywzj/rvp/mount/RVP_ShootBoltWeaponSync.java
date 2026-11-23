@@ -6,17 +6,22 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
-import net.minecraftforge.fml.util.ObfuscationReflectionHelper;
 import org.slf4j.Logger;
 import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.config.RVP_LauncherDeployConfigCache;
 import org.ywzj.rvp.debug.RVP_DebugFlags;
 import org.ywzj.rvp.util.RVP_ServerVehicleIndex;
+import org.ywzj.rvp.util.RVP_WeaponResolveHelper;
+import org.ywzj.vehicle.api.event.VehicleFireEvent;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.pojo.Bolt;
+import org.ywzj.vehicle.vehicle.structure.VehicleCubeGroup;
+import org.ywzj.vehicle.vehicle.structure.VehicleCubeOBB;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 
 import javax.annotation.Nullable;
@@ -38,8 +43,7 @@ import java.util.WeakHashMap;
  *
  * <p>轮转下标按武器记忆：每把武器有自己的弹药计数与弹体消失进度，切走时保存
  * {@code currentBoltIndex}、切回时恢复，保证"第 k 发从哪个挂点出"与"第 k 枚弹体消失"
- * 始终对齐。不新增 Mixin：遍历沿用既有载具注册表/客户端渲染实体集合，写入走本体公开的
- * {@code getBolts()} 活列表；仅下标读写用反射（与 {@code xTurnGroup} 同款兜底策略）。</p>
+ * 始终对齐。通过本体炮口索引与轮转接口读写，双端分别保存各武器的进度。</p>
  */
 @Mod.EventBusSubscriber(modid = RVP_MOD.MOD_ID)
 public final class RVP_ShootBoltWeaponSync {
@@ -51,11 +55,9 @@ public final class RVP_ShootBoltWeaponSync {
     /** 各武器切走时的轮转下标，切回时恢复。 */
     private static final Map<WeaponUnit, Map<ResourceLocation, Integer>> SERVER_SAVED_INDEX = new WeakHashMap<>();
     private static final Map<WeaponUnit, Map<ResourceLocation, Integer>> CLIENT_SAVED_INDEX = new WeakHashMap<>();
-    /** {@code WeaponUnit.currentBoltIndex} 反射字段（解析一次复用；失败退化为 countFire(0)）。 */
-    private static volatile java.lang.reflect.Field currentBoltIndexField;
-    private static volatile boolean currentBoltIndexResolveFailed;
 
-    private record Applied(long version, @Nullable ResourceLocation weaponId) {}
+    /** 当前挂到实体武器站上的构型受击盒，切换时只移除这一组。 */
+    private record Applied(long version, @Nullable ResourceLocation weaponId, List<VehicleCubeOBB> barrelShapes) {}
 
     private RVP_ShootBoltWeaponSync() {}
 
@@ -110,16 +112,36 @@ public final class RVP_ShootBoltWeaponSync {
         }
         RVP_ShootBoltQueueResolver.StationBoltQueues queues =
                 RVP_ShootBoltQueueResolver.getStationQueues(vehicleId, unit.getId());
-        if (queues == null) {
-            return;
-        }
         boolean clientSide = vehicle.level().isClientSide();
         Map<WeaponUnit, Applied> applied = clientSide ? CLIENT_APPLIED : SERVER_APPLIED;
         Map<WeaponUnit, Map<ResourceLocation, Integer>> savedIndices =
                 clientSide ? CLIENT_SAVED_INDEX : SERVER_SAVED_INDEX;
+        if (queues == null) {
+            Applied previous = applied.remove(unit);
+            if (previous != null && !previous.barrelShapes().isEmpty()) {
+                unit.getPartCubeOBBs().removeAll(previous.barrelShapes());
+                // 配置移除后用本体模板恢复炮管序列，避免沿用旧改装的筒口。
+                List<Bolt> original = unit.getData().getBolts();
+                if (original != null && !original.isEmpty()) {
+                    unit.getBolts().clear();
+                    unit.getBolts().addAll(original);
+                    writeBoltIndex(unit, 0);
+                }
+            }
+            return;
+        }
         long version = RVP_ShootBoltQueueResolver.cacheVersion();
-        ResourceLocation weaponId = currentWeaponId(unit);
+        // 调用本体武器站取当前改装子项，使用资源 ID 选队列，同时读取它的实际存弹量。
         Applied previous = applied.get(unit);
+        if (!queues.barrelGroupsByWeapon().isEmpty()) {
+            applyLauncherStation(unit, queues, selectedLauncherWeapon(unit), version, previous, applied);
+            return;
+        }
+        AbstractVehicleWeapon<?> weapon = unit.getCurrentWeapon().orElse(null);
+        ResourceLocation weaponId = weaponId(weapon);
+        if (previous != null && !previous.barrelShapes().isEmpty()) {
+            unit.getPartCubeOBBs().removeAll(previous.barrelShapes());
+        }
         if (previous != null && previous.version() == version
                 && Objects.equals(previous.weaponId(), weaponId)) {
             return;
@@ -153,16 +175,89 @@ public final class RVP_ShootBoltWeaponSync {
                     vehicleId, unit.getId(), weaponId, target.size(), targetIndex,
                     clientSide ? "client" : "server");
         }
-        applied.put(unit, new Applied(version, weaponId));
+        applied.put(unit, new Applied(version, weaponId, List.of()));
+    }
+
+    /** 多弹种包装先触发本体 Pre，再取炮口；开火当帧按实际武器重新应用构型。 */
+    @SubscribeEvent(priority = EventPriority.HIGH)
+    public static void beforeLauncherFire(VehicleFireEvent.Pre event) {
+        // 调用共用解包入口获取真正要发射的子武器，避免根武器站走其他选项。
+        AbstractVehicleWeapon<?> weapon = RVP_WeaponResolveHelper.unwrap(event.getWeapon());
+        if (weapon == null) return;
+        WeaponUnit unit = weapon.getWeaponUnit();
+        ResourceLocation vehicleId = event.getVehicle().getVehicleId();
+        var queues = RVP_ShootBoltQueueResolver.getStationQueues(vehicleId, unit.getId());
+        if (queues == null || queues.barrelGroupsByWeapon().isEmpty()) {
+            // 配置了独立组但结构尚未加载的武器站不使用本体默认炮口。
+            if (RVP_LauncherDeployConfigCache.get(vehicleId).stream().anyMatch(config ->
+                    !config.barrelBonesByWeapon().isEmpty() && config.pitchPartUnitId().equals(unit.getId()))) {
+                event.setCanceled(true);
+            }
+            return;
+        }
+        Map<WeaponUnit, Applied> applied = event.isClientSide() ? CLIENT_APPLIED : SERVER_APPLIED;
+        if (!applyLauncherStation(unit, queues, weapon, RVP_ShootBoltQueueResolver.cacheVersion(), applied.get(unit), applied)) {
+            event.setCanceled(true);
+        }
     }
 
     @Nullable
-    private static ResourceLocation currentWeaponId(WeaponUnit unit) {
-        AbstractVehicleWeapon<?> weapon = unit.getCurrentWeapon().orElse(null);
-        if (weapon == null || weapon.getData() == null) {
-            return null;
+    private static AbstractVehicleWeapon<?> selectedLauncherWeapon(WeaponUnit unit) {
+        for (WeaponUnit seat = unit; seat != null; seat = seat.getParentWeaponUnit()) {
+            // 本体把带 part_unit_id 的改装武器挂在席位上，子部件可能只负责结构。
+            AbstractVehicleWeapon<?> selected = RVP_WeaponResolveHelper.currentPrimary(seat);
+            if (selected != null && selected.getWeaponUnit() == unit) return selected;
         }
-        return weapon.getData().getWeaponId();
+        return null;
+    }
+
+    @Nullable
+    private static ResourceLocation weaponId(@Nullable AbstractVehicleWeapon<?> weapon) {
+        return weapon == null || weapon.getData() == null ? null : weapon.getData().getWeaponId();
+    }
+
+    private static boolean applyLauncherStation(WeaponUnit unit, RVP_ShootBoltQueueResolver.StationBoltQueues queues,
+                                                @Nullable AbstractVehicleWeapon<?> weapon, long version,
+                                                @Nullable Applied previous, Map<WeaponUnit, Applied> applied) {
+        ResourceLocation weaponId = weaponId(weapon);
+        var choice = queues.barrelGroupFor(weaponId);
+        VehicleCubeGroup group = choice == null ? null : choice.liveGroup(unit);
+        if (group == null) return false;
+        List<Bolt> target = choice.bolts();
+        if (previous == null || previous.version() != version || !Objects.equals(previous.weaponId(), weaponId)) {
+            List<VehicleCubeOBB> shapes = choice.templates().stream().map(template -> {
+                // 复制本体解析的盒，绑定选中子骨的实例旋转。
+                VehicleCubeOBB shape = new VehicleCubeOBB(template);
+                shape.group = group;
+                shape.update(unit.getVehicle());
+                return shape;
+            }).toList();
+            if (previous != null) unit.getPartCubeOBBs().removeAll(previous.barrelShapes());
+            unit.getPartCubeOBBs().addAll(shapes);
+            List<Bolt> live = unit.getBolts();
+            if (!sameBolts(live, target)) {
+                live.clear();
+                live.addAll(target);
+            }
+            applied.put(unit, new Applied(version, weaponId, shapes));
+        }
+        // 装满使用首筒；剩一发使用最后一筒，与脚本判定同源。
+        int remaining = weapon == null ? target.size() : weapon.getRemainAmmo();
+        writeBoltIndex(unit, Math.min(target.size() - 1, Math.max(0, target.size() - remaining)));
+        return true;
+    }
+
+    private static int readBoltIndex(WeaponUnit unit) {
+        List<Bolt> bolts = unit.getBolts();
+        if (bolts.isEmpty()) return 0;
+        // 调用本体轮转接口将索引收敛至当前队列；每个炮口持有独立的 Bolt。
+        unit.countFire(0);
+        return bolts.indexOf(unit.getCurrentBolt());
+    }
+
+    private static void writeBoltIndex(WeaponUnit unit, int index) {
+        int size = unit.getBolts().size();
+        if (size > 0) unit.countFire(Math.floorMod(index - readBoltIndex(unit), size));
     }
 
     private static boolean sameBolts(List<Bolt> live, List<Bolt> target) {
@@ -185,63 +280,4 @@ public final class RVP_ShootBoltWeaponSync {
         return true;
     }
 
-    private static int readBoltIndex(WeaponUnit unit) {
-        java.lang.reflect.Field field = resolveBoltIndexField();
-        if (field == null) {
-            return 0;
-        }
-        try {
-            return field.getInt(unit);
-        } catch (Throwable t) {
-            return 0;
-        }
-    }
-
-    private static void writeBoltIndex(WeaponUnit unit, int index) {
-        java.lang.reflect.Field field = resolveBoltIndexField();
-        if (field == null) {
-            // 反射不可用：至少把越界下标收敛到新队列长度内
-            unit.countFire(0);
-            return;
-        }
-        try {
-            field.setInt(unit, index);
-        } catch (Throwable t) {
-            unit.countFire(0);
-        }
-    }
-
-    /**
-     * 解析并缓存 {@code WeaponUnit.currentBoltIndex}（双重检查 + 失败记忆）。
-     * 字段在运行时会被重映射，必须经 {@link ObfuscationReflectionHelper} 按可读名解析。
-     */
-    @Nullable
-    private static java.lang.reflect.Field resolveBoltIndexField() {
-        java.lang.reflect.Field cached = currentBoltIndexField;
-        if (cached != null) {
-            return cached;
-        }
-        if (currentBoltIndexResolveFailed) {
-            return null;
-        }
-        synchronized (RVP_ShootBoltWeaponSync.class) {
-            if (currentBoltIndexField != null) {
-                return currentBoltIndexField;
-            }
-            if (currentBoltIndexResolveFailed) {
-                return null;
-            }
-            try {
-                java.lang.reflect.Field field = ObfuscationReflectionHelper.findField(WeaponUnit.class, "currentBoltIndex");
-                field.setAccessible(true);
-                currentBoltIndexField = field;
-                return field;
-            } catch (Throwable t) {
-                currentBoltIndexResolveFailed = true;
-                LOGGER.warn("[RVP] 无法解析 WeaponUnit.currentBoltIndex，换武器时出弹点下标只做取模收敛"
-                        + "（后续不再重复告警）", t);
-                return null;
-            }
-        }
-    }
 }

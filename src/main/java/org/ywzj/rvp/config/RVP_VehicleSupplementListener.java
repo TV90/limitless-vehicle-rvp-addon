@@ -9,6 +9,7 @@ import net.minecraft.util.GsonHelper;
 import net.minecraft.util.profiling.ProfilerFiller;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.event.AddReloadListenerEvent;
+import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.jetbrains.annotations.NotNull;
@@ -31,8 +32,8 @@ import java.util.Map;
  * {@code rvp_radar_rcs_factor} / {@code rvp_custom_mounts} / 武器过热 / {@code rvp_hide_in_creative}）
  * 解析进各自的静态缓存。</p>
  *
- * <p>为什么不再 mixin {@code VehicleDataManager.apply}：本类不依赖本体解析结果（只读 JSON 原文），
- * 因此不需要"贴在 apply 末尾"，只要在数据重载批次里跑一次即可。三条触发路径对应三种场景：</p>
+ * <p>扩展字段从原始 JSON 读取。挂件出弹点还要写入本轮的武器站模板，因此服务端在
+ * {@code CommonAssetsManager} 发布载具和结构模型索引后处理本监听器。</p>
  * <ul>
  *   <li><b>服务端 / 单人</b>：{@link AddReloadListenerEvent}（本类自身就是一个数据重载监听器）；</li>
  *   <li><b>专用服务器客户端</b>：{@code S2CVehicleRvpConfig} 收到同步的原始 JSON 后调
@@ -199,7 +200,7 @@ public final class RVP_VehicleSupplementListener
                 resourceManager);
     }
 
-    @SubscribeEvent
+    @SubscribeEvent(priority = EventPriority.LOWEST)
     public static void onAddReloadListener(AddReloadListenerEvent event) {
         event.addListener(INSTANCE);
     }

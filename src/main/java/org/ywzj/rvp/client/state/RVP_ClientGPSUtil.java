@@ -13,6 +13,7 @@ import org.joml.Vector3f;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.network.C2SSetGPSTarget;
 import org.ywzj.rvp.network.RVP_Network;
+import org.ywzj.rvp.util.RVP_WeaponResolveHelper;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
@@ -27,14 +28,9 @@ import static org.ywzj.rvp.client.state.RVP_ClientGPSState.Mode;
 public class RVP_ClientGPSUtil {
 
     public static boolean isGPSBombSelected() {
-        if (!LocalVehiclePlayer.instance.onVehicle()) {
-            return false;
-        }
-        WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
-        return weaponUnit != null
-                && weaponUnit.getCurrentWeapon().isPresent()
-                && weaponUnit.getCurrentWeapon().get() instanceof RVP_WeaponBase weapon
-                && usesDesignatedPoint(weapon);
+        // 改装槽和远程武器站可能经过 Multi 或 Agent 包装，读取实际选中的弹种。
+        RVP_WeaponBase weapon = RVP_WeaponResolveHelper.currentPrimaryRvp(currentWeaponUnit());
+        return weapon != null && usesDesignatedPoint(weapon);
     }
 
     /** 当前操作的武器站；未在载具返回 null。 */
@@ -125,10 +121,7 @@ public class RVP_ClientGPSUtil {
         if (RVP_ClientGPSState.getMode() != Mode.FAST || !LocalVehiclePlayer.instance.onVehicle()) {
             return false;
         }
-        WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
-        return weaponUnit != null
-                && weaponUnit.getCurrentWeapon().isPresent()
-                && weaponUnit.getCurrentWeapon().get() == weapon
+        return RVP_WeaponResolveHelper.currentPrimary(currentWeaponUnit()) == weapon
                 && usesDesignatedPoint(weapon);
     }
 

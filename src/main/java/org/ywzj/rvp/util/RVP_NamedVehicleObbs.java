@@ -8,9 +8,11 @@ import org.jetbrains.annotations.Nullable;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 import org.ywzj.rvp.config.RVP_VehicleExtendedConfigManager;
+import org.ywzj.rvp.mount.RVP_ShootBoltQueueResolver;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
+import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.structure.OBB;
 import org.ywzj.vehicle.vehicle.structure.VehicleCubeGroup;
 
@@ -88,6 +90,21 @@ public final class RVP_NamedVehicleObbs {
             List<BedrockBone> path = path(root, bone);
             if (path == null || path.size() >= bestDepth) continue;
             if (part.isDetached()) return List.of();
+            if (part instanceof WeaponUnit unit) {
+                // 调用构型表取实际子骨，只返回实体当前挂载的受击盒。
+                var queues = RVP_ShootBoltQueueResolver.getStationQueues(vehicle.getVehicleId(), unit.getId());
+                var barrel = queues == null ? null : queues.barrelGroupNamed(name);
+                if (barrel != null) {
+                    VehicleCubeGroup live = barrel.liveGroup(unit);
+                    List<Box> selected = new ArrayList<>();
+                    unit.getPartCubeOBBs().forEach(cube -> {
+                        if (live != null && cube.group == live) {
+                            selected.add(new Box(new Key(name, selected.size()), cube.obb()));
+                        }
+                    });
+                    return selected;
+                }
+            }
             VehicleCubeGroup candidate = follow(part.getStructureGroup(), path);
             if (candidate != null) { group = candidate; bestDepth = path.size(); }
         }

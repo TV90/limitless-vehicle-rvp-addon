@@ -101,13 +101,9 @@ public final class RVP_GpsModeSupport {
      */
     @Nullable
     public static RVP_WeaponData currentRvpWeaponData(@Nullable WeaponUnit unit) {
-        if (unit == null) {
-            return null;
-        }
-        return unit.getCurrentWeapon()
-                .filter(weapon -> weapon instanceof org.ywzj.rvp.weapon.core.RVP_WeaponBase)
-                .map(weapon -> ((org.ywzj.rvp.weapon.core.RVP_WeaponBase) weapon).getData())
-                .orElse(null);
+        // 调用共用解包入口，让服务端模式与客户端标记使用同一个改装子项。
+        var weapon = org.ywzj.rvp.util.RVP_WeaponResolveHelper.currentPrimaryRvp(unit);
+        return weapon == null ? null : weapon.getData();
     }
 
     /**

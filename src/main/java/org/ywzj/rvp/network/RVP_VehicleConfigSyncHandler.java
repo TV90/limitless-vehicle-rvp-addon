@@ -3,6 +3,7 @@ package org.ywzj.rvp.network;
 import com.google.gson.JsonElement;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.event.OnDatapackSyncEvent;
+import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.network.PacketDistributor;
@@ -16,14 +17,12 @@ import java.util.Map;
  * 服务端：在 {@code OnDatapackSyncEvent}（玩家加入 / 数据包重载）时，把含 RVP 扩展字段的载具 JSON
  * 下发给客户端，供客户端填充挂架配置与改装工具弹种配置。
  *
- * <p>与本体 {@code CommonAssetsManager.onDatapackSync} 同一事件、同一时机，保证 RVP 配置
- * 与本体的 vehicles 数据同步到达客户端。客户端侧 {@code OnDatapackSyncEvent} 不会触发，
- * 本监听只在服务端逻辑执行。</p>
+ * <p>本体先发送结构模型、武器和载具模板的所有分片，随后发送依赖这些模板的 RVP 挂件配置。</p>
  */
 @Mod.EventBusSubscriber(modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public class RVP_VehicleConfigSyncHandler {
 
-    @SubscribeEvent
+    @SubscribeEvent(priority = EventPriority.LOWEST)
     public static void onDatapackSync(OnDatapackSyncEvent event) {
         Map<ResourceLocation, JsonElement> raw = RVP_VehicleExtendedConfigManager.INSTANCE.getRawVehicleJson();
         if (raw.isEmpty()) {
