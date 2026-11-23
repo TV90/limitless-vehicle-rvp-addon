@@ -17,10 +17,16 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.HexFormat;
 
 /**
  * Installs the bundled {@code /rvp} vehicle pack into {@code limitless_vehicle/rvp}
@@ -31,6 +37,9 @@ public final class RVP_VehiclePackInstaller {
     private static final Logger LOGGER = LogManager.getLogger(RVP_MOD.MOD_ID);
     private static final String PACK_RESOURCE_ROOT = "/rvp";
     private static final String PACK_FOLDER_NAME = "rvp";
+    private static final String PACK_UPDATES_RESOURCE = PACK_RESOURCE_ROOT + "/vehicle_pack_updates.json";
+
+    private record PackUpdate(String path, String previousSha256) {}
     private static final Path VEHICLE_PACKS_PATH = FMLPaths.GAMEDIR.get().resolve("limitless_vehicle");
     private static final Path VEHICLE_PACKS_BACKUP_PATH = FMLPaths.GAMEDIR.get().resolve("limitless_vehicle_backup");
 
@@ -46,6 +55,9 @@ public final class RVP_VehiclePackInstaller {
                 Files.createDirectories(VEHICLE_PACKS_BACKUP_PATH);
             }
             if (shouldSkipInstall(targetPath)) {
+                if (applyPackUpdates(targetPath)) {
+                    org.ywzj.vehicle.resource.VehiclePackLoader.INSTANCE.scanVehiclePacks();
+                }
                 return;
             }
             copyModDirectory(PACK_RESOURCE_ROOT, targetPath);
@@ -110,6 +122,66 @@ public final class RVP_VehiclePackInstaller {
     private static String rvpVersion(String version) {
         int separator = version.indexOf('_');
         return separator < 0 ? version : version.substring(0, separator);
+    }
+
+    /** 同前缀的旧主包按清单补缺，已有文件只在原始内容匹配时更新。 */
+    private static boolean applyPackUpdates(Path targetPath) throws IOException, NoSuchAlgorithmException {
+        try (InputStream manifest = RVP_MOD.class.getResourceAsStream(PACK_UPDATES_RESOURCE)) {
+            if (manifest == null) return false;
+
+            PackUpdate[] updates = GsonUtil.GSON.fromJson(
+                    new InputStreamReader(manifest, StandardCharsets.UTF_8), PackUpdate[].class);
+            if (updates == null) return false;
+
+            Path root = targetPath.toAbsolutePath().normalize();
+            boolean changed = false;
+            for (PackUpdate update : updates) {
+                Path file = root.resolve(update.path()).normalize();
+                if (!file.startsWith(root) || file.equals(root)) {
+                    throw new IOException("Invalid bundled pack update path: " + update.path());
+                }
+                boolean exists = Files.exists(file);
+                if (exists && !matchesOriginal(file, update.previousSha256())) continue;
+
+                try (InputStream payload = RVP_MOD.class.getResourceAsStream(PACK_RESOURCE_ROOT + "/" + update.path())) {
+                    if (payload == null) throw new IOException("Missing bundled pack update: " + update.path());
+                    if (writePackUpdate(file, payload.readAllBytes(), exists, update.previousSha256())) {
+                        LOGGER.info("Applied RVP pack update {}", update.path());
+                        changed = true;
+                    }
+                }
+            }
+            return changed;
+        }
+    }
+
+    private static boolean matchesOriginal(Path file, String expected) throws IOException, NoSuchAlgorithmException {
+        if (expected == null || !Files.isRegularFile(file)) return false;
+        return expected.equals(HexFormat.of().formatHex(
+                MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(file))));
+    }
+
+    private static boolean writePackUpdate(Path file, byte[] data, boolean existed, String previousSha256)
+            throws IOException, NoSuchAlgorithmException {
+        Files.createDirectories(file.getParent());
+        if (!existed) {
+            try {
+                Files.write(file, data, StandardOpenOption.CREATE_NEW);
+                return true;
+            } catch (FileAlreadyExistsException exception) {
+                return false;
+            }
+        }
+
+        Path staged = Files.createTempFile(file.getParent(), file.getFileName().toString(), ".tmp");
+        try {
+            Files.write(staged, data);
+            if (!matchesOriginal(file, previousSha256)) return false;
+            Files.move(staged, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            return true;
+        } finally {
+            Files.deleteIfExists(staged);
+        }
     }
 
     private static void copyModDirectory(String sourcePath, Path targetPath) throws IOException, URISyntaxException {
