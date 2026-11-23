@@ -26,7 +26,7 @@ side="BOTH"
 [[dependencies.${mod_id}]]
 modId="ywzj_vehicle"
 mandatory=true
-versionRange="[0,)"
+versionRange="[0.6.3,)"
 ordering="BEFORE"
 side="BOTH"
 
