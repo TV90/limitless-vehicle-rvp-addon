@@ -10,6 +10,7 @@ import org.ywzj.rvp.countermeasure.network.S2CCountermeasureHudSync;
 import org.ywzj.rvp.maintenance.network.C2SSetRepairOrder;
 import org.ywzj.rvp.maintenance.network.C2SUseMaintenance;
 import org.ywzj.rvp.maintenance.network.S2CMaintenanceSync;
+import org.ywzj.rvp.network.remotevisibility.S2CRemoteAmmoEntitySnapshot;
 import org.ywzj.rvp.network.remotevisibility.S2CRemoteAmmoVisualSnapshot;
 import org.ywzj.rvp.network.remotevisibility.S2CRemoteVehicleVisualSnapshot;
 import org.ywzj.rvp.network.visual.S2CVisualEffectEvent;
@@ -46,7 +47,8 @@ public class RVP_Network {
     /** 协议 47：视距上报附带客户端扩展请求，载具快照下发服务端实际视距与许可。 */
     /** 协议 48：新版吊舱绝对请求、实际轨迹与预测确认；双端须一同更新。 */
     /** 协议 49：新增 S2CRotaryFlightModeSync（直升机三态同步，动作条状态图标）；双端须一同更新。 */
-    private static final String PROTOCOL = "49";
+    /** 协议 50：新增 RVP 弹药实体克隆快照，脱离本体 ServerBroadcastEntities；双端须一同更新。 */
+    private static final String PROTOCOL = "50";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "main"))
@@ -520,6 +522,12 @@ public class RVP_Network {
                 .encoder(org.ywzj.rvp.network.remotevisibility.C2SRemoteViewDistance::encode)
                 .decoder(org.ywzj.rvp.network.remotevisibility.C2SRemoteViewDistance::decode)
                 .consumerMainThread(org.ywzj.rvp.network.remotevisibility.C2SRemoteViewDistance::handle)
+                .add();
+        // 注册 RVP 弹药实体克隆快照，避免复用本体载具超视距广播协议。
+        CHANNEL.messageBuilder(S2CRemoteAmmoEntitySnapshot.class, id++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(S2CRemoteAmmoEntitySnapshot::encode)
+                .decoder(S2CRemoteAmmoEntitySnapshot::decode)
+                .consumerMainThread(S2CRemoteAmmoEntitySnapshot::handle)
                 .add();
     }
 }

@@ -438,7 +438,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     protected int trailParticleTickO = Integer.MIN_VALUE;
     protected boolean trailMotorBurningO;
 
-    /** 本弹体已广播过轨迹粒子的次数（命中补渲开关判断是否从未出过轨迹）。 */
+    /** 满足常规轨迹粒子生成条件的次数，供命中补渲判断；导弹由客户端实际生成。 */
     protected int trailBroadcastCount;
 
     /** ARM preselect target vehicle ID (from HUD selection). -1 = none. */
@@ -5920,23 +5920,15 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 || (this instanceof RVP_RocketEntity
                 && (effects.hasMissileNativeTrailParticleOverride()
                 || effects.hasMissileNativeTrailParticleStyle()));
+        if (missileNativeTrail) {
+            // 调用导弹尾迹入口，原生尾迹与原版烟共用同一个弹尾点。
+            spawnMissileTrailParticles(config, effects, motorBurning);
+            return;
+        }
         if (!motorBurning) {
             // 调用体积烟断链，燃尽不再排烟，但已经生成的烟段继续按自身寿命消散。
             stopRocketVolumeTrail(effects);
             trailMotorBurningO = false;
-            return;
-        }
-        boolean rocketFlameStyle = effects.isMissileNativeTrailRocketFlame();
-        // 调用本项目运行时调参入口：允许客户端命令在不改武器 JSON 的情况下关闭火箭尾焰。
-        if (missileNativeTrail && (!effects.isMissileNativeTrailEnabled()
-                || (rocketFlameStyle && !RVP_RocketFlameRuntimeTuning.resolveEnabled(true)))) {
-            // 调用体积烟断链，快速重新打开开关也不能补出被关闭期间的路径。
-            stopRocketVolumeTrail(effects);
-            trailMotorBurningO = false;
-            return;
-        }
-        if (missileNativeTrail) {
-            spawnMissileNativeTrailParticles(effects);
             return;
         }
 
@@ -6014,15 +6006,78 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         }
     }
 
-    private void spawnMissileNativeTrailParticles(RVP_EffectsData effects) {
-        boolean rvpSmokeStyle = effects.isMissileNativeTrailRvpSmoke();
+    /** 用画面插值的起点计算一次弹尾，供两路客户端尾烟共用。 */
+    private void spawnMissileTrailParticles(@Nullable RVP_WeaponData config, RVP_EffectsData effects,
+                                           boolean motorBurning) {
+        // 读取本项目尾迹风格和偏移配置，保留各风格的尾部距离。
         boolean rocketFlameStyle = effects.isMissileNativeTrailRocketFlame();
-        boolean keroseneBlackStyle = effects.isMissileNativeTrailKeroseneBlackSmoke();
         float configuredOffset = effects.getMissileNativeTrailOffset();
         // 调用本项目运行时调参入口：仅对 rvp_rocket_flame 覆盖尾迹生成点偏移，其他风格保持原配置。
         double trailOffset = rocketFlameStyle
                 ? RVP_RocketFlameRuntimeTuning.resolveOffset(configuredOffset) : configuredOffset;
-        Vec3 pos = this.position().add(this.getLookAngle().scale(-trailOffset));
+        // 同时取上一刻的位置和朝向，避免首个位置包推进后，烟先于画面里的弹体向前跳。
+        Vec3 exhaust = getViewVector(0.0F).scale(-1.0D);
+        Vec3 pos = getPosition(0.0F).add(exhaust.scale(trailOffset));
+
+        // 调用共用风格判断，保留原版粒子的独立配置，即使原生尾迹关闭也可排烟。
+        if (this instanceof RVP_MissileEntity && config != null && !hasEnabledNativeTrailStyle(effects)) {
+            // 调用原版尾迹入口，按武器推进配置保留补充烟和焰的生成条件。
+            spawnVanillaMissileTrail(effects, pos, motorBurning, config.usesPropulsion());
+        }
+        // 调用本项目尾迹开关，按燃烧期及运行时调参决定是否继续生成原生尾迹。
+        if (!motorBurning || !effects.isMissileNativeTrailEnabled()
+                || (rocketFlameStyle && !RVP_RocketFlameRuntimeTuning.resolveEnabled(true))) {
+            // 调用体积烟断链，燃尽或关闭期间的路径不在恢复时补画。
+            stopRocketVolumeTrail(effects);
+            trailMotorBurningO = false;
+            return;
+        }
+        // 调用原生尾迹入口，让补点、体积烟和粒子初速使用同一尾部位姿。
+        spawnMissileNativeTrailParticles(effects, rocketFlameStyle, pos, exhaust);
+    }
+
+    /** 原生尾迹已启用且指定风格时，省去原版补充烟和焰。 */
+    private static boolean hasEnabledNativeTrailStyle(RVP_EffectsData effects) {
+        // 调用本项目效果配置查询，由客户端出烟与服务端命中补渲共用。
+        return effects.isMissileNativeTrailEnabled() && effects.hasMissileNativeTrailParticleStyle();
+    }
+
+    /** 将原先由服务端广播的导弹原版粒子生成在客户端的弹尾点。 */
+    private void spawnVanillaMissileTrail(RVP_EffectsData effects, Vec3 pos, boolean motorBurning,
+                                          boolean motorPropulsion) {
+        if (motorPropulsion && !motorBurning) {
+            return;
+        }
+        // 调用本项目粒子解析，沿用 trajectory_particle 的类型、默认粒子和 none 语义。
+        ParticleOptions primary = resolveParticle(effects.getTrajectoryParticle(), ParticleTypes.LARGE_SMOKE);
+        if (primary != null) {
+            // 调用原版粒子散布入口，沿用原广播每刻三颗烟的数量、散布和初速。
+            spawnVanillaTrailBurst(primary, pos, 3, 0.1D, 0.01D);
+        }
+        if (motorPropulsion) {
+            // 调用同一个粒子散布入口，推进类导弹在燃烧时每刻额外生成一颗原版火焰。
+            spawnVanillaTrailBurst(ParticleTypes.FLAME, pos, 1, 0.03D, 0.002D);
+        }
+    }
+
+    /** 复用原版粒子包的高斯散布与速度，经世界粒子入口保留距离裁剪和 TV 视角屏蔽。 */
+    private void spawnVanillaTrailBurst(ParticleOptions particle, Vec3 pos, int count, double spread, double speed) {
+        Level clientLevel = level();
+        RandomSource random = clientLevel.random;
+        for (int i = 0; i < count; i++) {
+            clientLevel.addParticle(particle, false,
+                    pos.x + random.nextGaussian() * spread,
+                    pos.y + random.nextGaussian() * spread,
+                    pos.z + random.nextGaussian() * spread,
+                    random.nextGaussian() * speed, random.nextGaussian() * speed, random.nextGaussian() * speed);
+        }
+    }
+
+    private void spawnMissileNativeTrailParticles(RVP_EffectsData effects, boolean rocketFlameStyle,
+                                                 Vec3 pos, Vec3 exhaust) {
+        // 读取本项目尾迹风格，选择原生烟粒子的构造方式。
+        boolean rvpSmokeStyle = effects.isMissileNativeTrailRvpSmoke();
+        boolean keroseneBlackStyle = effects.isMissileNativeTrailKeroseneBlackSmoke();
         if (!trailMotorBurningO || trailParticleTickO != getFlightTickCount() - 1 || particlePosO == null) {
             particlePosO = pos;
         }
@@ -6047,7 +6102,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             float volumeScale = RVP_RocketFlameRuntimeTuning.resolveParticleScale(effects.getMissileNativeTrailParticleScale())
                     * resolveLaunchBoostFactor(effects);
             // 调用双端安全桥；公共弹体不引用客户端管理器或显卡类型，且不进入旧逐颗粒子补点循环。
-            RVP_ClientActionsAccess.addRocketVolumeTrail(this, pos, this.getLookAngle().scale(-1),
+            RVP_ClientActionsAccess.addRocketVolumeTrail(this, pos, exhaust,
                     volumeScale, ticksUntilMotorStopsBurning());
             particlePosO = pos;
             trailParticleTickO = getFlightTickCount();
@@ -6107,9 +6162,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 // 在一级燃烧窗口（motorBurnEndTick = 点火延迟 + 一级燃烧时长，随生成数据包同步）
                 // 内随飞行进度线性回落到 1.0，发射时全额加粗、一级燃尽恢复常规粗细，平滑无突变
                 particleScale *= resolveLaunchBoostFactor(effects);
-                // HBM ParticleRocketFlame：初速沿 -thrust（弹轴反方向）× 1.0，随阻尼 0.91/tick 后抛
-                Vec3 exhaust = rocketFlameStyle || keroseneBlackStyle
-                        ? this.getLookAngle().scale(-1.0D) : Vec3.ZERO;
+                // HBM 风格粒子沿同一弹尾方向喷出，粒子自身随阻尼 0.91/tick 后抛。
                 for (int i = 0; i <= segments; i++) {
                     Vec3 particlePos = segments <= 0 ? pos : posO.add(dir.scale(i * spacing));
                     if (rocketFlameStyle) {
@@ -6134,7 +6187,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         }
         // 目的：发射段贴地烟浪已前置到 spawnLaunchWash（含冷发射弹射段），此处不再重复生成
         particlePosO = pos;
-        trailParticleTickO = getFlightTickCount();        trailMotorBurningO = true;
+        trailParticleTickO = getFlightTickCount();
+        trailMotorBurningO = true;
     }
 
     /**
@@ -6392,16 +6446,14 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         if (config == null) {
             return;
         }
-        // 目的：配置了自定义原生尾迹风格的导弹，客户端本地尾迹（含 HBM 火箭焰/烟团）已定制
-        // 完整观感，服务端广播烟 + 尾焰粒子会与之叠加成"本地粗烟 + 广播细烟"两路混合
-        // ——按配置整体跳过（无风格配置的弹保持原有广播行为不变）。
         RVP_EffectsData effects = config.getEffectsData();
-        // 目的：导弹/火箭使用自定义尾迹时，关闭服务端原版烟雾广播，避免两套尾迹重叠。
+        // 调用共用风格判断，导弹或火箭的自定义风格已提供整套尾迹时不再叠加原版粒子。
         if ((this instanceof RVP_MissileEntity || this instanceof RVP_RocketEntity)
-                && effects.isMissileNativeTrailEnabled()
-                && effects.hasMissileNativeTrailParticleStyle()) {
+                && hasEnabledNativeTrailStyle(effects)) {
             return;
         }
+        // 导弹的原版粒子由客户端从画面中的弹尾生成，服务端只记录命中补渲需要的正常出烟次数。
+        boolean missileUsesClientTrail = this instanceof RVP_MissileEntity;
         String configured = effects.getTrajectoryParticle();
         boolean heavy = isHeavyProjectile();
         boolean motorBurning = isMotorBurning();
@@ -6413,19 +6465,22 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 // 轻弹（机炮/破片）：count 2、spread 0.1 —— 让短命的下坠破片也有可辨识尾迹
                 double spread = 0.1;
                 int count = heavy ? 3 : 2;
-                serverLevel.sendParticles(primary, getX(), getY(), getZ(), count, spread, spread, spread, 0.01);
+                if (!missileUsesClientTrail) {
+                    serverLevel.sendParticles(primary, getX(), getY(), getZ(), count, spread, spread, spread, 0.01);
+                }
                 trailBroadcastCount++;
                 if (RVP_TopAttackDebug.isEnabled()) {
                     RVP_TopAttackDebug.noteTick(this, "TRAIL particle="
                             + (configured == null ? ("fallback:" + primary) : configured)
                             + " count=" + count + " heavy=" + heavy
                             + " motorBurn=" + motorBurning + " motorProp=" + isMotorPropulsion()
+                            + " clientTrail=" + missileUsesClientTrail
                             + " pos=(" + String.format("%.1f,%.1f,%.1f", getX(), getY(), getZ()) + ")");
                 }
             }
         }
         // 尾焰：仅推进类弹体燃烧期
-        if (heavy && isMotorPropulsion() && motorBurning) {
+        if (!missileUsesClientTrail && heavy && isMotorPropulsion() && motorBurning) {
             serverLevel.sendParticles(ParticleTypes.FLAME, getX(), getY(), getZ(), 1, 0.03, 0.03, 0.03, 0.002);
         }
     }
@@ -6433,9 +6488,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     /**
      * 命中瞬间补渲轨迹粒子（effects_data.impact_trail_particles）。
      *
-     * <p>当弹体飞行时间过短（从未广播过轨迹粒子就命中死亡，如 1 tick 落地的下坠破片，
-     * pre-motion 命中死亡导致 post-motion 的 {@link #broadcastTrailParticles()} 永不执行）
-     * 且配置开启本开关时，在命中点沿来袭方向补渲一段轨迹粒子簇，避免"看不见弹道"。</p>
+     * <p>弹体在常规轨迹生成前就命中死亡时（如 1 tick 落地的下坠破片），
+     * 如果配置开启本开关，就在命中点沿来袭方向补渲一段轨迹粒子簇。</p>
      */
     protected void compensateImpactTrail(Vec3 hitPos) {
         RVP_WeaponData config = resolveWeaponConfig();
@@ -6457,7 +6511,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         if (!(level() instanceof ServerLevel serverLevel)) {
             return;
         }
-        // 只要此前广播过轨迹粒子（飞行过一段时间），就不再补渲
+        // 已到过常规轨迹生成时机的弹体已有尾迹，无需命中补渲。
         if (trailBroadcastCount > 0) {
             return;
         }

@@ -21,6 +21,7 @@ import org.ywzj.rvp.client.render.GunnerRenderer;
 import org.ywzj.rvp.client.render.RVP_VehiclePartRender;
 import org.ywzj.rvp.client.render.RVP_VehicleRender;
 import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteAmmoVisualState;
+import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteAmmoEntityState;
 import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteVehicleVisualState;
 import org.ywzj.rvp.client.visual.RVP_ClientVisualEffectDispatcher;
 import org.ywzj.rvp.client.visual.RVP_DefaultExplosionEffectFactory;
@@ -31,6 +32,7 @@ import org.ywzj.rvp.network.RVP_MissileAirTargetImpactFragmentEndpoint;
 import org.ywzj.rvp.network.RVP_NuclearVisualEndpoint;
 import org.ywzj.rvp.network.firesupport.RVP_FireSupportClientEndpoint;
 import org.ywzj.rvp.network.gunner.RVP_GunnerProfileClientEndpoint;
+import org.ywzj.rvp.network.remotevisibility.RVP_RemoteAmmoEntityEndpoint;
 import org.ywzj.rvp.network.remotevisibility.RVP_RemoteAmmoVisualEndpoint;
 import org.ywzj.rvp.network.remotevisibility.RVP_RemoteVehicleVisualEndpoint;
 import org.ywzj.rvp.weapon.visual.api.RVP_VisualEffectEndpoint;
@@ -84,6 +86,8 @@ public final class RVP_ClientBootstrap {
                     message.dimension(), message.entityIds(), message.motorBurnRemainingTicksByEntityId(),
                     Minecraft.getInstance().level == null
                             ? Long.MIN_VALUE : Minecraft.getInstance().level.getGameTime()));
+            // 安装 RVP 远程弹药实体消费端，把克隆快照写入本体远程实体表但不进入 ClientLevel。
+            RVP_RemoteAmmoEntityEndpoint.install(RVP_ClientRemoteAmmoEntityState::accept);
             // 安装 RVP 载具视觉公共消费端，把完整集合交给非世界代理状态管理器。
             RVP_RemoteVehicleVisualEndpoint.install(RVP_ClientRemoteVehicleVisualState::accept);
             // 安装独立虚拟弹显示消费者，只写视觉缓存，不写本体远程目标表。
