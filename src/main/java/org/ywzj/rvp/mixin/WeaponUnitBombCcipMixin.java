@@ -3,6 +3,7 @@ package org.ywzj.rvp.mixin;
 import net.minecraft.world.phys.Vec3;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
@@ -25,6 +26,31 @@ public abstract class WeaponUnitBombCcipMixin {
     @Shadow(remap = false) public abstract Optional<AbstractVehicleWeapon<?>> getCurrentWeapon();
     @Shadow(remap = false) public abstract boolean isParentWeaponUnitAim();
     @Shadow(remap = false) public abstract WeaponUnit getRootParentWeaponUnit();
+
+    @Inject(method = "aimHitPosition()Lnet/minecraft/world/phys/Vec3;", at = @At("HEAD"),
+            cancellable = true, remap = false)
+    private void ywzj_rvp$aimHitWithoutBolts(CallbackInfoReturnable<Vec3> cir) {
+        ywzj_rvp$traceSightWithoutBolts(1.0f, cir);
+    }
+
+    @Inject(method = "aimAtPosition(F)Lnet/minecraft/world/phys/Vec3;", at = @At("HEAD"),
+            cancellable = true, remap = false)
+    private void ywzj_rvp$aimAtWithoutBolts(float partialTick, CallbackInfoReturnable<Vec3> cir) {
+        ywzj_rvp$traceSightWithoutBolts(partialTick, cir);
+    }
+
+    @Unique
+    private void ywzj_rvp$traceSightWithoutBolts(float partialTick, CallbackInfoReturnable<Vec3> cir) {
+        WeaponUnit unit = (WeaponUnit) (Object) this;
+        // 本体会对车上所有武器站更新落点，含仅用于观瞄、没有炮闩的站位。
+        if (unit.getBolts().isEmpty()) {
+            // 没有俯仰组时用本体的武器站枢轴，避开部分观瞄类型对空旋转组的访问。
+            Vec3 start = unit.xTurnGroup == null
+                    ? unit.worldPosition(unit.getPivotOffset(), partialTick)
+                    : unit.worldOpticalSightPosition(partialTick);
+            cir.setReturnValue(RVP_AimContexts.opticalSightHit(unit, start, partialTick));
+        }
+    }
 
     @Inject(method = "currentWeaponHitPosition", at = @At("HEAD"), cancellable = true, remap = false)
     private void ywzj_rvp$computeRvpBombCcip(CallbackInfoReturnable<Vec3> cir) {
@@ -51,6 +77,10 @@ public abstract class WeaponUnitBombCcipMixin {
         }
         if (currentWeaponUnit == null) {
             currentWeaponUnit = (WeaponUnit) (Object) this;
+        }
+        // 当前发射站缺少炮闩时，交回本体的观瞄落点查询。
+        if (currentWeaponUnit.getBolts().isEmpty()) {
+            return;
         }
         WeaponUnit self = (WeaponUnit) (Object) this;
         AbstractVehicle vehicle = self.getVehicle();
