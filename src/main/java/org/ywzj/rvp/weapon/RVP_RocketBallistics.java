@@ -15,6 +15,7 @@ import org.ywzj.rvp.guidance.trajectorymath.util.RVP_PropulsionMath;
 import org.ywzj.rvp.weapon.core.RVP_AimContexts;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
+import org.ywzj.rvp.weapon.physics.RVP_UnguidedBallisticMath;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_QuadraticAirDrag;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
 import org.ywzj.vehicle.custom.weapon.VehicleWeaponIndex;
@@ -37,6 +38,16 @@ public final class RVP_RocketBallistics {
     private static final double SUBSTEP_SPEED_SCALE = 6.0D;
 
     private RVP_RocketBallistics() {}
+
+    public static boolean supportsArtilleryMap(RVP_WeaponData data) {
+        if (!data.getMiscData().isArtilleryMap()) {
+            return false;
+        }
+        return switch (data.getWeaponKind()) {
+            case ROCKET, BOMB, MACHINEGUN -> true;
+            default -> false;
+        };
+    }
 
     public record Params(double velocity, double gravity, double drag, int predictionTick) {}
     /** 预测器当前运动状态；currentSpeed 是上一子步的当前速率，不是历史峰值。 */
@@ -251,7 +262,13 @@ public final class RVP_RocketBallistics {
         Vec3 pos = startPos;
         Vec3 lookDir = startLookDir.lengthSqr() > 1.0E-6 ? startLookDir.normalize() : Vec3.ZERO;
         RvpState state = new RvpState(startVelocity, lookDir, Math.max(startVelocity.length(), 0.01), -1.0D);
-        for (int tick = 0; tick < Math.max(predictionTick, 1); tick++) {
+        boolean cannon = data.getWeaponKind() == RVP_EnumWeaponKind.MACHINEGUN;
+        boolean ballisticRocket = !data.usesPropulsion() && data.getWeaponKind() == RVP_EnumWeaponKind.ROCKET
+                && !data.getProjectileData().isConstantSpeed();
+        int maxTicks = cannon || ballisticRocket ? Math.min(predictionTick, data.getLife() + 1) : predictionTick;
+        double cannonRange = cannon ? data.getProjectileData().resolveSelfDestructDistance(data.getWeaponKind()) : 0;
+        double cannonTravel = 0;
+        for (int tick = 0; tick < Math.max(maxTicks, 1); tick++) {
             // RVP_BaseBullet performs tickHit() before tickMotion(); collision must use the
             // current velocity, then physics advances the projectile for the next tick.
             Vec3 segmentEnd = pos.add(state.velocity());
@@ -265,10 +282,30 @@ public final class RVP_RocketBallistics {
             }
             Vec3 fallbackImpact = intersectDescendingGroundPlane(pos, segmentEnd, fallbackGroundY);
             if (fallbackImpact != null) {
-                return fallbackImpact;
+                int x = Mth.floor(fallbackImpact.x), z = Mth.floor(fallbackImpact.z);
+                if (!level.hasChunk(x >> 4, z >> 4)
+                        && (terrainHeightResolver == null || terrainHeightResolver.resolve(x, z) == null)) {
+                    return fallbackImpact;
+                }
             }
-            state = stepVelocity(state, data, tick + 1.0D, 1.0D, pos.y);
-            pos = pos.add(state.velocity());
+            if (cannon) {
+                // 机枪弹先按当前速度移动，再施加全轴阻力和重力。复用真实弹体的步进。
+                var step = RVP_UnguidedBallisticMath.stepCannon(
+                        pos, state.velocity(), data.getCannonFriction(), data.getCannonGravity());
+                cannonTravel += pos.distanceTo(step.position());
+                if (cannonRange > 0 && cannonTravel >= cannonRange) {
+                    return null;
+                }
+                pos = step.position();
+                state = new RvpState(step.velocity(), lookDir, step.velocity().length(), -1.0D);
+            } else if (ballisticRocket) {
+                var step = RVP_UnguidedBallisticMath.stepProjectile(pos, state.velocity(), data);
+                pos = step.position();
+                state = new RvpState(step.velocity(), lookDir, step.velocity().length(), -1.0D);
+            } else {
+                state = stepVelocity(state, data, tick + 1.0D, 1.0D, pos.y);
+                pos = pos.add(state.velocity());
+            }
             if (pos.y < level.getMinBuildHeight() - 16) {
                 return null;
             }
@@ -369,7 +406,7 @@ public final class RVP_RocketBallistics {
                                                 @Nullable TerrainHeightResolver terrainHeightResolver) {
         Vec2 direction = aimContext.direction;
         Vec3 lookDir = VectorUtil.rotToVec(direction.x, direction.y).normalize();
-        Vec3 launchVelocity = lookDir.scale(data.resolveMuzzleSpeed(RVP_EnumWeaponKind.ROCKET));
+        Vec3 launchVelocity = lookDir.scale(data.resolveMuzzleSpeed(data.getWeaponKind()));
         if (data.isInheritVehicleVelocity()) {
             launchVelocity = launchVelocity.add(vehicleVelocity);
         }

@@ -73,6 +73,10 @@ public class RVP_RadarOverlay implements IGuiOverlay {
         if (weaponUnit == null) {
             return;
         }
+        // 雷达、外置雷达、RWR 和标签共用 RVP 预设画布。
+        try (RVP_PresetHudLayout layout = RVP_PresetHudLayout.begin(guiGraphics)) {
+        screenWidth = layout.width();
+        screenHeight = layout.height();
         AbstractVehicle vehicle = weaponUnit.getVehicle();
         String presetName = vehicle.getVehicleId() != null ? VehicleUIPresetCache.get(vehicle.getVehicleId()) : null;
         UIPosition radarPos = UIPresetManager.getRadar(presetName);
@@ -246,6 +250,7 @@ public class RVP_RadarOverlay implements IGuiOverlay {
         // 雷达/RWR 的 XX°/XX m 文字画在命中展板底色之上（但仍在模型之下）。
         // 这里提前 flush，让雷达文字先落入帧缓冲，命中展板底色之后绘制时自然盖住文字。
         guiGraphics.flush();
+        }
     }
 
     private void renderExternalRadar(GuiGraphics guiGraphics,

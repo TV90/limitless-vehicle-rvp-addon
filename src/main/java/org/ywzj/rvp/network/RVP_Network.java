@@ -48,7 +48,7 @@ public class RVP_Network {
     /** 协议 48：新版吊舱绝对请求、实际轨迹与预测确认；双端须一同更新。 */
     /** 协议 49：新增 S2CRotaryFlightModeSync（直升机三态同步，动作条状态图标）；双端须一同更新。 */
     /** 协议 50：新增 RVP 弹药实体克隆快照，脱离本体 ServerBroadcastEntities；双端须一同更新。 */
-    private static final String PROTOCOL = "50";
+    private static final String PROTOCOL = "51";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "main"))
@@ -528,6 +528,11 @@ public class RVP_Network {
                 .encoder(S2CRemoteAmmoEntitySnapshot::encode)
                 .decoder(S2CRemoteAmmoEntitySnapshot::decode)
                 .consumerMainThread(S2CRemoteAmmoEntitySnapshot::handle)
+                .add();
+        CHANNEL.messageBuilder(S2CDetachedMounts.class, id++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(S2CDetachedMounts::encode)
+                .decoder(S2CDetachedMounts::decode)
+                .consumerMainThread(S2CDetachedMounts::handle)
                 .add();
     }
 }

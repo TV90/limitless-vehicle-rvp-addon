@@ -126,6 +126,7 @@ public final class RVP_GpsRadarUplinkManager {
             }
             // 修正真值直写：不经 setTargetPos（避免重掷 GPS CEP 散布），GPS 制导源下一 tick 即读
             bullet.setGuidanceTargetPos(targetPos);
+            bullet.setSubmunitionGpsTarget(targetPos);
             if (ENTITY_LAST_UPDATE.size() >= STAMP_MAP_MAX) {
                 ENTITY_LAST_UPDATE.clear();
             }

@@ -40,6 +40,13 @@ vec3 viewPosition(vec2 uv, float depth) {
     return p.xyz / (abs(p.w) < 0.000001 ? 0.000001 : p.w);
 }
 
+// 步行视角晃动平移投影中心，射线必须由同一像素的两个逆投影点确定。
+void viewRay(vec2 uv, out vec3 rayOrigin, out vec3 rayDirection) {
+    float nearSample = NearEmptyDepth > 0.5 ? 0.25 : 0.75;
+    rayOrigin = viewPosition(uv, nearSample);
+    rayDirection = normalize(viewPosition(uv, 1.0 - nearSample) - rayOrigin);
+}
+
 // w=0是天空，w=-1是光影提前画出的手持物；近景与远景选同一观察空间的最近表面。
 vec4 scenePosition(vec2 uv) {
     float depth = texture(SceneDepth, uv).r;
@@ -52,7 +59,10 @@ vec4 scenePosition(vec2 uv) {
         found = !any(isnan(position)) && !any(isinf(position)) && position.z < 0.0;
     }
     if (HasDistantDepth != 0) {
-        vec4 distantClip = DistantProjection * ViewToDistant * vec4(viewPosition(uv, 0.5), 0.0);
+        vec3 rayOrigin;
+        vec3 rayDirection;
+        viewRay(uv, rayOrigin, rayDirection);
+        vec4 distantClip = DistantProjection * ViewToDistant * vec4(rayDirection, 0.0);
         if (distantClip.w > 0.000001) {
             vec2 distantUV = distantClip.xy / distantClip.w * 0.5 + 0.5;
             if (all(greaterThanEqual(distantUV, vec2(0.0))) && all(lessThanEqual(distantUV, vec2(1.0)))) {
@@ -113,9 +123,10 @@ float lobedSurface(vec3 q) {
 }
 
 // 只在球体的真实可见光路上积分，镜头进入爆炸内部也使用正确的近端。
-bool sphereInterval(vec3 ray, float radius, out vec2 range) {
-    float b = dot(ray, ExplosionCenter.xyz);
-    float d = b * b - dot(ExplosionCenter.xyz, ExplosionCenter.xyz) + radius * radius;
+bool sphereInterval(vec3 rayOrigin, vec3 ray, float radius, out vec2 range) {
+    vec3 center = ExplosionCenter.xyz - rayOrigin;
+    float b = dot(ray, center);
+    float d = b * b - dot(center, center) + radius * radius;
     if (d <= 0.0) { return false; }
     float root = sqrt(d);
     range = vec2(max(0.0, b - root), b + root);
@@ -128,7 +139,9 @@ void main() {
     if (age < 0.0 || age >= life) { discard; }
     vec4 opaque = scenePosition(screenUV);
     if (opaque.w < -0.5) { discard; }
-    vec3 ray = normalize(viewPosition(screenUV, 0.5));
+    vec3 rayOrigin;
+    vec3 ray;
+    viewRay(screenUV, rayOrigin, ray);
     float cool = 1.0 - smoothstep(Timeline.w * 0.18, Timeline.w, age);
     float smokeAmount = smoothstep(Timeline.w * 0.12, Timeline.w * 0.8, age);
     float grow = 0.06 + 0.94 * (1.0 - exp(-5.0 * age / Timeline.z));
@@ -140,8 +153,8 @@ void main() {
     float bound = min(ExplosionCenter.w, max(radius * max(1.0, Shape.y),
             waveStrength > 0.0 ? waveRadius + Shape.x * 0.085 : 0.0) * 1.02);
     vec2 range;
-    if (!sphereInterval(ray, bound, range)) { discard; }
-    float sceneDistance = opaque.w > 0.5 ? max(0.0, length(opaque.xyz) - 0.01) : 1.0e19;
+    if (!sphereInterval(rayOrigin, ray, bound, range)) { discard; }
+    float sceneDistance = opaque.w > 0.5 ? max(0.0, dot(opaque.xyz - rayOrigin, ray) - 0.01) : 1.0e19;
     range.y = min(range.y, sceneDistance);
     if (range.y <= range.x) { discard; }
     int steps = clamp(RaySteps, 16, 64);
@@ -156,7 +169,7 @@ void main() {
     float heat = 0.0;
     for (int i = 0; i < 64; i++) {
         if (i >= steps || transmittance < 0.008) { break; }
-        vec3 point = ray * (range.x + (float(i) + 0.5) * stepLength);
+        vec3 point = rayOrigin + ray * (range.x + (float(i) + 0.5) * stepLength);
         vec3 relative = (ViewToWorld * vec4(point - ExplosionCenter.xyz, 0.0)).xyz;
         float distanceToCenter = length(relative);
         float shellWidth = max(Shape.x * 0.085, stepLength * 0.8);
@@ -206,7 +219,7 @@ void main() {
     vec4 original = texture(SceneColor, screenUV);
     vec2 warpedUV = screenUV;
     if (Air.z > 0.0 && (wave > 0.001 || heat > 0.001)) {
-        vec3 middle = (ViewToWorld * vec4(ray * ((range.x + range.y) * 0.5) - ExplosionCenter.xyz, 0.0)).xyz;
+        vec3 middle = (ViewToWorld * vec4(rayOrigin + ray * ((range.x + range.y) * 0.5) - ExplosionCenter.xyz, 0.0)).xyz;
         vec2 ripple = vec2(noise(middle * 0.8 + seed + clock),
                 noise(middle * 0.8 + seed + vec3(9.2, 3.7, 12.1) - clock)) * 2.0 - 1.0;
         vec4 centerClip = Projection * vec4(ExplosionCenter.xyz, 1.0);

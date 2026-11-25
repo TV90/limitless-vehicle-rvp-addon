@@ -37,6 +37,14 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     @SerializedName("name_CN")
     private String nameCn = "";
 
+    /**
+     * 工坊武器图标覆盖（可选）：相对 {@code apricityui:apricity/icons/workshop/} 的 PNG 路径，
+     * 例如 {@code "tank_ammo_pele_outline.png"}。同一张图可被多个武器复用，无需按武器 ID 复制；
+     * 留空时回退到按武器注册 ID 的 {@code <namespace>/<path>.png}。仅客户端工坊界面消费。
+     */
+    @SerializedName("workshop_icon")
+    private String workshopIcon = "";
+
     @SerializedName("tactical_map_icon")
     private String tacticalMapIcon = "";
     /** 根级 {@code caliber} 是否在当前武器 JSON 中实际配置且不为 null；用于区分基类默认 5.8 mm。 */
@@ -208,6 +216,11 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
 
     public String getTacticalMapIcon() {
         return tacticalMapIcon == null ? "" : tacticalMapIcon;
+    }
+
+    /** 工坊图标覆盖路径（相对 {@code icons/workshop/}）；空串表示沿用武器 ID 命名约定。 */
+    public String getWorkshopIcon() {
+        return workshopIcon == null ? "" : workshopIcon.trim();
     }
 
     /** CCIP 地面落点标记外观；未配置/显式为 null 时回退 {@link RVP_CcipMarkerData#DEFAULT}。 */

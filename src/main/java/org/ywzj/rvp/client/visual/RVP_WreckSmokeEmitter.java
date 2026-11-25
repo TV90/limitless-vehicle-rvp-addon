@@ -110,6 +110,10 @@ public final class RVP_WreckSmokeEmitter {
             stopPreview();
             return;
         }
+        if (minecraft.isPaused()) {
+            // 暂停期间粒子不更新，跳过本帧发射，避免恢复游戏时积压的残骸烟集中出现。
+            return;
+        }
         // 调用本项目预览发射入口：准星位置的临时烟与真实残骸共用所选烟种的生成逻辑。
         emitPreviewSmoke(minecraft, level);
         // 调用本项目殉燃 tick 门控，共用当前实体遍历而不改变烟雾自身周期。

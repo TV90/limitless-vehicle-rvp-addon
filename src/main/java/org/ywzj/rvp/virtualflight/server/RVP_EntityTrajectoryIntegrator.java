@@ -36,6 +36,7 @@ public final class RVP_EntityTrajectoryIntegrator {
         // 仅外部上行改坐标时覆盖；电视操控或导引头刚写入原对象的实时目标不能被旧快照冲掉。
         if (state.guidanceTargetOverridePending) {
             missile.setGuidanceTargetPos(state.snapshot.targetPosition());
+            missile.setSubmunitionGpsTarget(state.snapshot.targetPosition());
             state.guidanceTargetOverridePending = false;
         }
         // 调用真实实体的专用飞行入口；制导、攻角兜底、受力和运动分派保持与实体 Tick 一致。
@@ -99,6 +100,9 @@ public final class RVP_EntityTrajectoryIntegrator {
         // GPS 以外的导引头、操作手输入、反制和引信波次使用完整运行态恢复，不重新初始化发射。
         missile.restoreVirtualRuntimeData(state.trajectoryEntity == null
                 ? state.runtimeData : state.trajectoryEntity.saveVirtualRuntimeData());
+        if (state.guidanceTargetOverridePending) {
+            missile.setSubmunitionGpsTarget(state.snapshot.targetPosition());
+        }
         missile.radarUplinkTargeting = state.radarUplinkTargeting;
         // 初始化原版上一刻坐标，避免不入世对象以世界原点作历史位置，被本体命中修正远移受击盒。
         missile.setOldPosAndRot();

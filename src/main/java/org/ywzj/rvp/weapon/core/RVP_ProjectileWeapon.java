@@ -49,6 +49,10 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
     /** 本轮点射的操作者，供后续服务端 Tick 重新检查发射条件。 */
     private LivingEntity burstVolleyShooter;
 
+    /** 最后一次发射进入的制导会话。只在弹匣见底且会话仍有效时阻止装填。 */
+    @Nullable
+    private RVP_MissileEntity hitlReloadMissile;
+
     /** 本次发射通过检查后的目标快照；无锁允许发射时 target 可以为空，整个记录为空表示拒射。 */
     protected record ApprovedShot(
             /** 实际出弹的武器部件。 */ WeaponUnit launchUnit,
@@ -71,6 +75,32 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
             return;
         }
         getFireController().tickBurstVolley(this::fireBurstVolleyShot);
+    }
+
+    @Override
+    public boolean canReload() {
+        return !isReloadWaitingForHitl() && super.canReload();
+    }
+
+    @Override
+    public void startReload() {
+        if (!isReloadWaitingForHitl()) {
+            super.startReload();
+        }
+    }
+
+    private boolean isReloadWaitingForHitl() {
+        RVP_MissileEntity missile = hitlReloadMissile;
+        if (missile == null) {
+            return false;
+        }
+        if (!missile.isAlive() || !missile.rvp$isHitlActive()
+                || !(missile.getOwner() instanceof net.minecraft.server.level.ServerPlayer player)
+                || player.getVehicle() != getVehicle()) {
+            hitlReloadMissile = null;
+            return false;
+        }
+        return getRemainAmmo() == 0;
     }
 
     @Override
@@ -534,7 +564,7 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
     }
 
     private void maybeEnterHitlView(RVP_WeaponData data, LivingEntity shooter, RVP_BaseBullet projectile, int projectileIndex) {
-        if (!(projectile instanceof RVP_MissileEntity) || projectileIndex != 0 || !data.hasHumanInTheLoop()) {
+        if (!(projectile instanceof RVP_MissileEntity missile) || projectileIndex != 0 || !data.hasHumanInTheLoop()) {
             return;
         }
         if (getVehicle().level().isClientSide() || !(shooter instanceof net.minecraft.server.level.ServerPlayer player)) {
@@ -543,7 +573,8 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
         RVP_EnumHitlControlMode mode = data.getGuidanceData().getGuidanceType() == RVP_EnumGuidanceType.HITL_CLOS_TV
                 ? RVP_EnumHitlControlMode.MOUSE
                 : RVP_EnumHitlControlMode.DESIGNATE;
+        hitlReloadMissile = missile;
         RVP_Network.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player),
-                S2CEnterHitlView.of(projectile.getId(), mode));
+                S2CEnterHitlView.of(missile.getId(), mode));
     }
 }

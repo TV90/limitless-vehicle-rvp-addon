@@ -52,6 +52,13 @@ vec3 viewPosition(vec2 uv, float depth) {
     return point.xyz / (abs(point.w) < 0.000001 ? 0.000001 : point.w);
 }
 
+// 视角晃动会平移投影中心；两次逆投影的差才是像素射线方向。
+void viewRay(vec2 uv, out vec3 rayOrigin, out vec3 rayDirection) {
+    float nearSample = NearEmptyDepth > 0.5 ? 0.25 : 0.75;
+    rayOrigin = viewPosition(uv, nearSample);
+    rayDirection = normalize(viewPosition(uv, 1.0 - nearSample) - rayOrigin);
+}
+
 // w=0 为天空，w=-1 为光影提前绘制的手持物；只读取不透明场景深度，烟自身不挡住后续烟。
 vec4 scenePosition(vec2 uv) {
     float depth = texture(SceneDepth, uv).r;
@@ -64,8 +71,10 @@ vec4 scenePosition(vec2 uv) {
         found = !any(isnan(position)) && !any(isinf(position)) && position.z < 0.0;
     }
     if (HasDistantDepth != 0) {
-        vec3 ray = viewPosition(uv, 0.5);
-        vec4 distantClip = DistantProjection * ViewToDistant * vec4(ray, 0.0);
+        vec3 rayOrigin;
+        vec3 rayDirection;
+        viewRay(uv, rayOrigin, rayDirection);
+        vec4 distantClip = DistantProjection * ViewToDistant * vec4(rayDirection, 0.0);
         if (distantClip.w > 0.000001) {
             vec2 distantUV = distantClip.xy / distantClip.w * 0.5 + 0.5;
             if (all(greaterThanEqual(distantUV, vec2(0.0))) && all(lessThanEqual(distantUV, vec2(1.0)))) {
@@ -106,8 +115,8 @@ float noise(vec3 point) {
 }
 
 // 先求有界圆柱/球的视线区间，侧看细烟也不会在大包围球的空白处浪费全部采样。
-bool interval(vec3 ray, vec3 axis, float extent, float radius, out vec2 result) {
-    vec3 relative = -TrailStart.xyz;
+bool interval(vec3 rayOrigin, vec3 ray, vec3 axis, float extent, float radius, out vec2 result) {
+    vec3 relative = rayOrigin - TrailStart.xyz;
     if (extent < 0.0001) {
         float b = dot(relative, ray);
         float discriminant = b * b - dot(relative, relative) + radius * radius;
@@ -179,7 +188,9 @@ void main() {
     if (max(TrailDensity.x, TrailDensity.y) <= 0.00001 || max(TrailStart.w, TrailEnd.w) <= 0.0) { discard; }
     vec4 opaque = scenePosition(screenUV);
     if (opaque.w < -0.5) { discard; }
-    vec3 ray = normalize(viewPosition(screenUV, 0.5));
+    vec3 rayOrigin;
+    vec3 ray;
+    viewRay(screenUV, rayOrigin, ray);
     vec3 delta = TrailEnd.xyz - TrailStart.xyz;
     float extent = length(delta);
     vec3 axis = extent > 0.0001 ? delta / extent : vec3(0.0, 1.0, 0.0);
@@ -188,9 +199,9 @@ void main() {
             / max(ScreenSize.y * abs(Projection[1][1]), 1.0);
     float boundRadius = max(TrailStart.w, TrailEnd.w) + footprint * 2.0;
     vec2 range;
-    if (!interval(ray, axis, extent, boundRadius, range)) { discard; }
+    if (!interval(rayOrigin, ray, axis, extent, boundRadius, range)) { discard; }
     float begin = max(0.0, range.x);
-    float sceneDistance = opaque.w > 0.5 ? max(0.0, length(opaque.xyz) - 0.008) : 1.0e19;
+    float sceneDistance = opaque.w > 0.5 ? max(0.0, dot(opaque.xyz - rayOrigin, ray) - 0.008) : 1.0e19;
     float end = min(range.y, sceneDistance);
     if (end <= begin) { discard; }
     int steps = clamp(RaySteps, 4, 24);
@@ -198,18 +209,18 @@ void main() {
     // 光照在当前像素穿过的可见烟区间取代表点，不拿背景方块当作烟的空间位置。
     // 当前像素的原画面明暗只读一次，不放进烟雾密度的逐步积分循环。
     float sceneBrightness = LightCount > 0 ? rvpAmbientSceneBrightness(screenUV) : 0.0;
-    vec3 light = illumination(ray * (begin + end) * 0.5, sceneBrightness);
+    vec3 light = illumination(rayOrigin + ray * (begin + end) * 0.5, sceneBrightness);
     vec3 accumulated = vec3(0.0);
     float transmittance = 1.0;
     for (int index = 0; index < 24; index++) {
         if (index >= steps || transmittance < 0.01) { break; }
-        vec3 point = ray * (begin + (float(index) + 0.5) * stepLength);
+        vec3 point = rayOrigin + ray * (begin + (float(index) + 0.5) * stepLength);
         float axial = dot(point - TrailStart.xyz, axis);
         float along = extent > 0.0001 ? clamp(axial / extent, 0.0, 1.0) : 0.5;
         vec3 center = mix(TrailStart.xyz, TrailEnd.xyz, along);
         float physicalRadius = mix(TrailStart.w, TrailEnd.w, along);
         // 像素覆盖扩展只用于抗闪烁；真实烟的前缘在墙后时不能借此扩展穿到墙前。
-        if (sceneDistance < dot(center, ray) - physicalRadius) { continue; }
+        if (sceneDistance < dot(center - rayOrigin, ray) - physicalRadius) { continue; }
         float radius = physicalRadius + footprint * 2.0;
         vec3 noisePoint = TrailNoiseOrigin + (ViewToWorld * vec4(point - TrailStart.xyz, 0.0)).xyz * TrailColor.w;
         noisePoint += vec3(TrailColor.z * 37.0, TrailColor.y * 0.012, TrailColor.z * 19.0);

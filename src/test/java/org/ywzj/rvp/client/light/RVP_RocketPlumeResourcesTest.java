@@ -52,6 +52,15 @@ class RVP_RocketPlumeResourcesTest {
         assertTrue(resource(".json").contains("\"HaloEnabled\""));
     }
 
+    /** 步行视角的投影含平移，程序尾焰必须按同一射线起点处理步进和遮挡。 */
+    @Test
+    void productionRangeShaderKeepsTheViewBobRayOrigin() throws Exception {
+        String shader = resource("_ranges.fsh");
+        assertTrue(shader.contains("normalize(farPoint - rayOrigin)"));
+        assertTrue(shader.contains("plumeInterval(rayOrigin, ray,"));
+        assertTrue(shader.contains("dot(surface.xyz - rayOrigin, rayDirection)"));
+    }
+
     /** 读取实际 classpath 资源，缺失即失败，不绕过 Gradle 的资源打包。 */
     private static String resource(String extension) throws Exception {
         try (var input = RVP_RocketPlumeResourcesTest.class.getResourceAsStream(ROOT + extension)) {

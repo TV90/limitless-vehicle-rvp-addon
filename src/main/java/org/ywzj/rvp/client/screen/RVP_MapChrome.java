@@ -1,6 +1,5 @@
 package org.ywzj.rvp.client.screen;
 
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
@@ -13,6 +12,11 @@ public final class RVP_MapChrome {
     public static final int TEXT = 0xFFF3F6F2, MUTED = 0xFFDBE2DE, INK = 0xFFFFFFFF, ACCENT = 0xFFF2CB75;
 
     private RVP_MapChrome() {}
+
+    /** 为地图工具裁剪设计坐标中的矩形，复用主地图的视口变换。 */
+    public static void scissor(GuiGraphics graphics, int left, int top, int right, int bottom) {
+        RVP_TacticalViewport.scissor(graphics, left, top, right, bottom);
+    }
 
     public static void glass(GuiGraphics g, int x, int y, int r, int b) {
         // 采样同位置的地图，仅在玻璃面内叠加烟色渐变。
@@ -48,27 +52,38 @@ public final class RVP_MapChrome {
         if (dropdown) RVP_MapGlyph.DOWN.draw(g, right - 3 - arrow / 2, y + h / 2 + 1, arrow, textColor);
     }
 
-    /** 大窗口使用较大的原生字体，小窗口保留游戏设置的字号。 */
-    static float textScale() {
-        var window = Minecraft.getInstance().getWindow();
-        return Mth.clamp(Math.min(window.getGuiScaledWidth() / 875f, window.getGuiScaledHeight() / 492f), 1f, 1.5f);
-    }
+    // 字体使用与地图图形相同的外层视口变换。
+    static float textScale() { return 1.0F; }
 
-    static int textHeight(Font font) { return (int) Math.ceil(font.lineHeight * textScale()); }
+    static int textHeight(Font font) { return font.lineHeight; }
 
     static void text(GuiGraphics g, Font f, FormattedCharSequence value, int x, int y, int color) {
-        float scale = textScale();
-        g.pose().pushPose();
-        g.pose().translate(x, y, 0);
-        g.pose().scale(scale, scale, 1f);
-        g.drawString(f, value, 0, 0, color, true);
-        g.pose().popPose();
+        g.drawString(f, value, x, y, color, true);
     }
 
     public static void line(GuiGraphics g, Font font, String value, int x, int y, int width, int color) {
         if (width <= 0) return;
         String label = font.plainSubstrByWidth(value, (int) (width / textScale()));
         text(g, font, net.minecraft.network.chat.Component.literal(label).getVisualOrderText(), x, y, color);
+    }
+
+    /** 为弹药名等长值先缩短绘制宽度，仍超出时在独立区域滚动。 */
+    public static void fitLine(GuiGraphics graphics, Font font, String value, int x, int y, int width, int color) {
+        if (width <= 0) return;
+        float scale = Math.min(1.0F, width / (float) Math.max(1, font.width(value)));
+        if (scale < 0.68F) {
+            scrollingLabel(graphics, font, Component.literal(value), x - 3, y - 1, x + width + 3,
+                    y + font.lineHeight - 1, color, false);
+            return;
+        }
+        graphics.pose().pushPose();
+        try {
+            graphics.pose().translate(x, y + (1.0F - scale) * font.lineHeight * 0.5F, 0.0F);
+            graphics.pose().scale(scale, scale, 1.0F);
+            graphics.drawString(font, value, 0, 0, color, true);
+        } finally {
+            graphics.pose().popPose();
+        }
     }
 
     /** 短标签居中，长标签在同一个按钮的裁剪区内往返滚动。 */
@@ -90,7 +105,7 @@ public final class RVP_MapChrome {
             double cycle = seconds / Math.max(3.0, excess / 24.0);
             double phase = .5 - .5 * Math.cos(cycle * Math.PI * 2);
             left = x + 3 - (int) Math.round(excess * Mth.clamp(phase * 1.5 - .25, 0, 1));
-            g.enableScissor(x + 3, y, right - 3, bottom);
+            RVP_TacticalViewport.scissor(g, x + 3, y, right - 3, bottom);
         }
         text(g, font, label.getVisualOrderText(), left, y + (bottom - y - textHeight(font)) / 2 + 1, color);
         if (excess > 0) g.disableScissor();

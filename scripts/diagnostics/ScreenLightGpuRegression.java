@@ -61,6 +61,7 @@ public final class ScreenLightGpuRegression {
             // 调用 RVP 新喷流程序专项回读，旧圆形喷口测试继续保留用于防止误删旧实现。
             plume = program(shaders, "rocket_plume_ranges");
             testRocketPlume(Path.of(args[0]), plume, bloom);
+            testPlumeDuringViewBob(plume);
             // 调用启停显示专项回读，验证高亮核心、局部和广域光晕在映射后确实平滑变暗。
             testRocketPlumeTransition(Path.of(args[0]), plume);
             testWorldEngineHalo(Path.of(args[0]), plume);
@@ -933,6 +934,43 @@ public final class ScreenLightGpuRegression {
     }
 
     /** 新程序喷流实际像素：形状、缩放、近景/DH/手持物遮挡、亚像素和橙色光晕。 */
+    /** 模拟行走晃动施加的投影平移：尾焰轮廓必须与同深度的喷口一起移动。 */
+    private static void testPlumeDuringViewBob(int plume) {
+        int size = 256;
+        float plumeDepth = 6;
+        int sky = depth(size, size, 0, false);
+        int[] output = target(size, size);
+        GL20.glUseProgram(plume);
+        uniforms(plume);
+        GL20.glUniform2f(GL20.glGetUniformLocation(plume, "ScreenSize"), size, size);
+        GL20.glUniform4f(GL20.glGetUniformLocation(plume, "PlumeEmission"), 60000, 16, .2F, 12);
+        GL20.glUniform1f(GL20.glGetUniformLocation(plume, "Time"), .7F);
+        sampler(plume, "SceneDepth", 1, sky);
+        sampler(plume, "DistantDepth", 2, sky);
+        plumeGeometry(plume, -1.5F, 0, -plumeDepth, 1, 0, 0, 3, .45F);
+        render(output, size, size);
+        int[] still = brightBounds(pixels(output[0], size, size), size);
+        require(still[2] > still[0], "reference view-bob plume missing");
+
+        for (int shift : new int[]{-8, 8}) {
+            float dx = 2 * plumeDepth * shift / size;
+            float dy = -dx;
+            // 把平移放进投影，同时给生产 Shader 输入对应的逆矩阵。
+            matrix(plume, "Projection", new float[]{1,0,0,0, 0,1,0,0, 0,0,A,-1, dx,dy,B,0});
+            matrix(plume, "InverseProjection", new float[]{
+                    1,0,0,0, 0,1,0,0, -dx/B,-dy/B,0,1/B, -dx*A/B,-dy*A/B,-1,A/B});
+            render(output, size, size);
+            int[] bobbed = brightBounds(pixels(output[0], size, size), size);
+            for (int edge = 0; edge < still.length; edge++) {
+                int expected = still[edge] + (edge % 2 == 0 ? shift : -shift);
+                require(Math.abs(bobbed[edge] - expected) <= 2,
+                        "plume drifted from its nozzle under view bob: edge " + edge
+                                + ", expected " + expected + ", got " + bobbed[edge]);
+            }
+        }
+        System.out.println("PASS translated view-bob projection keeps the plume aligned to the nozzle");
+    }
+
     private static void testRocketPlume(Path root, int plume, int bloom) throws Exception {
         int size = 256;
         int scene = color(size, size, BACKGROUND);

@@ -238,22 +238,7 @@ public final class RVP_JammingRuntime {
      * 使左右分布式干扰机各覆盖不同扇区。
      */
     public static Vec3 resolveFacing(AbstractVehicle vehicle, @Nullable String facingPart, double facingYawDeg) {
-        Vec3 base;
-        if (facingPart != null && !facingPart.isBlank()) {
-            PartUnit<?> partUnit = vehicle.getPartUnit(facingPart).orElse(null);
-            if (partUnit instanceof WeaponUnit weaponUnit) {
-                Vec3 world = weaponUnit.worldVec();
-                if (world != null && world.lengthSqr() > 1.0E-8) {
-                    base = world.normalize();
-                } else {
-                    base = VectorUtil.rotToVec(vehicle.getXRot(), vehicle.getYRot());
-                }
-            } else {
-                base = VectorUtil.rotToVec(vehicle.getXRot(), vehicle.getYRot());
-            }
-        } else {
-            base = VectorUtil.rotToVec(vehicle.getXRot(), vehicle.getYRot());
-        }
+        Vec3 base = facingBase(vehicle, facingPart);
         if (facingYawDeg == 0.0) {
             return base;
         }
@@ -265,6 +250,43 @@ public final class RVP_JammingRuntime {
                 base.y,
                 base.x * sin + base.z * cos
         );
+    }
+
+    /**
+     * APS 探测扇区朝向：只取水平面，不继承 facing_part（炮塔）主炮的俯仰角。
+     * 传感器固定在炮塔上，扫描扇区应随炮塔偏航，而不是随炮管抬高/压低。
+     */
+    public static Vec3 resolveHorizontalFacing(AbstractVehicle vehicle, @Nullable String facingPart, double facingYawDeg) {
+        Vec3 base = facingBase(vehicle, facingPart);
+        Vec3 horizontal = new Vec3(base.x, 0.0, base.z);
+        if (horizontal.lengthSqr() <= 1.0E-8) {
+            horizontal = VectorUtil.rotToVec(0.0f, vehicle.getYRot());
+        }
+        horizontal = horizontal.normalize();
+        if (facingYawDeg == 0.0) {
+            return horizontal;
+        }
+        double rad = Math.toRadians(facingYawDeg);
+        double cos = Math.cos(rad);
+        double sin = Math.sin(rad);
+        return new Vec3(
+                horizontal.x * cos - horizontal.z * sin,
+                0.0,
+                horizontal.x * sin + horizontal.z * cos
+        );
+    }
+
+    private static Vec3 facingBase(AbstractVehicle vehicle, @Nullable String facingPart) {
+        if (facingPart != null && !facingPart.isBlank()) {
+            PartUnit<?> partUnit = vehicle.getPartUnit(facingPart).orElse(null);
+            if (partUnit instanceof WeaponUnit weaponUnit) {
+                Vec3 world = weaponUnit.worldVec();
+                if (world != null && world.lengthSqr() > 1.0E-8) {
+                    return world.normalize();
+                }
+            }
+        }
+        return VectorUtil.rotToVec(vehicle.getXRot(), vehicle.getYRot());
     }
 
     /** 导弹是否为该干扰机车辆自身发射（排除自身，只干扰敌方/他方导弹）。 */

@@ -20,6 +20,14 @@ public class RVP_SubmunitionData {
     @SerializedName("releases")
     private List<RVP_SubmunitionReleaseData> releases = new ArrayList<>();
 
+    /** 近地引信和布撒共用的 GPS 三维距离上限，单位格；为 0 时沿用原触发条件。 */
+    @SerializedName("gps_release_max_distance")
+    private float gpsReleaseMaxDistance;
+
+    public float getGpsReleaseMaxDistance() {
+        return Float.isFinite(gpsReleaseMaxDistance) ? Math.max(0f, gpsReleaseMaxDistance) : 0f;
+    }
+
     public List<RVP_SubmunitionReleaseData> getReleases() {
         if (releases == null || releases.isEmpty()) {
             return Collections.emptyList();

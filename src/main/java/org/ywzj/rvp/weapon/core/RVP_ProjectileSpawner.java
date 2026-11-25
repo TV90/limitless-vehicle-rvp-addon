@@ -29,6 +29,7 @@ import org.ywzj.rvp.client.state.RVP_ClientGPSState;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.rvp.util.RVP_AimPointResolver;
 import org.jetbrains.annotations.Nullable;
+import org.ywzj.rvp.weapon.physics.RVP_UnguidedBallisticMath;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.VectorUtil;
@@ -131,10 +132,13 @@ public final class RVP_ProjectileSpawner {
                 extraSpread
         );
         LegacyDesignatedTarget designated = resolveLegacyDesignatedTarget(data, kind, shooter, level, aim);
+        // 炮兵弹配置的初速就是地图和出膛共用的初速。抵消旧无动力火箭在实体初始化里的倍率。
+        Vec3 spawnMotion = data.getMiscData().isArtilleryMap()
+                ? RVP_UnguidedBallisticMath.resolveSpawnContextMotion(data, kind, motion) : motion;
         // 调用本项目统一生成核心：旧载具入口只负责解析散布/GPS/挂架上下文，实体接线只保留一份。
         RVP_ProjectileSpawnResult result = spawn(new RVP_ProjectileSpawnContext(
                 level, data, kind, entityType.get(), vehicle, weaponUnit, launchUnit, shooter,
-                muzzle, new RVP_BaseBullet.AimRot(xRot, yRot), motion, lockTarget, designated.pos(),
+                muzzle, new RVP_BaseBullet.AimRot(xRot, yRot), spawnMotion, lockTarget, designated.pos(),
                 data.isInheritVehicleVelocity(), weaponUnit != null, muzzle,
                 RVP_ProjectileChunkLoadingPolicy.DEFAULT, sightDisguise));
         // [RVP] RADAR 模式上行弹标记：仅"RADAR 模式下发射且成功标记雷达锁目标（≤25m 离地）"的弹参与在途改靶
@@ -189,11 +193,13 @@ public final class RVP_ProjectileSpawner {
         }
 
         applyLockTarget(projectile, context);
-        if (context.designatedTarget() != null
-                && (context.weaponData().usesGuidanceType(RVP_EnumGuidanceType.GPS)
-                || projectile.getTargetPos() == null)) {
-            // GPS 坐标在旧入口中具有高于实体锁定的优先级；炮火任务也必须覆盖无载具实体弹体。
+        boolean gpsGuided = context.weaponData().usesGuidanceType(RVP_EnumGuidanceType.GPS);
+        if (context.designatedTarget() != null && (gpsGuided || projectile.getTargetPos() == null)) {
+            // GPS 坐标优先于实体锁定。布撒门槛读取原始坐标，制导仍使用既有散布。
             projectile.setTargetPos(context.designatedTarget());
+            if (gpsGuided) {
+                projectile.setSubmunitionGpsTarget(context.designatedTarget());
+            }
         }
         Vec3 launchVehicleVelocity = context.inheritVehicleVelocity() && context.sourceVehicle() != null
                 ? context.sourceVehicle().getDeltaMovement()

@@ -12,6 +12,8 @@ import org.ywzj.rvp.config.UIPresetAccess;
 import org.ywzj.rvp.config.UIPresetManager.UIPosition;
 import org.ywzj.rvp.vehicle.BoneModuleType;
 import org.ywzj.vehicle.client.render.util.Color;
+import org.ywzj.vehicle.client.gui.VehicleHudLayout;
+import org.ywzj.vehicle.util.VehicleHudText;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 
 /**
@@ -47,13 +49,21 @@ public class RVP_DircmHudOverlay implements IGuiOverlay {
             return;
         }
 
+        // DIRCM 状态文字和本体遥测使用相同的 480 高逻辑画布。
+        try (VehicleHudLayout layout = VehicleHudLayout.begin(guiGraphics)) {
+        screenWidth = Math.round(layout.width());
+        screenHeight = Math.round(VehicleHudLayout.HEIGHT);
         // UI 预设位置：ui_presets 的 dircm_hud 组件可自由配置；未配置用默认位置
         UIPosition pos = UIPresetAccess.dircmHud(vehicle);
         int x = pos != null ? pos.computeX(screenWidth) : DEFAULT_X;
         int y = pos != null ? pos.computeY(screenHeight)
                 : Math.max(screenHeight / 2 + Math.round(DEFAULT_Y_OFFSET * ((float) screenHeight / org.ywzj.rvp.config.UIPresetManager.UIPosition.REF_HEIGHT)), 15);
 
-        var font = Minecraft.getInstance().font;
+        float scale = pos == null ? 1.0f : Math.max(0.5f, Math.min(2.0f, pos.scale));
+        guiGraphics.pose().pushPose();
+        guiGraphics.pose().translate(x, y, 0);
+        guiGraphics.pose().scale(scale, scale, 1.0f);
+        int rowY = 0;
         for (RVP_DircmHudState.ChannelSnapshot channel : state.channels()) {
             String name = channel.displayName() != null && !channel.displayName().isBlank()
                     ? channel.displayName() : channel.boneName();
@@ -61,8 +71,9 @@ public class RVP_DircmHudOverlay implements IGuiOverlay {
             // 失效态照常显示（不隐藏行），与干扰物"烟雾: 损坏"红字行同款语义
             if (channel.boneName() != null && !RVP_ClientBoneModuleState.isModuleActive(
                     vehicle.getId(), channel.boneName(), BoneModuleType.DIRCM)) {
-                guiGraphics.drawString(font, I18n.get("gui.ywzj_rvp.hud.dircm_destroyed", name), x, y, Color.RED, false);
-                y += 12;
+                VehicleHudText.drawString(guiGraphics, I18n.get("gui.ywzj_rvp.hud.dircm_destroyed", name),
+                        0, rowY, Color.RED, false);
+                rowY += VehicleHudLayout.ROW_HEIGHT;
                 continue;
             }
             String line;
@@ -78,8 +89,10 @@ public class RVP_DircmHudOverlay implements IGuiOverlay {
                 line = I18n.get("gui.ywzj_rvp.hud.dircm_ready", name);
                 color = Color.GREEN;
             }
-            guiGraphics.drawString(font, line, x, y, color, false);
-            y += 12;
+            VehicleHudText.drawString(guiGraphics, line, 0, rowY, color, false);
+            rowY += VehicleHudLayout.ROW_HEIGHT;
+        }
+        guiGraphics.pose().popPose();
         }
     }
 }

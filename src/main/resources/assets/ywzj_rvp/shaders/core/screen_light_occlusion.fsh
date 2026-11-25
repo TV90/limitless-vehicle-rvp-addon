@@ -111,6 +111,13 @@ vec3 viewPosition(vec2 uv, float depth) {
     return point.xyz / (abs(point.w) < 0.000001 ? 0.000001 : point.w);
 }
 
+// 视角晃动会平移投影中心：用近、远逆投影点之差还原方向。
+void viewRay(vec2 uv, out vec3 rayOrigin, out vec3 rayDirection) {
+    float nearSample = NearEmptyDepth > 0.5 ? 0.25 : 0.75;
+    rayOrigin = viewPosition(uv, nearSample);
+    rayDirection = normalize(viewPosition(uv, 1.0 - nearSample) - rayOrigin);
+}
+
 // 分别逆投影近景/DH，再在同一玩家观察空间选择最近表面；w=0 表示天空，w=-1 表示手持物。
 vec4 scenePosition(vec2 uv) {
     float depth = texture(SceneDepth, uv).r;
@@ -124,8 +131,10 @@ vec4 scenePosition(vec2 uv) {
     }
     if (HasDistantDepth != 0) {
         // 从主画面射线换算 DH 的 UV，允许分辨率、视野、矩阵抖动和深度方向不同。
-        vec3 ray = viewPosition(uv, 0.5);
-        vec4 distantClip = DistantProjection * ViewToDistant * vec4(ray, 0.0);
+        vec3 rayOrigin;
+        vec3 rayDirection;
+        viewRay(uv, rayOrigin, rayDirection);
+        vec4 distantClip = DistantProjection * ViewToDistant * vec4(rayDirection, 0.0);
         if (distantClip.w > 0.000001) {
             vec2 distantUV = distantClip.xy / distantClip.w * 0.5 + 0.5;
             if (all(greaterThanEqual(distantUV, vec2(0.0))) && all(lessThanEqual(distantUV, vec2(1.0)))) {
@@ -155,7 +164,7 @@ vec3 neighborPosition(vec2 uv, vec3 fallback) {
 
 // 喷口独立自发光：天空也能看见，默认关闭的空气散射不影响它。
 // 光心和当前像素都检查近景/DH 遮挡，完整藏在墙后的光源不能向墙外画一个光团。
-vec3 sourceEmission(vec3 ray, float sceneDistance, vec4 light, vec3 color, vec4 emission) {
+vec3 sourceEmission(vec3 rayOrigin, vec3 ray, float sceneDistance, vec4 light, vec3 color, vec4 emission) {
     // 允许只保留外围光团（核心亮度为0）；核心半径或两路亮度都为空时才视为没有自发光。
     if (emission.x <= 0.0 || (emission.z <= 0.0 && emission.w <= 0.0) || light.z >= 0.0) { return vec3(0.0); }
     vec4 clip = Projection * vec4(light.xyz, 1.0);
@@ -165,14 +174,14 @@ vec3 sourceEmission(vec3 ray, float sceneDistance, vec4 light, vec3 color, vec4 
     vec4 centerSurface = scenePosition(centerUV);
     if (centerSurface.w < -0.5) { return vec3(0.0); }
     if (centerSurface.w > 0.5 && centerSurface.z > light.z + emission.x + 0.04) { return vec3(0.0); }
-    float along = dot(ray, light.xyz);
+    float along = dot(ray, light.xyz - rayOrigin);
     if (along <= 0.0 || sceneDistance < along - emission.x - 0.04) { return vec3(0.0); }
     // 远距离保留至少两个像素半径，半分辨率提取时不能因采样位置而让明亮喷口忽明忽灭。
     float pixelRadius = 4.0 * abs(light.z) / max(ScreenSize.y * abs(Projection[1][1]), 0.0001);
     float coreRadius = max(emission.x, pixelRadius);
     float haloRadius = max(emission.y, coreRadius * 3.5);
     // 用向量差计算垂距，避免远距离两个大数相减丢失喷口尺度的精度。
-    vec3 delta = light.xyz - ray * along;
+    vec3 delta = light.xyz - (rayOrigin + ray * along);
     float radialSquared = dot(delta, delta);
     if (radialSquared > haloRadius * haloRadius * 4.0) { return vec3(0.0); }
     float core = exp(-4.0 * radialSquared / (coreRadius * coreRadius)) * emission.z;
@@ -208,9 +217,10 @@ float visibility(int lightIndex, vec3 surface, vec3 normal, vec3 light) {
 
 // 可选球形参与介质：在相机射线穿过光球的可见片段上积分。
 // 强度默认 0，普通表面光不承担逐步雾光的额外成本。
-float volumeIntegral(vec3 ray, float sceneDistance, vec3 center, float radius) {
-    float along = dot(ray, center);
-    float discriminant = along * along - dot(center, center) + radius * radius;
+float volumeIntegral(vec3 rayOrigin, vec3 ray, float sceneDistance, vec3 center, float radius) {
+    vec3 relative = center - rayOrigin;
+    float along = dot(ray, relative);
+    float discriminant = along * along - dot(relative, relative) + radius * radius;
     if (discriminant <= 0.0) { return 0.0; }
     float root = sqrt(discriminant);
     float nearT = max(0.0, along - root);
@@ -219,7 +229,7 @@ float volumeIntegral(vec3 ray, float sceneDistance, vec3 center, float radius) {
     float total = 0.0;
     for (int step = 0; step < 12; ++step) {
         float distanceAlong = mix(nearT, farT, (float(step) + 0.5) / 12.0);
-        float radial = length(ray * distanceAlong - center) / radius;
+        float radial = length(rayOrigin + ray * distanceAlong - center) / radius;
         total += pow(max(0.0, 1.0 - radial * radial), 2.0);
     }
     return total * (farT - nearT) / (12.0 * max(radius, 0.01)) * 0.18;
@@ -227,7 +237,7 @@ float volumeIntegral(vec3 ray, float sceneDistance, vec3 center, float radius) {
 
 // 爆炸/炮口的镜头式光晕只使用独立半径，不依赖环境表面受光结果。
 // 光心完全被近景/DH 遮住时不产生光晕；源可见时允许跨过邻近轮廓柔和扩散。
-vec3 sourceHalo(vec3 ray, vec4 light, vec4 color, float radius) {
+vec3 sourceHalo(vec3 rayOrigin, vec3 ray, vec4 light, vec4 color, float radius) {
     if (radius <= 0.0 || color.a <= 0.0 || light.z >= -0.0001 || ray.z >= -0.0001) { return vec3(0.0); }
     vec4 clip = Projection * vec4(light.xyz, 1.0);
     if (clip.w <= 0.00001) { return vec3(0.0); }
@@ -235,7 +245,7 @@ vec3 sourceHalo(vec3 ray, vec4 light, vec4 color, float radius) {
     if (any(lessThan(centerUV, vec2(0.0))) || any(greaterThan(centerUV, vec2(1.0)))) { return vec3(0.0); }
     vec4 centerSurface = scenePosition(centerUV);
     if (centerSurface.w < -0.5 || (centerSurface.w > 0.5 && centerSurface.z > light.z + 0.08)) { return vec3(0.0); }
-    vec3 point = ray * (light.z / ray.z);
+    vec3 point = rayOrigin + ray * ((light.z - rayOrigin.z) / ray.z);
     vec2 delta = point.xy - light.xy;
     float radialSquared = dot(delta, delta) / (radius * radius);
     if (radialSquared >= 1.0) { return vec3(0.0); }
@@ -252,9 +262,9 @@ vec3 composite(vec3 background, vec3 contribution) {
 // 天空散射：天空没有深度也没有表面法线，只能按视线与爆心方向的夹角染色。
 // spread 为1时覆盖整片天空，趋近0时只剩爆心方向；strength 已包含淡出比例和画质倍率。
 // 允许爆心在相机背后：整片天空的亮度来自大气散射，不应因转头看向别处而消失。
-vec3 skyScatter(vec3 ray, vec4 light, vec4 color, float spread) {
+vec3 skyScatter(vec3 rayOrigin, vec3 ray, vec4 light, vec4 color, float spread) {
     if (color.a <= 0.0) { return vec3(0.0); }
-    vec3 center = light.xyz;
+    vec3 center = light.xyz - rayOrigin;
     float centerLength = length(center);
     // 光心与相机重合时没有稳定方向，按正前方采样，避免归一化出NaN。
     float cosAngle = centerLength < 0.0001 ? 0.0 : clamp(dot(ray, center / centerLength), -1.0, 1.0);
@@ -326,9 +336,11 @@ void main() {
         return;
     }
     bool hasSurface = sampled.w > 0.5;
-    vec3 position = hasSurface ? sampled.xyz : viewPosition(screenUV, 0.5);
-    vec3 ray = normalize(position);
-    float sceneDistance = hasSurface ? length(position) : 2048.0;
+    vec3 rayOrigin;
+    vec3 ray;
+    viewRay(screenUV, rayOrigin, ray);
+    vec3 position = hasSurface ? sampled.xyz : rayOrigin + ray * 2048.0;
+    float sceneDistance = hasSurface ? max(0.0, dot(position - rayOrigin, ray)) : 2048.0;
     // 自发光主体不读取环境倍率；其余通道每像素只取一次原画面明暗，多灯共用。
     float sceneBrightness = OutputMode == 2 ? 0.0 : rvpAmbientSceneBrightness(screenUV);
     float ambient[8] = float[8](LightAmbient0, LightAmbient1, LightAmbient2, LightAmbient3,
@@ -340,7 +352,7 @@ void main() {
             if (index >= LightCount) { break; }
             vec4 axis = hemisphereAxes[index];
             if (shapes[index].z > 0.5 && (axis.w < 0.5 || dot(-positions[index].xyz, axis.xyz) >= 0.0)) {
-                glow += sourceHalo(ray, positions[index], haloColors[index], shapes[index].w)
+                glow += sourceHalo(rayOrigin, ray, positions[index], haloColors[index], shapes[index].w)
                         * rvpAmbientMultiplier(ambient[index], sceneBrightness);
             }
         }
@@ -352,7 +364,7 @@ void main() {
         vec3 emission = vec3(0.0);
         for (int index = 0; index < 8; ++index) {
             if (index >= LightCount) { break; }
-            emission += sourceEmission(ray, sceneDistance, positions[index], colors[index].rgb, emissions[index]);
+            emission += sourceEmission(rayOrigin, ray, sceneDistance, positions[index], colors[index].rgb, emissions[index]);
         }
         // 独立叠加解除普通表面光的 0.9 曝光限制，显示核心可以达到纯白热亮度。
         fragColor = vec4(1.0 - exp(-clamp(emission, vec3(0.0), vec3(60000.0))), 0.0);
@@ -371,7 +383,7 @@ void main() {
         // 天空散射先于照亮判空累加：关掉照亮（radiusScale 或 brightness 为0）时天空仍然闪。
         float ambientMultiplier = rvpAmbientMultiplier(ambient[index], sceneBrightness);
         if (!hasSurface) {
-            skyContribution += skyScatter(ray, light, skyColors[index], skySpreads[index]) * ambientMultiplier;
+            skyContribution += skyScatter(rayOrigin, ray, light, skyColors[index], skySpreads[index]) * ambientMultiplier;
         }
         if (light.w <= 0.0 || color.a <= 0.0) { continue; }
         float surface = 0.0;
@@ -392,10 +404,10 @@ void main() {
             }
         }
         float volume = shape.y > 0.0
-                ? volumeIntegral(ray, sceneDistance, light.xyz, light.w) * shape.y : 0.0;
+                ? volumeIntegral(rayOrigin, ray, sceneDistance, light.xyz, light.w) * shape.y : 0.0;
         // 只对照亮和空气散射乘倍率；核心及贴身光团的 sourceEmission 必须保持独立。
         vec3 added = color.rgb * color.a * (surface + volume) * ambientMultiplier
-                + sourceEmission(ray, sceneDistance, light, color.rgb, emissions[index]);
+                + sourceEmission(rayOrigin, ray, sceneDistance, light, color.rgb, emissions[index]);
         contribution += added;
         if (shape.z > 0.5) { bloomEnergy += dot(added, vec3(0.2126, 0.7152, 0.0722)); }
     }

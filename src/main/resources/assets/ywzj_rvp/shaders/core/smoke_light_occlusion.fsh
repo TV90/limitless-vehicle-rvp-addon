@@ -56,6 +56,13 @@ vec3 viewPosition(vec2 uv, float depth) {
     return point.xyz / (abs(point.w) < 0.000001 ? 0.000001 : point.w);
 }
 
+// 投影中心因视角晃动偏移时，单个逆投影点不能当作方向。
+void viewRay(vec2 uv, out vec3 rayOrigin, out vec3 rayDirection) {
+    float nearSample = NearEmptyDepth > 0.5 ? 0.25 : 0.75;
+    rayOrigin = viewPosition(uv, nearSample);
+    rayDirection = normalize(viewPosition(uv, 1.0 - nearSample) - rayOrigin);
+}
+
 // 分别逆投影近景/DH，再在同一玩家观察空间选择最近表面；w=0 表示天空，w=-1 表示手持物。
 vec4 scenePosition(vec2 uv) {
     float depth = texture(SceneDepth, uv).r;
@@ -69,8 +76,10 @@ vec4 scenePosition(vec2 uv) {
     }
     if (HasDistantDepth != 0) {
         // 从主画面射线换算 DH 的 UV，允许分辨率、视野、矩阵抖动和深度方向不同。
-        vec3 ray = viewPosition(uv, 0.5);
-        vec4 distantClip = DistantProjection * ViewToDistant * vec4(ray, 0.0);
+        vec3 rayOrigin;
+        vec3 rayDirection;
+        viewRay(uv, rayOrigin, rayDirection);
+        vec4 distantClip = DistantProjection * ViewToDistant * vec4(rayDirection, 0.0);
         if (distantClip.w > 0.000001) {
             vec2 distantUV = distantClip.xy / distantClip.w * 0.5 + 0.5;
             if (all(greaterThanEqual(distantUV, vec2(0.0))) && all(lessThanEqual(distantUV, vec2(1.0)))) {

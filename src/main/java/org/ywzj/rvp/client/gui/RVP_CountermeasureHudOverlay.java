@@ -6,6 +6,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraftforge.client.gui.overlay.ForgeGui;
 import net.minecraftforge.client.gui.overlay.IGuiOverlay;
 import org.jetbrains.annotations.Nullable;
+import org.ywzj.rvp.client.state.RVP_ClientHitlState;
 import org.ywzj.rvp.client.RVP_Keys;
 import org.ywzj.rvp.client.state.RVP_ClientMaintenanceState;
 import org.ywzj.rvp.client.state.RVP_CountermeasureHudState;
@@ -147,8 +148,10 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
             } else {
                 // 地面载具：速度行置顶（用户 2026-09-27），其后 ECM 置于烟雾下方；无烟雾时 ECM 递补烟雾位
                 float y = VehicleHudLayout.CENTER_Y + 10f;
-                drawSpeedRow(guiGraphics, vehicle, leftX, y);
-                y += rowH;
+                if (!RVP_ClientHitlState.isActive()) {
+                    drawSpeedRow(guiGraphics, vehicle, leftX, y);
+                    y += rowH;
+                }
                 if (hasFlare || flareDestroyed) {
                     drawDecoyRow(guiGraphics, Component.translatable("gui.ywzj_rvp.hud.label_flare"),
                             flareDestroyed, flareDamaged, RVP_Keys.FIRE_FLARE, leftX, y,

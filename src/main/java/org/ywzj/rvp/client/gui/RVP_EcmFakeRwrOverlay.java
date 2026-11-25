@@ -61,6 +61,10 @@ public class RVP_EcmFakeRwrOverlay implements IGuiOverlay {
         if (vehicle == null) {
             return;
         }
+        // 复用真实 RWR 的预设画布，让伪造目标与表盘保持重合。
+        try (RVP_PresetHudLayout layout = RVP_PresetHudLayout.begin(guiGraphics)) {
+        screenWidth = layout.width();
+        screenHeight = layout.height();
         // 与 RVP_RadarOverlay 相同的 RWR 位置解析，确保随 UI 预设同步移动
         String presetName = vehicle.getVehicleId() != null ? VehicleUIPresetCache.get(vehicle.getVehicleId()) : null;
         UIPosition rwrPos = UIPresetManager.getRwr(presetName);
@@ -73,6 +77,7 @@ public class RVP_EcmFakeRwrOverlay implements IGuiOverlay {
             return;
         }
         renderLockBlips(guiGraphics, mc.font, rwrCenterX, rwrCenterY, types, n);
+        }
     }
 
     private static void renderLockBlips(GuiGraphics gg, Font font, int cx, int cy, List<String> types, int n) {

@@ -106,6 +106,7 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
 
     /** 页面几何仅在开屏、尺寸或面板状态变化时重算。 */
     private RVP_TacticalLayout layout;
+    private RVP_TacticalViewport viewport;
     /** 地图头部始终可见的关闭按钮。 */
     private TerminalButton closeButton;
     /** 长武器列表与 GPS 状态正文独立滚动。 */
@@ -376,6 +377,10 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
 
     @Override
     protected void init() {
+        var window = Minecraft.getInstance().getWindow();
+        viewport = RVP_TacticalViewport.of(window.getGuiScaledWidth(), window.getGuiScaledHeight());
+        width = viewport.width();
+        height = viewport.height();
         boolean firstOpen = xBox == null;
         String[] draft = firstOpen ? null : new String[] { xBox.getValue(), yBox.getValue(), zBox.getValue() };
         if (firstOpen) syncViewToPlayer(true);
@@ -589,7 +594,8 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
 
     /** 地形铺满屏幕，顶部工具、底部导航、坐标输入和对应命中框使用固定锚点。 */
     private void refreshLayout() {
-        layout = RVP_TacticalLayout.of(width,height,(sidebarVisible || mapTool != null) && !isArtilleryMode(),mapTool != null);
+        layout = RVP_TacticalLayout.of(width, height, (sidebarVisible || mapTool != null) && !isArtilleryMode(),
+                mapTool != null, font.width(title));
         mapLeft=0;
         mapTop=layout.mapTop();
         mapRight=layout.mapRight();
@@ -860,6 +866,8 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        mouseX = viewport.mapX(mouseX);
+        mouseY = viewport.mapY(mouseY);
         // 弹层按绘制逆序命中，覆盖在雷达或工具栏前的选项应先接收点击。
         if (weaponDropdownOpen && isOverWeaponDropdown(mouseX, mouseY) && handleWeaponDropdownClick(mouseX, mouseY, button)) return true;
         if (entityContextMenuVisible && handleEntityContextMenuClick(mouseX, mouseY, button)) return true;
@@ -876,7 +884,7 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
             }
             if (isOverMap(mouseX, mouseY) && button == 0) {
                 // 炮兵地图恢复左键开火（工具栏按钮已在上方分流，普通战术地图走另一分支）。
-                fireArtilleryWeapon();
+                RVP_ArtilleryFireControlState.requestFire(pickMapPoint(mouseX, mouseY));
                 draggingMap = false;
                 closeTransientMenus();
                 return true;
@@ -954,13 +962,10 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
         return super.mouseClicked(mouseX, mouseY, button);
     }
 
-    /** 炮兵地图左键开火：与空格键同一条客户端开火路径。 */
-    private void fireArtilleryWeapon() {
-        RVP_ClientEvents.fireCurrentWeaponClient();
-    }
-
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        mouseX = viewport.mapX(mouseX);
+        mouseY = viewport.mapY(mouseY);
         if (mapTool != null && mapTool.mouseReleased(this, mouseX, mouseY, button)) {
             return true;
         }
@@ -1036,6 +1041,10 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
 
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
+        mouseX = viewport.mapX(mouseX);
+        mouseY = viewport.mapY(mouseY);
+        dragX = viewport.mapX(dragX);
+        dragY = viewport.mapY(dragY);
         if (mapTool != null && mapTool.mouseDragged(this, mouseX, mouseY, button, dragX, dragY)) {
             return true;
         }
@@ -1053,6 +1062,8 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double delta) {
+        mouseX = viewport.mapX(mouseX);
+        mouseY = viewport.mapY(mouseY);
         if (weaponDropdownOpen && isOverWeaponDropdown(mouseX, mouseY)) {
             WeaponUnit station = localWeaponUnit();
             if (station != null) weaponScroll = weaponRows().clamp(weaponScroll - (int)Math.signum(delta), station.weapons.size());
@@ -1139,7 +1150,7 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
             return y;
         }
         Integer cachedHeight = RVP_TacticalMapCache.getCachedHeight(x, z);
-        return cachedHeight != null ? cachedHeight : y;
+        return cachedHeight != null ? cachedHeight + 1 : y;
     }
 
     @Override
@@ -1151,6 +1162,7 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
     public void removed() {
         // 窗口关闭或进入另一页面时归还地图专用的帧缓冲。
         RVP_MapFrost.release();
+        if (isArtilleryMode()) RVP_ArtilleryFireControlState.cancelPendingFire();
         super.removed();
     }
 
@@ -1165,6 +1177,17 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
 
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
+        guiGraphics.pose().pushPose();
+        try {
+            guiGraphics.pose().scale(viewport.scaleX(), viewport.scaleY(), 1.0F);
+            renderMapScreen(guiGraphics, Mth.floor(viewport.mapX(mouseX)), Mth.floor(viewport.mapY(mouseY)), partialTick);
+        } finally {
+            guiGraphics.pose().popPose();
+        }
+        org.ywzj.rvp.client.gui.RVP_HitIndicatorOverlay.renderGui(guiGraphics, partialTick);
+    }
+
+    private void renderMapScreen(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         renderPartialTick = partialTick;
         renderPositions.clear();
         if (followPlayer && !draggingMap && Minecraft.getInstance().player != null) {
@@ -1180,12 +1203,12 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
         // 扇面铺到整张底图并参与玻璃采样；图标、页签和侧栏各自保留命中区域。
         refreshTacticalRadarContext();
         renderRadarCoverage(guiGraphics, partialTick, false);
-        guiGraphics.enableScissor(mapLeft, mapTop, mapRight, mapBottom);
+        RVP_TacticalViewport.scissor(guiGraphics, mapLeft, mapTop, mapRight, mapBottom);
         renderMap(guiGraphics);
         guiGraphics.disableScissor();
         // 在绘制界面之前采样地形与实际标记，整页共用一份模糊图像。
         RVP_MapFrost.capture(guiGraphics);
-        guiGraphics.enableScissor(mapLeft,mapTop,mapRight,mapBottom);
+        RVP_TacticalViewport.scissor(guiGraphics, mapLeft,mapTop,mapRight,mapBottom);
         renderGpsMarker(guiGraphics);
         renderMarkedBlocks(guiGraphics);
         guiGraphics.disableScissor();
@@ -1216,13 +1239,11 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
         // 细轮廓和扫描线在控件之后按原分辨率画一次，跨过页签和底栏时仍然连续。
         renderRadarCoverage(guiGraphics, partialTick, true);
         renderControlTip(guiGraphics,mouseX,mouseY);
-        // 命中展板兜底：Screen 打开时 HUD overlay 不渲染，这里在 map 之上再画一次展板，
-        // 避免全屏战术地图盖住命中提示（保持"展板在最上层"的层序）。
-        org.ywzj.rvp.client.gui.RVP_HitIndicatorOverlay.renderGui(guiGraphics, partialTick);
     }
 
     private void updateArtilleryHoverTarget(int mouseX, int mouseY) {
-        if (!isArtilleryMode() || draggingMap || !isOverMap(mouseX, mouseY)) {
+        if (!isArtilleryMode() || draggingMap || RVP_ArtilleryFireControlState.hasPendingFire()
+                || !isOverMap(mouseX, mouseY)) {
             return;
         }
         Vec3 picked = pickMapPoint(mouseX, mouseY);
@@ -1518,7 +1539,7 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
         double minZ = screenToWorldZ(0);
         double maxZ = screenToWorldZ(height);
 
-        guiGraphics.enableScissor(0, 0, width, height);
+        RVP_TacticalViewport.scissor(guiGraphics, 0, 0, width, height);
         double mapCenterX = (mapLeft + mapRight) * 0.5;
         double mapCenterY = (mapTop + mapBottom) * 0.5;
         float pixelsPerBlock = (float) (1.0 / blocksPerPixel);
@@ -2049,8 +2070,7 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
         }
         RVP_ArtilleryFireControlState.Snapshot snapshot = RVP_ArtilleryFireControlState.snapshot();
         Vec3 target = snapshot.target();
-        WeaponUnit weaponUnit = localWeaponUnit();
-        Vec3 hitPos = weaponUnit != null ? weaponUnit.weaponHitPos : null;
+        Vec3 hitPos = RVP_ArtilleryFireControlState.getCurrentImpact();
 
         int targetX = target != null ? Mth.floor(worldToScreenX(target.x)) : Integer.MIN_VALUE;
         int targetY = target != null ? Mth.floor(worldToScreenY(target.z)) : Integer.MIN_VALUE;
@@ -2098,7 +2118,7 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
     /** 放大地图时给正在盘旋的飞机和当前数据链雷达加短签；密集区域优先保留实体轮廓。 */
     private void renderRoleLabels(GuiGraphics g, @Nullable MarkerHit detail) {
         Minecraft mc = Minecraft.getInstance();
-        if (width < 600 || mc.getWindow().getGuiScale() / blocksPerPixel < 2.2 || mc.level == null) return;
+        if (width < 600 || mc.getWindow().getGuiScale() * viewport.scaleX() / blocksPerPixel < 2.2 || mc.level == null) return;
         AbstractVehicle own = localVehicle();
         java.util.UUID relay = own == null ? null :
                 RVP_ClientExternalRadarState.getRelayVehicleUuid(mc.level.dimension().location(), own.getUUID());
@@ -2162,7 +2182,7 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
                 ? horizontalDistance(vehicle.position(), target) : Double.NaN;
         WeaponUnit weaponUnit = localWeaponUnit();
         AbstractVehicleWeapon<?> weapon = weaponUnit != null
-                ? weaponUnit.getCurrentWeapon().orElse(null) : null;
+                ? org.ywzj.rvp.weapon.util.RVP_WeaponLeafResolver.resolveLeaf(weaponUnit).orElse(null) : null;
         int remainAmmo = weapon != null ? weapon.getRemainAmmo() : 0;
         int maxAmmo = weapon != null ? weapon.getMaxCapacity() : 0;
 
@@ -2178,13 +2198,18 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
         int hitColor = snapshot.exact() ? 0xFF62F58A : 0xFFFF5B5B;
         String ammoText = maxAmmo > 0 ? remainAmmo + "/" + maxAmmo : Integer.toString(remainAmmo);
 
-        guiGraphics.drawString(this.font, line1, mapLeft + 8, mapTop + 20, 0xFFE5EDF6, false);
+        int x = mapLeft + layout.margin();
+        int y = mapTop + layout.buttonHeight();
+        int right = mapRight - layout.margin();
+        RVP_MapChrome.line(guiGraphics, font, line1, x, y, right - x, 0xFFE5EDF6);
+        y += RVP_MapChrome.textHeight(font) + 2;
         String solutionLabel = I18n.get("gui.ywzj_rvp.tactical_map.artillery.solution");
-        guiGraphics.drawString(this.font, solutionLabel, mapLeft + 8, mapTop + 30, 0xFF9CA9B8, false);
-        int statusX = mapLeft + 8 + this.font.width(solutionLabel);
-        guiGraphics.drawString(this.font, hitText, statusX, mapTop + 30, hitColor, false);
-        guiGraphics.drawString(this.font, I18n.get("gui.ywzj_rvp.tactical_map.artillery.ammo", ammoText),
-                statusX + this.font.width(hitText), mapTop + 30, 0xFFE5EDF6, false);
+        RVP_MapChrome.line(guiGraphics, font, solutionLabel, x, y, right - x, 0xFF9CA9B8);
+        x += (int) Math.ceil(font.width(solutionLabel) * RVP_MapChrome.textScale());
+        RVP_MapChrome.line(guiGraphics, font, hitText, x, y, right - x, hitColor);
+        x += (int) Math.ceil(font.width(hitText) * RVP_MapChrome.textScale());
+        RVP_MapChrome.line(guiGraphics, font, I18n.get("gui.ywzj_rvp.tactical_map.artillery.ammo", ammoText),
+                x, y, right - x, 0xFFE5EDF6);
     }
 
     private void renderSelectedMarkerInfo(GuiGraphics g, @Nullable MarkerHit hit) {
@@ -2588,7 +2613,7 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
         int visibleRows = radarVisibleRowCount();
         int rowStart = radarRowScroll;
         int rowEnd = Math.min(radarContactRows.size(), rowStart + visibleRows);
-        guiGraphics.enableScissor(x + 1, y + headerHeight + 1, x + width - 7, y + height - 1);
+        RVP_TacticalViewport.scissor(guiGraphics, x + 1, y + headerHeight + 1, x + width - 7, y + height - 1);
         for (int index = rowStart; index < rowEnd; index++) {
             RadarContactRow row = radarContactRows.get(index);
             int rowY = y + headerHeight + 2 + (index - rowStart) * rowHeight;
@@ -4486,6 +4511,7 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
 
         Tesselator tesselator = Tesselator.getInstance();
         BufferBuilder buffer = tesselator.getBuilder();
+        var matrix = guiGraphics.pose().last().pose();
         buffer.begin(outline ? VertexFormat.Mode.TRIANGLE_STRIP : VertexFormat.Mode.TRIANGLE_FAN, DefaultVertexFormat.POSITION_COLOR);
 
         float centerX = (float) worldToScreenX(worldX);
@@ -4495,16 +4521,16 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
         float g = green(color);
         float b = blue(color);
 
-        if (!outline) buffer.vertex(centerX, centerY, 0).color(r, g, b, a).endVertex();
+        if (!outline) buffer.vertex(matrix, centerX, centerY, 0).color(r, g, b, a).endVertex();
         for (int i = 0; i <= segments; i++) {
             float localAngle = localStartDeg + (localEndDeg - localStartDeg) * (i / (float) segments);
             float mapAngle = mapAngleForRadarLocal(vehicleYaw, localAngle);
             float dx = Mth.sin((float) Math.toRadians(mapAngle)), dy = -Mth.cos((float) Math.toRadians(mapAngle));
             if (outline) {
                 float inner = Math.max(0, radiusPixels - 1.2f);
-                buffer.vertex(centerX + dx * inner, centerY + dy * inner, 0).color(r,g,b,a).endVertex();
+                buffer.vertex(matrix, centerX + dx * inner, centerY + dy * inner, 0).color(r,g,b,a).endVertex();
             }
-            buffer.vertex(centerX + dx * radiusPixels, centerY + dy * radiusPixels, 0).color(r,g,b,a).endVertex();
+            buffer.vertex(matrix, centerX + dx * radiusPixels, centerY + dy * radiusPixels, 0).color(r,g,b,a).endVertex();
         }
         tesselator.end();
         RenderSystem.enableCull();
@@ -4519,6 +4545,7 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
 
         Tesselator tesselator = Tesselator.getInstance();
         BufferBuilder buffer = tesselator.getBuilder();
+        var matrix = guiGraphics.pose().last().pose();
         buffer.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
 
         float centerX = (float) worldToScreenX(worldX);
@@ -4536,11 +4563,11 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
         float perpY = dirX;
         float halfWidth = thickness * 0.5f;
 
-        buffer.vertex(centerX - perpX * halfWidth, centerY - perpY * halfWidth, 0).color(r, g, b, a).endVertex();
-        buffer.vertex(centerX + perpX * halfWidth, centerY + perpY * halfWidth, 0).color(r, g, b, a).endVertex();
-        buffer.vertex(centerX + dirX * radiusPixels + perpX * halfWidth, centerY + dirY * radiusPixels + perpY * halfWidth, 0)
+        buffer.vertex(matrix, centerX - perpX * halfWidth, centerY - perpY * halfWidth, 0).color(r, g, b, a).endVertex();
+        buffer.vertex(matrix, centerX + perpX * halfWidth, centerY + perpY * halfWidth, 0).color(r, g, b, a).endVertex();
+        buffer.vertex(matrix, centerX + dirX * radiusPixels + perpX * halfWidth, centerY + dirY * radiusPixels + perpY * halfWidth, 0)
                 .color(r, g, b, a).endVertex();
-        buffer.vertex(centerX + dirX * radiusPixels - perpX * halfWidth, centerY + dirY * radiusPixels - perpY * halfWidth, 0)
+        buffer.vertex(matrix, centerX + dirX * radiusPixels - perpX * halfWidth, centerY + dirY * radiusPixels - perpY * halfWidth, 0)
                 .color(r, g, b, a).endVertex();
 
         tesselator.end();

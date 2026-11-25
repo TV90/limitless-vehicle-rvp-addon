@@ -58,7 +58,8 @@ public final class RVP_AirburstInput {
             return false;
         }
 
-        int dist = RVP_AirburstMeasureUtil.measureDistanceMeters(weaponUnit);
+        // 调用客户端测距器；仅配置该弹种的新开关时，准星上的实体才可作为测距目标。
+        int dist = RVP_AirburstMeasureUtil.measureDistanceMeters(weaponUnit, fuse.isAirburstMeasureEntities());
         int min = fuse.getAirburstMeasureMin();
         int max = fuse.getAirburstMeasureMax();
         if (dist <= min || dist >= max) {

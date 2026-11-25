@@ -242,14 +242,33 @@ public class RVP_AuiVariantScreen extends ApricityScreen {
         if (active) art(row.plaque(), artwork);
     }
 
-    /** 图标按武器的完整注册名查找。资源包可补透明 PNG，一张图用于小槽、候选项和说明。 */
+    /**
+     * 图标优先读武器数据的 {@code workshop_icon}（相对 icons/workshop/，同一张图可被多个武器复用）；
+     * 未配置时回退按武器完整注册名查找。资源包可补透明 PNG，一张图用于小槽、候选项和说明。
+     */
     private String artwork(RVP_WorkshopStation station, int index) {
         if (index < 0 || index >= station.size()) return "";
-        return weaponArt.computeIfAbsent(station.weapon(index).getData().getWeaponId(), id -> {
-            String path = "icons/workshop/" + id.getNamespace() + "/" + id.getPath() + ".png";
-            var resource = new ResourceLocation("apricityui", "apricity/" + path);
-            return minecraft.getResourceManager().getResource(resource).isPresent() ? "/" + path : "";
+        var data = station.weapon(index).getData();
+        return weaponArt.computeIfAbsent(data.getWeaponId(), id -> {
+            String custom = data instanceof RVP_WeaponData rvp ? rvp.getWorkshopIcon() : "";
+            String path = workshopIconPath(custom);
+            if (!path.isEmpty() && workshopIconExists(path)) return "/" + path;
+            path = "icons/workshop/" + id.getNamespace() + "/" + id.getPath() + ".png";
+            return workshopIconExists(path) ? "/" + path : "";
         });
+    }
+
+    /** 把 {@code workshop_icon} 解析为相对 apricityui:apricity/ 的 PNG 路径；非法值返回空串。 */
+    private static String workshopIconPath(String icon) {
+        String value = icon == null ? "" : icon.trim().replace('\\', '/');
+        while (value.startsWith("/")) value = value.substring(1);
+        if (value.isEmpty() || value.contains(":")) return "";
+        return value.startsWith("icons/") ? value : "icons/workshop/" + value;
+    }
+
+    private boolean workshopIconExists(String path) {
+        var resource = new ResourceLocation("apricityui", "apricity/" + path);
+        return minecraft.getResourceManager().getResource(resource).isPresent();
     }
 
     /** 没有原画时显示低对比度的双框标记，保留与正式图标相同的占位尺寸。 */

@@ -3,7 +3,7 @@ package org.ywzj.rvp.client.screen;
 /** 地图投影固定在窗口中央；抽屉、导航和标尺共用同一套 GUI 像素坐标。 */
 record RVP_TacticalLayout(int margin, int buttonHeight, int mapTop, int mapBottom, int mapRight,
                           int tabWidth, int sideLeft, int sideRight, int sideTop, int sideBottom) {
-    static RVP_TacticalLayout of(int width, int height, boolean sidebar, boolean tool) {
+    static RVP_TacticalLayout of(int width, int height, boolean sidebar, boolean tool, int titleWidth) {
         int gap = Math.max(4, Math.min(14, Math.min(width, height) / 52));
         int row = Math.max(19, Math.min(32, height / 21));
         int top = 2 * gap + row, bottom = height - top;
@@ -13,7 +13,8 @@ record RVP_TacticalLayout(int margin, int buttonHeight, int mapTop, int mapBotto
         int cardHeight = tool ? bottom - top : bottomSheet ? Math.min(128, (bottom-top)*54/100)
                 : Math.min(bottom - top, row * 6 + 38);
         int panelTop = bottomSheet ? bottom - cardHeight : top;
-        int tabWidth = Math.max(54, Math.min(92, width / 11));
+        // 页签至少容纳当前语言的标题，为两侧留出与按钮一致的空间。
+        int tabWidth = Math.max(Math.max(54, Math.min(92, width / 11)), titleWidth + 14);
         return new RVP_TacticalLayout(gap, row, top, bottom, width, tabWidth,
                 sidebar ? right-cardWidth : right, right, panelTop, panelTop + cardHeight);
     }

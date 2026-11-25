@@ -85,7 +85,8 @@ public final class RVP_DamagedPartSmokeEmitter {
             return;
         }
         Minecraft mc = Minecraft.getInstance();
-        if (mc.level == null || mc.player == null) {
+        if (mc.level == null || mc.player == null || mc.isPaused()) {
+            // 暂停菜单仍可能收到客户端 Tick；粒子引擎却不前进，继续发射会在返回游戏时瞬间堆出一团烟。
             return;
         }
         if (++tickCounter % EMIT_PERIOD_TICKS != 0) {

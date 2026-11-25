@@ -46,11 +46,14 @@ final class RVP_MapFrost {
         if (backdrop == null || right <= left || bottom <= top) return;
         g.flush();
         float w = g.guiWidth(), h = g.guiHeight();
-        float u = left/w, v = 1-top/h, u2 = right/w, v2 = 1-bottom/h;
+        var pose = g.pose().last().pose();
+        float u = RVP_TacticalViewport.guiX(pose, left) / w;
+        float u2 = RVP_TacticalViewport.guiX(pose, right) / w;
+        float v = 1 - RVP_TacticalViewport.guiY(pose, top) / h;
+        float v2 = 1 - RVP_TacticalViewport.guiY(pose, bottom) / h;
         RenderSystem.setShader(GameRenderer::getPositionTexShader);
         RenderSystem.setShaderTexture(0, backdrop.getColorTextureId());
         RenderSystem.setShaderColor(1,1,1,1);
-        var pose = g.pose().last().pose();
         var buf = Tesselator.getInstance().getBuilder();
         buf.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX);
         buf.vertex(pose,left,top,0).uv(u,v).endVertex();

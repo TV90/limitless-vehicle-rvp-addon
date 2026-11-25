@@ -1,6 +1,5 @@
 package org.ywzj.rvp.client.gui;
 
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.language.I18n;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraftforge.client.gui.overlay.ForgeGui;
@@ -8,7 +7,9 @@ import net.minecraftforge.client.gui.overlay.IGuiOverlay;
 import org.ywzj.rvp.client.state.RVP_ApsHudState;
 import org.ywzj.rvp.config.UIPresetAccess;
 import org.ywzj.rvp.config.UIPresetManager.UIPosition;
+import org.ywzj.vehicle.client.gui.VehicleHudLayout;
 import org.ywzj.vehicle.client.render.util.Color;
+import org.ywzj.vehicle.util.VehicleHudText;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 
 public class RVP_ApsHudOverlay implements IGuiOverlay {
@@ -33,31 +34,26 @@ public class RVP_ApsHudOverlay implements IGuiOverlay {
 
         // UI 预设位置：ui_presets 的 aps_hud 组件可自由配置；未配置用默认位置
         UIPosition pos = UIPresetAccess.apsHud(vehicle);
-        int x = pos != null ? pos.computeX(screenWidth) : DEFAULT_X;
-        int y = pos != null ? pos.computeY(screenHeight)
-                : Math.max(screenHeight / 2 + Math.round(DEFAULT_Y_OFFSET * ((float) screenHeight / org.ywzj.rvp.config.UIPresetManager.UIPosition.REF_HEIGHT)), 15);
         int textColor = state.ammoCurrent() <= 0 ? Color.RED : Color.GREEN;
-
-        guiGraphics.drawString(
-                Minecraft.getInstance().font,
-                "APS:" + state.ammoCurrent() + "/" + state.ammoMax(),
-                x,
-                y,
-                textColor,
-                false
-        );
-
         String reloadText = resolveReloadText(state);
         // 装填类红字（2026-09-29 用户定版）：未满弹即处于装填，行红；满弹行保持常规色
         boolean reloading = state.ammoCurrent() < state.ammoMax();
-        guiGraphics.drawString(
-                Minecraft.getInstance().font,
-                reloadText,
-                x,
-                y + 12,
-                reloading ? Color.RED : textColor,
-                false
-        );
+        // APS 状态文字和本体遥测使用相同的 480 高逻辑画布。
+        try (VehicleHudLayout layout = VehicleHudLayout.begin(guiGraphics)) {
+            int x = pos != null ? pos.computeX(Math.round(layout.width())) : DEFAULT_X;
+            int y = pos != null ? pos.computeY(Math.round(VehicleHudLayout.HEIGHT))
+                    : Math.max(Math.round(VehicleHudLayout.HEIGHT / 2f
+                    + DEFAULT_Y_OFFSET * VehicleHudLayout.HEIGHT / UIPosition.REF_HEIGHT), 15);
+            float scale = pos == null ? 1.0f : Math.max(0.5f, Math.min(2.0f, pos.scale));
+            guiGraphics.pose().pushPose();
+            guiGraphics.pose().translate(x, y, 0);
+            guiGraphics.pose().scale(scale, scale, 1.0f);
+            VehicleHudText.drawString(guiGraphics, "APS:" + state.ammoCurrent() + "/" + state.ammoMax(),
+                    0, 0, textColor, false);
+            VehicleHudText.drawString(guiGraphics, reloadText, 0, VehicleHudLayout.ROW_HEIGHT,
+                    reloading ? Color.RED : textColor, false);
+            guiGraphics.pose().popPose();
+        }
     }
 
     private static String resolveReloadText(RVP_ApsHudState.Snapshot state) {

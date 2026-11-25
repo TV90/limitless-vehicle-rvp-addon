@@ -581,7 +581,7 @@ public class RVP_ClientEvents {
                 && InputConstants.isKeyDown(mc.getWindow().getWindow(), GLFW.GLFW_KEY_SPACE);
         if (artilleryFireKeyDown && !ywzj_rvp$artilleryFireKeyDown
                 && LocalVehiclePlayer.instance != null) {
-            fireCurrentWeaponClient();
+            RVP_ArtilleryFireControlState.requestFire(RVP_ArtilleryFireControlState.getDesignatedTarget());
         }
         ywzj_rvp$artilleryFireKeyDown = artilleryFireKeyDown;
 

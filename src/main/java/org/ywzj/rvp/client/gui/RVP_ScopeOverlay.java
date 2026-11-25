@@ -123,7 +123,10 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
             renderCrosshair(guiGraphics, partialTick, vehicle);
         }
         // 射界
-        renderWeaponEngagementEnvelope(guiGraphics, partialTick, screenWidth, screenHeight, vehicle);
+        try (RVP_PresetHudLayout layout = RVP_PresetHudLayout.begin(guiGraphics)) {
+            // 射界的预设位置与图形共用自动档参考比例。
+            renderWeaponEngagementEnvelope(guiGraphics, partialTick, layout.width(), layout.height(), vehicle);
+        }
         // 目标
         renderAimLockTarget(guiGraphics, partialTick);
         // [RVP] 骨骼俯视图：不渲染，由 show_skeleton 控制
@@ -290,6 +293,11 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
     private static Vec3 crosshairScreenPosition(WeaponUnit weaponUnit, float partialTick) {
         // FCS 失效：观瞄准星固定在屏幕中心（第三人称小圈才回炮管指向，2026-11-14 用户澄清）。
         if (org.ywzj.rvp.client.state.RVP_ClientFcsState.isDestroyed(weaponUnit)) {
+            var window = Minecraft.getInstance().getWindow();
+            return new Vec3(window.getGuiScaledWidth() / 2.0, window.getGuiScaledHeight() / 2.0, 1.0);
+        }
+        // crosshair_style=none：本站不显示落点十字，开镜准星固定屏幕中心。
+        if (weaponUnit.crosshairStyle == WeaponUnitData.CrosshairStyle.NONE) {
             var window = Minecraft.getInstance().getWindow();
             return new Vec3(window.getGuiScaledWidth() / 2.0, window.getGuiScaledHeight() / 2.0, 1.0);
         }

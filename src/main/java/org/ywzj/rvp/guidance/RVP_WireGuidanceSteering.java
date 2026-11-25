@@ -124,8 +124,7 @@ public final class RVP_WireGuidanceSteering {
 
         projectile.setYRot(yaw);
         projectile.setXRot(pitch);
-        projectile.yRotO = yaw;
-        projectile.xRotO = pitch;
+        // 保留 Entity.tick 写入的上一帧角度；渲染器据此在两次服务端转向之间插值。
         projectile.setDeltaMovement(velocity);
         projectile.rvp$markGuidanceWireDirectApplied();
     }

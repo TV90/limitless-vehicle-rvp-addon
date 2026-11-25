@@ -12,9 +12,9 @@ class RVP_TacticalLayoutTest {
             for (int scale = 1; scale <= 6; scale++) {
                 int w = (window[0] + scale - 1) / scale, h = (window[1] + scale - 1) / scale;
                 if (w < 320 || h < 240) continue;
-                var closed=RVP_TacticalLayout.of(w,h,false,false);
+                var closed=RVP_TacticalLayout.of(w,h,false,false,46);
                 for (boolean tool:new boolean[]{false,true}) {
-                    var open=RVP_TacticalLayout.of(w,h,true,tool);
+                    var open=RVP_TacticalLayout.of(w,h,true,tool,46);
                     assertEquals(w,open.mapRight());
                     assertEquals(closed.mapTop(),open.mapTop());
                     assertEquals(closed.mapBottom(),open.mapBottom());
@@ -36,8 +36,9 @@ class RVP_TacticalLayoutTest {
     void headerTabsShareTheirWidthAndLeaveRoomForTheFireAction() {
         for (int w : new int[]{320, 427, 512, 640, 960, 1280, 1920}) {
             for (int h : new int[]{240, 384, 540, 1080}) {
-                var layout = RVP_TacticalLayout.of(w, h, true, false);
+                var layout = RVP_TacticalLayout.of(w, h, true, false, 46);
                 int tab = layout.tabWidth();
+                assertTrue(tab >= 60);
                 assertEquals(tab, layout.titleRight() - layout.margin());
                 assertTrue(tab < Math.min(136, Math.max(65, w / 7)));
                 assertEquals(layout.titleRight() + 2, layout.weaponTabX());

@@ -55,6 +55,15 @@ vec3 viewPosition(vec2 uv, float depth) {
     return point.xyz / (abs(point.w) < 0.000001 ? 0.000001 : point.w);
 }
 
+// 步行视角晃动包含投影平移：单个逆投影点不再是相机原点到该像素的方向。
+// 从同一像素的近、远两个深度点建立射线，兼容正向与反向深度。
+void viewRay(vec2 uv, out vec3 rayOrigin, out vec3 rayDirection) {
+    float nearSample = NearEmptyDepth > 0.5 ? 0.25 : 0.75;
+    rayOrigin = viewPosition(uv, nearSample);
+    vec3 farPoint = viewPosition(uv, 1.0 - nearSample);
+    rayDirection = normalize(farPoint - rayOrigin);
+}
+
 // 分别逆投影近景/DH，再在同一玩家观察空间选择最近表面；w=0 表示天空，w=-1 表示手持物。
 vec4 scenePosition(vec2 uv) {
     float depth = texture(SceneDepth, uv).r;
@@ -67,9 +76,11 @@ vec4 scenePosition(vec2 uv) {
         found = !any(isnan(position)) && !any(isinf(position)) && position.z < 0.0;
     }
     if (HasDistantDepth != 0) {
-        // 从主画面射线换算 DH 的 UV，允许分辨率、视野、矩阵抖动和深度方向不同。
-        vec3 ray = viewPosition(uv, 0.5);
-        vec4 distantClip = DistantProjection * ViewToDistant * vec4(ray, 0.0);
+        // 从主画面射线换算 DH 的 UV；步行晃动带来的投影平移不能混进方向向量。
+        vec3 rayOrigin;
+        vec3 rayDirection;
+        viewRay(uv, rayOrigin, rayDirection);
+        vec4 distantClip = DistantProjection * ViewToDistant * vec4(rayDirection, 0.0);
         if (distantClip.w > 0.000001) {
             vec2 distantUV = distantClip.xy / distantClip.w * 0.5 + 0.5;
             if (all(greaterThanEqual(distantUV, vec2(0.0))) && all(lessThanEqual(distantUV, vec2(1.0)))) {
@@ -93,8 +104,8 @@ vec4 scenePosition(vec2 uv) {
 
 
 // 封闭有限圆柱的视线区间，包住收尖喷流；轴向/径向接近平行时分别处理，防止除零。
-bool plumeInterval(vec3 ray, vec3 origin, vec3 axis, float extent, float radius, out vec2 interval) {
-    vec3 relative = -origin;
+bool plumeInterval(vec3 rayOrigin, vec3 ray, vec3 origin, vec3 axis, float extent, float radius, out vec2 interval) {
+    vec3 relative = rayOrigin - origin;
     float axialOrigin = dot(relative, axis);
     float axialRay = dot(ray, axis);
     vec3 radialOrigin = relative - axis * axialOrigin;
@@ -126,7 +137,7 @@ bool plumeInterval(vec3 ray, vec3 origin, vec3 axis, float extent, float radius,
 }
 
 // 整条喷流只用已配对的近景/DH 深度裁剪；不因喷口被弹体挡住而丢弃实际露出的尾段。
-vec3 plumeRadiance(vec3 ray, float sceneDistance, vec2 rayUV, vec2 intensities) {
+vec3 plumeRadiance(vec3 rayOrigin, vec3 ray, float sceneDistance, vec2 rayUV, vec2 intensities) {
     vec3 origin = PlumeOriginLength.xyz;
     float extent = PlumeOriginLength.w;
     vec3 axis = normalize(PlumeAxisRadius.xyz);
@@ -143,14 +154,14 @@ vec3 plumeRadiance(vec3 ray, float sceneDistance, vec2 rayUV, vec2 intensities) 
         if (clip.w <= 0.00001) { return vec3(0.0); }
         vec2 pixelDelta = (rayUV - (clip.xy / clip.w * 0.5 + 0.5)) * ScreenSize;
         float coverage = exp(-dot(pixelDelta, pixelDelta) * 0.7);
-        float distanceAlong = dot(ray, center);
+        float distanceAlong = dot(ray, center - rayOrigin);
         float axialFacing = abs(dot(ray, axis));
         float frontExtent = extent * 0.5 * axialFacing + radius * sqrt(max(0.0, 1.0 - axialFacing * axialFacing));
         if (distanceAlong <= 0.0 || sceneDistance < distanceAlong - frontExtent - 0.01) { return vec3(0.0); }
         return max(PlumeCoreColor * intensities.x, PlumeOuterColor * intensities.y) * coverage;
     }
     vec2 interval;
-    if (!plumeInterval(ray, origin, axis, extent, radius, interval)) { return vec3(0.0); }
+    if (!plumeInterval(rayOrigin, ray, origin, axis, extent, radius, interval)) { return vec3(0.0); }
     interval.y = min(interval.y, sceneDistance - 0.008);
     if (interval.y <= interval.x) { return vec3(0.0); }
     float stepLength = (interval.y - interval.x) / 20.0;
@@ -158,7 +169,7 @@ vec3 plumeRadiance(vec3 ray, float sceneDistance, vec2 rayUV, vec2 intensities) 
     float outer = 0.0;
     float phase = Time * PlumeMotion.x + PlumeEmission.z * 6.283185;
     for (int step = 0; step < 20; step++) {
-        vec3 relative = ray * (interval.x + (float(step) + 0.5) * stepLength) - origin;
+        vec3 relative = rayOrigin + ray * (interval.x + (float(step) + 0.5) * stepLength) - origin;
         float axial = dot(relative, axis);
         float u = clamp(axial / extent, 0.0, 1.0);
         // 轮廓与波动始终不超过Java包围圆柱，调参后墙体遮挡与裁剪仍使用真实尺寸。
@@ -207,9 +218,12 @@ float visiblePlumeEmission() {
             if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) { continue; }
             vec4 surface = scenePosition(uv);
             if (surface.w < -0.5) { continue; }
-            float limit = surface.w > 0.5 ? length(surface.xyz) : 1.0e20;
+            vec3 rayOrigin;
+            vec3 rayDirection;
+            viewRay(uv, rayOrigin, rayDirection);
+            float limit = surface.w > 0.5 ? dot(surface.xyz - rayOrigin, rayDirection) : 1.0e20;
             // 使用单位辐射求真实几何覆盖，不让外围橙焰亮度串改广域光晕的可见比例。
-            vec3 emission = plumeRadiance(normalize(point), limit, uv, vec2(1.0));
+            vec3 emission = plumeRadiance(rayOrigin, rayDirection, limit, uv, vec2(1.0));
             float peak = max(emission.r, max(emission.g, emission.b));
             slice = max(slice, clamp(peak, 0.0, 1.0));
         }
@@ -220,10 +234,10 @@ float visiblePlumeEmission() {
 
 // 在喷口深度的相机朝向平面上按世界半径求径向扩散，保留橙色色比，边缘平滑归零。
 // 这是可见发光源的光晕，不是额外的五百格烟雾体积；只有源本身可见时才叠加。
-vec3 worldHalo(vec3 ray) {
+vec3 worldHalo(vec3 rayOrigin, vec3 ray) {
     float visible = texture(PlumeVisibility, vec2(0.5)).r;
     if (visible <= 0.0001 || PlumeHaloIntensity <= 0.0 || PlumeHaloRadius <= 0.0 || PlumeOriginLength.z >= -0.0001 || ray.z >= -0.0001) { return vec3(0.0); }
-    vec3 point = ray * (PlumeOriginLength.z / ray.z);
+    vec3 point = rayOrigin + ray * ((PlumeOriginLength.z - rayOrigin.z) / ray.z);
     float radius = clamp(PlumeHaloRadius, 0.0001, 8192.0);
     vec2 delta = point.xy - PlumeOriginLength.xy;
     float radialSq = dot(delta, delta) / (radius * radius);
@@ -242,11 +256,13 @@ void main() {
     if (OutputMode == 1 && PlumeHaloRadius <= 0.0) { fragColor = vec4(0.0); return; }
     vec4 surface = scenePosition(screenUV);
     if (surface.w < -0.5) { fragColor = vec4(0.0); return; }
-    vec3 ray = normalize(viewPosition(screenUV, 0.5));
-    if (OutputMode == 4) { fragColor = vec4(worldHalo(ray), 0.0); return; }
+    vec3 rayOrigin;
+    vec3 rayDirection;
+    viewRay(screenUV, rayOrigin, rayDirection);
+    if (OutputMode == 4) { fragColor = vec4(worldHalo(rayOrigin, rayDirection), 0.0); return; }
     // 天空不使用近景远平面裁掉远程克隆喷流；有表面时仍严格按真实深度截断。
-    float sceneDistance = surface.w > 0.5 ? length(surface.xyz) : 1.0e20;
-    vec3 emission = clamp(plumeRadiance(ray, sceneDistance, screenUV, PlumeEmission.xy), vec3(0.0), vec3(60000.0));
+    float sceneDistance = surface.w > 0.5 ? dot(surface.xyz - rayOrigin, rayDirection) : 1.0e20;
+    vec3 emission = clamp(plumeRadiance(rayOrigin, rayDirection, sceneDistance, screenUV, PlumeEmission.xy), vec3(0.0), vec3(60000.0));
     if (OutputMode == 0) {
         // 原始辐射量供显卡诊断回读，生产显示使用模式 2，光晕输入使用模式 1。
         emission *= clamp(PlumeTransition, 0.0, 1.0);

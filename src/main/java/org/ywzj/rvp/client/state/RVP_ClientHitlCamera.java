@@ -15,6 +15,8 @@ public final class RVP_ClientHitlCamera {
 
     private static final float POSITION_TAU = 0.05f;
     private static final float VIEW_ROTATION_TAU = 0.038f;
+    /** 人在回路鼠标操控也需要帧内轻微追随，消除 20 Hz 舵量台阶。 */
+    private static final float MOUSE_ROTATION_TAU = 0.028f;
     /** SACLOS+TV designate: softer follow than instant snap, tighter than passive VIEW. */
     private static final float DESIGNATE_ROTATION_TAU = 0.072f;
     /** 镜头沿弹轴前移量（2026-09-19 用户定版 2 米）：相机脱离弹体原点的尾焰/烟团，
@@ -119,10 +121,16 @@ public final class RVP_ClientHitlCamera {
         float orientYaw;
         float orientPitch;
         if (RVP_ClientHitlState.isMouseSteering()) {
-            orientYaw = bodyYaw;
-            orientPitch = bodyPitch;
-            displayYaw = bodyYaw;
-            displayPitch = bodyPitch;
+            if (!poseValid || dtSeconds <= 0f) {
+                displayYaw = bodyYaw;
+                displayPitch = bodyPitch;
+            } else {
+                float alpha = 1f - (float) Math.exp(-dtSeconds / MOUSE_ROTATION_TAU);
+                displayYaw = Mth.wrapDegrees(displayYaw + Mth.wrapDegrees(bodyYaw - displayYaw) * alpha);
+                displayPitch += (bodyPitch - displayPitch) * alpha;
+            }
+            orientYaw = displayYaw;
+            orientPitch = displayPitch;
         } else if (RVP_ClientHitlState.isDesignateMode()) {
             seekerYaw = bodyYaw;
             seekerPitch = bodyPitch;

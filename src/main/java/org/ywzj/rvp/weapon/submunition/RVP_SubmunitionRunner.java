@@ -20,21 +20,23 @@ import java.util.Set;
 public final class RVP_SubmunitionRunner {
 
     private final List<WaveState> waves = new ArrayList<>();
+    private final double gpsReleaseMaxDistanceSquared;
     private boolean globallyDisabled;
 
-    private RVP_SubmunitionRunner(List<WaveState> waves) {
+    private RVP_SubmunitionRunner(List<WaveState> waves, double gpsReleaseMaxDistance) {
         this.waves.addAll(waves);
+        this.gpsReleaseMaxDistanceSquared = gpsReleaseMaxDistance * gpsReleaseMaxDistance;
     }
 
     public static RVP_SubmunitionRunner create(RVP_SubmunitionData data, int submunitionDepth) {
         if (data == null || !data.isEnabled()) {
-            return new RVP_SubmunitionRunner(List.of());
+            return new RVP_SubmunitionRunner(List.of(), 0.0D);
         }
         List<WaveState> states = new ArrayList<>();
         for (RVP_SubmunitionReleaseData release : data.getReleases()) {
             states.add(new WaveState(release));
         }
-        return new RVP_SubmunitionRunner(states);
+        return new RVP_SubmunitionRunner(states, data.getGpsReleaseMaxDistance());
     }
 
     public void disableAll() {
@@ -99,12 +101,19 @@ public final class RVP_SubmunitionRunner {
         }
     }
 
+    /** 配置了距离时，只有当本发装订了 GPS 坐标且触发点在球形范围内才放行。 */
+    public boolean gpsRangeAllows(@Nullable Vec3 target, Vec3 position) {
+        return gpsReleaseMaxDistanceSquared == 0.0D
+                || target != null && target.distanceToSqr(position) <= gpsReleaseMaxDistanceSquared;
+    }
+
     /** @return true if parent should be discarded this tick */
-    public boolean tickInFlight(RVP_BaseBullet parent) {
+    public boolean tickInFlight(RVP_BaseBullet parent, @Nullable Vec3 gpsTarget) {
         if (globallyDisabled || parent.level().isClientSide()) {
             return false;
         }
         boolean discardParent = false;
+        boolean gpsRangeAllowed = gpsRangeAllows(gpsTarget, parent.position());
         for (WaveState wave : waves) {
             if (!wave.config.getTriggers().contains(RVP_EnumSubmunitionTrigger.IN_FLIGHT)) {
                 continue;
@@ -114,6 +123,9 @@ public final class RVP_SubmunitionRunner {
             }
             if (wave.sprinkleTimer > 0) {
                 wave.sprinkleTimer--;
+                continue;
+            }
+            if (!gpsRangeAllowed) {
                 continue;
             }
             int perTick = wave.config.getPerTick();

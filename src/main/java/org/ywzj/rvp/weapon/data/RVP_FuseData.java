@@ -37,6 +37,10 @@ public class RVP_FuseData {
     @SerializedName("airburst_measure_max")
     private int airburstMeasureMax = 300;
 
+    /** 定距空爆测距是否允许准星命中实体；默认 false，保持原有仅方块测距行为。 */
+    @SerializedName("airburst_measure_entities")
+    private boolean airburstMeasureEntities = false;
+
     /** 空爆专用爆炸伤害；未写时使用 {@code detonate_data.explosion_data.damage}。 */
     @SerializedName("airburst_explosion_damage")
     private Float airburstExplosionDamage;
@@ -230,6 +234,11 @@ public class RVP_FuseData {
 
     public int getAirburstMeasureMax() {
         return airburstMeasureMax > 0 ? airburstMeasureMax : 300;
+    }
+
+    /** 当前弹种是否允许以实体碰撞箱入射点装订定距空爆。 */
+    public boolean isAirburstMeasureEntities() {
+        return airburstMeasureEntities;
     }
 
     public Float getAirburstExplosionDamage() {

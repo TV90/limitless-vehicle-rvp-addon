@@ -11,19 +11,18 @@ import java.util.Locale;
 public final class RVP_HitlInstrumentRenderer {
     private RVP_HitlInstrumentRenderer() { }
 
-    /** 数值缺失或无穷大时显示横线，不用伪造距离、速度。 */
+    /** 数值缺失或无穷大时显示横线，不用伪造距离。 */
     private static String number(double value, String pattern, String unit) {
         return Double.isFinite(value) ? String.format(Locale.ROOT, pattern, value) + unit : "--";
     }
 
     /** 消费既有飞行和观瞄数据；本部件不查询区块、修改制导或发送网络包。 */
-    public static void draw(GuiGraphics graphics, Font font, double speed, double altitude, double range,
+    public static void draw(GuiGraphics graphics, Font font, double altitude, double range,
                             double seconds, double turnRate, String video, String control, String track,
                             boolean airburst, float zoom) {
         float width = graphics.guiWidth(), height = graphics.guiHeight();
         if (width <= 0 || height <= 0) return;
         // 调用成对读数绘制，侧栏远离中央操作区域，宽屏仍按视口边缘定位。
-        pair(graphics, font, width * 0.16F, height * 0.43F, "SPD", number(speed, "%.0f", " km/h"));
         pair(graphics, font, width * 0.16F, height * 0.55F, "ALT", number(altitude, "%.0f", " m"));
         pair(graphics, font, width * 0.16F, height * 0.67F, "ZOOM",
                 "x" + String.format(Locale.ROOT, "%.1f", zoom));

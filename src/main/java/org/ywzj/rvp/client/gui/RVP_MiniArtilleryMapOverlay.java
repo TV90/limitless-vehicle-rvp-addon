@@ -23,8 +23,8 @@ import org.ywzj.rvp.network.S2CMarkedBlockSync;
 import org.ywzj.rvp.util.RVP_RadarContactHelper;
 import org.ywzj.rvp.weapon.RVP_RocketBallistics;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
-import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
+import org.ywzj.rvp.weapon.util.RVP_WeaponLeafResolver;
 import org.ywzj.vehicle.client.render.util.GuiHelper;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.RenderHelper;
@@ -171,37 +171,34 @@ public final class RVP_MiniArtilleryMapOverlay implements IGuiOverlay {
             if (operatorUnit.needPower) {
                 return null;
             }
-            // 调用目的：扫本车找带「炮兵地图」弹种（artillery_map + 火箭/炸弹）的武器站，
+            // 调用目的：扫本车找带「炮兵地图」弹种的武器站，
             // 找到则在该观瞄视角下照样解算火箭 CCIP 落点（与常规炮兵模式同一条路径）。
             for (PartUnit<?> part : vehicle.getPartUnits()) {
                 if (!(part instanceof WeaponUnit unit)) {
                     continue;
                 }
-                AbstractVehicleWeapon<?> partWeapon = unit.getCurrentWeapon().orElse(null);
+                // 调用多弹种槽叶子解析器，识别 D-30 当前选中的高爆弹而非外层包装武器。
+                AbstractVehicleWeapon<?> partWeapon = RVP_WeaponLeafResolver.resolveLeaf(unit).orElse(null);
                 if (!(partWeapon instanceof RVP_WeaponBase partRvpWeapon)) {
                     continue;
                 }
                 RVP_WeaponData partData = partRvpWeapon.getData();
-                RVP_EnumWeaponKind partKind = partData.getWeaponKind();
-                if (!partData.getMiscData().isArtilleryMap()
-                        || (partKind != RVP_EnumWeaponKind.ROCKET && partKind != RVP_EnumWeaponKind.BOMB)
-                        || partData.getWeaponId() == null) {
+                if (!RVP_RocketBallistics.supportsArtilleryMap(partData) || partData.getWeaponId() == null) {
                     continue;
                 }
                 return new Context(vehicle, operatorUnit, unit, partData, partData.getWeaponId(), true);
             }
             // 本车没有炮兵弹种（如 T-84BM 二号位 12.7mm 手摇机枪）时不显示本框：
-            // 炮兵地图只服务于带火箭/炸弹炮兵弹种的载具，纯机枪车的观瞄视角不该出现它。
+            // 没有启用 artillery_map 的载具不显示本框。
             return null;
         }
-        AbstractVehicleWeapon<?> currentWeapon = operatorUnit.getCurrentWeapon().orElse(null);
+        // 调用多弹种槽叶子解析器，避免 F 切换组的炮兵弹被包装层遮蔽。
+        AbstractVehicleWeapon<?> currentWeapon = RVP_WeaponLeafResolver.resolveLeaf(operatorUnit).orElse(null);
         if (!(currentWeapon instanceof RVP_WeaponBase weapon)) {
             return null;
         }
         RVP_WeaponData data = weapon.getData();
-        RVP_EnumWeaponKind kind = data.getWeaponKind();
-        if (!data.getMiscData().isArtilleryMap()
-                || (kind != RVP_EnumWeaponKind.ROCKET && kind != RVP_EnumWeaponKind.BOMB)) {
+        if (!RVP_RocketBallistics.supportsArtilleryMap(data)) {
             return null;
         }
         WeaponUnit launchUnit = currentWeapon.getWeaponUnit();

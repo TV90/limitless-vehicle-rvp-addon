@@ -12,6 +12,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.entity.projectile.RVP_BulletEntity;
+import org.ywzj.rvp.entity.projectile.RVP_RocketEntity;
 import org.ywzj.rvp.weapon.data.RVP_EffectsData;
 import org.ywzj.vehicle.client.resource.ClientAssetsManager;
 import org.ywzj.vehicle.client.resource.InternalAssets;
@@ -39,24 +40,43 @@ final class VehicleProjectileRenderLogic {
 
     static void renderBullet(RVP_BulletEntity bullet, float partialTicks, PoseStack poseStack,
                              MultiBufferSource bufferSource, int packedLight) {
+        // 调用共用曳光绘制，机炮弹沿用既有口径和颜色。
+        double flown = bullet.getPosition(partialTicks).distanceTo(bullet.getStartPos());
+        drawTracer(bullet, partialTicks, poseStack, bufferSource, packedLight, flown,
+                bullet.getTracerCaliber(), bullet.getTracerLengthScale(),
+                bullet.getTracerR(), bullet.getTracerG(), bullet.getTracerB());
+        // 原机枪型弹体只绘制曳光；固定火炮显式提供 display 时还需绘制模型。
+        ResourceLocation weaponId = bullet.getWeaponId();
+        if (weaponId != null && ClientAssetsManager.INSTANCE.getWeaponDisplay(weaponId)
+                .map(display -> display.getModel() != null && display.getTexture() != null)
+                .orElse(false)) {
+            renderBedrockProjectile(bullet, bullet.getYRot(), partialTicks, poseStack, bufferSource,
+                    packedLight, InternalAssets.BASIC_BULLET_MODEL, InternalAssets.BASIC_BULLET_TEXTURE);
+        }
+    }
+
+    private static void drawTracer(AmmoEntity bullet, float partialTicks, PoseStack poseStack,
+                                   MultiBufferSource bufferSource, int packedLight, double flown,
+                                   float caliber, float lengthScale, float red, float green, float blue) {
+        if (lengthScale <= 0f) {
+            return;
+        }
         BedrockModel model = BedrockModelLoader.getModel(InternalAssets.BASIC_BULLET_MODEL);
         poseStack.pushPose();
         // 调用本项目弹体视觉口径入口：曳光宽度使用 tracer_caliber，不混用炮口烟/物理口径 caliber。
-        float width = Math.min(0.04f * bullet.getTracerCaliber() / 7.62f, 0.2f);
-        Vec3 bulletPosition = bullet.getPosition(partialTicks);
-        double disToEye = bulletPosition.distanceTo(bullet.getStartPos());
+        float width = Math.min(0.04f * caliber / 7.62f, 0.2f);
         // 曳光长度 = 0.3 × 当前速度 × effects_data.tracer_length_scale，上限 = 已飞距离 × 0.8
-        double trailLength = RVP_EffectsData.resolveTracerLength(bullet.getDeltaMovement().length(), disToEye,
-                bullet.getTracerLengthScale());
+        double trailLength = RVP_EffectsData.resolveTracerLength(bullet.getDeltaMovement().length(), flown,
+                lengthScale);
         poseStack.mulPose(Axis.YP.rotationDegrees(Mth.lerp(partialTicks, bullet.yRotO, bullet.getYRot()) - 180.0F));
         poseStack.mulPose(Axis.XP.rotationDegrees(Mth.lerp(partialTicks, bullet.xRotO, bullet.getXRot())));
         poseStack.translate(0, 0, trailLength / 2.0);
         poseStack.scale(width, width, (float) trailLength);
-        if (disToEye > 1.0) {
+        if (flown > 1.0) {
             RenderType type = RenderType.energySwirl(InternalAssets.BASIC_BULLET_TEXTURE, 15, 15);
             VertexConsumer builder = bufferSource.getBuffer(type);
             model.renderToBuffer(poseStack, builder, packedLight, OverlayTexture.NO_OVERLAY,
-                    bullet.getTracerR(), bullet.getTracerG(), bullet.getTracerB(), 1f);
+                    red, green, blue, 1f);
         }
         poseStack.popPose();
     }
@@ -64,6 +84,20 @@ final class VehicleProjectileRenderLogic {
     static void renderBedrockProjectile(AmmoEntity ammo, float entityYaw, float partialTick, PoseStack poseStack,
                                         MultiBufferSource bufferSource, int packedLight,
                                         ResourceLocation fallbackModel, ResourceLocation fallbackTexture) {
+        if (ammo instanceof RVP_RocketEntity rocket) {
+            // 调用弹药配置查询。仅无动力曲射弹同时配置粒径和长度时绘制曳光。
+            var data = rocket.getResolvedWeaponConfig();
+            if (data != null && !data.getProjectileData().hasRocketEngine()) {
+                var effects = data.getEffectsData();
+                if (effects.hasTracerCaliberOverride() && effects.hasTracerLengthScaleOverride()) {
+                    // 曲射弹不保存机枪弹的出生点。以起飞帧速度估算初始曳光长度上限。
+                    double flown = rocket.getDeltaMovement().length() * (rocket.tickCount + partialTick);
+                    drawTracer(rocket, partialTick, poseStack, bufferSource, packedLight, flown,
+                            effects.getTracerCaliber(), effects.getTracerLengthScale(),
+                            effects.getTracerR(), effects.getTracerG(), effects.getTracerB());
+                }
+            }
+        }
         poseStack.pushPose();
         Vec3 root = Vec3.ZERO;
         // 调用专用显示归属门，虚拟显示已经统一插值，模型不能再比喷口/HUD 多平滑一次。
@@ -121,6 +155,10 @@ final class VehicleProjectileRenderLogic {
                 modelInstance.applyPose(BLENDER.blend(modelInstance.getBindPose(), runner.evaluate()));
             }
             ammoModel.renderToBuffer(modelInstance, poseStack, bufferSource, texture, packedLight);
+        } else if (ammoModel != null && ammoModel.hasBakedModel()) {
+            // 机枪弹不预建弹体实例；按帧创建一次独立姿态，避免退回不兼容的 v1 网格路径。
+            BakedModelInstance temporaryInstance = ammoModel.createBakedInstance();
+            ammoModel.renderToBuffer(temporaryInstance, poseStack, bufferSource, texture, packedLight);
         } else {
             // fallback: v1 路径（无烘焙模型时，如 fallbackModel）
             BedrockModel model = ammoModel != null ? ammoModel : BedrockModelLoader.getModel(fallbackModel);

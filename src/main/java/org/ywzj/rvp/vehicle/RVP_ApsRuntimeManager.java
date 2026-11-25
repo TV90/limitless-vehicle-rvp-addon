@@ -307,7 +307,7 @@ public final class RVP_ApsRuntimeManager {
             if (toTarget.lengthSqr() <= 1.0E-8) {
                 continue;
             }
-            Vec3 front = RVP_JammingRuntime.resolveFacing(vehicle, cfg.facingPart(), cfg.facingYawDeg());
+            Vec3 front = RVP_JammingRuntime.resolveHorizontalFacing(vehicle, cfg.facingPart(), cfg.facingYawDeg());
             if (front == null || front.lengthSqr() <= 1.0E-8) {
                 continue;
             }

@@ -247,6 +247,7 @@ public final class RVP_VirtualMissileState {
         // 调用实体运动记忆编码器，保存下一刻实际制导和二脉冲判定仍需使用的状态。
         tag.put("kinematics", kinematics.save());
         tag.put("runtimeData", runtimeData.copy());
+        tag.putBoolean("guidanceTargetOverridePending", guidanceTargetOverridePending);
         tag.putInt("originalEntityId", originalEntityId);
         tag.putInt("coldLaunchTimeTick", coldLaunchTimeTick);
         tag.putLong("enteredGameTime", enteredGameTime);
@@ -300,6 +301,7 @@ public final class RVP_VirtualMissileState {
                     Math.max(tag.getInt("restoreAttemptCount"), 0), tag.getLong("restoreRequestedGameTime"));
             // 额外运行态是可选 NBT；原有 GPS 记录保持可读，不迁移武器 JSON 或改写历史存档。
             state.runtimeData = tag.getCompound("runtimeData").copy();
+            state.guidanceTargetOverridePending = tag.getBoolean("guidanceTargetOverridePending");
             state.radarUplinkTargeting = state.runtimeData.getBoolean("radarUplinkTargeting");
             // 最终统一执行有限坐标、寿命、实现 ID 等结构校验。
             return validRuntimeExtension(state.runtimeData) && finiteRuntimeData(state.runtimeData, 0)

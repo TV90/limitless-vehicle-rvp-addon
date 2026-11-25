@@ -27,6 +27,7 @@ import org.ywzj.vehicle.client.resource.vehicle.SpecialBoneEffect;
 import org.ywzj.vehicle.custom.serialize.GsonUtil;
 import org.ywzj.vehicle.client.resource.vehicle.VehicleBedrockModel;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
+import org.ywzj.vehicle.entity.misc.VehiclePart;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.vehicle.pojo.Bolt;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
@@ -262,9 +263,98 @@ public final class RVP_CustomMountRenderLogic {
         }
     }
 
+    /**
+     * 脱落炮塔只有自己的部件副本，本体的整车挂架渲染入口不再执行。
+     * 在残件模型同一坐标系内重画其子武器当前选中的外置挂架。
+     */
+    public static void renderDetachedPart(VehiclePart part, PoseStack poseStack,
+                                          MultiBufferSource bufferSource, int packedLight) {
+        PartUnit<?> root = part.getPartUnit();
+        BakedModelInstance partModel = part.getVehicleModelInstance();
+        if (root == null || partModel == null) {
+            return;
+        }
+        var selectedMounts = org.ywzj.rvp.client.state.RVP_ClientWreckHiddenBonesCache.detachedMounts(part);
+        for (RVP_CustomMountConfig config : RVP_CustomMountConfigCache.get(part.getVehicleId())) {
+            if (selectedMounts != null) {
+                if (!config.weaponId().toString().equals(selectedMounts.getString(config.partUnitId()))) continue;
+            } else {
+                // 老存档没有母车快照时，沿用本体恢复出的残件状态。
+                if (!(findDetachedUnit(root, config.partUnitId()) instanceof WeaponUnit weaponUnit)) continue;
+                AbstractVehicleWeapon<?> current = resolveCurrentWeapon(weaponUnit);
+                if (current == null || current.getData() == null
+                        || !config.weaponId().equals(current.getData().getWeaponId())) continue;
+            }
+            VehicleBedrockModel attachmentModel = getAttachmentModel(config.model());
+            if (attachmentModel == null || !attachmentModel.hasBakedModel()) {
+                continue;
+            }
+            Matrix4f transform;
+            if (!config.attachPartUnitId().isEmpty()) {
+                PartUnit<?> anchor = findDetachedUnit(root, config.attachPartUnitId());
+                if (!(anchor instanceof WeaponUnit anchorUnit)) {
+                    continue;
+                }
+                VehicleCubeGroup group = resolveMountAnchorGroup(anchorUnit);
+                if (group == null) {
+                    continue;
+                }
+                Vec3 point = group.pivotOffset;
+                if (!group.cubeOBBs.isEmpty()) {
+                    point = point.add(group.cubeOBBs.get(0).position);
+                }
+                transform = new Matrix4f().translation((float) point.x, (float) point.y, (float) point.z);
+            } else {
+                int boneIndex = partModel.getIndex(config.attachBone());
+                if (boneIndex < 0) {
+                    continue;
+                }
+                transform = partModel.getGlobalTransform(boneIndex);
+            }
+            BakedModelInstance attachment = attachmentModel.createBakedInstance();
+            poseStack.pushPose();
+            try {
+                poseStack.mulPoseMatrix(transform);
+                RVP_CustomMountConfig.Vec3fConfig offset = config.offset();
+                poseStack.translate(offset.x(), offset.y(), offset.z());
+                RVP_CustomMountConfig.Vec3fConfig rotation = config.rotationDeg();
+                poseStack.mulPose(Axis.XP.rotationDegrees(rotation.x()));
+                poseStack.mulPose(Axis.YP.rotationDegrees(rotation.y()));
+                poseStack.mulPose(Axis.ZP.rotationDegrees(rotation.z()));
+                RVP_CustomMountConfig.Vec3fConfig scale = config.scale();
+                poseStack.scale(scale.x(), scale.y(), scale.z());
+                attachmentModel.renderToBuffer(attachment, poseStack, bufferSource, config.texture(), packedLight);
+            } finally {
+                poseStack.popPose();
+            }
+        }
+    }
+
+    @Nullable
+    private static PartUnit<?> findDetachedUnit(PartUnit<?> root, String id) {
+        if (root.getId().equals(id)) {
+            return root;
+        }
+        for (PartUnit<?> child : root.getAttPartUnits()) {
+            if (child.isDetachable()) continue;
+            PartUnit<?> found = findDetachedUnit(child, id);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
+    }
+
     public static boolean shouldSuppressDefaultWeaponDisplay(WeaponUnit weaponUnit) {
         ResolvedMount resolved = resolveForCurrentWeapon(weaponUnit);
         return resolved != null && resolved.config().replaceWeaponDisplay();
+    }
+
+    private static boolean isOnDetachedStation(WeaponUnit unit) {
+        for (WeaponUnit current = unit; current != null; current = current.getParentWeaponUnit()) {
+            if (current.isDetached()) return true;
+        }
+        return false;
     }
 
     private static List<ResolvedMount> resolveMounts(AbstractVehicle vehicle, List<RVP_CustomMountConfig> configs) {
@@ -272,7 +362,8 @@ public final class RVP_CustomMountRenderLogic {
         List<ResolvedMount> resolved = new ArrayList<>(configs.size());
         Map<GroupKey, List<ResolvedMount>> grouped = new HashMap<>(Math.max(4, configs.size()));
         for (RVP_CustomMountConfig config : configs) {
-            if (!(vehicle.getPartUnit(config.partUnitId()).orElse(null) instanceof WeaponUnit weaponUnit)) {
+            if (!(vehicle.getPartUnit(config.partUnitId()).orElse(null) instanceof WeaponUnit weaponUnit)
+                    || isOnDetachedStation(weaponUnit)) {
                 continue;
             }
             WeaponResolution resolution = resolveCurrentWeaponForDisplay(weaponUnit);

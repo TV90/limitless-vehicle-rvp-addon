@@ -298,6 +298,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     protected double selfDestructTravelled;
   @Nullable
     protected RVP_SubmunitionRunner submunitionRunner;
+    /** 本发装订或雷达上行的 GPS 原始坐标，独立于散布后的制导瞄准点。 */
+    @Nullable private Vec3 submunitionGpsTarget;
     /** Child projectiles increment depth; blocks chains beyond {@link org.ywzj.rvp.weapon.submunition.RVP_SubmunitionSpawner#MAX_DEPTH}. */
     protected int submunitionDepth;
     /** 弹体初始化或子体释放时固化的风向单位向量；来源由 wind_data.direction_mode 决定。 */
@@ -499,6 +501,26 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
 
     public int rvp$getSightDisguiseEndTick() {
         return sightDisguiseEndTick;
+    }
+
+    /**
+     * 模型、曳光和轨迹粒子共用的观瞄出弹视觉平移；两端均从同一个伪装出生点求差。
+     */
+    public Vec3 rvp$getSightDisguiseVisualOffset(float partialTick) {
+        Vec3 offset = sightDisguiseRenderOffset;
+        int startTick = sightDisguiseTicks;
+        int endTick = sightDisguiseEndTick;
+        if (offset == null && sightFireDisguise != null) {
+            offset = sightFireDisguise.visualMuzzle().subtract(sightFireDisguise.actualSpawn());
+            startTick = sightFireDisguise.disguiseTicks();
+            endTick = startTick + Math.max(1, sightFireDisguise.blendTicks());
+        }
+        if (offset == null || tickCount + partialTick >= endTick) {
+            return Vec3.ZERO;
+        }
+        float t = Mth.clamp((tickCount + partialTick - startTick)
+                / (float) Math.max(1, endTick - startTick), 0.0f, 1.0f);
+        return offset.scale(1.0f - t * t * (3.0f - 2.0f * t));
     }
 
     @Nullable
@@ -978,10 +1000,24 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         }
     }
 
-    protected boolean trySubmunitionTrigger(RVP_EnumSubmunitionTrigger trigger, @Nullable Vec3 anchor) {
+    public void setSubmunitionGpsTarget(@Nullable Vec3 target) {
+        if (rvpData != null && rvpData.getSubmunitionData().getGpsReleaseMaxDistance() > 0f) {
+            submunitionGpsTarget = target;
+        }
+    }
+
+    private boolean submunitionGpsRangeAllows(Vec3 triggerPosition) {
+        return submunitionRunner == null || submunitionRunner.gpsRangeAllows(submunitionGpsTarget, triggerPosition);
+    }
+
+    protected boolean trySubmunitionTrigger(RVP_EnumSubmunitionTrigger trigger, Vec3 triggerPosition,
+                                            @Nullable Vec3 anchor) {
         if (submunitionRunner == null || level().isClientSide()) {
             RVP_TopAttackDebug.noteSpawn(this, "SUBMUN skip runner=nullOrClient runner="
                     + (submunitionRunner != null) + " trigger=" + trigger);
+            return false;
+        }
+        if (!submunitionGpsRangeAllows(triggerPosition)) {
             return false;
         }
         boolean fired = submunitionRunner.fireTrigger(this, trigger, anchor);
@@ -2076,6 +2112,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         tag.putDouble("rvpAttackYawRateDeg", attackYawRateDeg);
         // 调用本项目向量存档工具：保存冷发射期间仍需使用的发射瞬间载机速度快照。
         writeRemoteVec3(tag, "rvpLaunchVehicleVelocity", launchVehicleVelocity);
+        writeRemoteVec3(tag, "rvpSubmunitionGpsTarget", submunitionGpsTarget);
     }
 
     /** 缺少运行态字段时 NBT 自动读零；这不是武器 JSON schema 迁移。 */
@@ -2089,6 +2126,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         restoreAttackAngleRates(tag.getDouble("rvpAttackPitchRateDeg"), tag.getDouble("rvpAttackYawRateDeg"));
         // 调用本项目向量读取工具：兼容没有该运行态字段的旧存档，缺失时回退为零速度。
         captureLaunchVehicleVelocity(readRemoteVec3(tag, "rvpLaunchVehicleVelocity"));
+        submunitionGpsTarget = readRemoteVec3(tag, "rvpSubmunitionGpsTarget");
     }
 
     /** 恢复时只校验角速度，不环绕已有旋转角，避免影响非攻角弹及其旧帧插值。 */
@@ -2665,6 +2703,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         writeRemoteVec3(tag, "wirePivotLocalPrev", wirePivotLocalPrev);
         writeRemoteVec3(tag, "topAttackSpawnPosition", topAttackSpawnPosition);
         writeRemoteVec3(tag, "smartFuseTargetPos", smartFuseTargetPos);
+        writeRemoteVec3(tag, "submunitionGpsTarget", submunitionGpsTarget);
         writeRemoteVec3(tag, "guidanceMotionPosition", guidanceMotionPosition);
         writeRemoteVec3(tag, "guidanceMotionVelocity", guidanceMotionVelocity);
         writeRemoteVec3(tag, "guidanceMotionAcceleration", guidanceMotionAcceleration);
@@ -2770,6 +2809,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         wirePivotLocalPrev = readRemoteVec3(tag, "wirePivotLocalPrev");
         topAttackSpawnPosition = readRemoteVec3(tag, "topAttackSpawnPosition");
         smartFuseTargetPos = readRemoteVec3(tag, "smartFuseTargetPos");
+        submunitionGpsTarget = readRemoteVec3(tag, "submunitionGpsTarget");
         guidanceMotionPosition = readRemoteVec3(tag, "guidanceMotionPosition");
         guidanceMotionVelocity = readRemoteVec3(tag, "guidanceMotionVelocity");
         guidanceMotionAcceleration = readRemoteVec3(tag, "guidanceMotionAcceleration");
@@ -3459,12 +3499,14 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
 
         Vec3 segmentStart = collisionSegmentStart();
         Vec3 segmentEnd = collisionSegmentEnd();
-        Vec3 downEnd = segmentStart.add(0.0D, -clearance, 0.0D);
-        BlockHitResult currentGroundHit = level().clip(new ClipContext(
-                segmentStart, downEnd, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, this));
-        if (currentGroundHit.getType() != HitResult.Type.MISS) {
-            detonateGroundProximityFuse(segmentStart, clearance, "current_clearance");
-            return true;
+        if (submunitionGpsRangeAllows(segmentStart)) {
+            Vec3 downEnd = segmentStart.add(0.0D, -clearance, 0.0D);
+            BlockHitResult currentGroundHit = level().clip(new ClipContext(
+                    segmentStart, downEnd, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, this));
+            if (currentGroundHit.getType() != HitResult.Type.MISS) {
+                detonateGroundProximityFuse(segmentStart, clearance, "current_clearance");
+                return true;
+            }
         }
 
         Vec3 movement = segmentEnd.subtract(segmentStart);
@@ -3482,7 +3524,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         // 调用本项目几何换算：将下移后的碰撞点恢复到弹体原运动段上的准确起爆位置。
         Vec3 detonationPosition = RVP_GroundProximityFuseMath.restoreDetonationPosition(
                 segmentStart, segmentEnd, sweptGroundHit.getLocation(), clearance);
-        if (hasCollisionBeforeGroundFuse(segmentStart, segmentEnd, detonationPosition)) {
+        if (!submunitionGpsRangeAllows(detonationPosition)
+                || hasCollisionBeforeGroundFuse(segmentStart, segmentEnd, detonationPosition)) {
             return false;
         }
         setPos(detonationPosition);
@@ -3980,7 +4023,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         if (submunitionRunner == null) {
             return;
         }
-        if (submunitionRunner.tickInFlight(this)) {
+        if (submunitionRunner.tickInFlight(this, submunitionGpsTarget)) {
             RVP_ProjectileLifecycleDebug.noteEvent(this,
                     RVP_ProjectileLifecycleDebug.Event.SUBMUNITION_TRIGGER,
                     () -> "trigger=IN_FLIGHT action=parent_discard");
@@ -4451,7 +4494,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 // [RVP] 穿透瞬间的可触发时机（PELE 等，2026-10-03）：按 trySubmunitionTrigger 返回值
                 // （= parent_action 决定"是否立刻丢弃母弹"）分派——continue ⇒ false ⇒ 母弹穿墙后继续飞；
                 // discard_* ⇒ true ⇒ 丢弃。与下方 on_block_hit 的无条件 discard 不同（撞击必然终结弹体）。
-                if (trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_PENETRATE, null)) {
+                if (trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_PENETRATE, hit, null)) {
                     compensatePenetrateImpactTrail(RVP_WallPenetrationUtil.positionPastBlockFace(hit, getDeltaMovement(), result));
                     discard();
                     return true;
@@ -4503,8 +4546,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         // 锚点外移后子体稳定落在墙面外侧，下一 tick 正面撞墙引爆；对 spawn_forward_offset > 0
         // 的前推类释放（PELE 破片）只相当于前推距离少 5cm，不影响穿透语义。
         Vec3 blockReleaseAnchor = hit.add(blockFaceNormal.scale(0.05D));
-        if (trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_BLOCK_HIT, blockReleaseAnchor)
-                || trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_IMPACT, blockReleaseAnchor)) {
+        if (trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_BLOCK_HIT, hit, blockReleaseAnchor)
+                || trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_IMPACT, hit, blockReleaseAnchor)) {
             compensateImpactTrail(hit);
             discard();
             return true;
@@ -4591,8 +4634,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             return;
         }
         Vec3 hitPos = result.getLocation();
-        if (trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_ENTITY_HIT, hitPos)
-                || trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_IMPACT, hitPos)) {
+        if (trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_ENTITY_HIT, hitPos, hitPos)
+                || trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_IMPACT, hitPos, hitPos)) {
             compensateImpactTrail(hitPos);
             discard();
             return;
@@ -5657,7 +5700,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 () -> "type=" + kind
                         + " position=" + RVP_ProjectileLifecycleDebug.formatVec(pos)
                         + " proximityTarget=" + RVP_ProjectileLifecycleDebug.formatEntity(proximityTarget));
-        if (trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_FUSE, null)) {
+        if (trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_FUSE, pos, null)) {
             discard();
             return;
         }
@@ -5764,7 +5807,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         // [RVP] APS / 弹间硬杀伤拦截的子弹药释放（2026-11-06 用户定版）：母弹引爆前先触发
         // on_aps_intercept 释放方案——子体沿用 referenceAim（母弹当前速度方向）并继承速度，
         // 因此母弹被拦截后子弹药仍沿原弹道继续飞行；无此触发条件时行为与原逻辑一致。
-        trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_APS_INTERCEPT, pos);
+        trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_APS_INTERCEPT, pos, pos);
         RVP_WeaponData config = resolveWeaponConfig();
         // 调用六参入口并显式标记空中起爆：APS 拦截发生在弹体飞行途中，属于空中爆炸。
         if (config == null) {
@@ -5989,8 +6032,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             return;
         }
         for (int i = 0; i < 2; i++) {
+            Vec3 visualPos = position().add(rvp$getSightDisguiseVisualOffset(0.0f));
             level().addParticle(primary, true,
-                    getX(), getY(), getZ(),
+                    visualPos.x, visualPos.y, visualPos.z,
                     level().random.nextGaussian() * 0.1D,
                     level().random.nextGaussian() * 0.1D,
                     level().random.nextGaussian() * 0.1D);
@@ -6054,7 +6098,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             // 调用原版粒子散布入口，沿用原广播每刻三颗烟的数量、散布和初速。
             spawnVanillaTrailBurst(primary, pos, 3, 0.1D, 0.01D);
         }
-        if (motorPropulsion) {
+        if (motorPropulsion && effects.isMissileNativeTrailExtraFlameEnabled()) {
             // 调用同一个粒子散布入口，推进类导弹在燃烧时每刻额外生成一颗原版火焰。
             spawnVanillaTrailBurst(ParticleTypes.FLAME, pos, 1, 0.03D, 0.002D);
         }
@@ -6438,10 +6482,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         if (!(level() instanceof ServerLevel serverLevel)) {
             return;
         }
-        // 观瞄伪装期内跳过服务端尾迹：服务端粒子落在真实弹道（观瞄相机出弹）上，会出卖炮口伪装
-        if (sightFireDisguise != null && tickCount < sightFireDisguise.disguiseTicks()) {
-            return;
-        }
+        // 服务端广播的粒子也按虚拟炮口出生点平移，与客户端弹体和本地尾迹同轨。
+        Vec3 visualPos = position().add(rvp$getSightDisguiseVisualOffset(0.0f));
         RVP_WeaponData config = resolveWeaponConfig();
         if (config == null) {
             return;
@@ -6466,7 +6508,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 double spread = 0.1;
                 int count = heavy ? 3 : 2;
                 if (!missileUsesClientTrail) {
-                    serverLevel.sendParticles(primary, getX(), getY(), getZ(), count, spread, spread, spread, 0.01);
+                    serverLevel.sendParticles(primary, visualPos.x, visualPos.y, visualPos.z, count, spread, spread, spread, 0.01);
                 }
                 trailBroadcastCount++;
                 if (RVP_TopAttackDebug.isEnabled()) {
@@ -6481,7 +6523,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         }
         // 尾焰：仅推进类弹体燃烧期
         if (!missileUsesClientTrail && heavy && isMotorPropulsion() && motorBurning) {
-            serverLevel.sendParticles(ParticleTypes.FLAME, getX(), getY(), getZ(), 1, 0.03, 0.03, 0.03, 0.002);
+            serverLevel.sendParticles(ParticleTypes.FLAME, visualPos.x, visualPos.y, visualPos.z, 1, 0.03, 0.03, 0.03, 0.002);
         }
     }
 
@@ -6555,6 +6597,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
      * "客户端实体是否存在"影响，专补近距离命中的曳光空窗，观感与正常曳光一致。
      */
     private void compensateTracerLine(ServerLevel serverLevel, RVP_BulletEntity tracerBullet, Vec3 hitPos) {
+        if (tracerBullet.getTracerLengthScale() <= 0f) {
+            return;
+        }
         Vec3 delta = getDeltaMovement();
         double speed = delta.length();
         if (speed <= 1.0E-4D) {

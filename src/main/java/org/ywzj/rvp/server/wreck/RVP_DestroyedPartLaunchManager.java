@@ -1,5 +1,6 @@
 package org.ywzj.rvp.server.wreck;
 
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.event.TickEvent;
@@ -12,14 +13,20 @@ import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.network.PacketDistributor;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.config.RVP_CommonConfig;
+import org.ywzj.rvp.config.RVP_CustomMountConfigCache;
 import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.network.S2CWreckDestructionState;
+import org.ywzj.rvp.network.S2CDetachedMounts;
 import org.ywzj.rvp.vehicle.wreck.RVP_WreckDestructionState;
 import org.ywzj.rvp.vehicle.wreck.RVP_WreckDestructionState.Mode;
+import org.ywzj.rvp.weapon.util.RVP_WeaponLeafResolver;
+import org.ywzj.vehicle.entity.misc.VehiclePart;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.entity.vehicle.TrackedVehicle;
 import org.ywzj.vehicle.entity.vehicle.WheeledVehicle;
 import org.ywzj.vehicle.util.VehiclePartSpawner;
+import org.ywzj.vehicle.vehicle.part.PartUnit;
+import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -31,6 +38,8 @@ public final class RVP_DestroyedPartLaunchManager {
     private static final Set<AbstractVehicle> PENDING = new HashSet<>();
     /** 到时重入本体生成器的一次性放行凭据，只在服务端线程使用。 */
     private static final Set<AbstractVehicle> NATIVE_CALLS = new HashSet<>();
+
+    private static AbstractVehicle nativeSpawnSource;
 
     private RVP_DestroyedPartLaunchManager() {}
 
@@ -75,8 +84,24 @@ public final class RVP_DestroyedPartLaunchManager {
         // 调用持久化和同步入口，立即飞头标记必须先于本体脱落与客户端第一帧喷燃生效。
         saveState(vehicle, state);
         broadcast(vehicle, state);
-        if (mode == Mode.DELAYED) PENDING.add(vehicle);
-        return mode != Mode.IMMEDIATE;
+        if (mode == Mode.DELAYED) {
+            PENDING.add(vehicle);
+        } else if (mode == Mode.IMMEDIATE) {
+            spawnParts(vehicle);
+        }
+        return true;
+    }
+
+    private static void spawnParts(AbstractVehicle vehicle) {
+        AbstractVehicle previous = nativeSpawnSource;
+        nativeSpawnSource = vehicle;
+        NATIVE_CALLS.add(vehicle);
+        try {
+            VehiclePartSpawner.spawnDestroyedParts(vehicle);
+        } finally {
+            NATIVE_CALLS.remove(vehicle);
+            nativeSpawnSource = previous;
+        }
     }
 
     /** 将决定发送给当前追踪玩家；后加入追踪者由 StartTracking 补发同一状态。 */
@@ -108,13 +133,7 @@ public final class RVP_DestroyedPartLaunchManager {
             // 调用一次性状态转换并先保存，阻止本体事件回调中的重复调用。
             RVP_WreckDestructionState launched = state.markPartsLaunched();
             saveState(vehicle, launched);
-            NATIVE_CALLS.add(vehicle);
-            try {
-                // 调用本体原方法，原样保留全部可脱落部件、初速度、物理、隐藏和实体同步行为。
-                VehiclePartSpawner.spawnDestroyedParts(vehicle);
-            } finally {
-                NATIVE_CALLS.remove(vehicle);
-            }
+            spawnParts(vehicle);
             // 调用同步入口，追踪玩家与之后重连者得到相同执行标记。
             broadcast(vehicle, launched);
         }
@@ -123,11 +142,55 @@ public final class RVP_DestroyedPartLaunchManager {
     /** 加载保存的残骸时恢复等待表；不为没有本功能记录的既存残骸补抽签。 */
     @SubscribeEvent
     public static void onJoin(EntityJoinLevelEvent event) {
-        if (event.getLevel().isClientSide() || !(event.getEntity() instanceof AbstractVehicle vehicle)
-                || !isGroundVehicle(vehicle)) return;
+        if (event.getLevel().isClientSide() || !(event.getEntity() instanceof AbstractVehicle vehicle)) return;
+        if (vehicle instanceof VehiclePart part) {
+            if (nativeSpawnSource != null && nativeSpawnSource.level() == event.getLevel()) {
+                captureDetachedMounts(nativeSpawnSource, part);
+            }
+            return;
+        }
+        if (!isGroundVehicle(vehicle)) return;
         // 调用本类 NBT 读取，仅恢复尚未飞头的延迟任务。
         RVP_WreckDestructionState state = readState(vehicle);
         if (state != null && state.mode() == Mode.DELAYED && !state.partsLaunched()) PENDING.add(vehicle);
+    }
+
+    private static void captureDetachedMounts(AbstractVehicle source, VehiclePart part) {
+        PartUnit<?> detached = part.getPartUnit();
+        if (detached == null) return;
+        PartUnit<?> original = source.getPartUnit(detached.getId()).orElse(null);
+        if (original == null) return;
+
+        CompoundTag selected = new CompoundTag();
+        boolean hasMount = false;
+        for (var config : RVP_CustomMountConfigCache.get(source.getVehicleId())) {
+            PartUnit<?> candidate = source.getPartUnit(config.partUnitId()).orElse(null);
+            if (!(candidate instanceof WeaponUnit unit) || !belongsToDetachedTree(unit, original)) continue;
+            hasMount = true;
+            var weapon = RVP_WeaponLeafResolver.resolveLeaf(unit).orElse(null);
+            if (weapon != null && config.weaponId().equals(weapon.getData().getWeaponId())) {
+                selected.putString(unit.getId(), config.weaponId().toString());
+            }
+        }
+        if (hasMount) {
+            part.getPersistentData().put(S2CDetachedMounts.NBT_KEY, selected);
+        }
+    }
+
+    private static boolean belongsToDetachedTree(WeaponUnit unit, PartUnit<?> root) {
+        // 同轴通常挂在俯仰骨的下一层，本体的直接附着表不会包含它。
+        for (WeaponUnit current = unit; current != null; current = current.getParentWeaponUnit()) {
+            if (current == root) return true;
+            if (current.isDetachable()) return false;
+        }
+
+        var rootGroup = root.getStructureGroup();
+        if (rootGroup == null) return false;
+        var group = unit.getStructureGroup() != null ? unit.getStructureGroup() : unit.xTurnGroup;
+        for (; group != null; group = group.parent) {
+            if (group == rootGroup) return true;
+        }
+        return false;
     }
 
     /** 卸载时释放实体引用；时间表留在实体 NBT，再次加载后按原定时刻处理。 */
@@ -143,8 +206,16 @@ public final class RVP_DestroyedPartLaunchManager {
     @SubscribeEvent
     public static void onStartTracking(PlayerEvent.StartTracking event) {
         if (!(event.getEntity() instanceof ServerPlayer player)
-                || !(event.getTarget() instanceof AbstractVehicle vehicle)
-                || !isGroundVehicle(vehicle) || !vehicle.isDestroyed()) return;
+                || !(event.getTarget() instanceof AbstractVehicle vehicle)) return;
+        if (vehicle instanceof VehiclePart part) {
+            CompoundTag snapshot = part.getPersistentData().getCompound(S2CDetachedMounts.NBT_KEY);
+            if (part.getPersistentData().contains(S2CDetachedMounts.NBT_KEY)) {
+                RVP_Network.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player),
+                        new S2CDetachedMounts(part.level().dimension().location(), part.getUUID(), snapshot));
+            }
+            return;
+        }
+        if (!isGroundVehicle(vehicle) || !vehicle.isDestroyed()) return;
         // 调用本类 NBT 读取；既存的无记录残骸仅显示普通烟，不凭空重放击毁过程。
         RVP_WreckDestructionState state = readState(vehicle);
         if (state == null) state = new RVP_WreckDestructionState(Mode.BURN_ONLY, vehicle.level().getGameTime(), 0, -1, 30, false);

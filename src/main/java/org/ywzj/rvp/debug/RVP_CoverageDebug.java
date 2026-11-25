@@ -121,8 +121,9 @@ public final class RVP_CoverageDebug {
                     continue;
                 }
                 BoneApsConfig cfg = entry.getValue();
-                Vec3 facing = RVP_JammingRuntime.resolveFacing(vehicle, cfg.facingPart(), cfg.facingYawDeg());
-                drawCone(level, player, origin, facing, cfg.halfAngleDeg(), cfg.detectRadius(), ParticleTypes.SOUL_FIRE_FLAME);
+                Vec3 facing = RVP_JammingRuntime.resolveHorizontalFacing(vehicle, cfg.facingPart(), cfg.facingYawDeg());
+                Vec3 sensorOrigin = apsSensorOrigin(vehicle, entry.getKey(), origin);
+                drawCone(level, player, sensorOrigin, facing, cfg.halfAngleDeg(), cfg.detectRadius(), ParticleTypes.SOUL_FIRE_FLAME);
             }
         }
 
@@ -138,6 +139,20 @@ public final class RVP_CoverageDebug {
                 drawCone(level, player, origin, facing, cfg.halfAngleDeg(), cfg.detectRadius(), ParticleTypes.END_ROD);
             }
         }
+    }
+
+    /** APS 锥顶点与运行时判定同源：传感器骨最大 cube 的实时 OBB 中心，缺失时回退车体中心。 */
+    private static Vec3 apsSensorOrigin(AbstractVehicle vehicle, String boneName, Vec3 fallback) {
+        var partUnit = vehicle.getPartUnit(boneName).orElse(null);
+        if (partUnit != null) {
+            var cube = partUnit.getLargestCube();
+            if (cube != null) {
+                var center = cube.obb().center();
+                return new Vec3(center.x, center.y, center.z);
+            }
+            return partUnit.worldPivotPosition();
+        }
+        return fallback;
     }
 
     /**

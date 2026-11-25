@@ -8,7 +8,6 @@ import net.minecraft.world.entity.Entity;
 import net.minecraftforge.client.gui.overlay.ForgeGui;
 import net.minecraftforge.client.gui.overlay.IGuiOverlay;
 import org.ywzj.rvp.client.state.RVP_ClientHitlState;
-import org.ywzj.rvp.client.state.RVP_ClientRemoteAmmoState;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 
 /**
@@ -68,12 +67,6 @@ public class RVP_TVMissileOverlay implements IGuiOverlay {
         String control = switch (RVP_ClientHitlState.getControlMode()) {
             case MOUSE -> "WIRE"; case DESIGNATE -> "TV"; case VIEW -> "OBS";
         };
-        // 客户端弹体只插值位置且关闭常规速度同步，deltaMovement 会停在出生值；
-        // 复用每 5 tick 下发的服务端弹药快照，显示真实加速、转弯与燃尽后的当前速度。
-        var snapshot = RVP_ClientRemoteAmmoState.getEntry(mc.level.dimension().location(), missile.getId());
-        // 首份快照尚未到达时沿用出生速度；读数不反写实体，保持既有插值与制导行为。
-        double speedKmh = snapshot != null && Double.isFinite(snapshot.speedKmh()) && snapshot.speedKmh() >= 0.0
-                ? snapshot.speedKmh() : missile.getDeltaMovement().length() * 72.0;
         boolean designated = RVP_ClientHitlState.isDesignateMode()
                 && RVP_ClientHitlState.getClientDesignatedPos() != null;
         // 调用既有目标/实时瞄准点，天空的虚拟射线终点不作为真实测距显示。
@@ -84,7 +77,7 @@ public class RVP_TVMissileOverlay implements IGuiOverlay {
         String track = RVP_ClientHitlState.getLockStatusLabel();
         boolean airburst = missile.rvp$isHitlRightClickDetonate();
         // 调用统一缩放的紧凑侧栏；飞行时间复用生成包飞行刻与客户端后续刻的既有视觉时钟。
-        RVP_HitlInstrumentRenderer.draw(gg, font, speedKmh, missile.getY(), range,
+        RVP_HitlInstrumentRenderer.draw(gg, font, missile.getY(), range,
                 missile.getDisplayFlightTickCount() / 20.0, lastRateDegPerSec, video, control, track,
                 airburst, RVP_ClientHitlState.getHitlZoom());
         boolean airburstNearby = airburst && hasNonSelfEntityWithin(mc, missile, 10.0D);

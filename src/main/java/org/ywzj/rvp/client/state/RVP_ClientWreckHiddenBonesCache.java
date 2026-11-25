@@ -4,6 +4,9 @@ import com.github.mcmodderanchor.simplebedrockmodel.v2.common.model.runtime.Bake
 import com.github.mcmodderanchor.simplebedrockmodel.v2.common.model.runtime.BoneState;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.nbt.CompoundTag;
+import org.jetbrains.annotations.Nullable;
+import org.ywzj.rvp.network.S2CDetachedMounts;
 import net.minecraft.world.entity.Entity;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
@@ -19,6 +22,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * 残件"击毁前状态"骨快照缓存（2026-10-08，残件隐藏渲染骨的动态增强）。
@@ -40,6 +44,19 @@ public final class RVP_ClientWreckHiddenBonesCache {
 
     /** 残件实体 id → 源车击毁前隐藏骨序号快照；拍取一次后不再刷新（源车死亡后隐藏集不恢复）。 */
     private static final Map<Integer, Set<Integer>> SNAPSHOT = new HashMap<>();
+    private static final Map<UUID, CompoundTag> DETACHED_MOUNTS = new HashMap<>();
+
+    public static void acceptMounts(S2CDetachedMounts message) {
+        ClientLevel level = Minecraft.getInstance().level;
+        if (level != null && level.dimension().location().equals(message.dimension())) {
+            DETACHED_MOUNTS.put(message.partId(), message.weapons());
+        }
+    }
+
+    @Nullable
+    public static CompoundTag detachedMounts(VehiclePart part) {
+        return DETACHED_MOUNTS.get(part.getUUID());
+    }
 
     /** 缓存安全上限，防止极端战场残件数量下无限累积。 */
     private static final int MAX_ENTRIES = 256;
@@ -125,6 +142,9 @@ public final class RVP_ClientWreckHiddenBonesCache {
     /** 残件实体离开世界时释放快照，防止战场残件 id 长期累积。 */
     @SubscribeEvent
     public static void onEntityLeave(EntityLeaveLevelEvent event) {
-        SNAPSHOT.remove(event.getEntity().getId());
+        if (event.getLevel().isClientSide()) {
+            SNAPSHOT.remove(event.getEntity().getId());
+            DETACHED_MOUNTS.remove(event.getEntity().getUUID());
+        }
     }
 }

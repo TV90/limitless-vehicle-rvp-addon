@@ -3,6 +3,7 @@ package org.ywzj.rvp.mixin;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import org.ywzj.rvp.client.gui.RVP_ScopeOverlay;
 import org.ywzj.rvp.util.RVP_WeaponResolveHelper;
@@ -188,6 +189,11 @@ public class VehicleAimAtOverlaySeekerColorMixin {
     @Redirect(method = "render", remap = false, at = @At(value = "INVOKE", remap = false,
             target = "Lorg/ywzj/vehicle/client/gui/VehicleAimAtOverlay;aimScreenPosition(Lorg/ywzj/vehicle/vehicle/part/WeaponUnit;F)Lnet/minecraft/world/phys/Vec3;"))
     private net.minecraft.world.phys.Vec3 rvp$disguiseAimPosition(WeaponUnit weaponUnit, float partialTick) {
+        // crosshair_style=none：本站不显示落点圈，白圈固定屏幕中心。
+        if (weaponUnit.crosshairStyle == WeaponUnitData.CrosshairStyle.NONE) {
+            var window = Minecraft.getInstance().getWindow();
+            return new net.minecraft.world.phys.Vec3(window.getGuiScaledWidth() / 2.0, window.getGuiScaledHeight() / 2.0, 1.0);
+        }
         // 复用现有重定向：受损观瞄的意图/装填圈与实际弹道准星同源，健康站保留原有提前量。
         net.minecraft.world.phys.Vec3 actual = org.ywzj.rvp.client.state.RVP_ClientTurretTraverseSight
                 .actualHitScreenPosition(weaponUnit, partialTick);

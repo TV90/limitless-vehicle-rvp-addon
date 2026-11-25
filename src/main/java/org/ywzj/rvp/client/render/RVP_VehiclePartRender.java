@@ -9,8 +9,10 @@ import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 import org.ywzj.rvp.config.RVP_PartHiddenBonesCache;
 import org.ywzj.vehicle.client.render.entity.vehicle.VehiclePartRender;
+import org.ywzj.vehicle.client.render.entity.vehicle.VehicleRender;
 import org.ywzj.vehicle.entity.misc.VehiclePart;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.List;
 
@@ -67,5 +69,15 @@ public class RVP_VehiclePartRender extends VehiclePartRender {
             }
         }
         super.render(part, pEntityYaw, pPartialTick, pPoseStack, bufferSource, pPackedLight);
+        // 本体残件渲染器只画脱落骨；在同一车体坐标系中补画属于该部件的 RVP 可选挂架。
+        pPoseStack.pushPose();
+        try {
+            VehicleRender.applyVehicleRotation(part, pPartialTick, pPoseStack);
+            Vec3 bottom = part.getBottomOffset();
+            pPoseStack.translate(-bottom.x, -bottom.y, -bottom.z);
+            RVP_CustomMountRenderLogic.renderDetachedPart(part, pPoseStack, bufferSource, pPackedLight);
+        } finally {
+            pPoseStack.popPose();
+        }
     }
 }

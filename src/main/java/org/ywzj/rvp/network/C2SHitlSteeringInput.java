@@ -42,18 +42,18 @@ public class C2SHitlSteeringInput {
 
     public static void handle(C2SHitlSteeringInput msg, Supplier<NetworkEvent.Context> ctxSupplier) {
         NetworkEvent.Context ctx = ctxSupplier.get();
-        ServerPlayer player = ctx.getSender();
-        if (player == null || player.level() == null) {
-            ctx.setPacketHandled(true);
-            return;
-        }
-        // 调用真实/虚拟统一查找；后续归属和远程会话校验继续约束当前操作者。
-        Entity e = org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.resolve(player.level(), msg.missileEntityId);
-        if (!(e instanceof RVP_MissileEntity missile) || missile.getOwner() != player) {
-            ctx.setPacketHandled(true);
-            return;
-        }
-        missile.rvp$setHitlSteeringInput(msg.yaw, msg.pitch, msg.seq);
         ctx.setPacketHandled(true);
+        // 网络线程不能直接改实体舵量；排入服务端主线程，使输入与导弹 Tick 按顺序执行。
+        ctx.enqueueWork(() -> {
+            ServerPlayer player = ctx.getSender();
+            if (player == null || player.level() == null) {
+                return;
+            }
+            // 调用真实/虚拟统一查找；后续归属和远程会话校验继续约束当前操作者。
+            Entity e = org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileTargets.resolve(player.level(), msg.missileEntityId);
+            if (e instanceof RVP_MissileEntity missile && missile.getOwner() == player) {
+                missile.rvp$setHitlSteeringInput(msg.yaw, msg.pitch, msg.seq);
+            }
+        });
     }
 }

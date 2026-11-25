@@ -34,10 +34,22 @@ in vec2 screenUV;
 // 已包含原背景的最终颜色。
 out vec4 fragColor;
 
+vec3 viewPosition(vec2 uv, float depth) {
+    vec4 point = InverseProjection * vec4(uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+    return point.xyz / (abs(point.w) < 0.000001 ? 0.000001 : point.w);
+}
+
+// 投影平移时，远裁剪点本身不再表示从相机出发的方向。
+void viewRay(vec2 uv, out vec3 rayOrigin, out vec3 rayDirection) {
+    rayOrigin = viewPosition(uv, 0.25);
+    rayDirection = normalize(viewPosition(uv, 0.75) - rayOrigin);
+}
+
 // 返回视线进入、离开球体的距离；负判别量表示没有相交。
-vec2 sphereInterval(vec3 ray, float radius) {
-    float along = dot(ray, CenterView);
-    float discriminant = along * along - dot(CenterView, CenterView) + radius * radius;
+vec2 sphereInterval(vec3 rayOrigin, vec3 ray, float radius) {
+    vec3 center = CenterView - rayOrigin;
+    float along = dot(ray, center);
+    float discriminant = along * along - dot(center, center) + radius * radius;
     if (discriminant <= 0.0) return vec2(1.0, -1.0);
     float halfChord = sqrt(discriminant);
     return vec2(along - halfChord, along + halfChord);
@@ -47,8 +59,10 @@ vec2 sphereInterval(vec3 ray, float radius) {
 float sceneDistance(vec2 uv) {
     float depth = texture(SceneDepth, uv).r;
     if (depth >= 0.999999) return 1.0e20;
-    vec4 point = InverseProjection * vec4(uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
-    return length(point.xyz / point.w);
+    vec3 rayOrigin;
+    vec3 ray;
+    viewRay(uv, rayOrigin, ray);
+    return max(0.0, dot(viewPosition(uv, depth) - rayOrigin, ray));
 }
 
 // 连续、低频的空气扰动；只轻微打散密度，保留连贯而宽厚的波面。
@@ -61,12 +75,12 @@ float billow(vec3 point) {
 }
 
 // 只沿朝向玩家的空气层采样八次，分别累计空气和白雾厚度，以及外推和反向恢复。
-void integrate(vec3 ray, float begin, float end, inout float opticalDepth, inout float mistDepth, inout vec2 bend) {
+void integrate(vec3 rayOrigin, vec3 ray, float begin, float end, inout float opticalDepth, inout float mistDepth, inout vec2 bend) {
     if (end <= begin) return;
     float band = max(Radii.y - Radii.x, 0.001);
     float stepLength = (end - begin) / 8.0;
     for (int i = 0; i < 8; ++i) {
-        vec3 point = ray * (begin + (float(i) + 0.5) * stepLength) - CenterView;
+        vec3 point = rayOrigin + ray * (begin + (float(i) + 0.5) * stepLength) - CenterView;
         float distanceToCenter = length(point);
         vec3 normal = point / max(distanceToCenter, 0.001);
         float q = clamp((distanceToCenter - Radii.x) / band, 0.0, 1.0);
@@ -93,27 +107,28 @@ vec2 safeRefractedUV(vec2 uv, vec2 offset, float entryDistance) {
 
 void main() {
     if (LifeFade <= 0.0001 || Radii.y <= Radii.x) discard;
-    vec4 farPoint = InverseProjection * vec4(screenUV * 2.0 - 1.0, 1.0, 1.0);
-    vec3 ray = normalize(farPoint.xyz / farPoint.w);
-    vec2 outer = sphereInterval(ray, Radii.y);
+    vec3 rayOrigin;
+    vec3 ray;
+    viewRay(screenUV, rayOrigin, ray);
+    vec2 outer = sphereInterval(rayOrigin, ray, Radii.y);
     float begin = max(outer.x, 0.0);
     // 到视线离爆心最近的位置就停止，只保留正面；背面不再叠成一颗发白的球。
-    float end = min(min(outer.y, dot(ray, CenterView)), sceneDistance(screenUV));
+    float end = min(min(outer.y, dot(ray, CenterView - rayOrigin)), sceneDistance(screenUV));
     if (end <= begin) discard;
-    vec2 inner = sphereInterval(ray, Radii.x);
+    vec2 inner = sphereInterval(rayOrigin, ray, Radii.x);
     float opticalDepth = 0.0;
     float mistDepth = 0.0;
     vec2 bend = vec2(0.0);
     if (inner.y > inner.x) {
-        integrate(ray, begin, min(end, inner.x), opticalDepth, mistDepth, bend);
+        integrate(rayOrigin, ray, begin, min(end, inner.x), opticalDepth, mistDepth, bend);
     } else {
-        integrate(ray, begin, end, opticalDepth, mistDepth, bend);
+        integrate(rayOrigin, ray, begin, end, opticalDepth, mistDepth, bend);
     }
     if (opticalDepth <= 0.00001) discard;
 
     // 由真实波面与视线的夹角决定通透程度，偏离屏幕中心的爆炸也能正确显示。
     // 保留负的入射距离，使玩家进入空气层后仍平滑过渡，不出现包住镜头的亮球。
-    vec3 entryNormal = (ray * outer.x - CenterView) / Radii.y;
+    vec3 entryNormal = (rayOrigin + ray * outer.x - CenterView) / Radii.y;
     float facing = clamp(-dot(ray, entryNormal), 0.0, 1.0);
     float faceRadius = sqrt(max(1.0 - facing * facing, 0.0));
     float centerVisibility = smoothstep(0.12, 0.62, faceRadius);

@@ -146,7 +146,8 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
     @Override
     public void renderOverlay(RVP_TacticalMapHost host, GuiGraphics graphics,
                               int mouseX, int mouseY, float partialTick) {
-        graphics.enableScissor(host.mapLeft(), host.mapTop(), host.mapRight(), host.mapBottom());
+        // 预览和侧栏坐标来自地图视口，裁剪时转换为原版 GUI 坐标。
+        RVP_MapChrome.scissor(graphics, host.mapLeft(), host.mapTop(), host.mapRight(), host.mapBottom());
         renderPreview(host, graphics);
         graphics.disableScissor();
         renderSidebar(host, graphics, mouseX, mouseY);
@@ -316,17 +317,23 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
             return;
         }
         firstRow = body.clamp(firstRow,formCount());
-        int y = body.y(0,firstRow);
-        graphics.enableScissor(left,body.top(),right,body.top()+body.visible()*ROW_HEIGHT);
-        RVP_MapChrome.strip(graphics, left, y, right, y + ROW_HEIGHT - 1, false, false);
-        drawTrimmed(host, graphics, tr("gui.ywzj_rvp.fire_support.profile") + "  " + label(profile().translationKey()),
-                left + 5, y + 4, right - left - 10, RVP_MapChrome.TEXT);
-        y += ROW_HEIGHT;
-        y = drawChoice(host,graphics,left,right,y,tr("gui.ywzj_rvp.fire_support.munition"),munition()==null ? "–" : label(munition().translationKey()),mx,my);
-        y = drawChoice(host,graphics,left,right,y,tr("gui.ywzj_rvp.fire_support.fire_mode"),mode()==null ? "–" : label(mode().translationKey()),mx,my);
-        y = drawChoice(host,graphics,left,right,y,tr("gui.ywzj_rvp.fire_support.pattern"),pattern()==null ? "–" : label(pattern().translationKey()),mx,my);
-        if (pattern()!=null) for (var spec : pattern().parameters().values()) y=drawParameter(host,graphics,left,right,y,spec,mx,my);
-        graphics.disableScissor();
+        // 展开下拉列表时暂停绘制表单行，避免在列表边缘留下半截字形。
+        if (openChoice < 0) {
+            int y = body.y(0,firstRow);
+            RVP_MapChrome.scissor(graphics, left, body.top(), right, body.top() + body.visible() * ROW_HEIGHT);
+            try {
+                RVP_MapChrome.strip(graphics, left, y, right, y + ROW_HEIGHT - 1, false, false);
+                drawTrimmed(host, graphics, tr("gui.ywzj_rvp.fire_support.profile") + "  " + label(profile().translationKey()),
+                        left + 5, y + 4, right - left - 10, RVP_MapChrome.TEXT);
+                y += ROW_HEIGHT;
+                y = drawChoice(host,graphics,left,right,y,tr("gui.ywzj_rvp.fire_support.munition"),munition()==null ? "–" : label(munition().translationKey()),mx,my);
+                y = drawChoice(host,graphics,left,right,y,tr("gui.ywzj_rvp.fire_support.fire_mode"),mode()==null ? "–" : label(mode().translationKey()),mx,my);
+                y = drawChoice(host,graphics,left,right,y,tr("gui.ywzj_rvp.fire_support.pattern"),pattern()==null ? "–" : label(pattern().translationKey()),mx,my);
+                if (pattern()!=null) for (var spec : pattern().parameters().values()) y=drawParameter(host,graphics,left,right,y,spec,mx,my);
+            } finally {
+                graphics.disableScissor();
+            }
+        }
         int footer = actionY(host), middle = (left+right)/2;
         int[] preview = previewPlan();
         drawTrimmed(host,graphics,tr("gui.ywzj_rvp.fire_support.estimate",preview[0],preview[1],format(preview[2]/20.0)),
@@ -554,9 +561,17 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
 
     private int drawChoice(RVP_TacticalMapHost host, GuiGraphics graphics, int left, int right, int y,
                            String name, String value, int mouseX, int mouseY) {
-        int next = drawValueRow(host, graphics, left, right, y, name, value, mouseX, mouseY);
+        boolean hover = mouseY >= y && mouseY < y + ROW_HEIGHT && mouseX >= left && mouseX <= right;
+        RVP_MapChrome.strip(graphics, left, y, right, y + ROW_HEIGHT - 1, false, hover);
+        graphics.drawString(host.font(), "‹", left + 4, y + 4, ACCENT, false);
+        graphics.drawString(host.font(), "›", right - 9, y + 4, ACCENT, false);
         graphics.drawString(host.font(), "▾", right - 20, y + 4, ACCENT, false);
-        return next;
+        int nameX = left + 15;
+        int valueX = nameX + host.font().width(name) + 6;
+        // 固定显示字段名，为较长的选项值和右侧箭头分别预留空间。
+        RVP_MapChrome.line(graphics, host.font(), name, nameX, y + 4, right - 24 - nameX, 0xFFE8EEF5);
+        RVP_MapChrome.fitLine(graphics, host.font(), value, valueX, y + 4, right - 24 - valueX, 0xFFE8EEF5);
+        return y + ROW_HEIGHT;
     }
 
     private int drawParameter(RVP_TacticalMapHost host, GuiGraphics graphics, int left, int right, int y,
@@ -576,16 +591,6 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
         graphics.drawString(host.font(), "+", right - 10, y + 4, ACCENT, false);
         drawTrimmed(host, graphics, parameterLabel(spec.key()) + " " + format(value) + unit(spec.unit()),
                 left + 15, y + 3, 58, 0xFFE8EEF5);
-        return y + ROW_HEIGHT;
-    }
-
-    private int drawValueRow(RVP_TacticalMapHost host, GuiGraphics graphics, int left, int right, int y,
-                             String name, String value, int mouseX, int mouseY) {
-        boolean hover = mouseY >= y && mouseY < y + ROW_HEIGHT && mouseX >= left && mouseX <= right;
-        RVP_MapChrome.strip(graphics,left,y,right,y+ROW_HEIGHT-1,false,hover);
-        graphics.drawString(host.font(), "‹", left + 4, y + 4, ACCENT, false);
-        graphics.drawString(host.font(), "›", right - 9, y + 4, ACCENT, false);
-        drawTrimmed(host, graphics, name + "  " + value, left + 15, y + 4, right - left - 30, 0xFFE8EEF5);
         return y + ROW_HEIGHT;
     }
 
@@ -708,11 +713,20 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
         var rows=choices(host,labels.size());
         firstChoice=rows.clamp(firstChoice,labels.size());
         int left=host.sideLeft()+7,right=host.sideRight()-7;
-        for (int i=firstChoice;i<Math.min(labels.size(),firstChoice+rows.visible());i++) {
-            int y=rows.y(i,firstChoice);
-            boolean hover=mx>=left && mx<right && my>=y && my<y+rows.step();
-            RVP_MapChrome.strip(g,left,y,right,y+rows.step(),hover,false);
-            drawTrimmed(host,g,labels.get(i),left+5,y+4,right-left-10,hover ? RVP_MapChrome.INK : RVP_MapChrome.TEXT);
+        // 列表底板与文字共用上层深度，覆盖底层表单的字形、滑条和高亮。
+        g.pose().pushPose();
+        try {
+            g.pose().translate(0.0F, 0.0F, 100.0F);
+            g.fill(left, rows.top(), right, rows.top() + rows.visible() * rows.step(), 0xFF293238);
+            for (int i = firstChoice; i < Math.min(labels.size(), firstChoice + rows.visible()); i++) {
+                int y = rows.y(i, firstChoice);
+                boolean hover = mx >= left && mx < right && my >= y && my < y + rows.step();
+                RVP_MapChrome.strip(g, left, y, right, y + rows.step(), hover, false);
+                RVP_MapChrome.fitLine(g, host.font(), labels.get(i), left + 5, y + 4, right - left - 10,
+                        hover ? RVP_MapChrome.INK : RVP_MapChrome.TEXT);
+            }
+        } finally {
+            g.pose().popPose();
         }
     }
 

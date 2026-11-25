@@ -2,11 +2,14 @@ package org.ywzj.rvp.client.state;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.ResourceLocation;
+import com.mojang.math.Axis;
 import net.minecraft.util.Mth;
-import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
+import org.joml.Quaternionf;
+import org.joml.Vector3f;
+import org.ywzj.rvp.client.RVP_ClientEvents;
 import org.ywzj.rvp.client.screen.RVP_TacticalMapScreen;
 import org.ywzj.rvp.client.map.RVP_TacticalMapCache;
 import org.ywzj.rvp.util.RVP_CcipUtil;
@@ -15,12 +18,15 @@ import org.ywzj.rvp.weapon.core.RVP_AimContexts;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
+import org.ywzj.rvp.weapon.util.RVP_WeaponLeafResolver;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.network.Channel;
 import org.ywzj.vehicle.network.message.ClientVehicleAction;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
+import org.ywzj.vehicle.vehicle.pojo.AimContext;
+import org.ywzj.vehicle.vehicle.pojo.Bolt;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 
 import java.util.ArrayList;
@@ -49,6 +55,10 @@ public final class RVP_ArtilleryFireControlState {
     private static Vec3 designatedTarget;
     @Nullable
     private static Solution solution;
+    @Nullable
+    private static Vec3 currentImpact;
+    private static int pendingFireUntil = Integer.MIN_VALUE;
+    private static int alignedTicks;
     /** 地图目标或弹道模式每次变化时递增，用于识别解算结果是否仍对应最新输入。 */
     private static long targetRevision;
     private static int designatedVehicleId = Integer.MIN_VALUE;
@@ -101,7 +111,7 @@ public final class RVP_ArtilleryFireControlState {
      * @param targetRevision 解算对应的地图目标/弹道模式版本
      */
     private record Solution(Vec3 aimPoint, @Nullable Vec3 predictedImpact, double elevationDeg,
-                            double missDistance, boolean exact, int vehicleId,
+                            double missDistance, boolean exact, float localYaw, int vehicleId,
                             ResourceLocation weaponId, long targetRevision) {}
 
     /**
@@ -161,6 +171,8 @@ public final class RVP_ArtilleryFireControlState {
     public static void clear() {
         designatedTarget = null;
         solution = null;
+        currentImpact = null;
+        cancelPendingFire();
         designatedVehicleId = Integer.MIN_VALUE;
         designatedWeaponId = null;
         lastResolveTick = Integer.MIN_VALUE;
@@ -194,8 +206,31 @@ public final class RVP_ArtilleryFireControlState {
         lastResolveTick = Integer.MIN_VALUE;
     }
 
+    @Nullable
+    public static Vec3 getCurrentImpact() {
+        return currentImpact;
+    }
+
+    public static boolean hasPendingFire() {
+        return pendingFireUntil != Integer.MIN_VALUE;
+    }
+
+    public static void cancelPendingFire() {
+        pendingFireUntil = Integer.MIN_VALUE;
+        alignedTicks = 0;
+    }
+
+    public static void requestFire(@Nullable Vec3 point) {
+        Context context = resolveContext(LocalVehiclePlayer.instance);
+        if (point == null || context == null) return;
+        designate(point);
+        pendingFireUntil = context.vehicle().tickCount + 120;
+        alignedTicks = 0;
+    }
+
     public static void tick(Minecraft mc) {
         if (!(mc.screen instanceof RVP_TacticalMapScreen screen) || !screen.isArtilleryMode()) {
+            currentImpact = null;
             return;
         }
         if (designatedTarget == null || LocalVehiclePlayer.instance == null) {
@@ -205,6 +240,8 @@ public final class RVP_ArtilleryFireControlState {
         if (context == null) {
             // 无有效上下文时重置缓存，防止切回炮兵载具时 contextChanged 误判为 false
             solution = null;
+            currentImpact = null;
+            cancelPendingFire();
             designatedVehicleId = Integer.MIN_VALUE;
             designatedWeaponId = null;
             lastResolveTick = Integer.MIN_VALUE;
@@ -213,6 +250,32 @@ public final class RVP_ArtilleryFireControlState {
             resetAimGate();
             return;
         }
+        refreshSolution(context);
+        currentImpact = impactForAim(context, context.launchUnit().aimContext(), designatedTarget.y);
+        fireWhenAligned(context);
+    }
+
+    private static void fireWhenAligned(Context context) {
+        if (!hasPendingFire()) return;
+        if (context.vehicle().tickCount >= pendingFireUntil) {
+            cancelPendingFire();
+            return;
+        }
+        Solution current = solution;
+        if (current == null || current.targetRevision() != targetRevision || !current.exact()
+                || currentImpact == null
+                || Math.hypot(currentImpact.x - designatedTarget.x, currentImpact.z - designatedTarget.z)
+                        > solutionTolerance(designatedTarget.distanceTo(context.vehicle().position()))) {
+            alignedTicks = 0;
+            return;
+        }
+        // 留出同步时间，等本地和服务端炮管完成转动后再提交这次发射。
+        if (++alignedTicks < 4) return;
+        cancelPendingFire();
+        RVP_ClientEvents.fireCurrentWeaponClient();
+    }
+
+    private static void refreshSolution(Context context) {
         boolean contextChanged = context.vehicle().getId() != designatedVehicleId
                 || !context.weaponId().equals(designatedWeaponId);
         boolean sourceMoved = lastSolveVehiclePos == null
@@ -282,7 +345,7 @@ public final class RVP_ArtilleryFireControlState {
                 && context.vehicle().getId() == current.vehicleId()
                 && context.weaponId().equals(current.weaponId());
         Vec3 yawAimPoint = latestSolution ? current.aimPoint() : target;
-        float targetYaw = reachableYaw(context.operatorUnit(), yawAimPoint);
+        float targetYaw = latestSolution ? current.localYaw() : reachableYaw(context.operatorUnit(), yawAimPoint);
         boolean movableYaw = context.operatorUnit().rotByAim
                 && context.operatorUnit().getYRotSpeed() > 0.0F
                 && context.operatorUnit().getYRotMax() - context.operatorUnit().getYRotMin() > 1.0E-4F;
@@ -296,7 +359,7 @@ public final class RVP_ArtilleryFireControlState {
                 return false;
             }
             // 调用本体递归瞄准，将最新完整解算角同步到操作武器站及其子武器站。
-            context.operatorUnit().aim(current.aimPoint());
+            applySolvedAim(context, current);
             return true;
         }
 
@@ -312,8 +375,21 @@ public final class RVP_ArtilleryFireControlState {
             return true;
         }
         // 调用本体递归瞄准，在偏航到位后才释放各子武器站追踪最新俯仰解。
-        context.operatorUnit().aim(current.aimPoint());
+        applySolvedAim(context, current);
         return true;
+    }
+
+    private static void applySolvedAim(Context context, Solution current) {
+        WeaponUnit operator = context.operatorUnit();
+        WeaponUnit launcher = context.launchUnit();
+        float pitch = (float) -current.elevationDeg();
+        if (operator == launcher) {
+            applyUnitAim(launcher, pitch, current.localYaw());
+        } else {
+            operator.aim(current.aimPoint());
+            applyUnitAim(operator, operator.getXAimRot(), current.localYaw());
+            applyUnitAim(launcher, pitch, launcher.getYAimRot());
+        }
     }
 
     private static boolean aimContextChanged(Context context) {
@@ -410,14 +486,14 @@ public final class RVP_ArtilleryFireControlState {
         if (operatorUnit == null) {
             return null;
         }
-        AbstractVehicleWeapon<?> currentWeapon = operatorUnit.getCurrentWeapon().orElse(null);
+        // 调用多弹种槽叶子解析器，让 D-30 的高爆弹进入完整的炮兵逆解与自动瞄准链。
+        AbstractVehicleWeapon<?> currentWeapon = RVP_WeaponLeafResolver.resolveLeaf(operatorUnit).orElse(null);
         if (!(currentWeapon instanceof RVP_WeaponBase weapon)) {
             return null;
         }
         RVP_WeaponData data = weapon.getData();
         RVP_EnumWeaponKind kind = data.getWeaponKind();
-        if (!data.getMiscData().isArtilleryMap()
-                || (kind != RVP_EnumWeaponKind.ROCKET && kind != RVP_EnumWeaponKind.BOMB)) {
+        if (!RVP_RocketBallistics.supportsArtilleryMap(data)) {
             return null;
         }
         WeaponUnit launchUnit = currentWeapon.getWeaponUnit();
@@ -435,24 +511,17 @@ public final class RVP_ArtilleryFireControlState {
         if (targetDistance <= 1.0E-6D) {
             Vec3 aimPoint = muzzle.add(0.0D, 2048.0D, 0.0D);
             return new Solution(aimPoint, null, 90.0D, targetDistance, false,
-                    context.vehicle().getId(), context.weaponId(), revision);
+                    context.operatorUnit().getYRot(), context.vehicle().getId(), context.weaponId(), revision);
         }
 
         Vec3 targetDirection = horizontalTarget.scale(1.0D / targetDistance);
         Vec2 rootAimRot = context.operatorUnit().aimRot(target);
         float yawMin = context.operatorUnit().getYRotMin() - context.operatorUnit().ySelfRot;
         float yawMax = context.operatorUnit().getYRotMax() - context.operatorUnit().ySelfRot;
-        float desiredLocalYaw = Mth.wrapDegrees(rootAimRot.y);
+        float desiredLocalYaw = Mth.wrapDegrees(rootAimRot.y - context.operatorUnit().yBarrelSelfRot);
         float reachableLocalYaw = Mth.clamp(desiredLocalYaw, yawMin, yawMax);
         boolean yawReachable = Math.abs(Mth.wrapDegrees(desiredLocalYaw - reachableLocalYaw)) <= 0.5F;
-        Vec3 reachableWorldDirection = context.operatorUnit().worldVec(0.0F, reachableLocalYaw);
-        Vec3 reachableHorizontal = new Vec3(reachableWorldDirection.x, 0.0D, reachableWorldDirection.z);
-        if (reachableHorizontal.lengthSqr() <= 1.0E-8D) {
-            reachableHorizontal = targetDirection;
-        } else {
-            reachableHorizontal = reachableHorizontal.normalize();
-        }
-        float worldYaw = VectorUtil.vecToRot(reachableHorizontal).y;
+
 
         double localPitchMin = context.launchUnit().getXRotMin() - context.launchUnit().xSelfRot;
         double localPitchMax = context.launchUnit().getXRotMax() - context.launchUnit().xSelfRot;
@@ -463,7 +532,7 @@ public final class RVP_ArtilleryFireControlState {
         Sample previous = null;
         for (double elevation = minElevation; elevation <= maxElevation + 1.0E-6D;
              elevation += COARSE_ELEVATION_STEP_DEG) {
-            Sample sample = evaluate(context, target, muzzle, targetDirection, targetDistance, worldYaw, elevation);
+            Sample sample = evaluate(context, target, muzzle, targetDirection, targetDistance, reachableLocalYaw, elevation);
             if (sample == null) {
                 previous = null;
                 continue;
@@ -471,7 +540,7 @@ public final class RVP_ArtilleryFireControlState {
             candidates.add(sample);
             if (previous != null && signsDiffer(previous.rangeResidual(), sample.rangeResidual())) {
                 Sample root = refineRoot(context, target, muzzle, targetDirection, targetDistance,
-                        worldYaw, previous, sample);
+                        reachableLocalYaw, previous, sample);
                 if (root != null) {
                     candidates.add(root);
                 }
@@ -483,14 +552,16 @@ public final class RVP_ArtilleryFireControlState {
         if (selected == null) {
             double directElevation = Math.toDegrees(Math.atan2(target.y - muzzle.y, targetDistance));
             double clampedElevation = Mth.clamp(directElevation, minElevation, maxElevation);
-            Vec3 direction = VectorUtil.rotToVec((float) -clampedElevation, worldYaw).normalize();
-            return new Solution(muzzle.add(direction.scale(2048.0D)), null, clampedElevation,
-                    Double.POSITIVE_INFINITY, false, context.vehicle().getId(), context.weaponId(), revision);
+            AimContext pose = launchPose(context, clampedElevation, reachableLocalYaw);
+            Vec3 direction = VectorUtil.rotToVec(pose.direction.x, pose.direction.y);
+            return new Solution(pose.from.add(direction.scale(2048.0D)), null, clampedElevation,
+                    Double.POSITIVE_INFINITY, false, reachableLocalYaw, context.vehicle().getId(), context.weaponId(), revision);
         }
         double tolerance = solutionTolerance(targetDistance);
         boolean exact = yawReachable && selected.missDistance() <= tolerance;
-        return new Solution(muzzle.add(selected.direction().scale(2048.0D)), selected.impact(),
-                selected.elevationDeg(), selected.missDistance(), exact,
+        Vec3 solvedMuzzle = launchPose(context, selected.elevationDeg(), reachableLocalYaw).from;
+        return new Solution(solvedMuzzle.add(selected.direction().scale(2048.0D)), selected.impact(),
+                selected.elevationDeg(), selected.missDistance(), exact, reachableLocalYaw,
                 context.vehicle().getId(), context.weaponId(), revision);
     }
 
@@ -521,24 +592,9 @@ public final class RVP_ArtilleryFireControlState {
     @Nullable
     private static Sample evaluate(Context context, Vec3 target, Vec3 muzzle, Vec3 targetDirection,
                                    double targetDistance, float worldYaw, double elevationDeg) {
-        Vec3 direction = VectorUtil.rotToVec((float) -elevationDeg, worldYaw).normalize();
-        Vec3 velocity = direction.scale(context.data().resolveMuzzleSpeed(context.kind()));
-        if (context.data().isInheritVehicleVelocity()) {
-            velocity = velocity.add(context.vehicle().getDeltaMovement());
-        }
-        Vec3 impact = context.kind() == RVP_EnumWeaponKind.BOMB
-                ? RVP_CcipUtil.computeBombImpact(context.vehicle().level(), muzzle, velocity, context.data())
-                : RVP_RocketBallistics.computeArtilleryImpact(context.vehicle().level(), muzzle, velocity,
-                        direction, context.data(), context.vehicle(),
-                        RVP_RocketBallistics.ARTILLERY_PREDICTION_TICK, target.y,
-                        (x, z) -> {
-                            Integer cached = RVP_TacticalMapCache.getCachedHeight(x, z);
-                            if (cached != null) {
-                                return cached;
-                            }
-                            // 后备：缓存缺失时（如从视距外无人机切回）从已加载chunk实时获取
-                            return context.vehicle().level().getHeight(Heightmap.Types.WORLD_SURFACE, x, z);
-                        });
+        AimContext pose = launchPose(context, elevationDeg, worldYaw);
+        Vec3 direction = VectorUtil.rotToVec(pose.direction.x, pose.direction.y).normalize();
+        Vec3 impact = impactForAim(context, pose, target.y);
         if (impact == null) {
             return null;
         }
@@ -548,6 +604,57 @@ public final class RVP_ArtilleryFireControlState {
         double dz = impact.z - target.z;
         double missDistance = Math.sqrt(dx * dx + dz * dz);
         return new Sample(elevationDeg, direction, impact, alongRange - targetDistance, missDistance);
+    }
+
+    @Nullable
+    private static AimContext launchPose(Context context, double elevation, float localYaw) {
+        WeaponUnit operator = context.operatorUnit();
+        WeaponUnit launcher = context.launchUnit();
+        if (launcher.xTurnGroup == null) return launcher.aimContext();
+        var operatorGroup = operator.getStructureGroup();
+        var launcherGroup = launcher.getStructureGroup();
+        var barrel = launcher.xTurnGroup;
+        var transform = barrel.globalTransform(Vec3.ZERO, false, group -> {
+            if (group != operatorGroup && group != launcherGroup && group != barrel) return group.rotation;
+            Quaternionf rotation = new Quaternionf(group.baseRotation);
+            if (group == operatorGroup) {
+                rotation.mul(Axis.YN.rotationDegrees(localYaw));
+            } else if (group == launcherGroup) {
+                rotation.mul(Axis.YN.rotationDegrees(launcher.getYRot()));
+            }
+            if (group == barrel) rotation.mul(Axis.XP.rotationDegrees((float) -elevation));
+            return rotation;
+        }, group -> group.offset);
+
+        Bolt bolt = launcher.getCurrentBolt();
+        AbstractVehicle vehicle = context.vehicle();
+        Vec3 offset = transform.offset().add(new Vec3(transform.rotation().transform(bolt.offset.toVector3f())));
+        Quaternionf vehicleRotation = vehicle.rotYXZ();
+        Vec3 muzzle = vehicle.position().add(vehicle.centerOffset)
+                .add(new Vec3(vehicleRotation.transform(offset.subtract(vehicle.centerOffset).toVector3f())));
+        Vector3f angles = vehicleRotation.mul(transform.rotation()).getEulerAnglesYXZ(new Vector3f());
+        AimContext aim = new AimContext();
+        aim.direction = new Vec2((float) Math.toDegrees(angles.x) + bolt.xRot,
+                (float) Math.toDegrees(-angles.y) + bolt.yRot);
+        aim.from = muzzle.add(VectorUtil.rotToVec(aim.direction.x, aim.direction.y).scale(bolt.barrelLength));
+        return aim;
+    }
+
+    @Nullable
+    private static Vec3 impactForAim(Context context, AimContext aim, double targetY) {
+        Vec3 direction = VectorUtil.rotToVec(aim.direction.x, aim.direction.y).normalize();
+        Vec3 velocity = direction.scale(context.data().resolveMuzzleSpeed(context.kind()));
+        if (context.data().isInheritVehicleVelocity()) velocity = velocity.add(context.vehicle().getDeltaMovement());
+        var level = context.vehicle().level();
+        return context.kind() == RVP_EnumWeaponKind.BOMB
+                ? RVP_CcipUtil.computeBombImpact(level, aim.from, velocity, context.data())
+                : RVP_RocketBallistics.computeArtilleryImpact(level, aim.from, velocity, direction, context.data(),
+                        context.vehicle(), RVP_RocketBallistics.ARTILLERY_PREDICTION_TICK, targetY,
+                        (x, z) -> {
+                            if (level.hasChunk(x >> 4, z >> 4)) return null;
+                            Integer top = RVP_TacticalMapCache.getCachedHeight(x, z);
+                            return top == null ? null : top + 1;
+                        });
     }
 
     @Nullable
