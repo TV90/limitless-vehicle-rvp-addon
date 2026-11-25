@@ -539,9 +539,6 @@ public class RVP_ClientEvents {
                 // 雷达与 EO 条件都不满足：保持静默（原行为）。
             }
         }
-        while (RVP_Keys.TOGGLE_LASER_DESIGNATION.consumeClick()) {
-            RVP_ClientSaclosState.toggleVehicleLaser(player);
-        }
 
         // 火控稳定器切换（T 键）：RF 机枪火控稳定模式（STABLE/SEMI_AUTO/OFF）+ GPS 单点/多点
         // 模式。T 键为本体未占用的键，无需拦截本体处理，故以 ClientTick 轮询公共 API 实现，

@@ -1,6 +1,7 @@
 package org.ywzj.rvp.client.state;
 
 import net.minecraft.client.Minecraft;
+import org.ywzj.rvp.maintenance.RVP_RepairPlanner;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -27,7 +28,7 @@ public final class RVP_ClientRepairOrderState {
     public static final Order EMPTY = new Order(List.of(), List.of());
 
     /** 单队列长度上限（与服务端 RVP_RepairOrderTable 一致）。 */
-    private static final int MAX_QUEUE = 64;
+    private static final int MAX_QUEUE = RVP_RepairPlanner.MAX_BONES;
 
     private static final Map<Integer, Order> ORDERS = new LinkedHashMap<>();
 

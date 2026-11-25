@@ -32,7 +32,7 @@ import java.util.Locale;
  * @param healPerTickPercent  每 tick 回复量占最大血量百分比（默认 0.25：80t 共 20%）
  * @param healParts           生效期是否同步回部件血量（每部件 +10% 上限，默认 false）
  * @param requireMaxAltitude  允许触发的离地高度上限（方块，<0 不限；默认 -1）
- * @param moduleRepair        模块渐进恢复子配置（null = 缺省：设备概率 25% + ERA 25%）
+ * @param moduleRepair        模块渐进恢复子配置（null = 缺省：设备 30% 配额、损坏数大于 2 时至少修 2 个 + ERA 25%）
  */
 public record BoneMaintenanceConfig(
         int useTimeTicks,
@@ -47,7 +47,7 @@ public record BoneMaintenanceConfig(
      * 已列装快修的数值参数基准（不会自动给未配置载具授予能力）：
      * 生效 4 秒 = 80t × 0.25%/tick = 一次修复 20% 最大血量；冷却 300t（15 秒）且维修
      * 持续结束后才开始计时）；
-     * 不回部件血量、无离地限制、模块恢复走缺省（设备 25% + ERA 25%/至少 1 块）。
+     * 不回部件血量、无离地限制、模块恢复走缺省（设备 30%/多于两台保底两台 + ERA 25%/至少 1 块）。
      */
     public static BoneMaintenanceConfig defaults() {
         return new BoneMaintenanceConfig(80, 300, 0.25f, false, -1f, null);
@@ -87,7 +87,7 @@ public record BoneMaintenanceConfig(
         public final float eraRecoverFraction;
         /** ERA 单次维修至少恢复块数。 */
         public final int eraRecoverMin;
-        /** 设备类（非 ERA）每台已毁模块每次维修的独立恢复概率（0~1）。 */
+        /** 设备类每次修复的数量比例（0~1，默认 0.30），沿用现有 JSON 字段名。 */
         public final float deviceRecoverChance;
 
         @Nullable
@@ -100,12 +100,12 @@ public record BoneMaintenanceConfig(
                     ? Math.max(0f, Math.min(1f, eraRecoverFraction)) : 0.25f;
             this.eraRecoverMin = Math.max(0, Math.min(64, eraRecoverMin));
             this.deviceRecoverChance = Float.isFinite(deviceRecoverChance) && deviceRecoverChance >= 0f
-                    ? Math.min(1f, deviceRecoverChance) : 0.25f;
+                    ? Math.min(1f, deviceRecoverChance) : 0.30f;
         }
 
-        /** 缺省策略（未配置 module_repair 时）：设备概率 25% + ERA 25%/至少 1 块。 */
+        /** 缺省策略（未配置 module_repair 时）：设备 30% 配额、损坏数大于 2 时至少修 2 个 + ERA 25%/至少 1 块。 */
         public static ModuleRepair defaults() {
-            return new ModuleRepair(null, 0.25f, 1, 0.25f);
+            return new ModuleRepair(null, 0.25f, 1, 0.30f);
         }
 
         @Nullable
@@ -127,7 +127,14 @@ public record BoneMaintenanceConfig(
                     types,
                     GsonHelper.getAsFloat(obj, "era_recover_fraction", 0.25f),
                     GsonHelper.getAsInt(obj, "era_recover_min", 1),
-                    GsonHelper.getAsFloat(obj, "device_recover_chance", 0.25f));
+                    GsonHelper.getAsFloat(obj, "device_recover_chance", 0.30f));
+        }
+
+        /** 数量向上取整；失效超过两台时保底两台，最多恢复当前失效数。 */
+        public int deviceQuota(int destroyed) {
+            int count = (int) Math.ceil(destroyed * deviceRecoverChance);
+            if (destroyed > 2) count = Math.max(2, count);
+            return Math.min(destroyed, Math.max(0, count));
         }
 
         /** 解析后的可维修类型集合（懒加载；空 = 不维修任何模块）。 */
@@ -157,7 +164,9 @@ public record BoneMaintenanceConfig(
         public boolean isRepairable(BoneModuleType type) {
             return type != null && type != BoneModuleType.TRACK && (repairableTypesParsed().contains(type)
                     || (type == BoneModuleType.TURRET_TRAVERSE_DAMAGED
-                    && repairableTypesParsed().contains(BoneModuleType.TURRET_TRAVERSE)));
+                    && repairableTypesParsed().contains(BoneModuleType.TURRET_TRAVERSE))
+                    || (type == BoneModuleType.ENGINE_DAMAGED && repairableTypesParsed().contains(BoneModuleType.ENGINE))
+                    || (type == BoneModuleType.BARREL_DAMAGED && repairableTypesParsed().contains(BoneModuleType.BARREL)));
         }
 
         @Override

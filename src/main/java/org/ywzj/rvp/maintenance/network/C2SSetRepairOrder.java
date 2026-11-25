@@ -4,7 +4,10 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraftforge.network.NetworkEvent;
+import net.minecraftforge.network.PacketDistributor;
+import org.ywzj.rvp.maintenance.RVP_RepairPlanner;
 import org.ywzj.rvp.maintenance.server.RVP_RepairOrderTable;
+import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 
@@ -26,8 +29,15 @@ public class C2SSetRepairOrder {
     public List<String> eraBones;
     /** 辅助设备（非 ERA 骨模块，如 APS/ECM/干扰机）维修顺序：骨名列表，队首先修。 */
     public List<String> deviceBones;
+    /** 打开面板时只请求当前权威顺序，避免用本地旧缓存覆盖其他乘员的编辑。 */
+    public boolean requestOnly;
 
     public C2SSetRepairOrder() {
+    }
+
+    public C2SSetRepairOrder(int vehicleId) {
+        this(vehicleId, List.of(), List.of());
+        requestOnly = true;
     }
 
     public C2SSetRepairOrder(int vehicleId, List<String> eraBones, List<String> deviceBones) {
@@ -38,6 +48,7 @@ public class C2SSetRepairOrder {
 
     public static void encode(C2SSetRepairOrder msg, FriendlyByteBuf buf) {
         buf.writeVarInt(msg.vehicleId);
+        buf.writeBoolean(msg.requestOnly);
         buf.writeVarInt(msg.eraBones.size());
         for (String bone : msg.eraBones) {
             buf.writeUtf(bone, 256);
@@ -50,18 +61,21 @@ public class C2SSetRepairOrder {
 
     public static C2SSetRepairOrder decode(FriendlyByteBuf buf) {
         int vehicleId = buf.readVarInt();
-        // 队列长度上限 64（与 RVP_RepairOrderTable 一致）：decode 侧先钳制再读，防恶意超长包
-        int eraCount = Math.min(buf.readVarInt(), 64);
-        List<String> eraBones = new ArrayList<>(eraCount);
-        for (int i = 0; i < eraCount; i++) {
-            eraBones.add(buf.readUtf(256));
+        boolean request = buf.readBoolean();
+        C2SSetRepairOrder msg = new C2SSetRepairOrder(vehicleId, readBones(buf), readBones(buf));
+        msg.requestOnly = request;
+        return msg;
+    }
+
+    /** 两个方向使用相同的长度校验，超限拒绝整包，避免截断导致后续字段错位。 */
+    static List<String> readBones(FriendlyByteBuf buf) {
+        int count = buf.readVarInt();
+        if (count < 0 || count > RVP_RepairPlanner.MAX_BONES) {
+            throw new IllegalArgumentException("Invalid repair queue size: " + count);
         }
-        int deviceCount = Math.min(buf.readVarInt(), 64);
-        List<String> deviceBones = new ArrayList<>(deviceCount);
-        for (int i = 0; i < deviceCount; i++) {
-            deviceBones.add(buf.readUtf(256));
-        }
-        return new C2SSetRepairOrder(vehicleId, eraBones, deviceBones);
+        List<String> result = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) result.add(buf.readUtf(256));
+        return result;
     }
 
     public static void handle(C2SSetRepairOrder msg, Supplier<NetworkEvent.Context> ctxSupplier) {
@@ -86,7 +100,17 @@ public class C2SSetRepairOrder {
             }
             // 逐条合法性在快修触发消费时按"骨块确实失效 + 类型可修"服务端权威校验，
             // 这里只做保序去重收纳（无效骨名永远匹配不到失效集，无越权面）。
-            RVP_RepairOrderTable.setOrder(vehicle.getUUID(), msg.eraBones, msg.deviceBones);
+            if (!msg.requestOnly) {
+                RVP_RepairOrderTable.setOrder(vehicle.getUUID(), msg.eraBones, msg.deviceBones);
+            }
+            // 调用队列补全后回传权威顺序；所有乘员实时看见已保存的调整。
+            var order = RVP_RepairOrderTable.getOrder(vehicle);
+            var reply = new S2CRepairOrder(vehicle.getId(), order.eraBones(), order.deviceBones());
+            for (Entity passenger : vehicle.getPassengers()) {
+                if (passenger instanceof ServerPlayer recipient && (!msg.requestOnly || recipient == player)) {
+                    RVP_Network.CHANNEL.send(PacketDistributor.PLAYER.with(() -> recipient), reply);
+                }
+            }
         });
     }
 }

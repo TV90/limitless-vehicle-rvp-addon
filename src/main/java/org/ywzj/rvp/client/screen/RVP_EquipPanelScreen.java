@@ -8,19 +8,27 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.resources.language.I18n;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
+import org.ywzj.rvp.client.RVP_Keys;
+import org.ywzj.rvp.client.state.RVP_ClientBoneModuleState;
+import org.ywzj.rvp.client.state.RVP_ClientMaintenanceState;
 import org.ywzj.rvp.client.screen.RVP_EquipPanelData.Category;
 import org.ywzj.rvp.client.screen.RVP_EquipPanelData.Row;
-import org.ywzj.rvp.client.state.RVP_ClientBoneModuleState;
+import org.ywzj.rvp.maintenance.RVP_RepairPlanner;
 import org.ywzj.rvp.client.state.RVP_ClientRepairOrderState;
 import org.ywzj.rvp.client.state.RVP_ClientRepairOrderState.Order;
 import org.ywzj.rvp.maintenance.network.C2SSetRepairOrder;
+import org.ywzj.rvp.maintenance.network.C2SUseMaintenance;
 import org.ywzj.rvp.network.RVP_Network;
+import org.ywzj.rvp.util.RVP_VehicleSeatAccess;
 import org.ywzj.rvp.vehicle.BoneModuleType;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Set;
 
 /** 透明的三栏辅助设备面板。部件、俯视图和维修队列共用同一辆车的状态。 */
 @OnlyIn(Dist.CLIENT)
@@ -33,9 +41,19 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
     /** 上次显示的部件、维修顺序，均为值快照。 */
     private List<Category> categories = List.of();
     private Order displayedOrder;
+    /** 与配额文字同刻刷新的预览目标，避免悬停时每帧重新遍历全车模块。 */
+    private Set<String> previewBones = Set.of();
     /** 翻页、缩放时保留用户正在查看的分类和队列。 */
     private String categoryTitle = "";
-    private boolean showEra = true;
+    private boolean showEra;
+    /** 已挂载队列行，用于按当前 AUI 矩形识别拖拽和插入位置。 */
+    private final Map<String, Element> queueRows = new LinkedHashMap<>();
+    /** 拖动中的骨名和所属队列，窗口重建时清空。 */
+    private String draggedBone;
+    private boolean draggedEra, dragMoved;
+    /** 按下位置和待插入索引；位置使用 Minecraft GUI 坐标。 */
+    private double dragStartX, dragStartY;
+    private int dropIndex;
     /** 将取数限制为每五个游戏刻一次。 */
     private int refreshTicks;
     /** 俯视图画布矩形采用值（GUI 像素坐标）：scissor 与绘制区域来源。 */
@@ -68,6 +86,7 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
         frame.setInlineStyleProperty("--eq-detail", Math.round(15 * factor) + "px");
         frame.setInlineStyleProperty("--eq-heading", Math.round(19 * factor) + "px");
         frame.setInlineStyleProperty("--eq-title", Math.round(22 * factor) + "px");
+        draggedBone = null;
         skeletonCanvas = el("skeleton-canvas");
         skeletonRectValid = skeletonRectFreshValid = false;
         el("vehicle-name").setTextContent(vehicle.getDisplayName().getString());
@@ -75,16 +94,21 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
         el("close-button").addEventListener("click", event -> onClose());
         el("era-tab").addEventListener("click", event -> selectQueue(true));
         el("dev-tab").addEventListener("click", event -> selectQueue(false));
+        el("repair-preview").addEventListener("click", event -> useMaintenance());
         // 每次挂载都构建新 DOM，状态相同也不能复用上一个 Document 的元素。
         refresh(true);
+        if (RVP_EquipPanelData.hasMaintenance(vehicle)) {
+            // 请求服务器保存的车组共享顺序，首次打开也能完整展示。
+            RVP_Network.CHANNEL.sendToServer(new C2SSetRepairOrder(vehicle.getId()));
+        }
     }
 
-    private Element el(String id) { return document.getElementById(id); }
+    private Element el(String id) { return document == null ? null : document.getElementById(id); }
 
     @Override
     public void tick() {
         super.tick();
-        if (document != null && ++refreshTicks >= 5) {
+        if (document != null && draggedBone == null && ++refreshTicks >= 5) {
             refreshTicks = 0;
             refresh(false);
         }
@@ -94,7 +118,7 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         if (document != null) querySkeletonCanvasRect();
         super.render(graphics, mouseX, mouseY, partialTick);
-        renderSkeletonNative(graphics, partialTick);
+        renderSkeletonNative(graphics, partialTick, over(el("repair-preview"), mouseX, mouseY));
     }
 
     private static void text(Element element, String value) {
@@ -132,16 +156,48 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
         String cls = repair ? "col repair" : "col repair hidden";
         if (!cls.equals(el("maint-panel").getAttribute("class"))) el("maint-panel").setClassName(cls);
         if (!repair) return;
-        Order order = RVP_ClientRepairOrderState.get(vehicle.getId());
-        List<String> era = new ArrayList<>(order.eraBones());
-        List<String> dev = new ArrayList<>(order.deviceBones());
-        boolean pruned = era.removeIf(b -> !queueEntryStillFailed(b));
-        pruned |= dev.removeIf(b -> !queueEntryStillFailed(b));
-        if (pruned) order = saveOrder(era, dev);
+        Order order = RVP_EquipPanelData.repairOrder(vehicle);
+        RVP_ClientRepairOrderState.set(vehicle.getId(), order.eraBones(), order.deviceBones());
         if (changed || !order.equals(displayedOrder)) drawQueue(order);
         var forecast = RVP_EquipPanelData.repairForecast(vehicle);
-        text(el("repair-forecast"), label("forecast", forecast.eraQuota(), (int) Math.ceil(forecast.deviceExpected()),
-                forecast.deviceDestroyed(), forecast.deviceChancePercent()));
+        previewBones = forecast.bones();
+        text(el("repair-forecast"), label("forecast", forecast.eraQuota(), forecast.deviceQuota()));
+        // 读取现有服务端快修快照和玩家实际绑定键，不另设冷却计时器。
+        var state = RVP_ClientMaintenanceState.get(vehicle.getId());
+        String status = state == null ? label("repair_syncing")
+                : state.isUsing() ? I18n.get("gui.ywzj_rvp.hud.value_repairing", (state.useRemain() + 19) / 20)
+                : state.isCoolingDown() ? I18n.get("gui.ywzj_rvp.hud.value_cooling", (state.cooldownRemain() + 19) / 20)
+                : maintenanceAvailable() ? I18n.get("gui.ywzj_rvp.hud.value_ready") : label("repair_unavailable");
+        text(el("repair-state"), status);
+        text(el("repair-key"), "[" + RVP_Keys.USE_MAINTENANCE.getTranslatedKeyMessage().getString() + "]");
+        boolean available = maintenanceAvailable();
+        el("repair-preview").setClassName(available ? "" : "unavailable");
+        el("repair-preview").setAttribute("aria-disabled", Boolean.toString(!available));
+    }
+
+    /** 客户端仅控制按钮可用外观；服务器继续独立校验座位、模块、冷却和高度。 */
+    private boolean maintenanceAvailable() {
+        var state = RVP_ClientMaintenanceState.get(vehicle.getId());
+        if (state == null || state.isUsing() || state.isCoolingDown() || vehicle.isDestroyed()
+                || !RVP_VehicleSeatAccess.isPrimaryPassenger(minecraft.player, vehicle)) return false;
+        var binding = RVP_VehicleHitboxFactorManager.INSTANCE.resolveMaintenanceModule(vehicle);
+        return binding != null && RVP_ClientBoneModuleState.isModuleActive(vehicle.getId(), binding.bone(), BoneModuleType.MAINTENANCE)
+                && (binding.config().requireMaxAltitude() < 0
+                || vehicle.getY() - vehicle.level().getMinBuildHeight() <= binding.config().requireMaxAltitude());
+    }
+
+    /** 按钮与绑定按键走同一条现有维修请求，不在界面直接回血或重置模块。 */
+    private void useMaintenance() {
+        if (maintenanceAvailable()) RVP_Network.CHANNEL.sendToServer(new C2SUseMaintenance(vehicle.getId()));
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (RVP_Keys.USE_MAINTENANCE.matches(keyCode, scanCode)) {
+            useMaintenance();
+            return true;
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     /** 类别栏和部件列表独立滚动，选择分类后回到该分类第一项。 */
@@ -165,8 +221,7 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
             });
             if (!current) continue;
             for (Row row : category.rows()) {
-                boolean actionable = row.queueKey() != null && (!row.active() || row.damaged())
-                        && RVP_EquipPanelData.hasMaintenance(vehicle);
+                boolean actionable = row.queueKey() != null && RVP_EquipPanelData.hasMaintenance(vehicle);
                 Element item = append(list, actionable ? "button" : "div", actionable ? "part action" : "part", "");
                 append(item, "span", "idx", String.valueOf(row.index()));
                 String alias = "__vehicle__".equals(row.alias()) ? category.title() : row.alias();
@@ -175,7 +230,7 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
                 String state = row.damaged() ? "damaged" : row.active() ? "ok" : "bad";
                 append(item, "span", "status " + state, label("state_" + state));
                 if (actionable) item.addEventListener("click", event -> editQueue(
-                        RVP_EquipPanelData.QUEUE_ERA.equals(row.queueKey()), row.boneName(), true));
+                        RVP_EquipPanelData.QUEUE_ERA.equals(row.queueKey()), row.boneName(), 0));
             }
         }
     }
@@ -183,7 +238,7 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
     private void selectQueue(boolean era) {
         if (era == showEra) return;
         showEra = era;
-        drawQueue(RVP_ClientRepairOrderState.get(vehicle.getId()));
+        drawQueue(RVP_EquipPanelData.repairOrder(vehicle));
         el("queue-list").setScrollTop(0);
     }
 
@@ -195,33 +250,38 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
         el("dev-tab").setAttribute("aria-pressed", Boolean.toString(!showEra));
         Element list = el("queue-list");
         list.replaceChildren();
+        queueRows.clear();
         List<String> bones = showEra ? order.eraBones() : order.deviceBones();
         if (bones.isEmpty()) append(list, "div", "empty", label("queue_empty"));
         for (int i = 0; i < bones.size(); i++) {
             String bone = bones.get(i);
             Element item = append(list, "div", "queue-row", "");
+            item.setAttribute("data-bone", bone);
+            queueRows.put(bone, item);
             append(item, "span", "idx", Integer.toString(i + 1));
             Row part = categories.stream().flatMap(c -> c.rows().stream())
                     .filter(row -> bone.equals(row.boneName())).findFirst().orElse(null);
             String name = RVP_VehicleHitboxFactorManager.INSTANCE.resolveHitboxDisplayNameLocalized(vehicle, bone);
+            if ("__vehicle__".equals(name)) {
+                name = categories.stream().filter(c -> c.rows().stream().anyMatch(r -> bone.equals(r.boneName())))
+                        .map(Category::title).findFirst().orElse(name);
+            }
             append(item, "span", "name", part == null ? name : "#" + part.index() + " " + name);
-            Element remove = append(item, "button", "queue-x", "×");
-            remove.setAttribute("aria-label", I18n.get("selectWorld.delete") + " " + name);
-            remove.addEventListener("click", event -> editQueue(showEra, bone, false));
+            int stage = RVP_EquipPanelData.boneStage(vehicle, bone);
+            String state = stage == 1 ? "damaged" : stage >= 2 ? "bad" : "ok";
+            append(item, "span", "status " + state, label("state_" + state));
+            append(item, "span", "drag-handle", "≡");
         }
     }
 
-    private void editQueue(boolean eraQueue, String bone, boolean add) {
-        if (add && !queueEntryStillFailed(bone)) return;
-        Order order = RVP_ClientRepairOrderState.get(vehicle.getId());
-        List<String> era = new ArrayList<>(order.eraBones()), dev = new ArrayList<>(order.deviceBones());
-        List<String> target = eraQueue ? era : dev;
-        if (add) {
-            if (target.size() >= 64 || target.contains(bone)) return;
-            target.add(bone);
-        } else if (!target.remove(bone)) return;
+    private void editQueue(boolean eraQueue, String bone, int index) {
+        Order order = RVP_EquipPanelData.repairOrder(vehicle);
+        List<String> era = order.eraBones(), dev = order.deviceBones();
+        if (eraQueue) era = RVP_RepairPlanner.move(era, bone, index);
+        else dev = RVP_RepairPlanner.move(dev, bone, index);
         showEra = eraQueue;
         drawQueue(saveOrder(era, dev));
+        previewBones = RVP_EquipPanelData.repairForecast(vehicle).bones();
     }
 
     /** 本地立即回显，同一条原有网络消息保存两组队列。 */
@@ -232,24 +292,68 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
         return order;
     }
 
-    private boolean queueEntryStillFailed(String bone) {
-        var types = RVP_EquipPanelData.boneModules(vehicle).get(bone);
-        if (types == null) {
-            return false; // 配置里已无该骨（如配置热重载移除）：视为不再待修
-        }
-        for (BoneModuleType type : types) {
-            if (type == BoneModuleType.MAINTENANCE || type == BoneModuleType.TRACK) {
-                continue;
-            }
-            if (!RVP_ClientBoneModuleState.isModuleActive(vehicle.getId(), bone, type)) {
+    /** DOM 矩形换算和点击/悬停共用坐标，拖拽只在可见队列区域内开始。 */
+    private boolean over(Element node, double x, double y) {
+        if (node == null || document == null) return false;
+        var box = node.getBoundingClientRect();
+        double scale = document.getViewport().renderScale();
+        return box.width > 0 && box.height > 0 && x >= box.x * scale && x < (box.x + box.width) * scale
+                && y >= box.y * scale && y < (box.y + box.height) * scale;
+    }
+
+    @Override
+    public boolean mouseClicked(double x, double y, int button) {
+        if (button == 0 && over(el("queue-list"), x, y)) {
+            for (var row : queueRows.entrySet()) {
+                if (!over(row.getValue(), x, y)) continue;
+                draggedBone = row.getKey();
+                draggedEra = showEra;
+                dragStartX = x;
+                dragStartY = y;
+                dragMoved = false;
                 return true;
             }
         }
-        return false;
+        return super.mouseClicked(x, y, button);
+    }
+
+    @Override
+    public boolean mouseDragged(double x, double y, int button, double dx, double dy) {
+        if (button != 0 || draggedBone == null) return super.mouseDragged(x, y, button, dx, dy);
+        dragMoved |= Math.hypot(x - dragStartX, y - dragStartY) >= 3;
+        if (!dragMoved) return true;
+        dropIndex = 0;
+        double scale = document.getViewport().renderScale();
+        Element scroll = el("queue-list");
+        var viewport = scroll.getBoundingClientRect();
+        double localY = y / scale;
+        if (localY < viewport.y + 22) scroll.setScrollTop(Math.max(0, scroll.getScrollTop() - 12));
+        else if (localY > viewport.y + viewport.height - 22) scroll.setScrollTop(scroll.getScrollTop() + 12);
+        for (var row : queueRows.entrySet()) {
+            row.getValue().setClassName(row.getKey().equals(draggedBone) ? "queue-row dragging" : "queue-row");
+            if (row.getKey().equals(draggedBone)) continue;
+            var box = row.getValue().getBoundingClientRect();
+            if (y >= (box.y + box.height / 2) * scale) dropIndex++;
+        }
+        List<String> others = new ArrayList<>(queueRows.keySet());
+        others.remove(draggedBone);
+        if (dropIndex < others.size()) queueRows.get(others.get(dropIndex)).setClassName("queue-row drop-before");
+        else if (!others.isEmpty()) queueRows.get(others.get(others.size() - 1)).setClassName("queue-row drop-after");
+        return true;
+    }
+
+    @Override
+    public boolean mouseReleased(double x, double y, int button) {
+        if (button != 0 || draggedBone == null) return super.mouseReleased(x, y, button);
+        String bone = draggedBone;
+        draggedBone = null;
+        if (dragMoved) editQueue(draggedEra, bone, dropIndex);
+        else drawQueue(RVP_EquipPanelData.repairOrder(vehicle));
+        return true;
     }
 
     /** 在现有 AUI 画布内调用本体俯视图；保留 scissor、稳定画布和原生绘制时序。 */
-    private void renderSkeletonNative(GuiGraphics guiGraphics, float partialTick) {
+    private void renderSkeletonNative(GuiGraphics guiGraphics, float partialTick, boolean preview) {
         if (!skeletonRectValid) {
             // 尚无稳定有效矩形（首帧/布局未完成）：跳过，下一帧帧首预读重试
             return;
@@ -260,7 +364,8 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
         try {
             poseStack.translate(0, 0, 400);
             RVP_EquipSkeletonRenderer.render(guiGraphics, vehicle,
-                    skeletonRectX0, skeletonRectY0, skeletonRectX1, skeletonRectY1, partialTick);
+                    skeletonRectX0, skeletonRectY0, skeletonRectX1, skeletonRectY1, partialTick,
+                    preview ? previewBones : Set.of());
             guiGraphics.flush();
         } finally {
             poseStack.popPose();

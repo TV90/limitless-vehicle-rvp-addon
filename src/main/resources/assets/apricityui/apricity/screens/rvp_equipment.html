@@ -33,7 +33,7 @@
         .label { min-height:31px; flex:0 0 auto; padding:5px 10px; font-size:var(--eq-heading,19px); font-weight:bold; }
         .rule { border-bottom:1px solid rgba(199,194,179,.47); }
         .scroll { min-height:0; overflow-y:auto; overflow-x:hidden; }
-        #categories { flex:0 1 38%; border-bottom:1px solid #928a78; }
+        #categories { flex:2 1 0; border-bottom:1px solid #928a78; }
         .category, .part, .queue-row { width:100%; min-width:0; min-height:33px; padding:4px 8px; gap:5px; border-bottom:1px solid rgba(194,190,179,.27); }
         .category:not(.selected), .queue-row { background-image:linear-gradient(180deg,rgba(51,52,59,.51),rgba(22,23,28,.34)); }
         .category.selected { font-weight:bold; }
@@ -59,7 +59,17 @@
         .tabs { flex:0 0 auto; gap:2px; padding:6px; }
         .tab { display:flex; align-items:center; justify-content:center; flex:1 1 0; min-width:0; height:30px; text-align:center; border-bottom:1px solid #9c9480; }
         .queue-row { min-height:30px; }
-        .queue-x { flex:0 0 30px; height:25px; background-color:transparent; color:#eee; text-align:center; }
+        .drag-handle { flex:0 0 18px; text-align:center; color:#aaa9a3; }
+        .queue-row { cursor:grab; }
+        .queue-row.dragging { opacity:.45; cursor:grabbing; }
+        .queue-row.drop-before { border-top:2px solid #d7c48a; }
+        .queue-row.drop-after { border-bottom:2px solid #d7c48a; }
+        #repair-preview { margin:6px 9px; padding:6px 10px; text-align:center; width:calc(100% - 18px);
+            background-image:linear-gradient(180deg,rgba(75,77,81,.85),rgba(25,27,31,.85)); }
+        #repair-preview:hover { color:#b1efb7; background-image:linear-gradient(180deg,rgba(76,92,81,.92),rgba(31,47,37,.88)); }
+        #repair-preview.unavailable { opacity:.55; cursor:default; }
+        #repair-status { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:0 9px; font-size:var(--eq-detail,15px); }
+        #repair-key { flex:0 0 auto; white-space:nowrap; }
         .empty, .hint, #repair-forecast { padding:6px 9px; line-height:1.35; overflow-wrap:anywhere; }
         .repair-foot { flex:0 0 auto; border-top:1px solid rgba(200,193,175,.4); }
         #repair-forecast { font-size:var(--eq-detail,15px); } .hint { padding-top:0; }
@@ -96,6 +106,8 @@
                 <div class="tabs"><button id="era-tab" type="button" class="tab"><translation>gui.ywzj_rvp.equipment.era_tab</translation></button>
                     <button id="dev-tab" type="button" class="tab"><translation>gui.ywzj_rvp.equipment.device_tab</translation></button></div>
                 <div id="queue-list" class="scroll"></div><footer class="repair-foot"><div id="repair-forecast"></div>
+                <div id="repair-status"><span id="repair-state"></span><span id="repair-key"></span></div>
+                <button id="repair-preview" type="button"><translation>gui.ywzj_rvp.equipment.repair_preview</translation></button>
                 <div class="hint"><translation>gui.ywzj_rvp.equipment.queue_hint</translation></div></footer></section>
         </div>
     </main>

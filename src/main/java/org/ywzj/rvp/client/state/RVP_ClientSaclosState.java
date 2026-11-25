@@ -2,7 +2,6 @@ package org.ywzj.rvp.client.state;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
@@ -33,8 +32,6 @@ public final class RVP_ClientSaclosState {
     private static int pendingAcquireTicks;
     private static int vehicleId = -1;
     @Nullable
-    private static Boolean manualLaserOverride;
-    @Nullable
     private static Vec3 laserHudPos;
 
     private RVP_ClientSaclosState() {}
@@ -64,7 +61,6 @@ public final class RVP_ClientSaclosState {
         updateVehicleContext(player.getVehicle());
         if (LocalVehiclePlayer.instance.vehicle != null
                 && RVP_ClientFcsState.isDestroyed(LocalVehiclePlayer.instance.vehicle)) {
-            manualLaserOverride = null;
             laserEnabled = false;
             laserHudPos = null;
             syncTargetingDisabled();
@@ -93,34 +89,6 @@ public final class RVP_ClientSaclosState {
         }
         // 调用服务端确认的锁点缓存，真实/虚拟导弹共用；脱锁后不读取弹体出生时的陈旧目标。
         laserHudPos = RVP_ClientHitlState.getClientDesignatedPos();
-    }
-
-    public static void toggleVehicleLaser(LocalPlayer player) {
-        if (player == null || !LocalVehiclePlayer.instance.onVehicle() || RVP_ClientHitlState.isDesignateMode()) {
-            return;
-        }
-        if (LocalVehiclePlayer.instance.vehicle == null
-                || RVP_ClientFcsState.isDestroyed(LocalVehiclePlayer.instance.vehicle)) {
-            return;
-        }
-        if (!canUseVehicleLaserToggle(resolveCurrentWeapon())) {
-            return;
-        }
-        boolean next = !isLaserEnabled();
-        manualLaserOverride = next;
-        laserEnabled = next;
-        laserHudPos = next ? resolvePodAimPoint() : null;
-        if (!next) {
-            syncTargetingDisabled();
-        } else {
-            syncDesignation();
-        }
-        player.displayClientMessage(
-                Component.translatable(next
-                        ? "message.ywzj_rvp.saclos.designation_on"
-                        : "message.ywzj_rvp.saclos.designation_off"),
-                true
-        );
     }
 
     @Nullable
@@ -302,7 +270,6 @@ public final class RVP_ClientSaclosState {
         trackedMissileId = -1;
         pendingAcquireTicks = 0;
         vehicleId = -1;
-        manualLaserOverride = null;
         laserHudPos = null;
     }
 
@@ -316,9 +283,10 @@ public final class RVP_ClientSaclosState {
         if (nextVehicleId == vehicleId) {
             return;
         }
+        // 服务端无会话时默认开启；按住按键上车也必须先明确发送关闭，而非等到曾经照射过。
+        if (RVP_Keys.TOGGLE_LASER_DESIGNATION.isDown()) serverTargetingActive = true;
         syncTargetingDisabled();
         vehicleId = nextVehicleId;
-        manualLaserOverride = null;
         trackedMissileId = -1;
         pendingAcquireTicks = 0;
         laserHudPos = null;
@@ -330,13 +298,11 @@ public final class RVP_ClientSaclosState {
             return false;
         }
         AbstractVehicleWeapon<?> currentWeapon = resolveCurrentWeapon();
-        if (!canUseVehicleLaserToggle(currentWeapon)) {
+        if (!canUseVehicleLaser(currentWeapon)) {
             return false;
         }
-        if (manualLaserOverride != null) {
-            return manualLaserOverride;
-        }
-        return isAutoLaserWeapon(currentWeapon);
+        // 激光键仅作按住暂停：每 Tick 读取当前按键，松开立即回到该武器的自动照射状态。
+        return isAutoLaserWeapon(currentWeapon) && !RVP_Keys.TOGGLE_LASER_DESIGNATION.isDown();
     }
 
     @Nullable
@@ -355,7 +321,7 @@ public final class RVP_ClientSaclosState {
         return rvp.getData().isOperatorGuided();
     }
 
-    private static boolean canUseVehicleLaserToggle(@Nullable AbstractVehicleWeapon<?> weapon) {
+    private static boolean canUseVehicleLaser(@Nullable AbstractVehicleWeapon<?> weapon) {
         if (!(weapon instanceof RVP_WeaponBase rvp)) {
             return false;
         }

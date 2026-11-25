@@ -23,6 +23,8 @@ public final class RVP_DamagedPartWireframeHelper {
     private static final RVP_ScopeCubePartResolver CUBES = new RVP_ScopeCubePartResolver();
     /** AUI 显式传入的绘制载具；嵌套绘制结束恢复，避免读成另一台本地载具。 */
     private static AbstractVehicle displayedVehicle;
+    /** 仅当前 AUI 作用域内的预计修复骨，避免影响世界渲染和常驻 HUD。 */
+    private static Set<String> previewBones = Set.of();
 
     private RVP_DamagedPartWireframeHelper() { }
 
@@ -33,21 +35,36 @@ public final class RVP_DamagedPartWireframeHelper {
 
     /** 原生俯视图没有公开入口，AUI 调用期间显式传递同一台载具上下文。 */
     public static Scope displaying(AbstractVehicle vehicle) {
-        Scope scope = new Scope(displayedVehicle);
+        return displaying(vehicle, Set.of());
+    }
+
+    public static Scope displaying(AbstractVehicle vehicle, Set<String> preview) {
+        Scope scope = new Scope(displayedVehicle, previewBones);
         displayedVehicle = vehicle;
+        previewBones = preview;
         return scope;
     }
 
     public static final class Scope implements AutoCloseable {
         /** 嵌套绘制前的载具。 */
         private final AbstractVehicle previous;
-        private Scope(AbstractVehicle previous) { this.previous = previous; }
-        @Override public void close() { displayedVehicle = previous; }
+        /** 嵌套绘制前的预览集合。 */
+        private final Set<String> previousPreview;
+        private Scope(AbstractVehicle previous, Set<String> preview) {
+            this.previous = previous;
+            this.previousPreview = preview;
+        }
+        @Override public void close() {
+            displayedVehicle = previous;
+            previewBones = previousPreview;
+        }
     }
 
     /** 有模块配置就替换整车原生血量染色；没有模块配置则原样沿用本体。 */
     public static int headingFillColor(@Nullable AbstractVehicle vehicle, VehicleCubeOBB cube, int nativeFill) {
         Map<String, Set<BoneModuleType>> modules = RVP_VehicleHitboxFactorManager.INSTANCE.resolveBoneModules(vehicle);
+        String bone = configuredBone(vehicle, cube, modules);
+        if (vehicle == displayedVehicle && bone != null && previewBones.contains(bone)) return 0x804CE278;
         return chooseFill(!modules.isEmpty(), cubeStage(vehicle, cube, modules), nativeFill);
     }
 
@@ -88,22 +105,27 @@ public final class RVP_DamagedPartWireframeHelper {
 
     private static int cubeStage(@Nullable AbstractVehicle vehicle, VehicleCubeOBB cube,
                                  Map<String, Set<BoneModuleType>> modules) {
-        if (vehicle == null || cube == null || modules.isEmpty()) return 0;
+        String bone = configuredBone(vehicle, cube, modules);
+        return bone == null ? 0 : boneStage(vehicle.getId(), bone, modules.getOrDefault(bone, Set.of()));
+    }
+
+    /** 复用具名子骨、炮管组和父部件回退规则，预览与损伤染色命中同一部件。 */
+    private static String configuredBone(@Nullable AbstractVehicle vehicle, VehicleCubeOBB cube,
+                                          Map<String, Set<BoneModuleType>> modules) {
+        if (vehicle == null || cube == null || modules.isEmpty()) return null;
         PartUnit<?> part = CUBES.resolve(vehicle, cube);
         String bone = CUBES.resolveBone(vehicle, cube);
-        if (bone != null && modules.containsKey(bone)) return boneStage(vehicle.getId(), bone, modules.get(bone));
-        if (part == null) return 0;
+        if (bone != null && modules.containsKey(bone)) return bone;
+        if (part == null) return null;
         String structure = part.getData() == null ? null : part.getData().getStructureBone();
         // 已解析到独立具名子骨时不继承父部件损伤，尤其不能把炮管档位染到整个炮塔。
-        if (bone != null && !bone.equals(structure)) return 0;
+        if (bone != null && !bone.equals(structure)) return null;
         if (part instanceof WeaponUnit weapon && structure != null
                 && RVP_VehicleHitboxFactorManager.isBarrelGroupCube(cube, weapon)
                 && modules.containsKey(structure + "_barrel")) {
-            String barrel = structure + "_barrel";
-            return boneStage(vehicle.getId(), barrel, modules.get(barrel));
+            return structure + "_barrel";
         }
-        String configuredBone = structure != null && modules.containsKey(structure) ? structure : part.getId();
-        return boneStage(vehicle.getId(), configuredBone, modules.getOrDefault(configuredBone, Set.of()));
+        return structure != null && modules.containsKey(structure) ? structure : part.getId();
     }
 
     private static int boneStage(int entityId, String bone, Set<BoneModuleType> configured) {
