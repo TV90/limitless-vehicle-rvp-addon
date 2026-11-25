@@ -5,12 +5,15 @@ import com.github.mcmodderanchor.simplebedrockmodel.v1.common.model.BedrockModel
 import com.google.gson.JsonParser;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Quaternionf;
 import org.junit.jupiter.api.*;
 import org.ywzj.rvp.config.RVP_VehicleExtendedConfigManager;
 import org.ywzj.rvp.entity.projectile.RVP_ProjectileSimulationBootstrap;
+import org.ywzj.rvp.entity.projectile.RVP_ProjectileSimulationLevel;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
+import org.ywzj.rvp.weapon.laser.RVP_LaserRaycast;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
 import org.ywzj.vehicle.custom.StructureModelManager;
 import org.ywzj.vehicle.custom.part.data.PartUnitData;
@@ -23,6 +26,7 @@ import java.util.Map;
 import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.ywzj.rvp.entity.projectile.RVP_ProjectileSimulationBootstrap.*;
+import static org.ywzj.rvp.weapon.laser.RVP_LaserRaycastTest.shooterFixture;
 
 /** 用本体真实结构解析与 group 层级验证选骨，测试环境只替换世界/实体构造边界。 */
 class RVP_NamedVehicleObbsTest {
@@ -100,6 +104,31 @@ class RVP_NamedVehicleObbsTest {
         assertEquals(1.5F, manager.resolveHitboxExplosionDamageFactor(vehicle, top.center().add(0, .1, 0)));
         var body = RVP_NamedVehicleObbs.resolve(vehicle, new RVP_NamedVehicleObbs.Key("vehicle_body", 0));
         assertEquals(1F, manager.resolveHitboxExplosionDamageFactor(vehicle, body.center()));
+    }
+
+    @Test void laserUsesRealHullSurfaceForBothContactAndDamageBone() {
+        var level = RVP_ProjectileSimulationLevel.create(-20, null);
+        vehicle.setBoundingBox(new AABB(-2.5, -1.25, -3.125, 2.5, 3.75, 3.125));
+        level.addObserver(vehicle);
+        var origin = shooterFixture();
+        Vec3 direction = new Vec3(0, 0, 1);
+
+        var gap = RVP_LaserRaycast.computeBeam(level, origin, null, new Vec3(1.75, 2.25, -10), direction, 20, 0.5);
+        assertFalse(gap.hitSomething(), "纯物理盒和模型空隙不应拦截光束");
+        var hit = RVP_LaserRaycast.computeBeam(level, origin, null, new Vec3(1.75, 0.5, -10), direction, 20, 0.5);
+        assertSame(vehicle, hit.hitEntity());
+        assertNotNull(hit.vehicleHit());
+        assertEquals("vehicle_body", hit.vehicleHit().box().key().bone());
+        assertEquals(-3, hit.impactPoint().z, 1e-6);
+
+        var manager = new RVP_VehicleHitboxFactorManager();
+        var config = JsonParser.parseString("""
+                {"structure_model":"rvp:vehicle/test_weakpoint","hitbox_damage_factor":{"vehicle_body":0.5}}
+                """).getAsJsonObject();
+        manager.applyFromJsonMap(Map.of(vehicleId, config));
+        var damage = manager.resolveHitboxDamage(vehicle, hit.vehicleHit());
+        assertEquals(0.5f, damage.factor());
+        assertEquals(hit.impactPoint(), damage.hitPoint());
     }
 
     private static VehicleCubeGroup group(BedrockBone bone, VehicleCubeGroup parent) {

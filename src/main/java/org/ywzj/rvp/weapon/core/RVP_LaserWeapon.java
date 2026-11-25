@@ -68,14 +68,17 @@ public class RVP_LaserWeapon extends RVP_WeaponBase {
             // 不结算伤害/告警/致盲——光束被烟吸收但弹药与热量照常消耗，属设计语义。
             if (beam.hitEntity() != null) {
                 var source = AllDamageTypes.Sources.bullet(
-                        vehicle.level().registryAccess(), shooter, shooter, beam.hitEntity().position());
+                        vehicle.level().registryAccess(), shooter, shooter, beam.impactPoint());
                 float hitDamage = RVP_DamageApplier.applyScaled(
                         data.getDirectDamage() * chargeScale, beam.hitEntity(), data);
                 RVP_VehicleHitboxFactorManager.HitboxDamageResult hitboxRes = null;
                 float hitDamageBeforeHitbox = hitDamage;
                 if (beam.hitEntity() instanceof AbstractVehicle targetVehicle) {
-                    hitboxRes = RVP_VehicleHitboxFactorManager.INSTANCE.resolveHitboxDamage(
-                            targetVehicle, start, beam.impactPoint());
+                    // 伤害和模块沿用光束选中的骨块，避免对恰好落在边界的坐标再求交。
+                    hitboxRes = beam.vehicleHit() == null
+                            ? RVP_VehicleHitboxFactorManager.INSTANCE.resolveHitboxDamage(
+                                    targetVehicle, start, beam.impactPoint())
+                            : RVP_VehicleHitboxFactorManager.INSTANCE.resolveHitboxDamage(targetVehicle, beam.vehicleHit());
                     hitDamageBeforeHitbox = hitDamage;
                     // 装甲层（armor_min_damage / armor_max_damage）：与弹体路径一致，hitDamage 尚未乘
                     // 命中箱系数，由 applyArmor 按 MCH 不对称顺序统一施加（减伤先乘→扣装甲→保底 0.1→

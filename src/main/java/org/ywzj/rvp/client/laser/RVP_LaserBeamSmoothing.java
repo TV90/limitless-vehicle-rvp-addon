@@ -24,7 +24,8 @@ public final class RVP_LaserBeamSmoothing {
 
         Vec3 prevStart = LAST_START.get(key);
         Vec3 prevEnd = LAST_END.get(key);
-        if (prevStart == null || prevEnd == null) {
+        // 碰到遮挡后立即采用本帧落点，避免旧终点插值到遮挡后面。
+        if (beam.hitSomething() || !beam.isDrawable() || prevStart == null || prevEnd == null) {
             remember(key, targetStart, targetEnd);
             return beam;
         }
@@ -32,14 +33,9 @@ public final class RVP_LaserBeamSmoothing {
         float blend = Mth.clamp(0.55F + partialTick * 0.35F, 0.55F, 0.95F);
         Vec3 start = prevStart.lerp(targetStart, blend);
         Vec3 end = prevEnd.lerp(targetEnd, blend);
-        Vec3 impact = beam.impactPoint();
-        if (beam.hitSomething() && prevEnd != null) {
-            impact = prevEnd.lerp(beam.impactPoint(), blend);
-        }
-
         remember(key, start, end);
-        return new RVP_LaserBeam(beam.muzzle(), start, end, impact,
-                beam.hitSomething(), beam.hitEntity(), beam.blockHit(), beam.smokeBlocked());
+        return new RVP_LaserBeam(beam.muzzle(), start, end, beam.impactPoint(),
+                false, null, null, false, null);
     }
 
     public static void clear(LaserBeamKey key) {

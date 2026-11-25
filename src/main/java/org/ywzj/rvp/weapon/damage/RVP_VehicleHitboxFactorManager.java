@@ -26,6 +26,7 @@ import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.network.S2CBoneModuleState;
 import org.ywzj.rvp.network.S2CModuleHitNotify;
 import org.ywzj.rvp.physics.RVP_PhysicsOnlyCollisionHelper;
+import org.ywzj.rvp.util.RVP_NamedVehicleObbs;
 import org.ywzj.rvp.radar.RVP_RadarModuleEnforcer;
 import org.ywzj.rvp.vehicle.BoneApsConfig;
 import org.ywzj.rvp.vehicle.BoneBarrelConfig;
@@ -255,6 +256,19 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             return HitboxDamageResult.defaulted(cfg.defaultFactor, structureModelId, 0, Double.NaN);
         }
         return cfg.resolve(model, vehicle, segmentStart, segmentEnd);
+    }
+
+    /** 光束已命中实时受击盒，直接对该骨读取伤害倍率与设备配置。 */
+    public HitboxDamageResult resolveHitboxDamage(AbstractVehicle vehicle, RVP_NamedVehicleObbs.Hit hit) {
+        VehicleHitboxConfig cfg = configs.get(vehicle.getVehicleId());
+        if (cfg == null || !cfg.isEnabled()) {
+            return HitboxDamageResult.disabled();
+        }
+        sanitizeModuleState(vehicle, cfg);
+        String bone = hit.box().key().bone();
+        return cfg.result(new HitCandidate(Math.sqrt(hit.distanceSquared()), hit.point(), bone,
+                cfg.factorByBoneName.getOrDefault(bone, cfg.defaultFactor),
+                cfg.moduleByBoneName.get(bone), vehicle.getUUID()), 0);
     }
 
     public boolean isEraActive(AbstractVehicle vehicle, @Nullable String boneName) {
@@ -2154,41 +2168,22 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                     // ERA 模块失效 → 该骨块不再阻拦弹药（穿透）；其余模块失效不穿透
                     continue;
                 }
-                float factor = Float.isFinite(candidate.factor()) ? candidate.factor() : defaultFactor;
-                BoneModuleConfig moduleConfig = candidate.moduleConfig();
-                if (moduleConfig != null && moduleConfig.hasModules()) {
-                    Set<BoneModuleType> destroyed = candidate.destroyedModules();
-                    return new HitboxDamageResult(
-                            true,
-                            Math.max(0f, factor),
-                            defaultFactor,
-                            candidate.boneName(),
-                            structureModel,
-                            missingBones,
-                            candidate.distance(),
-                            candidate.hitPoint(),
-                            moduleConfig.modules(),
-                            destroyed,
-                            moduleConfig.minTriggerDamage(),
-                            moduleConfig.explosion()
-                    );
-                }
-                return new HitboxDamageResult(
-                        true,
-                        Math.max(0f, factor),
-                        defaultFactor,
-                        candidate.boneName(),
-                        structureModel,
-                        missingBones,
-                        candidate.distance(),
-                        candidate.hitPoint(),
-                        Set.of(),
-                        Set.of(),
-                        Float.POSITIVE_INFINITY,
-                        0f
-                );
+                return result(candidate, missingBones);
             }
             return HitboxDamageResult.defaulted(defaultFactor, structureModel, missingBones, Double.NaN);
+        }
+
+        /** 将已选中的骨块转换为装甲与设备结算所用的结果。 */
+        private HitboxDamageResult result(HitCandidate candidate, int missingBones) {
+            float factor = Float.isFinite(candidate.factor()) ? candidate.factor() : defaultFactor;
+            BoneModuleConfig moduleConfig = candidate.moduleConfig();
+            boolean hasModules = moduleConfig != null && moduleConfig.hasModules();
+            return new HitboxDamageResult(true, Math.max(0f, factor), defaultFactor, candidate.boneName(),
+                    structureModel, missingBones, candidate.distance(), candidate.hitPoint(),
+                    hasModules ? moduleConfig.modules() : Set.of(),
+                    hasModules ? candidate.destroyedModules() : Set.of(),
+                    hasModules ? moduleConfig.minTriggerDamage() : Float.POSITIVE_INFINITY,
+                    hasModules ? moduleConfig.explosion() : 0f);
         }
 
         static @Nullable VehicleHitboxConfig parse(JsonObject obj) {

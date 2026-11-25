@@ -5,7 +5,6 @@ import net.minecraft.resources.ResourceLocation;
 import org.ywzj.vehicle.YwzjVehicle;
 import org.ywzj.vehicle.client.resource.ClientAssetsManager;
 import org.ywzj.vehicle.client.resource.vehicle.BaseDisplay;
-import org.ywzj.vehicle.resource.BedrockModelLoader;
 
 import javax.annotation.Nullable;
 import java.util.Optional;
@@ -15,7 +14,7 @@ import java.util.Optional;
  */
 public final class RVP_LaserDisplayHelper {
 
-    private static final ResourceLocation DEFAULT_MODEL = YwzjVehicle.modLocation("entity/basic_bullet");
+    /** 自定义光束模型未另配贴图时，沿用原贴图。 */
     private static final ResourceLocation DEFAULT_TEXTURE = YwzjVehicle.modLocation("textures/entity/basic_bullet.png");
 
     private RVP_LaserDisplayHelper() {}
@@ -37,9 +36,6 @@ public final class RVP_LaserDisplayHelper {
                     texture = display.getTexture();
                 }
             }
-        }
-        if (model == null) {
-            model = BedrockModelLoader.getModel(DEFAULT_MODEL);
         }
         if (texture == null) {
             texture = DEFAULT_TEXTURE;

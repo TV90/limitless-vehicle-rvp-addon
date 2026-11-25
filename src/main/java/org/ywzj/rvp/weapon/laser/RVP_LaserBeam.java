@@ -4,6 +4,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
+import org.ywzj.rvp.util.RVP_NamedVehicleObbs;
 
 /**
  * Clipped laser segment used by server damage and client rendering.
@@ -17,8 +18,10 @@ public record RVP_LaserBeam(
         boolean hitSomething,
         @Nullable Entity hitEntity,
         @Nullable BlockHitResult blockHit,
-        /** 射线被烟雾弹（{@link RVP_SmokeEntity}）AABB 截断：光束止于云团表面，hitEntity 为 null，不结算任何伤害。 */
-        boolean smokeBlocked) {
+        /** 烟幕截断射线，光束止于云团边界或烟幕内的炮口。 */
+        boolean smokeBlocked,
+        /** 光束先接触的载具骨块，用同一骨块结算直击。 */
+        @Nullable RVP_NamedVehicleObbs.Hit vehicleHit) {
 
     private static final double MIN_DRAW_LENGTH = 0.05;
 
