@@ -129,7 +129,14 @@ final class RVP_HitPanelGlass {
     }
 
     static void label(GuiGraphics gg, Text text, double x, double y) {
+        label(gg, text, x, y, width(text));
+    }
+
+    /** 每段文字都有独立的内容裁剪区；抗锯齿和辉光也不能越过相邻字段或面板留白。 */
+    static void label(GuiGraphics gg, Text text, double x, double y, double maxWidth) {
         gg.flush();
+        gg.enableScissor((int) Math.floor(x - 1), (int) Math.floor(y - text.fontSize),
+                (int) Math.ceil(x + maxWidth + 1), (int) Math.ceil(y + text.fontSize * 1.5));
         FontDrawer.pushDocumentPixelScale(Minecraft.getInstance().getWindow().getGuiScale());
         try {
             FontDrawer.drainCompletedRasters();
@@ -145,6 +152,7 @@ final class RVP_HitPanelGlass {
             FontDrawer.drawFont(gg.pose(), text, new Position(x, y));
         } finally {
             FontDrawer.popDocumentPixelScale();
+            gg.disableScissor();
         }
     }
 }

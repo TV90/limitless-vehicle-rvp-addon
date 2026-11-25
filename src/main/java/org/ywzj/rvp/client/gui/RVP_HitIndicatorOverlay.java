@@ -364,13 +364,19 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
         double unit = panelH / 330.0;
         var percent = RVP_HitPanelGlass.text(String.format(java.util.Locale.ROOT, "−%.1f%%", damagePercent),
                 30 * unit, damageColor, true);
+        double contentWidth = Math.max(1, panelW - 40 * unit);
+        // 百分比异常大或窗口很窄时也先限制数值宽度，始终给命中部位和两侧留白留出空间。
         double percentWidth = RVP_HitPanelGlass.width(percent);
+        if (percentWidth > contentWidth * .45) {
+            percent.fontSize *= contentWidth * .45 / percentWidth;
+            percentWidth = RVP_HitPanelGlass.width(percent);
+        }
         var heading = RVP_HitPanelGlass.text(title, 23 * unit, 0xFFF2F5F6, true);
         double titleWidth = RVP_HitPanelGlass.width(heading);
-        double titleAvailable = Math.max(1, panelW - percentWidth - 64 * unit);
+        double titleAvailable = Math.max(1, contentWidth - percentWidth - 24 * unit);
         if (titleWidth > titleAvailable) heading.fontSize *= titleAvailable / titleWidth;
-        RVP_HitPanelGlass.label(gg, heading, x0 + 20 * unit, y0 + 19 * unit);
-        RVP_HitPanelGlass.label(gg, percent, x1 - 20 * unit - percentWidth, y0 + 15 * unit);
+        RVP_HitPanelGlass.label(gg, heading, x0 + 20 * unit, y0 + 31 * unit, titleAvailable);
+        RVP_HitPanelGlass.label(gg, percent, x1 - 20 * unit - percentWidth, y0 + 27 * unit, percentWidth);
         gg.flush();
 
         // 标题、模型、通知分别占独立区域；通知变多时缩小模型区，避免叠字。
