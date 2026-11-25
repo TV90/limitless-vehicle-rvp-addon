@@ -29,6 +29,23 @@ public class RVP_GuidanceData {
     @SerializedName("recognition_hold_ticks")
     private int recognitionHoldTicks = 12;
 
+    /** TV/ATV 目标框样式，无单位，默认 YOLO。仅影响炮手观瞄和弹头画面的绘制。 */
+    @SerializedName("recognition_hud_style")
+    private RecognitionHudStyle recognitionHudStyle;
+
+    public enum RecognitionHudStyle {
+        /** 隐藏彩色识别框与白色锁定框。 */
+        NONE,
+        /** 仅显示已锁定目标的白框。 */
+        WHITE,
+        /** 显示带名称与置信度的彩框，以及确认锁定的白框。 */
+        YOLO
+    }
+
+    public RecognitionHudStyle getRecognitionHudStyle() {
+        return recognitionHudStyle == null ? RecognitionHudStyle.YOLO : recognitionHudStyle;
+    }
+
     public boolean allowsMissileView() { return allowMissileView; }
 
     public float getRecognitionLockThreshold() {

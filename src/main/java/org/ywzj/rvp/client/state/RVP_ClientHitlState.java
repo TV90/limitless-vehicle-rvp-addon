@@ -217,6 +217,12 @@ public class RVP_ClientHitlState {
         noRedesignateTicks = lock.noRedesignateTicks();
     }
 
+    /** 只返回服务端确认的坐标锁，排除遮挡后保留的最后可见点。 */
+    @Nullable
+    public static Vec3 getConfirmedGroundLock() {
+        return lockStatus == org.ywzj.rvp.hitl.RVP_HitlLockSnapshot.Status.POINT ? clientDesignatedPos : null;
+    }
+
     /** 沿用紧凑侧栏缩写，状态不再由客户端本地实体 ID 猜测。 */
     public static String getLockStatusLabel() {
         return switch (lockStatus) {

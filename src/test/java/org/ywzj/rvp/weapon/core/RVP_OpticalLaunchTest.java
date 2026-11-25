@@ -53,8 +53,8 @@ class RVP_OpticalLaunchTest {
         assertEquals(120, atv.getGuidanceData().getMaxGuidanceAngle());
         var weapon = new RVP_ProjectileWeapon(carrier, unit, 0, data, "optical_launch_probe", null);
 
-        assertNull(RVP_OpticalLock.designate(gunner, unit, data, outside, null, true));
-        assertSame(selected, RVP_OpticalLock.designate(gunner, unit, data, selected, null, false).entity());
+        assertNull(RVP_OpticalLock.designate(gunner, unit, data, outside, null, true, false));
+        assertSame(selected, RVP_OpticalLock.designate(gunner, unit, data, selected, null, true, false).entity());
         // 发射前同步炮塔姿态有变化，已确认的光学锁仍通过真实发射检查。
         unit.direction = new Vec3(-1, 0, 0);
         var shot = weapon.prepareShot(List.of(new AimContext()), gunner);
@@ -64,20 +64,35 @@ class RVP_OpticalLaunchTest {
         world.observeTick(35);
         assertSame(selected, weapon.prepareShot(List.of(new AimContext()), gunner).target());
         unit.direction = new Vec3(0, 0, 1);
-        assertSame(nearest, RVP_OpticalLock.designate(gunner, unit, data, nearest, null, false).entity());
+        assertSame(nearest, RVP_OpticalLock.designate(gunner, unit, data, nearest, null, false, false).entity());
         assertSame(nearest, weapon.prepareShot(List.of(new AimContext()), gunner).target());
         assertSame(selected, shot.target());
-        RVP_OpticalLock.designate(gunner, unit, data, null, null, false);
+        RVP_OpticalLock.designate(gunner, unit, data, null, null, false, false);
         assertNull(weapon.prepareShot(List.of(new AimContext()), gunner));
 
         // 距离和可见度相同，只提高瞄具倍率即可通过服务端实体锁定门槛。
         var distant = vehicle(world, 0, 260, 1005);
-        assertNull(RVP_OpticalLock.designate(gunner, unit, data, distant, null, false));
-        var zoomedLock = RVP_OpticalLock.designate(gunner, unit, data, distant, null, true);
+        assertNull(RVP_OpticalLock.designate(gunner, unit, data, distant, null, false, false));
+        var zoomedLock = RVP_OpticalLock.designate(gunner, unit, data, distant, null, true, false);
         assertNotNull(zoomedLock);
         assertSame(distant, zoomedLock.entity());
         assertTrue(zoomedLock.confidence() >= data.getGuidanceData().getRecognitionLockThreshold());
         assertSame(distant, weapon.prepareShot(List.of(new AimContext()), gunner).target());
+
+        // 白光和无热成像设备的请求都不能在漆黑场景锁定目标。
+        world.setOpticalTestLight(0.5f, 0);
+        assertNull(RVP_OpticalLock.designate(gunner, unit, data, nearest, null, false, false));
+        assertNull(RVP_OpticalLock.designate(gunner, unit, data, nearest, null, true, true));
+        unit.thermalImaging = true;
+        assertNotNull(RVP_OpticalLock.designate(gunner, unit, data, nearest, null, false, true));
+        assertTrue(RVP_OpticalLock.usesThermal(gunner, unit, data));
+        assertSame(nearest, weapon.prepareShot(List.of(new AimContext()), gunner).target());
+
+        // 有热成像也不能把像素不足的固定设备识别成已锁定目标。
+        var small = vehicle(world, 0, 85, 1006);
+        small.setBoundingBox(new AABB(-0.4, 8.6, 84.6, 0.4, 9.4, 85.4));
+        assertNull(RVP_OpticalLock.designate(gunner, unit, data, small, null, false, true));
+        assertSame(small, RVP_OpticalLock.designate(gunner, unit, data, small, null, true, true).entity());
     }
 
     private static Vehicle vehicle(RVP_ProjectileSimulationLevel level, int x, int z, int id) {
@@ -109,6 +124,8 @@ class RVP_OpticalLaunchTest {
 
     private static final class Scope extends WeaponUnit {
         private Vec3 direction;
+        private boolean thermalImaging;
+        @Override public boolean withThermalImager() { return thermalImaging; }
         private Scope() { super(0, null, null); }
         @Override public WeaponUnit getRootParentWeaponUnit() { return this; }
         @Override public WeaponUnitData.OpticalSightType getOpticalSightType() {

@@ -30,9 +30,11 @@ import org.ywzj.rvp.network.C2SOpticalRequest;
 import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.network.S2COpticalFeedback;
 import org.ywzj.rvp.util.RVP_WeaponResolveHelper;
+import org.ywzj.rvp.weapon.data.RVP_GuidanceData.RecognitionHudStyle;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.entity.vehicle.FixedWingVehicle;
+import org.ywzj.vehicle.entity.vehicle.NoneVehicle;
 import org.ywzj.vehicle.entity.vehicle.RotaryWingVehicle;
 import org.ywzj.vehicle.entity.vehicle.TrackedVehicle;
 import org.ywzj.vehicle.entity.vehicle.WheeledVehicle;
@@ -40,9 +42,11 @@ import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 
 @Mod.EventBusSubscriber(modid = RVP_MOD.MOD_ID, value = Dist.CLIENT)
 public final class RVP_ClientOpticalState {
@@ -58,6 +62,8 @@ public final class RVP_ClientOpticalState {
     private static LocalVehiclePlayer.ViewType previousView;
     private static long nextScan;
     private static int cameraSource = -1;
+    /** 切换热成像时立即刷新候选，避免重用上一个滤镜的识别结果。 */
+    private static boolean lastScanThermal;
     private static int lockSequence;
     /** 本帧准星下的识别对象，只有按键时才提交。 */
     private static Detection aimedDetection;
@@ -134,7 +140,7 @@ public final class RVP_ClientOpticalState {
                 } else {
                     observerId = context;
                     RVP_Network.CHANNEL.sendToServer(new C2SOpticalRequest(lastLaunch.vehicleId(), lastLaunch.weapon(),
-                            observerId, 0, -1, null, false));
+                            observerId, 0, -1, null, false, false));
                 }
             }
             if (consumed) return true;
@@ -176,12 +182,17 @@ public final class RVP_ClientOpticalState {
         clearSnapshot();
         // 服务端返回确认结果后才绘制方框和截图。
         RVP_Network.CHANNEL.sendToServer(new C2SOpticalRequest(tvUnit.getVehicle().getId(), tvWeapon.getWeaponId(),
-                -1, ++lockSequence, target, ground, scopeZoomed()));
+                -1, ++lockSequence, target, ground, scopeZoomed(), scopeThermal()));
     }
 
     /** 查询本体武器站当前选择的倍率档。 */
     private static boolean scopeZoomed() {
         return tvUnit.getZoom() > tvUnit.getData().getZoomMin() + 0.01f;
+    }
+
+    /** 使用本体武器站实际启用的热成像状态。 */
+    private static boolean scopeThermal() {
+        return tvUnit.withThermalImager() && LocalVehiclePlayer.instance.thermalImaging;
     }
 
     public static void receive(S2COpticalFeedback msg) {
@@ -261,37 +272,53 @@ public final class RVP_ClientOpticalState {
         int height = graphics.guiHeight();
         int source = observing ? observed.getId() : tvUnit.getVehicle().getId();
         long tick = mc.level.getGameTime();
-        if (source != cameraSource || tick >= nextScan) {
+        boolean thermal = observing ? RVP_ClientHitlState.getVideoMode() == RVP_EnumVideoMode.THERMAL : scopeThermal();
+        if (source != cameraSource || tick >= nextScan || thermal != lastScanThermal) {
             cameraSource = source;
+            lastScanThermal = thermal;
             nextScan = tick + 3;
             contacts = RVP_OpticalTargeting.scanDisplayed(observing ? observed : mc.player,
                     observing ? observed.getShooterVehicle() : tvUnit.getVehicle(), view,
                     observing ? data.getGuidanceTargetDistanceRange() : RVP_OpticalTargeting.lockRange(data),
-                    observing ? data.getMaxGuidanceAngle() * 0.5 : data.getMaxLockHalfAngle(),
+                    observing ? data.getMaxGuidanceAngle() * 0.5 : data.getMaxLockHalfAngle(), thermal,
                     entity -> {
                         // 调用已有投影边界，按实际屏幕中的识别框中心距准星排序。
                         ScreenBox box = screenBox(entity, width, height);
-                        if (box == null) return Double.POSITIVE_INFINITY;
+                        if (box == null || displayedConfidence(1f, box.right() - box.left(),
+                                box.bottom() - box.top(), Math.min(width, height)) <= 0f) {
+                            return Double.POSITIVE_INFINITY;
+                        }
                         double dx = (box.left() + box.right() - width) * 0.5;
                         double dy = (box.top() + box.bottom() - height) * 0.5;
                         return dx * dx + dy * dy;
                     });
         }
+        boolean zoomed = observing ? RVP_ClientHitlState.getHitlZoom() > 1.01f : scopeZoomed();
+        float scopeMagnification = observing ? 1f : RVP_OpticalTargeting.scopeMagnification(tvUnit, zoomed);
         var boxes = contacts.stream().filter(contact -> contact.entity().isAlive())
-                .map(contact -> new Detection(contact, screenBox(contact.entity(), width, height)))
-                .filter(detection -> detection.box() != null).toList();
+                .map(contact -> {
+                    ScreenBox box = screenBox(contact.entity(), width, height);
+                    if (box == null) return null;
+                    float projected = displayedConfidence(contact.confidence(),
+                            box.right() - box.left(), box.bottom() - box.top(), Math.min(width, height));
+                    if (projected <= 0f) return null;
+                    // TV 发射前的锁定置信度与服务端共用参考视场；观察模式按实际画面计算。
+                    float confidence = observing ? projected : RVP_OpticalTargeting.scopeConfidence(contact, view, scopeMagnification);
+                    return confidence > 0f ? new Detection(contact, box, confidence) : null;
+                }).filter(Objects::nonNull).toList();
         aimedDetection = scope ? boxes.stream()
                 .filter(detection -> detection.box().contains(width / 2.0, height / 2.0))
                 .min(Comparator.comparingDouble(detection -> detection.contact().point().distanceToSqr(view.origin())))
                 .orElse(null) : null;
         int tracked = observing ? RVP_ClientHitlState.getClientDesignatedEntityId() : lock == null ? -1 : lock.targetId();
         boolean atvView = observing && data.getGuidanceType() == RVP_EnumGuidanceType.ATV;
+        var style = data.getRecognitionHudStyle();
         LockFrame frame = null;
         if (scope && lock != null) {
             frame = lockFrame(lock.point(), lock.targetId(), boxes, width, height);
-        } else if (atvView && tracked >= 0) {
-            // ATV 使用服务端确认的实体编号，普通识别框不触发锁定白框。
-            frame = lockFrame(null, tracked, boxes, width, height);
+        } else if (observing && (atvView || style == RecognitionHudStyle.WHITE)) {
+            // 使用服务端确认的实体或坐标，普通识别框和失锁后的记忆点不触发白框。
+            frame = lockFrame(RVP_ClientHitlState.getConfirmedGroundLock(), tracked, boxes, width, height);
         }
         if (scope && snapshotPending && frame != null) {
             // 截取方框所占的同一范围，在绘制白线和识别文字之前读取底图。
@@ -299,23 +326,33 @@ public final class RVP_ClientOpticalState {
             mc.getTextureManager().register(SNAPSHOT, new DynamicTexture(captureScope(frame.area(), width, height)));
             snapshotFrame = frame;
         }
-        boolean zoomed = observing ? RVP_ClientHitlState.getHitlZoom() > 1.01f : scopeZoomed();
-        float scopeMagnification = observing ? 1f : RVP_OpticalTargeting.scopeMagnification(tvUnit, zoomed);
-        for (var detection : boxes) {
-            var contact = detection.contact();
-            var box = detection.box();
-            // TV 发射前的 HUD 与服务端锁定使用相同的参考视场；弹头观察跟随实际投影。
-            float confidence = observing ? displayedConfidence(contact.confidence(),
-                    box.right() - box.left(), box.bottom() - box.top(), Math.min(width, height))
-                    : RVP_OpticalTargeting.scopeConfidence(contact, view, scopeMagnification);
-            drawBox(graphics, mc, detection, confidence, contact.entity().getId() == tracked);
+        if (style == RecognitionHudStyle.YOLO) {
+            List<Caption> captions = new ArrayList<>(boxes.size());
+            for (var detection : boxes) {
+                Caption caption = drawBox(graphics, mc, detection, detection.confidence(),
+                        detection.contact().entity().getId() == tracked);
+                if (caption != null) captions.add(caption);
+            }
+            // 先绘制所有轮廓，再绘制去重后的标签，低分轮廓线不会盖在高分文字上。
+            for (Caption caption : visibleCaptions(captions)) {
+                ScreenBox area = caption.area();
+                graphics.fill(area.left(), area.top(), area.right(), area.bottom(), caption.color());
+                var pose = graphics.pose();
+                pose.pushPose();
+                pose.translate(area.left() + 2, area.top() + 1, 0);
+                pose.scale(0.75f, 0.75f, 1f);
+                graphics.drawString(mc.font, caption.text(), 0, 0, 0xffffffff, true);
+                pose.popPose();
+            }
         }
         // 锁定时给小十字留出空间，避免被屏幕中央的大十字吞没。
         drawReticle(graphics, width, height, zoomed || frame != null);
         if (frame != null) {
-            ScreenBox area = frame.area();
-            graphics.renderOutline(area.left(), area.top(), area.right() - area.left(),
-                    area.bottom() - area.top(), 0xffedf4f7);
+            if (style != RecognitionHudStyle.NONE) {
+                ScreenBox area = frame.area();
+                graphics.renderOutline(area.left(), area.top(), area.right() - area.left(),
+                        area.bottom() - area.top(), 0xffedf4f7);
+            }
             drawLockPoint(graphics, frame.x(), frame.y(), 6);
         }
         if (scope && snapshotFrame != null) {
@@ -387,11 +424,32 @@ public final class RVP_ClientOpticalState {
     }
 
     private record LockFrame(ScreenBox area, int x, int y) {}
-    private record Detection(RVP_OpticalTargeting.Contact contact, ScreenBox box) {}
-    private record ScreenBox(int left, int top, int right, int bottom) {
+    /** 通过最小画面尺寸与可见度筛选的目标及显示分数。 */
+    private record Detection(RVP_OpticalTargeting.Contact contact, ScreenBox box, float confidence) {}
+    /** 标签候选的完整底板范围、文本、底色和实际显示置信度。 */
+    record Caption(ScreenBox area, String text, int color, float confidence) {}
+
+    record ScreenBox(int left, int top, int right, int bottom) {
         boolean contains(double x, double y) {
             return x >= left && x <= right && y >= top && y <= bottom;
         }
+
+        boolean overlaps(ScreenBox other) {
+            return left < other.right && right > other.left && top < other.bottom && bottom > other.top;
+        }
+    }
+
+    /** 分数相同保留原有准星优先顺序，每个像素范围只接受最高分标签。 */
+    static List<Caption> visibleCaptions(List<Caption> candidates) {
+        List<Caption> ranked = new ArrayList<>(candidates);
+        ranked.sort(Comparator.comparingDouble(Caption::confidence).reversed());
+        List<Caption> visible = new ArrayList<>(ranked.size());
+        for (Caption caption : ranked) {
+            if (visible.stream().noneMatch(higher -> higher.area().overlaps(caption.area()))) {
+                visible.add(caption);
+            }
+        }
+        return visible;
     }
 
     private static ScreenBox screenBox(Entity entity, int width, int height) {
@@ -416,7 +474,7 @@ public final class RVP_ClientOpticalState {
         return right - left >= 2 && bottom - top >= 2 ? new ScreenBox(left, top, right, bottom) : null;
     }
 
-    private static void drawBox(GuiGraphics graphics, Minecraft mc, Detection detection, float score, boolean locked) {
+    private static Caption drawBox(GuiGraphics graphics, Minecraft mc, Detection detection, float score, boolean locked) {
         var b = detection.box();
         var contact = detection.contact();
         var label = classify(contact.entity());
@@ -429,39 +487,39 @@ public final class RVP_ClientOpticalState {
         if (locked && boxWidth > 4 && boxHeight > 4) {
             graphics.renderOutline(b.left() + 1, b.top() + 1, boxWidth - 2, boxHeight - 2, outline);
         }
-        String name = contact.entity() instanceof AbstractVehicle vehicle
-                ? RVP_OpticalVehicleNames.name(vehicle)
-                : Component.translatable("ui.rvp.optical.class." + label.key()).getString();
-        String text = name + " " + String.format(Locale.ROOT, "%.2f", score);
-        float scale = 0.75f;
-        int size = (int) Math.ceil(mc.font.width(text) * scale) + 4;
+        // 低置信度只够判断大类，等到 0.50 才显示具体型号和分数。
+        String text = label.lowConfidence();
+        if (score >= 0.5f) {
+            String name = contact.entity() instanceof AbstractVehicle vehicle
+                    ? RVP_OpticalVehicleNames.name(vehicle)
+                    : Component.translatable("ui.rvp.optical.class." + label.key()).getString();
+            text = name + " " + String.format(Locale.ROOT, "%.2f", score);
+        }
+        if (text.isEmpty()) return null;
+        int size = (int) Math.ceil(mc.font.width(text) * 0.75f) + 4;
         int labelLeft = Math.max(0, Math.min(b.left(), graphics.guiWidth() - size));
         int labelTop = Math.max(0, b.top() - 9);
-        graphics.fill(labelLeft, labelTop, labelLeft + size, labelTop + 9, caption);
-        var pose = graphics.pose();
-        pose.pushPose();
-        pose.translate(labelLeft + 2, labelTop + 1, 0);
-        pose.scale(scale, scale, 1f);
-        graphics.drawString(mc.font, text, 0, 0, 0xffffffff, true);
-        pose.popPose();
+        return new Caption(new ScreenBox(labelLeft, labelTop, labelLeft + size, labelTop + 9), text, caption, score);
     }
 
     /** 距离和光学倍率共同反映在投影尺寸中；按识别框短边占屏幕短边的比例计算 HUD 清晰度。 */
     static float displayedConfidence(float visibility, int boxWidth, int boxHeight, int screenShortSide) {
-        float apparentSize = (float) Math.min(boxWidth, boxHeight) / screenShortSide;
+        double apparentSize = (double) Math.min(boxWidth, boxHeight) / screenShortSide;
         return RVP_OpticalTargeting.sizeWeightedConfidence(visibility, apparentSize);
     }
 
-    private record Label(String key, int color) {}
+    /** 识别标签含翻译键、低置信度类别缩写与框颜色。 */
+    private record Label(String key, String lowConfidence, int color) {}
 
     private static Label classify(Entity entity) {
-        if (entity instanceof Player) return new Label("person", 0xffac2abc);
-        if (entity instanceof RotaryWingVehicle) return new Label("helicopter", 0xffcd5721);
-        if (entity instanceof FixedWingVehicle) return new Label("aircraft", 0xff674fc1);
-        if (entity instanceof TrackedVehicle) return new Label("tracked", 0xff007eae);
-        if (entity instanceof WheeledVehicle) return new Label("wheeled", 0xff168794);
-        if (entity instanceof AbstractVehicle) return new Label("vehicle", 0xff526caa);
-        return new Label("living", 0xffac2abc);
+        if (entity instanceof Player) return new Label("person", "", 0xffac2abc);
+        if (entity instanceof RotaryWingVehicle) return new Label("helicopter", "HELI", 0xffcd5721);
+        if (entity instanceof FixedWingVehicle) return new Label("aircraft", "JET", 0xff674fc1);
+        if (entity instanceof TrackedVehicle) return new Label("tracked", "TANK", 0xff007eae);
+        if (entity instanceof WheeledVehicle) return new Label("wheeled", "CAR", 0xff168794);
+        if (entity instanceof NoneVehicle) return new Label("vehicle", "STAT", 0xff526caa);
+        if (entity instanceof AbstractVehicle) return new Label("vehicle", "", 0xff526caa);
+        return new Label("living", "", 0xffac2abc);
     }
 
     private static void clearSnapshot() {

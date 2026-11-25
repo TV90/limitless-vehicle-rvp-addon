@@ -16,9 +16,12 @@ public final class RVP_OpticalTrack {
     private Vec3 lastSeen;
     private int lastSeenTick;
     private int nextScan;
+    /** TV 发射前确认的识别模式；ATV 自主搜索使用白光。 */
+    private boolean thermal;
     private RVP_HitlLockSnapshot snapshot = RVP_HitlLockSnapshot.EMPTY;
 
-    public void designate(Entity entity, Vec3 point) {
+    public void designate(Entity entity, Vec3 point, boolean thermal) {
+        this.thermal = thermal;
         target = entity == null ? null : entity.getUUID();
         ground = entity == null ? point : null;
     }
@@ -43,13 +46,19 @@ public final class RVP_OpticalTrack {
         double angle = context.active().maxGuidanceAngle() * 0.5;
         RVP_OpticalTargeting.Contact contact = null;
         if (!automatic && ground != null && RVP_OpticalTargeting.inView(view, ground, distance, angle)
-                && RVP_OpticalTargeting.groundVisible(missile, view.origin(), ground)) {
+                && RVP_OpticalTargeting.groundVisible(missile, view.origin(), ground)
+                && RVP_OpticalTargeting.groundLightFactor(level, view.origin(), ground, thermal)
+                        >= data.getRecognitionLockThreshold()) {
             return track(missile, type, null, ground);
         }
         Entity entity = target == null ? null : level.getEntity(target);
         if (entity != null && RVP_OpticalTargeting.isCandidate(missile, missile.getShooterVehicle(), entity, automatic)) {
-            var visible = RVP_OpticalTargeting.sample(missile, view, entity, distance, angle);
-            if (visible.confidence() >= data.getRecognitionLockThreshold()) contact = visible;
+            var visible = RVP_OpticalTargeting.applyLight(
+                    RVP_OpticalTargeting.sample(missile, view, entity, distance, angle), thermal);
+            if (visible.confidence() >= data.getRecognitionLockThreshold()
+                    && (!automatic || RVP_OpticalTargeting.scopeConfidence(visible, view, 1f) > 0f)) {
+                contact = visible;
+            }
         }
         boolean holding = lastSeen != null && missile.tickCount - lastSeenTick <= data.getRecognitionHoldTicks();
         if (contact == null && automatic && !holding && missile.tickCount >= nextScan) {
@@ -87,6 +96,7 @@ public final class RVP_OpticalTrack {
     }
 
     public void save(CompoundTag tag) {
+        if (thermal) tag.putBoolean("rvp_optical_thermal", true);
         if (target != null) tag.putUUID("rvp_optical_target", target);
         if (ground != null) {
             tag.putDouble("rvp_optical_ground_x", ground.x);
@@ -96,6 +106,7 @@ public final class RVP_OpticalTrack {
     }
 
     public void load(CompoundTag tag) {
+        thermal = tag.getBoolean("rvp_optical_thermal");
         if (tag.hasUUID("rvp_optical_target")) target = tag.getUUID("rvp_optical_target");
         if (tag.contains("rvp_optical_ground_x")) {
             ground = new Vec3(tag.getDouble("rvp_optical_ground_x"), tag.getDouble("rvp_optical_ground_y"),

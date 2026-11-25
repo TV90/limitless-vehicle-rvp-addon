@@ -201,7 +201,10 @@ public final class RVP_ProjectileSpawner {
 
         if (projectile instanceof RVP_MissileEntity missile && missile.isOpticalMissile()) {
             if (context.weaponData().getGuidanceData().getGuidanceType() == RVP_EnumGuidanceType.TV) {
-                missile.opticalTrack().designate(context.lockTarget(), context.designatedTarget());
+                // 每发 TV 独立保存本次指示使用的识别模式。
+                boolean thermal = org.ywzj.rvp.guidance.RVP_OpticalLock.usesThermal(
+                        context.owner(), context.sourceWeaponUnit(), context.weaponData());
+                missile.opticalTrack().designate(context.lockTarget(), context.designatedTarget(), thermal);
             }
         } else {
             applyLockTarget(projectile, context);

@@ -1,10 +1,13 @@
 package org.ywzj.rvp.guidance;
 
+import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
@@ -31,6 +34,10 @@ public final class RVP_OpticalTargeting {
     private static final int MAX_CANDIDATES = 16;
     /** 单轮 HUD 可见度检查的候选上限。 */
     private static final int MAX_DISPLAY_CANDIDATES = 15;
+    /** 目标短边至少覆盖参考画幅的 2.5%，光学和热成像都需要足够的像素。 */
+    private static final double MIN_APPARENT_SIZE = 0.025;
+    /** 达到画幅短边的 7.5% 时保留完整几何置信度。 */
+    private static final double FULL_APPARENT_SIZE = 0.075;
 
     private RVP_OpticalTargeting() {}
 
@@ -67,18 +74,18 @@ public final class RVP_OpticalTargeting {
     public static List<Contact> scan(Entity seeker, @Nullable AbstractVehicle carrier, View view,
             RVP_Range<Float> distance, double angle, boolean automatic) {
         return scan(seeker, carrier, view, distance, angle, automatic,
-                target -> -alignment(view, target.getBoundingBox().getCenter()), MAX_CANDIDATES, false);
+                target -> -alignment(view, target.getBoundingBox().getCenter()), MAX_CANDIDATES, false, false);
     }
 
     /** 画面候选按距屏幕准星的平方距离排序，无投影的实体返回正无穷并跳过。 */
     public static List<Contact> scanDisplayed(Entity seeker, @Nullable AbstractVehicle carrier, View view,
-            RVP_Range<Float> distance, double angle, ToDoubleFunction<Entity> screenDistance) {
-        return scan(seeker, carrier, view, distance, angle, false, screenDistance, MAX_DISPLAY_CANDIDATES, true);
+            RVP_Range<Float> distance, double angle, boolean thermal, ToDoubleFunction<Entity> screenDistance) {
+        return scan(seeker, carrier, view, distance, angle, false, screenDistance, MAX_DISPLAY_CANDIDATES, true, thermal);
     }
 
     private static List<Contact> scan(Entity seeker, @Nullable AbstractVehicle carrier, View view,
             RVP_Range<Float> distance, double angle, boolean automatic, ToDoubleFunction<Entity> priority,
-            int limit, boolean checkVehicleOcclusion) {
+            int limit, boolean checkVehicleOcclusion, boolean thermal) {
         double radius = RVP_GuidanceRuntimeGeometry.resolveScanRadius(distance);
         Vec3 end = view.origin().add(view.forward().scale(radius));
         double width = radius * Math.sin(Math.toRadians(Math.min(90.0, angle)));
@@ -92,12 +99,15 @@ public final class RVP_OpticalTargeting {
         // 先按视场收窄并排序，仅给最靠近准星的有限候选计算可见度。
         return seeker.level().getEntities(seeker, region, target -> isCandidate(seeker, carrier, target, automatic))
                 .stream().filter(target -> inView(view, target.getBoundingBox().getCenter(), distance, angle))
+                // 过小的目标不占用 ATV 的射线预算。
+                .filter(target -> !automatic || scopeApparentSize(target, view, 1f) >= MIN_APPARENT_SIZE)
                 .map(target -> new RankedCandidate(target, priority.applyAsDouble(target)))
                 .filter(candidate -> Double.isFinite(candidate.priority()))
                 .sorted(Comparator.comparingDouble(RankedCandidate::priority)
                         .thenComparingInt(candidate -> candidate.entity().getId()))
                 .limit(limit)
                 .map(candidate -> sample(seeker, view, candidate.entity(), distance, angle, foreground))
+                .map(contact -> applyLight(contact, thermal))
                 .filter(contact -> contact.confidence() > 0f).toList();
     }
 
@@ -141,9 +151,38 @@ public final class RVP_OpticalTargeting {
         return false;
     }
 
-    /** 相同的尺寸曲线用于观察画面和 TV 锁定。短边占画面 7.5% 时无扣分。 */
+    /** 只削弱白光的几何可见度，热成像同样必须通过方块、烟幕和遮挡检查。 */
+    public static Contact applyLight(Contact contact, boolean thermal) {
+        if (thermal || contact.confidence() <= 0f) return contact;
+        float light = lightFactor(contact.entity().level(), contact.point(), false);
+        return new Contact(contact.entity(), contact.point(), contact.confidence() * light);
+    }
+
+    /** 取已加载位置的原版天空与方块光。有效光照不超过 5 时白光无法识别，12 起无扣分。 */
+    public static float lightFactor(Level level, Vec3 point, boolean thermal) {
+        if (thermal) return 1f;
+        BlockPos pos = BlockPos.containing(point);
+        if (!level.hasChunkAt(pos)) return 0f;
+        int blockLight = level.getBrightness(LightLayer.BLOCK, pos);
+        int skyLight = level.getBrightness(LightLayer.SKY, pos);
+        // 客户端整数 skyDarken 可能还停在进世界时的亮度，两端改用当前天色与天气计算。
+        float daylight = Mth.clamp(Mth.cos(level.getTimeOfDay(1f) * Mth.TWO_PI) * 2f + 0.5f, 0f, 1f);
+        daylight *= 1f - level.getRainLevel(1f) * 0.3125f;
+        daylight *= 1f - level.getThunderLevel(1f) * 0.3125f;
+        int light = Math.max(blockLight, skyLight - Math.round(11f * (1f - daylight)));
+        return Mth.clamp((light - 5) / 7f, 0f, 1f);
+    }
+
+    /** 在刚好位于方块可见面外的位置采光，避免采到不可见的方块内部。 */
+    public static float groundLightFactor(Level level, Vec3 origin, Vec3 ground, boolean thermal) {
+        return lightFactor(level, ground.add(origin.subtract(ground).normalize().scale(0.05)), thermal);
+    }
+
+    /** 尺寸不足时没有可辨识轮廓，通过最低门槛后再按尺寸连续修正置信度。 */
     public static float sizeWeightedConfidence(float visible, double apparentSize) {
-        float detail = (float) Mth.clamp(apparentSize / 0.075, 0.0, 1.0);
+        if (apparentSize < MIN_APPARENT_SIZE) return 0f;
+        float detail = (float) Mth.clamp((apparentSize - MIN_APPARENT_SIZE)
+                / (FULL_APPARENT_SIZE - MIN_APPARENT_SIZE), 0.0, 1.0);
         return visible * Mth.lerp(detail, 0.6f, 1f);
     }
 
@@ -154,12 +193,16 @@ public final class RVP_OpticalTargeting {
 
     /** TV 锁定使用同一参考视场估算目标短边占比，服务端无需依赖屏幕分辨率和用户 FOV。 */
     public static float scopeConfidence(Contact contact, View view, float magnification) {
-        AABB box = contact.entity().getBoundingBox();
+        return sizeWeightedConfidence(contact.confidence(), scopeApparentSize(contact.entity(), view, magnification));
+    }
+
+    private static double scopeApparentSize(Entity target, View view, float magnification) {
+        AABB box = target.getBoundingBox();
         double shortSide = Math.min(box.getYsize(), Math.min(box.getXsize(), box.getZsize()));
         // 70° 参考视场的画面短边在目标平面的长度为 2 × tan(35°) × 距离。
         double viewSpan = 2.0 * Math.tan(Math.toRadians(35.0))
                 * Math.max(0.001, view.origin().distanceTo(box.getCenter()));
-        return sizeWeightedConfidence(contact.confidence(), shortSide * magnification / viewSpan);
+        return shortSide * magnification / viewSpan;
     }
 
     public static boolean clear(Entity seeker, Vec3 start, Vec3 end) {

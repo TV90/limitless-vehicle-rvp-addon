@@ -64,6 +64,22 @@ class RVP_RuntimeGuidanceRegistryTest {
     }
 
     @Test
+    void opticalHudStyleDeserializesForBothOpticalGuidanceTypes() {
+        assertEquals(RVP_GuidanceData.RecognitionHudStyle.YOLO,
+                parse("{\"guidance_type\":\"TV\"}").getRecognitionHudStyle());
+        for (String type : new String[]{"TV", "ATV"}) {
+            for (var style : RVP_GuidanceData.RecognitionHudStyle.values()) {
+                var holder = gson.fromJson("""
+                        {"guidance_data":{"guidance_type":"%s","recognition_hud_style":"%s"}}
+                        """.formatted(type, style.name()), GuidanceHolder.class);
+                assertEquals(style, holder.guidanceData.getRecognitionHudStyle());
+                var synced = gson.fromJson(gson.toJson(holder), GuidanceHolder.class);
+                assertEquals(style, synced.guidanceData.getRecognitionHudStyle());
+            }
+        }
+    }
+
+    @Test
     void guidanceTypeQueriesSeeMainAndTerminalGuidance() {
         RVP_GuidanceData guidance = parse("""
                 {

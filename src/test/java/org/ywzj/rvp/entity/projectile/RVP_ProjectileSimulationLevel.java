@@ -2,6 +2,7 @@ package org.ywzj.rvp.entity.projectile;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.level.material.Fluids;
@@ -13,6 +14,9 @@ public final class RVP_ProjectileSimulationLevel extends ServerLevel {
     /** 平地世界高度，格。 */ private double groundY;
     /** 可选水面世界高度；null 表示无水。 */ private Double waterY;
     /** 当前已发生的世界刻，供生产采样与时序方法读取。 */ private long observationTick;
+    /** 光学测试默认白昼，可在同一世界切换时段和附近的方块光。 */
+    private float opticalTime;
+    private int opticalBlockLight;
     /** 无地形依赖的飞行回归可拒绝所有高度图查询，避免测试环境掩盖虚拟段的强加载。 */ private boolean terrainQueriesForbidden;
     /** 场景的水查询结果。 */ private FluidState water;
     /** 场景的干燥查询结果。 */ private FluidState air;
@@ -55,6 +59,18 @@ public final class RVP_ProjectileSimulationLevel extends ServerLevel {
         level.chunkSource.view = RVP_ProjectileSimulationBootstrap.environment(ReadOnlyChunk.class);
         level.chunkSource.view.world = level;
         return level;
+    }
+
+    /** 光学试验固定天光 15，通过时段和人工照明控制有效亮度。 */
+    public void setOpticalTestLight(float timeOfDay, int blockLight) {
+        opticalTime = timeOfDay;
+        opticalBlockLight = blockLight;
+    }
+
+    @Override public float getTimeOfDay(float partialTick) { return opticalTime; }
+
+    @Override public int getBrightness(LightLayer layer, BlockPos position) {
+        return layer == LightLayer.SKY ? 15 : opticalBlockLight;
     }
 
     /** 测试时序由逐刻调度提供，不用实际墙钟时间。 */
