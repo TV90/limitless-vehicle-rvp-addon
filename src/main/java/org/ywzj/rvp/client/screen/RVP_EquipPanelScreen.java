@@ -8,13 +8,19 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.resources.language.I18n;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
+import org.ywzj.rvp.client.RVP_Keys;
+import org.ywzj.rvp.client.state.RVP_ClientBoneModuleState;
+import org.ywzj.rvp.client.state.RVP_ClientMaintenanceState;
 import org.ywzj.rvp.client.screen.RVP_EquipPanelData.Category;
 import org.ywzj.rvp.client.screen.RVP_EquipPanelData.Row;
 import org.ywzj.rvp.maintenance.RVP_RepairPlanner;
 import org.ywzj.rvp.client.state.RVP_ClientRepairOrderState;
 import org.ywzj.rvp.client.state.RVP_ClientRepairOrderState.Order;
 import org.ywzj.rvp.maintenance.network.C2SSetRepairOrder;
+import org.ywzj.rvp.maintenance.network.C2SUseMaintenance;
 import org.ywzj.rvp.network.RVP_Network;
+import org.ywzj.rvp.util.RVP_VehicleSeatAccess;
+import org.ywzj.rvp.vehicle.BoneModuleType;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 
@@ -88,6 +94,7 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
         el("close-button").addEventListener("click", event -> onClose());
         el("era-tab").addEventListener("click", event -> selectQueue(true));
         el("dev-tab").addEventListener("click", event -> selectQueue(false));
+        el("repair-preview").addEventListener("click", event -> useMaintenance());
         // 每次挂载都构建新 DOM，状态相同也不能复用上一个 Document 的元素。
         refresh(true);
         if (RVP_EquipPanelData.hasMaintenance(vehicle)) {
@@ -155,6 +162,42 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
         var forecast = RVP_EquipPanelData.repairForecast(vehicle);
         previewBones = forecast.bones();
         text(el("repair-forecast"), label("forecast", forecast.eraQuota(), forecast.deviceQuota()));
+        // 读取现有服务端快修快照和玩家实际绑定键，不另设冷却计时器。
+        var state = RVP_ClientMaintenanceState.get(vehicle.getId());
+        String status = state == null ? label("repair_syncing")
+                : state.isUsing() ? I18n.get("gui.ywzj_rvp.hud.value_repairing", (state.useRemain() + 19) / 20)
+                : state.isCoolingDown() ? I18n.get("gui.ywzj_rvp.hud.value_cooling", (state.cooldownRemain() + 19) / 20)
+                : maintenanceAvailable() ? I18n.get("gui.ywzj_rvp.hud.value_ready") : label("repair_unavailable");
+        text(el("repair-state"), status);
+        text(el("repair-key"), "[" + RVP_Keys.USE_MAINTENANCE.getTranslatedKeyMessage().getString() + "]");
+        boolean available = maintenanceAvailable();
+        el("repair-preview").setClassName(available ? "" : "unavailable");
+        el("repair-preview").setAttribute("aria-disabled", Boolean.toString(!available));
+    }
+
+    /** 客户端仅控制按钮可用外观；服务器继续独立校验座位、模块、冷却和高度。 */
+    private boolean maintenanceAvailable() {
+        var state = RVP_ClientMaintenanceState.get(vehicle.getId());
+        if (state == null || state.isUsing() || state.isCoolingDown() || vehicle.isDestroyed()
+                || !RVP_VehicleSeatAccess.isPrimaryPassenger(minecraft.player, vehicle)) return false;
+        var binding = RVP_VehicleHitboxFactorManager.INSTANCE.resolveMaintenanceModule(vehicle);
+        return binding != null && RVP_ClientBoneModuleState.isModuleActive(vehicle.getId(), binding.bone(), BoneModuleType.MAINTENANCE)
+                && (binding.config().requireMaxAltitude() < 0
+                || vehicle.getY() - vehicle.level().getMinBuildHeight() <= binding.config().requireMaxAltitude());
+    }
+
+    /** 按钮与绑定按键走同一条现有维修请求，不在界面直接回血或重置模块。 */
+    private void useMaintenance() {
+        if (maintenanceAvailable()) RVP_Network.CHANNEL.sendToServer(new C2SUseMaintenance(vehicle.getId()));
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (RVP_Keys.USE_MAINTENANCE.matches(keyCode, scanCode)) {
+            useMaintenance();
+            return true;
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     /** 类别栏和部件列表独立滚动，选择分类后回到该分类第一项。 */

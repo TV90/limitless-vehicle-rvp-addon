@@ -67,6 +67,9 @@
         #repair-preview { margin:6px 9px; padding:6px 10px; text-align:center; width:calc(100% - 18px);
             background-image:linear-gradient(180deg,rgba(75,77,81,.85),rgba(25,27,31,.85)); }
         #repair-preview:hover { color:#b1efb7; background-image:linear-gradient(180deg,rgba(76,92,81,.92),rgba(31,47,37,.88)); }
+        #repair-preview.unavailable { opacity:.55; cursor:default; }
+        #repair-status { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:0 9px; font-size:var(--eq-detail,15px); }
+        #repair-key { flex:0 0 auto; white-space:nowrap; }
         .empty, .hint, #repair-forecast { padding:6px 9px; line-height:1.35; overflow-wrap:anywhere; }
         .repair-foot { flex:0 0 auto; border-top:1px solid rgba(200,193,175,.4); }
         #repair-forecast { font-size:var(--eq-detail,15px); } .hint { padding-top:0; }
@@ -103,6 +106,7 @@
                 <div class="tabs"><button id="era-tab" type="button" class="tab"><translation>gui.ywzj_rvp.equipment.era_tab</translation></button>
                     <button id="dev-tab" type="button" class="tab"><translation>gui.ywzj_rvp.equipment.device_tab</translation></button></div>
                 <div id="queue-list" class="scroll"></div><footer class="repair-foot"><div id="repair-forecast"></div>
+                <div id="repair-status"><span id="repair-state"></span><span id="repair-key"></span></div>
                 <button id="repair-preview" type="button"><translation>gui.ywzj_rvp.equipment.repair_preview</translation></button>
                 <div class="hint"><translation>gui.ywzj_rvp.equipment.queue_hint</translation></div></footer></section>
         </div>
