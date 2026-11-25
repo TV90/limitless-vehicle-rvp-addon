@@ -54,7 +54,13 @@ public final class RVP_VehicleActionHudModel {
         /** 人在回路镜头退出。 */
         HITL_EXIT,
         /** 配置允许的提前引爆并退出。 */
-        HITL_DETONATE
+        HITL_DETONATE,
+        /** 图像制导弹头视角。 */
+        HITL_VIEW,
+        /** 图像制导弹头视角退出。 */
+        OPTICAL_EXIT,
+        /** 电视导引头发射前的手动锁定。 */
+        OPTICAL_LOCK
     }
     public enum Phase { READY, DISABLED, COOLING, DEPLOYED, ACTIVE, DAMAGED, ALERT }
     public record Card(Action action, Phase phase, boolean enabled, int cooldownSeconds) {}
@@ -164,8 +170,8 @@ public final class RVP_VehicleActionHudModel {
 
     private static int displayPriority(Action action) {
         return switch (action) {
-            case HITL_REDESIGNATE -> 10;
-            case HITL_EXIT, HITL_DETONATE -> 20;
+            case HITL_REDESIGNATE, OPTICAL_LOCK -> 10;
+            case HITL_EXIT, HITL_DETONATE, HITL_VIEW, OPTICAL_EXIT -> 20;
             case SEEKER -> 10;
             case QUICK_LOCK -> 20;
             case FOCUS_LOCK -> 30;

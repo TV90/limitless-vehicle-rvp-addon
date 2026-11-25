@@ -308,6 +308,7 @@
   "key.ywzj_rvp.hmd_toggle.desc": "头盔瞄准具 / 格斗模式切换",
   "key.ywzj_rvp.fire_control_stabilizer.desc": "火控模式切换",
   "key.ywzj_rvp.toggle_laser_designation.desc": "暂时关闭激光照射（按住）",
+  "key.ywzj_rvp.optical_missile_view.desc": "切换图像制导弹头视角",
   "key.ywzj_rvp.hitl_redesignate.desc": "TV/HITL 重新指定目标",
   "key.ywzj_rvp.hitl_switch_video_mode.desc": "TV/HITL 切换视频模式",
   "key.ywzj_rvp.hitl_exit.desc": "TV/HITL 退出视角",
@@ -777,5 +778,17 @@
   "hud.ywzj_rvp.action.artillery_map": "炮兵地图",
   "gui.ywzj_rvp.equipment.repair_preview": "快速维修",
   "gui.ywzj_rvp.equipment.repair_syncing": "同步维修状态…",
-  "gui.ywzj_rvp.equipment.repair_unavailable": "维修不可用"
+  "gui.ywzj_rvp.equipment.repair_unavailable": "维修不可用",
+  "hud.ywzj_rvp.action.optical_lock": "锁定目标",
+  "hud.ywzj_rvp.action.optical_exit": "退出视角",
+  "ui.rvp.optical.snapshot_target": "目标",
+  "ui.rvp.optical.need_lock": "按 [%s] 键锁定可见目标",
+  "ui.rvp.optical.class.person": "人员",
+  "ui.rvp.optical.class.living": "生物",
+  "ui.rvp.optical.class.tracked": "履带",
+  "ui.rvp.optical.class.wheeled": "轮式",
+  "ui.rvp.optical.class.vehicle": "载具",
+  "ui.rvp.optical.class.helicopter": "直升机",
+  "ui.rvp.optical.class.aircraft": "固定翼",
+  "hud.ywzj_rvp.action.hitl_view": "弹头视角"
 }

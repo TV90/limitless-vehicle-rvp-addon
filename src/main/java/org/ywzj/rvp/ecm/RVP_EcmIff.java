@@ -44,6 +44,21 @@ public final class RVP_EcmIff {
      * 判定按序短路，任一命中即友方。
      */
     public static boolean areVehiclesFriendly(@Nullable AbstractVehicle a, @Nullable AbstractVehicle b) {
+        return areVehiclesFriendly(a, b, true);
+    }
+
+    /** ATV 排除游戏友方目标，观察方由友方 AI 驾驶时仍按实际阵营和队伍检查。 */
+    public static boolean isFriendlyOpticalTarget(@Nullable AbstractVehicle observer, AbstractVehicle target) {
+        if (areVehiclesFriendly(observer, target, false)) {
+            return true;
+        }
+        // 炮手 AI 换到非驾驶席后，该载具仍是友方。
+        return target.getPassengers().stream().anyMatch(passenger -> passenger instanceof GunnerEntity gunner
+                && gunner.getProfileFaction() == RVP_EnumGunnerFaction.FRIENDLY);
+    }
+
+    private static boolean areVehiclesFriendly(@Nullable AbstractVehicle a, @Nullable AbstractVehicle b,
+                                               boolean observerFriendlyToAll) {
         if (a == null || b == null) {
             return false;
         }
@@ -59,7 +74,7 @@ public final class RVP_EcmIff {
             return true;
         }
         // FRIENDLY 阵营 gunner 对任何载具视为友方（不触发其 ECM）
-        if (da instanceof GunnerEntity ga2
+        if (observerFriendlyToAll && da instanceof GunnerEntity ga2
                 && ga2.getProfileFaction() == RVP_EnumGunnerFaction.FRIENDLY) {
             return true;
         }

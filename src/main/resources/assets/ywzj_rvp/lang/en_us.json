@@ -279,6 +279,7 @@
   "key.ywzj_rvp.hmd_toggle.desc": "HMD / ACM mode toggle",
   "key.ywzj_rvp.fire_control_stabilizer.desc": "Fire control mode toggle",
   "key.ywzj_rvp.toggle_laser_designation.desc": "Suspend laser designation (hold)",
+  "key.ywzj_rvp.optical_missile_view.desc": "Switch optical missile view",
   "key.ywzj_rvp.hitl_redesignate.desc": "TV/HITL redesignate target",
   "key.ywzj_rvp.hitl_switch_video_mode.desc": "TV/HITL switch video mode",
   "key.ywzj_rvp.hitl_exit.desc": "TV/HITL exit view",
@@ -777,5 +778,18 @@
   "hud.ywzj_rvp.action.artillery_map": "ARTY MAP",
   "gui.ywzj_rvp.equipment.repair_preview": "Quick repair",
   "gui.ywzj_rvp.equipment.repair_syncing": "Syncing repair status…",
-  "gui.ywzj_rvp.equipment.repair_unavailable": "Repair unavailable"
+  "gui.ywzj_rvp.equipment.repair_unavailable": "Repair unavailable",
+  "ui.rvp.optical.name.entity.rvp.mi28": "Mi-28NE Night Hunter",
+  "hud.ywzj_rvp.action.optical_lock": "Lock target",
+  "hud.ywzj_rvp.action.optical_exit": "Exit view",
+  "ui.rvp.optical.snapshot_target": "Target",
+  "ui.rvp.optical.need_lock": "Press [%s] to lock a visible target",
+  "ui.rvp.optical.class.person": "Person",
+  "ui.rvp.optical.class.living": "Mob",
+  "ui.rvp.optical.class.tracked": "Tracked",
+  "ui.rvp.optical.class.wheeled": "Wheeled",
+  "ui.rvp.optical.class.vehicle": "Vehicle",
+  "ui.rvp.optical.class.helicopter": "Helicopter",
+  "ui.rvp.optical.class.aircraft": "Aircraft",
+  "hud.ywzj_rvp.action.hitl_view": "Missile view"
 }

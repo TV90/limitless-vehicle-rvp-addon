@@ -24,7 +24,8 @@ public class InputHandlerAirburstMixin {
             )
     )
     private static void ywzj_rvp$redirectFireControlLock(WeaponUnit weaponUnit, int key, int scanCode, int action) {
-        if (RVP_SaclosLockInput.tryConsumeLockKey(weaponUnit)) {
+        if (org.ywzj.rvp.client.state.RVP_ClientOpticalState.isOpticalWeapon(weaponUnit)
+                || RVP_SaclosLockInput.tryConsumeLockKey(weaponUnit)) {
             return;
         }
         if (RVP_AirburstInput.tryMeasureOnLockKey(weaponUnit)) {

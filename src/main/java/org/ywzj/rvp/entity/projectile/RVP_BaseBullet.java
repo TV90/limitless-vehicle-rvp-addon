@@ -3184,7 +3184,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             // both track a moving target. The base MissileEntity path also uses a live
             // Java Entity reference; five-tick sampling made high-acceleration targets lag.
             // TV 必须先做烟雾/速度检查，唯有 TV 制导源可更新该弹的实体记忆。
-            boolean tvValidatedTracking = rvpData != null && rvpData.isSaclosTvGuided();
+            boolean tvValidatedTracking = rvpData != null && (rvpData.isSaclosTvGuided()
+                    || org.ywzj.rvp.guidance.RVP_OpticalTargeting.isOptical(rvpData.getGuidanceData().getGuidanceType()));
             if (allowEntityTracking && !tvValidatedTracking && targetEntity != null && targetEntity.isAlive()) {
                 targetPos = aimPoint(targetEntity);
                 lastGuidancePos = targetPos;

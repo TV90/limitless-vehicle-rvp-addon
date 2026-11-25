@@ -53,8 +53,19 @@ public class RVP_OverlayCancelHandler {
             }
         }
         ResourceLocation id = event.getOverlay().id();
-        // HITL 电视画面只保留 RVP 仪表/提示：隐藏本体左下状态面板与右下武器栏。
-        if (RVP_ClientHitlState.isActive() && (id.equals(VEHICLE_STATUS) || id.equals(VEHICLE_WEAPON))) {
+        boolean inMissile = RVP_ClientHitlState.isActive();
+        boolean opticalView = inMissile && org.ywzj.rvp.client.state.RVP_ClientOpticalState
+                .isViewing(RVP_ClientHitlState.getActiveMissileId());
+        boolean opticalScope = !inMissile && org.ywzj.rvp.client.state.RVP_ClientOpticalState.isOpticalSelected();
+        if ((opticalView || opticalScope) && (id.equals(net.minecraftforge.client.gui.overlay.VanillaGuiOverlay.CROSSHAIR.id())
+                || event.getOverlay().overlay() instanceof org.ywzj.vehicle.client.gui.VehicleAimAtOverlay
+                || id.equals(VEHICLE_SCOPE))
+                || inMissile && (id.equals(VEHICLE_STATUS) || id.equals(VEHICLE_WEAPON))) {
+            event.setCanceled(true);
+            return;
+        }
+        if (opticalScope && id.getNamespace().equals(RVP_MOD.MOD_ID) && id.getPath().equals("rvp_hmd")
+                || opticalView && id.getNamespace().equals(RVP_MOD.MOD_ID) && !isOpticalVideoOverlay(id.getPath())) {
             event.setCanceled(true);
             return;
         }
@@ -100,4 +111,11 @@ public class RVP_OverlayCancelHandler {
             // 自 VehicleScopeOverlay 移除），此处不再补画，随本体状态面板正常展示。
         }
     }
+    private static boolean isOpticalVideoOverlay(String path) {
+        return switch (path) {
+            case "rvp_hitl_video_background", "rvp_hit_indicator", "rvp_tv_missile", "rvp_optical_targeting" -> true;
+            default -> false;
+        };
+    }
+
 }

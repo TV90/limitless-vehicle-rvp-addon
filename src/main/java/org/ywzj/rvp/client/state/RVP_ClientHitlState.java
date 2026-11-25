@@ -352,7 +352,8 @@ public class RVP_ClientHitlState {
         Minecraft mc = Minecraft.getInstance();
         // 下车后到达的结束包不能把正常视角重新盖成雪花。
         boolean showEnd = RVP_HitlSignalLossPresentation.shouldBegin(activeMissileId, missileEntityId,
-                isMouseSteering() || isDesignateMode(), mc.player != null && mc.player.getVehicle() instanceof AbstractVehicle);
+                isMouseSteering() || isDesignateMode() || RVP_ClientOpticalState.isViewing(missileEntityId),
+                mc.player != null && mc.player.getVehicle() instanceof AbstractVehicle);
         // 调用原有退出流程，立即归还相机/热成像/区块，提示不保留导弹实体。
         if (showEnd) {
             clearSession();
@@ -494,21 +495,10 @@ public class RVP_ClientHitlState {
         LocalVehiclePlayer.instance.viewType = LocalVehiclePlayer.ViewType.SCOPE;
         LocalVehiclePlayer.instance.thermalImaging = (videoMode == RVP_EnumVideoMode.THERMAL);
 
-        if (tickExitClick(mc)) {
-            if (mc.level != null) {
-                markRightClickConsumed(mc.level.getGameTime());
-            }
-            // 右键：默认退出视角；武器配置 hitl_right_click_detonate 时改为提前引爆
-            Entity hitlMissile = resolveActiveMissile(mc);
-            if (hitlMissile instanceof RVP_MissileEntity rvpMissile
-                    && rvpMissile.rvp$isHitlRightClickDetonate()) {
-                RVP_Network.CHANNEL.sendToServer(C2SHitlDetonate.of(activeMissileId));
-                // 主动引爆也会失去视频；普通退出仍然立即返回且不显示失图。
-                onDetonation(activeMissileId);
-            } else {
-                RVP_Network.CHANNEL.sendToServer(C2SExitHitlView.of(activeMissileId));
-                clear();
-            }
+        if (tickExitClick(mc) && missile != null && missile.rvp$isHitlRightClickDetonate()) {
+            markRightClickConsumed(mc.level.getGameTime());
+            RVP_Network.CHANNEL.sendToServer(C2SHitlDetonate.of(activeMissileId));
+            onDetonation(activeMissileId);
             return;
         }
         if (missile != null) {
@@ -697,6 +687,13 @@ public class RVP_ClientHitlState {
         particleSuppressY = lvp.vehicle.getY();
         particleSuppressZ = lvp.vehicle.getZ();
         particleSuppressRadiusSq = 64.0D;
+    }
+
+    public static void exitView(Minecraft mc) {
+        if (!isActive() || mc.level == null) return;
+        markRightClickConsumed(mc.level.getGameTime());
+        RVP_Network.CHANNEL.sendToServer(C2SExitHitlView.of(activeMissileId));
+        clear();
     }
 
     private static boolean tickExitClick(Minecraft mc) {

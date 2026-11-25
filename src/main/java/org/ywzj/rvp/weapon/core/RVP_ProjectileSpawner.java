@@ -131,7 +131,14 @@ public final class RVP_ProjectileSpawner {
                 powerScale,
                 extraSpread
         );
-        LegacyDesignatedTarget designated = resolveLegacyDesignatedTarget(data, kind, shooter, level, aim);
+        var guidanceType = data.getGuidanceData().getGuidanceType();
+        LegacyDesignatedTarget designated = switch (guidanceType) {
+            case TV -> lockTarget == null && weaponUnit != null
+                    ? new LegacyDesignatedTarget(org.ywzj.rvp.guidance.RVP_OpticalLock.groundPoint(shooter, weaponUnit, data),
+                    false) : LegacyDesignatedTarget.NONE;
+            case ATV -> LegacyDesignatedTarget.NONE;
+            default -> resolveLegacyDesignatedTarget(data, kind, shooter, level, aim);
+        };
         // 炮兵弹配置的初速就是地图和出膛共用的初速。抵消旧无动力火箭在实体初始化里的倍率。
         Vec3 spawnMotion = data.getMiscData().isArtilleryMap()
                 ? RVP_UnguidedBallisticMath.resolveSpawnContextMotion(data, kind, motion) : motion;
@@ -192,7 +199,13 @@ public final class RVP_ProjectileSpawner {
             projectile.bindProgrammableAirburstRange(context.sourceWeaponUnit(), weaponIndex);
         }
 
-        applyLockTarget(projectile, context);
+        if (projectile instanceof RVP_MissileEntity missile && missile.isOpticalMissile()) {
+            if (context.weaponData().getGuidanceData().getGuidanceType() == RVP_EnumGuidanceType.TV) {
+                missile.opticalTrack().designate(context.lockTarget(), context.designatedTarget());
+            }
+        } else {
+            applyLockTarget(projectile, context);
+        }
         boolean gpsGuided = context.weaponData().usesGuidanceType(RVP_EnumGuidanceType.GPS);
         if (context.designatedTarget() != null && (gpsGuided || projectile.getTargetPos() == null)) {
             // GPS 坐标优先于实体锁定。布撒门槛读取原始坐标，制导仍使用既有散布。

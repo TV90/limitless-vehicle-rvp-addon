@@ -166,6 +166,44 @@
     {
       "part_unit_id": "variable_agm_2",
       "attach_part_unit_id": "variable_agm_2_mount",
+      "weapon_id": "rvp:mi28_optical_tv",
+      "model": "rvp:entity/weapon_mount/weapon_mount_kh39",
+      "texture": "rvp:textures/entity/mi28.png",
+      "rack_bones": [
+        "pylon"
+      ],
+      "missile_bones": [
+        "missile1",
+        "missile2"
+      ],
+      "replace_weapon_display": true,
+      "ammo_slot": 1,
+      "shoot_structure_bones": [
+        "missile_shoot2_barrel"
+      ]
+    },
+    {
+      "part_unit_id": "variable_agm_2",
+      "attach_part_unit_id": "variable_agm_2_mount",
+      "weapon_id": "rvp:mi28_optical_atv",
+      "model": "rvp:entity/weapon_mount/weapon_mount_kh39",
+      "texture": "rvp:textures/entity/mi28.png",
+      "rack_bones": [
+        "pylon"
+      ],
+      "missile_bones": [
+        "missile1",
+        "missile2"
+      ],
+      "replace_weapon_display": true,
+      "ammo_slot": 1,
+      "shoot_structure_bones": [
+        "missile_shoot2_barrel"
+      ]
+    },
+    {
+      "part_unit_id": "variable_agm_2",
+      "attach_part_unit_id": "variable_agm_2_mount",
       "weapon_id": "rvp:mi28_9m127",
       "model": "rvp:entity/weapon_mount/weapon_mount_9m127",
       "texture": "rvp:textures/entity/weapon_mount/pylon_9m127.png",
@@ -383,7 +421,9 @@
       "crosshair_style": "square",
       "weapons": [
         "rvp:mi28_kh_39",
-        "rvp:mi28_9m127"
+        "rvp:mi28_9m127",
+        "rvp:mi28_optical_tv",
+        "rvp:mi28_optical_atv"
       ]
     },
     {

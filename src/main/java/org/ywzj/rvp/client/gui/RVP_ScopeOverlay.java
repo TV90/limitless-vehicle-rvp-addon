@@ -89,7 +89,8 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
     @Override
     public void render(ForgeGui gui, GuiGraphics guiGraphics, float partialTick, int screenWidth, int screenHeight) {
         // 调用 HITL 状态门，必须先于非观瞄分支，避免母车航迹/硬锁框投到弹上画面。
-        if (org.ywzj.rvp.client.state.RVP_ClientHitlState.isActive()) return;
+        if (org.ywzj.rvp.client.state.RVP_ClientHitlState.isActive()
+                || org.ywzj.rvp.client.state.RVP_ClientOpticalState.isOpticalSelected()) return;
         if (!LocalVehiclePlayer.instance.onVehicle()) {
             return;
         }
@@ -614,7 +615,8 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
      */
     public static boolean shouldSkipVanillaAimLockTarget() {
         // 调用 HITL 状态门，让既有重定向同时拦住本体目标框，避免放行第二套绘制。
-        if (org.ywzj.rvp.client.state.RVP_ClientHitlState.isActive()) return true;
+        if (org.ywzj.rvp.client.state.RVP_ClientHitlState.isActive()
+                || org.ywzj.rvp.client.state.RVP_ClientOpticalState.isOpticalSelected()) return true;
         if (hudLockTakeoverActive()) {
             return true;
         }
@@ -653,7 +655,8 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
 
     public static void renderAimLockTarget(GuiGraphics guiGraphics, float partialTick) {
         // 调用 HITL 状态门，兼顾无 UI 预设时 CancelHandler 直接补画的入口。
-        if (org.ywzj.rvp.client.state.RVP_ClientHitlState.isActive()) return;
+        if (org.ywzj.rvp.client.state.RVP_ClientHitlState.isActive()
+                || org.ywzj.rvp.client.state.RVP_ClientOpticalState.isOpticalSelected()) return;
         // 调试（BVR 扫描框排查，默认关闭）：无条件节流日志，定位外置扫描框不渲染
         if (RVP_BVR_DEBUG) {
             AbstractVehicle dbgVehicle = LocalVehiclePlayer.instance.vehicle;

@@ -17,6 +17,26 @@ public class RVP_GuidanceData {
     @SerializedName("guidance_type")
     private RVP_EnumGuidanceType guidanceType = RVP_EnumGuidanceType.NONE;
 
+    /** TV/ATV 允许操作手查看弹载画面；默认关闭，观察不授予操控权。 */
+    @SerializedName("allow_missile_view")
+    private boolean allowMissileView;
+
+    /** 游戏内图像锁定最低置信度，0～1，默认 0.65。 */
+    @SerializedName("recognition_lock_threshold")
+    private float recognitionLockThreshold = 0.65f;
+
+    /** 光学目标短时遮挡保留时间，单位 tick，默认 12。 */
+    @SerializedName("recognition_hold_ticks")
+    private int recognitionHoldTicks = 12;
+
+    public boolean allowsMissileView() { return allowMissileView; }
+
+    public float getRecognitionLockThreshold() {
+        return Float.isFinite(recognitionLockThreshold) ? Math.max(0.05f, Math.min(1f, recognitionLockThreshold)) : 0.65f;
+    }
+
+    public int getRecognitionHoldTicks() { return Math.max(0, recognitionHoldTicks); }
+
     @SerializedName("guidance_tick_range")
     private RVP_Range<Integer> guidanceTickRange;
 

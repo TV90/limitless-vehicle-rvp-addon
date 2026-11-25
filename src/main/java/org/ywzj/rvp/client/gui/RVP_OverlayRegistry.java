@@ -116,6 +116,10 @@ public class RVP_OverlayRegistry {
                 RVP_SaclosOverlay.render(graphics);
             }
         });
+        // 图像制导的识别框、十字和锁定截图位于雪花之下。
+        event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_optical_targeting",
+                (gui, graphics, partialTick, width, height) ->
+                        org.ywzj.rvp.client.state.RVP_ClientOpticalState.render(graphics));
         // 失图必须晚于载具瞄具黑色遮罩绘制，否则状态已触发但实际画面仍被盖成黑屏。
         event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_hitl_video_background", new RVP_HitlVideoBackgroundOverlay());
         // 命中展板和 TV 状态文字位于雪花之上，仍由聊天层覆盖。

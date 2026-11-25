@@ -1,0 +1,93 @@
+{
+  "type": "rvp:missile",
+  "life": 2400,
+  "name": "TV Imaging Test Missile",
+  "shoot_interval": 500,
+  "max_capacity": 2,
+  "reload": {
+    "time": 300,
+    "ammo": "ywzj_vehicle:ammo_missile"
+  },
+  "fire_data": {
+    "spread": 0,
+    "require_lock": false,
+    "fire_mode": "FULL_AUTO"
+  },
+  "projectile_data": {
+    "inherit_vehicle_velocity": true,
+    "collision_box_size": 0.7,
+    "velocity": 1.0,
+    "has_rocket_engine": true,
+    "mass": 150,
+    "fuel_mass": 45,
+    "thrust": 3.8208,
+    "motor_burn_time": 60,
+    "drag_coefficient": 0.035,
+    "rvp_induced_drag": 0.005,
+    "rotate_to_motion": true,
+    "max_speed": 3.5,
+    "turning_factor": {
+      "[[1,inf]]": 0.12
+    },
+    "rvp_aero_steering": true,
+    "rvp_attack_angle_limit_deg": 60,
+    "second_pulse": true,
+    "second_pulse_thrust": 0.76416,
+    "second_pulse_burn_time": 200,
+    "second_pulse_trigger_speed": 10
+  },
+  "fuse_data": {
+    "delay_tick": 0,
+    "proximity_radius": 0,
+    "detonate_on_life_end": false
+  },
+  "guidance_data": {
+    "guidance_type": "TV",
+    "guidance_tick_range": "[[5,inf]]",
+    "guidance_target_distance_range": "[[0,2048]]",
+    "lock_target_distance_range": "[[0,2048]]",
+    "enable_inertial_guidance": false,
+    "max_guidance_angle": 120,
+    "max_lock_angle": 120,
+    "allow_missile_view": true,
+    "recognition_lock_threshold": 0.65,
+    "recognition_hold_ticks": 12,
+    "scan_interval_tick": 4
+  },
+  "effects_data": {
+    "trajectory_particle": "minecraft:campfire_signal_smoke",
+    "impact_particle": "minecraft:block",
+    "explosion_particle": "minecraft:explosion_emitter"
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": true,
+      "damage": 900,
+      "radius": 6,
+      "proximity_fuze": false,
+      "proximity_radius": 0,
+      "destroy_block": false,
+      "explosion_damage_factor": {
+        "player": 0.0556,
+        "living": 0.0556,
+        "vehicle_default": 1.0,
+        "vehicles": {
+          "ywzj_vehicle:tracked_vehicle": 0.9,
+          "ywzj_vehicle:wheeled_vehicle": 1.2,
+          "ywzj_vehicle:vessel_vehicle": 2.0
+        }
+      }
+    }
+  },
+  "collision_data": {
+    "direct_damage": 10
+  },
+  "misc_data": {
+    "ammo_radar_rcs_factor": [
+      1,
+      1,
+      1
+    ]
+  },
+  "name_CN": "TV 电视图像制导测试弹"
+}

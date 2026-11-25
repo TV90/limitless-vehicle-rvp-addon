@@ -51,7 +51,6 @@ public final class RVP_GuidanceDataAdapter
             "seeker_lock_hold_grace_tick"
     );
     private static final EnumSet<RVP_EnumGuidanceType> HITL_TYPES = EnumSet.of(
-            RVP_EnumGuidanceType.TV,
             RVP_EnumGuidanceType.HITL_TV,
             RVP_EnumGuidanceType.HITL_CLOS_TV
     );
@@ -87,9 +86,13 @@ public final class RVP_GuidanceDataAdapter
         if (type == RVP_EnumGuidanceType.IOG) {
             throw new JsonParseException("IOG is not a public guidance_type in the new schema");
         }
+        boolean hasHitlFields = containsAny(object, HITL_FIELDS);
+        // Older TV records with explicit manual controls are HITL; plain TV uses the independent optical track.
+        if (type == RVP_EnumGuidanceType.TV && hasHitlFields && !object.has("hitl_remote_view")) {
+            type = RVP_EnumGuidanceType.HITL_TV;
+        }
         object.addProperty("guidance_type", type.name());
         normalizeTerminalType(object);
-        boolean hasHitlFields = containsAny(object, HITL_FIELDS);
         boolean hasArmFields = containsAny(object, ARM_FIELDS);
         validateSubtypeFields(object, type);
 

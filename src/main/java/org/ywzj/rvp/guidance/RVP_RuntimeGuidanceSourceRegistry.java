@@ -14,6 +14,7 @@ import org.ywzj.rvp.guidance.runtime.RVP_RuntimeHitlTvGuidanceSource;
 import org.ywzj.rvp.guidance.runtime.RVP_RuntimeHitlClosTvGuidanceSource;
 import org.ywzj.rvp.guidance.runtime.RVP_RuntimeLbrGuidanceSource;
 import org.ywzj.rvp.guidance.runtime.RVP_RuntimeUnsupportedGuidanceSource;
+import org.ywzj.rvp.guidance.runtime.RVP_RuntimeOpticalGuidanceSource;
 
 import java.util.EnumMap;
 import java.util.Map;
@@ -38,8 +39,8 @@ public final class RVP_RuntimeGuidanceSourceRegistry {
         register(new RVP_RuntimeHitlClosTvGuidanceSource());
         register(new RVP_RuntimeLbrGuidanceSource());
         register(new RVP_RuntimeUnsupportedGuidanceSource(RVP_EnumGuidanceType.MCLOS));
-        register(new RVP_RuntimeUnsupportedGuidanceSource(RVP_EnumGuidanceType.TV));
-        register(new RVP_RuntimeUnsupportedGuidanceSource(RVP_EnumGuidanceType.ATV));
+        register(new RVP_RuntimeOpticalGuidanceSource(RVP_EnumGuidanceType.TV));
+        register(new RVP_RuntimeOpticalGuidanceSource(RVP_EnumGuidanceType.ATV));
     }
 
     private RVP_RuntimeGuidanceSourceRegistry() {}

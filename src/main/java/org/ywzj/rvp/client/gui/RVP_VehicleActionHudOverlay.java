@@ -11,6 +11,7 @@ import net.minecraftforge.client.gui.overlay.IGuiOverlay;
 import org.ywzj.rvp.client.RVP_Keys;
 import org.ywzj.rvp.client.lead.RVP_MachinegunLeadSolver;
 import org.ywzj.rvp.client.state.RVP_ClientHitlState;
+import org.ywzj.rvp.client.state.RVP_ClientOpticalState;
 import org.ywzj.rvp.client.state.RVP_ClientAuxiliaryHudState;
 import org.ywzj.rvp.client.state.RVP_ClientGPSState;
 import org.ywzj.rvp.client.state.RVP_ClientGPSUtil;
@@ -35,6 +36,7 @@ import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 import org.ywzj.vehicle.vehicle.weapon.VehicleMissile;
+import java.util.ArrayList;
 import java.util.List;
 import static org.ywzj.rvp.client.gui.RVP_VehicleActionHudModel.*;
 
@@ -50,14 +52,15 @@ public final class RVP_VehicleActionHudOverlay implements IGuiOverlay {
             texture("vision_white"), texture("vision_night"), texture("vision_thermal"),
             texture("fire_support_bind"), texture("artillery_map"), texture("focus_lock"),
             // HITL 复用已有锁点、切换和空爆图标，不覆盖美术资源。
-            texture("focus_lock"), texture("switch_auxiliary"), texture("airburst")};
+            texture("focus_lock"), texture("switch_auxiliary"), texture("airburst"), texture("switch_auxiliary"),
+            texture("switch_auxiliary"), texture("focus_lock")};
     private static final ResourceLocation DEPLOYED_TEXTURE = texture("deployed_auxiliary");
     private static final String[] LABELS = {"deploy_auxiliary", "switch_auxiliary", "tactical_map", "vehicle_status",
             "seeker", "fire_control_stable", "fire_control_semi_auto", "fire_control_off", "quick_lock",
             "loiter", "rotary_normal", "rotary_auto_collective", "rotary_hover",
             "gps_mark", "gps_single", "gps_multi", "gps_fast", "gps_radar", "airburst",
             "vision_white", "vision_night", "vision_thermal", "fire_support_bind", "artillery_map", "focus_lock",
-            "hitl_redesignate", "hitl_exit", "hitl_detonate"};
+            "hitl_redesignate", "hitl_exit", "hitl_detonate", "hitl_view", "optical_exit", "optical_lock"};
     private static final KeyMapping[] BINDINGS = {RVP_Keys.DEPLOY_DEPLOYABLE_UAV, RVP_Keys.SWITCH_DEPLOYABLE_UAV,
             RVP_Keys.OPEN_GPS_PANEL, RVP_Keys.OPEN_EQUIP_PANEL, AllKeys.TOGGLE_SEEKER,
             RVP_Keys.FIRE_CONTROL_STABILIZER, RVP_Keys.FIRE_CONTROL_STABILIZER, RVP_Keys.FIRE_CONTROL_STABILIZER,
@@ -72,7 +75,8 @@ public final class RVP_VehicleActionHudOverlay implements IGuiOverlay {
             RVP_Keys.OPEN_GPS_PANEL, RVP_Keys.OPEN_GPS_PANEL,
             // 焦点锁定沿用本体锁定键（R）
             AllKeys.FIRE_CONTROL_LOCK,
-            RVP_Keys.HITL_REDESIGNATE, RVP_Keys.HITL_EXIT, RVP_Keys.HITL_EXIT};
+            RVP_Keys.HITL_REDESIGNATE, RVP_Keys.HITL_EXIT, RVP_Keys.HITL_EXIT, RVP_Keys.OPTICAL_MISSILE_VIEW,
+            RVP_Keys.OPTICAL_MISSILE_VIEW, RVP_Keys.HITL_REDESIGNATE};
     private static ResourceLocation texture(String name) {
         return new ResourceLocation("ywzj_rvp", "textures/gui/actions/" + name + ".png");
     }
@@ -108,7 +112,8 @@ public final class RVP_VehicleActionHudOverlay implements IGuiOverlay {
                 fireControlActive = mode != RVP_FireControlStabilizerState.Mode.OFF;
             }
         }
-        boolean quickLock = unit != null && RVP_ClientHmdState.supportsQuickLock(unit);
+        boolean optical = RVP_ClientOpticalState.isOpticalWeapon(unit);
+        boolean quickLock = !optical && unit != null && RVP_ClientHmdState.supportsQuickLock(unit);
         RVP_ClientHmdState quickLockHmd = RVP_ClientHmdState.getInstance();
         // 只有 EO 快速搜索受 FCS 影响；雷达头瞄仍走雷达自身状态。
         boolean eoQuickLock = quickLock && quickLockHmd.getRadarHmdUnit(unit) == null;
@@ -185,7 +190,7 @@ public final class RVP_VehicleActionHudOverlay implements IGuiOverlay {
         Action mapAction = RVP_VehicleActionHudModel.mapAction(fireSupportBind, artilleryMap);
         // 焦点锁定卡只在观瞄站带焦点锁定器且处于观瞄视角时出现；焦点锁住或已吸附载具时常亮
         boolean scopeView = LocalVehiclePlayer.instance.viewType == LocalVehiclePlayer.ViewType.SCOPE;
-        boolean focusLock = unit != null && unit.withFocusLocker() && scopeView;
+        boolean focusLock = !optical && unit != null && unit.withFocusLocker() && scopeView;
         boolean focusLockActive = focusLock && !fcsDamaged && (unit.getFocusLockPos() != null
                 || RVP_FocusLockSnapState.isSnapped(unit));
         List<Card> cards = RVP_VehicleActionHudModel.markFcsDamaged(
@@ -195,6 +200,25 @@ public final class RVP_VehicleActionHudOverlay implements IGuiOverlay {
                                 visionAction, visionActive),
                         new FlightPrompts(loiterApplicable, loitering, rotaryMode), mapAction, focusLock, focusLockActive)),
                 fcsDamaged, fcsDamaged && eoQuickLock);
+        boolean opticalLock = RVP_ClientOpticalState.canDesignate();
+        boolean opticalViewReady = RVP_ClientOpticalState.canOpenView(mc);
+        boolean opticalView = opticalViewReady || optical && currentRvpWeapon.getData().getGuidanceData().allowsMissileView();
+        if (opticalLock || opticalView) {
+            cards = new ArrayList<>(cards);
+            if (opticalLock) cards.add(new Card(Action.OPTICAL_LOCK,
+                    RVP_ClientOpticalState.hasLock() ? Phase.ACTIVE : Phase.READY, true, 0));
+            if (opticalView) cards.add(new Card(Action.HITL_VIEW,
+                    opticalViewReady ? Phase.READY : Phase.DISABLED, opticalViewReady, 0));
+        }
+        drawBoundRow(graphics, cards);
+    }
+
+    /** 两个镜头共用动作条的位置与键位换算。 */
+    public static void drawOpticalObserverRow(GuiGraphics graphics) {
+        drawBoundRow(graphics, List.of(new Card(Action.OPTICAL_EXIT, Phase.READY, true, 0)));
+    }
+
+    private static void drawBoundRow(GuiGraphics graphics, List<Card> cards) {
         String[] keys = new String[BINDINGS.length];
         boolean[] pressed = new boolean[BINDINGS.length];
         for (Card card : cards) {

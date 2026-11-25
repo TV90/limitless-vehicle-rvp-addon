@@ -59,6 +59,8 @@ public class RVP_Keys {
     public static final KeyMapping TOGGLE_LASER_DESIGNATION = key("toggle_laser_designation", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_GRAVE_ACCENT);
     public static final KeyMapping HITL_REDESIGNATE = key("hitl_redesignate", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_R);
     public static final KeyMapping HITL_SWITCH_VIDEO_MODE = key("hitl_switch_video_mode", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_4);
+    /** 图像制导弹头镜头切换，独立于人在回路退出键。 */
+    public static final KeyMapping OPTICAL_MISSILE_VIEW = key("optical_missile_view", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_U);
     public static final KeyMapping HITL_EXIT = key("hitl_exit", InputConstants.Type.MOUSE, GLFW.GLFW_MOUSE_BUTTON_RIGHT);
 
     /** 发射热焰弹（干扰 IR/AIR）。 */
@@ -98,6 +100,7 @@ public class RVP_Keys {
         event.register(HITL_REDESIGNATE);
         event.register(HITL_SWITCH_VIDEO_MODE);
         event.register(HITL_EXIT);
+        event.register(OPTICAL_MISSILE_VIEW);
         event.register(FIRE_FLARE);
         event.register(FIRE_CHAFF);
         event.register(FIRE_ECM);

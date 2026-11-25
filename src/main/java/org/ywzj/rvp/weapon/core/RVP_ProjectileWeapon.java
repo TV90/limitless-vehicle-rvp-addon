@@ -291,7 +291,19 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
         }
 
         Entity lock = null;
-        if (data.isHomingProjectile()
+        var guidanceType = data.getGuidanceData().getGuidanceType();
+        if (guidanceType == RVP_EnumGuidanceType.TV) {
+            if (!(shooter instanceof net.minecraft.server.level.ServerPlayer player)) return null;
+            var optical = org.ywzj.rvp.guidance.RVP_OpticalLock.resolve(player, rootUnit, data);
+            if (optical == null) {
+                // 发送键位组件，由接收端读取玩家当前的按键绑定。
+                player.displayClientMessage(net.minecraft.network.chat.Component.translatable("ui.rvp.optical.need_lock",
+                        net.minecraft.network.chat.Component.keybind("key.ywzj_rvp.hitl_redesignate.desc")), true);
+                noteLaunchResult("SHOT_REJECTED", "OPTICAL_LOCK_LOST", 0);
+                return null;
+            }
+            lock = optical.entity();
+        } else if (!org.ywzj.rvp.guidance.RVP_OpticalTargeting.isOptical(guidanceType) && data.isHomingProjectile()
                 && (!data.isVehicleLaserGuided() && !data.isCommandGuided() || data.isSaclosTvGuided())) {
             // [RVP] 2026-10-21 IR 反泄漏收口（方案 §6 L3）：IR 发射武器的导弹目标只认
             // 服务端 armed 表（客户端跃迁上报经包线复算写入 / AI 炮手服务端自算 dwell 写入）。
@@ -326,7 +338,8 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
             return null;
         }
         // 雷达/导引头要求锁定时复查服务端目标，堵住客户端发包后目标失效的窗口；保留现有 EO 直瞄豁免。
-        if (requiresServerSeekerLock(data, lock, RVP_WeaponSensorHelper.effectiveOrStatic(rootUnit))) {
+        if (!org.ywzj.rvp.guidance.RVP_OpticalTargeting.isOptical(guidanceType)
+                && requiresServerSeekerLock(data, lock, RVP_WeaponSensorHelper.effectiveOrStatic(rootUnit))) {
             if (shooter instanceof net.minecraft.server.level.ServerPlayer notifyPlayer) {
                 notifyPlayer.displayClientMessage(net.minecraft.network.chat.Component
                         .translatable("ui.need_lock_entity"), true);
@@ -337,7 +350,8 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
         // 服务端离轴角权威终检（2026-09-20 离轴角 bug 修复，bug B 兜底）：IR 发射武器的
         // 锁可能来自 EO 捕获/RF 落锁/切武器恢复——这些来源都不查离轴角，改包客户端也可能
         // 直接发。以离轴基准方向复验，超锥拒射（不耗弹，提示 ui.ir_target_off_axis）。
-        if (lock != null && shooter.level() instanceof net.minecraft.server.level.ServerLevel) {
+        if (lock != null && !org.ywzj.rvp.guidance.RVP_OpticalTargeting.isOptical(guidanceType)
+                && shooter.level() instanceof net.minecraft.server.level.ServerLevel) {
             if (!org.ywzj.rvp.guidance.RVP_IrLockHelper.isLaunchTargetWithinOffAxis(rootUnit, lock, data, 1.0f)) {
                 if (shooter instanceof net.minecraft.server.level.ServerPlayer notifyPlayer) {
                     notifyPlayer.displayClientMessage(
@@ -564,12 +578,12 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
     }
 
     private void maybeEnterHitlView(RVP_WeaponData data, LivingEntity shooter, RVP_BaseBullet projectile, int projectileIndex) {
-        if (!(projectile instanceof RVP_MissileEntity missile) || projectileIndex != 0 || !data.hasHumanInTheLoop()) {
-            return;
+        if (!(projectile instanceof RVP_MissileEntity missile) || projectileIndex != 0
+                || !(shooter instanceof net.minecraft.server.level.ServerPlayer player)) return;
+        if (missile.isOpticalMissile() && data.getGuidanceData().allowsMissileView()) {
+            org.ywzj.rvp.network.S2COpticalFeedback.launched(player, getVehicle().getId(), data.getWeaponId(), missile.getId());
         }
-        if (getVehicle().level().isClientSide() || !(shooter instanceof net.minecraft.server.level.ServerPlayer player)) {
-            return;
-        }
+        if (!data.hasHumanInTheLoop()) return;
         RVP_EnumHitlControlMode mode = data.getGuidanceData().getGuidanceType() == RVP_EnumGuidanceType.HITL_CLOS_TV
                 ? RVP_EnumHitlControlMode.MOUSE
                 : RVP_EnumHitlControlMode.DESIGNATE;

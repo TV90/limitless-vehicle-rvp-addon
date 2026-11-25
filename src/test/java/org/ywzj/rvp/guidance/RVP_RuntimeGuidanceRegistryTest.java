@@ -33,10 +33,34 @@ class RVP_RuntimeGuidanceRegistryTest {
     }
 
     @Test
-    void declaredButUnimplementedGuidanceTypesUseExplicitPlaceholders() {
+    void opticalAndPlaceholderSourcesAreRegistered() {
         assertNotNull(RVP_RuntimeGuidanceSourceRegistry.get(RVP_EnumGuidanceType.MCLOS));
         assertNotNull(RVP_RuntimeGuidanceSourceRegistry.get(RVP_EnumGuidanceType.TV));
         assertNotNull(RVP_RuntimeGuidanceSourceRegistry.get(RVP_EnumGuidanceType.ATV));
+    }
+
+    @Test
+    void tvAndAtvConfigRemainSeparateFromManualHITL() {
+        var tv = parse("""
+                {"guidance_type":"TV","allow_missile_view":true,"recognition_lock_threshold":0.7}
+                """);
+        assertEquals(RVP_EnumGuidanceType.TV, tv.getGuidanceType());
+        assertFalse(tv instanceof org.ywzj.rvp.weapon.data.RVP_GuidanceDataHITL);
+        assertTrue(tv.allowsMissileView());
+        assertEquals(0.7f, tv.getRecognitionLockThreshold());
+
+        var atv = parse("""
+                {"guidance_type":"ATV","recognition_hold_ticks":8}
+                """);
+        assertEquals(RVP_EnumGuidanceType.ATV, atv.getGuidanceType());
+        assertFalse(atv.allowsMissileView());
+        assertEquals(8, atv.getRecognitionHoldTicks());
+
+        var legacyTv = parse("""
+                {"guidance_type":"TV","hitl_max_control_tick":400}
+                """);
+        assertEquals(RVP_EnumGuidanceType.HITL_TV, legacyTv.getGuidanceType());
+        assertTrue(legacyTv instanceof org.ywzj.rvp.weapon.data.RVP_GuidanceDataHITL);
     }
 
     @Test

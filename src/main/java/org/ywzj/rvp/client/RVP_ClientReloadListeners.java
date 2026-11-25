@@ -8,6 +8,7 @@ import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.client.resource.RVP_CustomMountReloadListener;
 import org.ywzj.rvp.client.resource.RVP_DisplayTransparentModeManager;
 import org.ywzj.rvp.client.resource.RVP_EoJammerGlowManager;
+import org.ywzj.rvp.client.resource.RVP_OpticalVehicleNames;
 import org.ywzj.rvp.client.resource.pylon.RVP_PylonDisplayReloadListener;
 import org.ywzj.rvp.client.resource.remotevisibility.RVP_RemoteVehicleVisualReloadListener;
 import org.ywzj.rvp.client.screen.RVP_UiResources;
@@ -25,6 +26,8 @@ public final class RVP_ClientReloadListeners {
     public static void onRegisterReloadListeners(RegisterClientReloadListenersEvent event) {
         // 准备静态界面背景，并使预热缓存随资源包更新失效。
         event.registerReloadListener(RVP_UiResources.INSTANCE);
+        // 预载图像制导 HUD 使用的英文载具名。
+        event.registerReloadListener(RVP_OpticalVehicleNames.INSTANCE);
         // 注册本项目殉燃资源检查：重载时清理自动挂点并检查火柱贴图。
         event.registerReloadListener(org.ywzj.rvp.client.visual.cookoff.RVP_WreckCookoffRenderer.INSTANCE);
         event.registerReloadListener(RVP_DisplayTransparentModeManager.INSTANCE);

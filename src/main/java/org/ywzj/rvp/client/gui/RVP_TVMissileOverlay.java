@@ -8,6 +8,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraftforge.client.gui.overlay.ForgeGui;
 import net.minecraftforge.client.gui.overlay.IGuiOverlay;
 import org.ywzj.rvp.client.state.RVP_ClientHitlState;
+import org.ywzj.rvp.client.state.RVP_ClientOpticalState;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 
 /**
@@ -53,15 +54,18 @@ public class RVP_TVMissileOverlay implements IGuiOverlay {
             return;
         }
 
+        if (missile.isOpticalMissile() || RVP_ClientOpticalState.isViewing(missile.getId())) {
+            RVP_VehicleActionHudOverlay.drawOpticalObserverRow(gg);
+            return;
+        }
+
         if (lastMissileId != missile.getId()) { reset(); lastMissileId = missile.getId(); }
         updateRate(missile);
 
         Font font = mc.font;
-        // 雪花由紧邻本层之前的独立 overlay 绘制，此处只绘制相机仪表与失图文字。
-        // 调用固定居中的装饰层；与可动准星、已有制导和离轴角限制相互独立。
-        if (!RVP_ClientHitlState.isHitlLinkBlocked()) {
-            if (RVP_ClientHitlState.isDesignateMode()) RVP_HitlReticleRenderer.drawTvReference(gg);
-            else RVP_HitlReticleRenderer.drawReference(gg);
+        // 人在回路 TV 保留动态锁点，仅指令线等其他模式绘制固定中央参照。
+        if (!RVP_ClientHitlState.isHitlLinkBlocked() && !RVP_ClientHitlState.isDesignateMode()) {
+            RVP_HitlReticleRenderer.drawReference(gg);
         }
         String video = switch (RVP_ClientHitlState.getVideoMode()) {
             case COLOR -> "VIS"; case BW -> "B/W"; case THERMAL -> "IR";
@@ -89,7 +93,7 @@ public class RVP_TVMissileOverlay implements IGuiOverlay {
         if (RVP_ClientHitlState.isMouseSteering() && !RVP_ClientHitlState.isHitlLinkBlocked()) drawSteeringCursor(gg);
         else { cursor.reset(); lastFrameNanos = 0; }
         // 指令制导的动态瞄准/目标斜十字并回同一 HUD 层，和仪表一起走 CHAT_PANEL 之下的绘制顺序。
-        RVP_HitlDesignateOverlay.render(gg);
+        if (RVP_ClientHitlState.getSnowOpacity(mc.level) <= 0) RVP_HitlDesignateOverlay.render(gg);
     }
 
     /** 指令线模式的视觉游标跟随既有舵量，并以临界阻尼跟随其原有回中过程。 */

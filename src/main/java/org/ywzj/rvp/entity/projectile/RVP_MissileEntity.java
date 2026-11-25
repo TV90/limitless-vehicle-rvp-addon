@@ -139,6 +139,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
 
     @Override
     protected boolean tryEnterVirtualMidcourse() {
+        if (isOpticalMissile()) return false;
         // 调用阶段 B 服务端管理器；管理器完成资格、快照、SavedData 注册后才移除本实体。
         return RVP_VirtualMissileManager.tryVirtualize(this);
     }
@@ -147,6 +148,10 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     public void initFromWeapon(RVP_WeaponData data, RVP_EnumWeaponKind kind, AbstractVehicle vehicle, LivingEntity shooter,
                                Vec3 spawnPos, AimRot aim, Vec3 initialMotion) {
         super.initFromWeapon(data, kind, vehicle, shooter, spawnPos, aim, initialMotion);
+        if (data != null && org.ywzj.rvp.guidance.RVP_OpticalTargeting.isOptical(
+                data.getGuidanceData().getGuidanceType())) {
+            hitlVideoModeMask = HITL_MODE_COLOR | HITL_MODE_BW;
+        }
         if (data == null
                 || !(data.getGuidanceData() instanceof RVP_GuidanceDataHITL hitl)) {
             return;
@@ -201,6 +206,11 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
 
     @Override
     protected void tickGuidance() {
+        if (isOpticalMissile()) {
+            super.tickGuidance();
+            if (!level().isClientSide() && opticalViewer) tickOpticalVideo();
+            return;
+        }
         if (!level().isClientSide() && hitlRemoteConfigured && !hitlRemoteAttempted && hitlEnabled) {
             hitlRemoteAttempted = true;
             // 只有显式配置的弹体申请额外观察，服务端负责人数/距离/母车身份门控。
@@ -258,7 +268,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     public void tick() {
         // 调用既有飞行、碰撞和制导结算；镜头消息不能反过来改变弹体运动。
         super.tick();
-        if (!level().isClientSide() && isAlive() && rvp$isHitlActive()
+        if (!level().isClientSide() && isAlive() && (rvp$isHitlActive() || opticalViewer)
                 && getOwner() instanceof ServerPlayer player && getShooterVehicle() != null
                 && player.getVehicle() == getShooterVehicle()) {
             RVP_Network.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player),
@@ -928,7 +938,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
 
     private void syncHitlState(boolean force) {
         // 普通导弹不发送 TV 状态，沿用显式 HITL 能力门。
-        if (level().isClientSide() || rvpData == null || !rvpData.hasHumanInTheLoop()) return;
+        if (level().isClientSide() || rvpData == null || !(rvpData.hasHumanInTheLoop() || opticalViewer)) return;
         boolean dircm = dircmJammed && dircmHitlTemporary;
         var lock = rvp$getHitlLockSnapshot();
         boolean lockChanged = !lock.sameIdentity(hitlLastSentLock)
@@ -953,6 +963,9 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
 
     /** 双端安全的只读快照；禁锁期间不泄露后台残留目标坐标。 */
     public org.ywzj.rvp.hitl.RVP_HitlLockSnapshot rvp$getHitlLockSnapshot() {
+        if (isOpticalMissile()) {
+            return hitlLinkBlocked ? org.ywzj.rvp.hitl.RVP_HitlLockSnapshot.EMPTY : opticalTrack.snapshot();
+        }
         var status = org.ywzj.rvp.hitl.RVP_HitlLockSnapshot.Status.NONE;
         if (dircmJammed || dircmNoRedesignateTick > 0) {
             return new org.ywzj.rvp.hitl.RVP_HitlLockSnapshot(
@@ -1056,6 +1069,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         // 调用弹体存档，再保存 TV 骨身份，重载后不退回车体中心。
         super.addAdditionalSaveData(tag);
         tag.putBoolean("rvp_air_loss_timer_armed", airLossTimerArmed);
+        if (isOpticalMissile()) opticalTrack.save(tag);
         if (hitlTargetObb != null && hitlObbTargetUuid != null) {
             tag.putString("rvp_hitl_target_bone", hitlTargetObb.bone());
             tag.putInt("rvp_hitl_target_cube", hitlTargetObb.index());
@@ -1067,6 +1081,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     protected void readAdditionalSaveData(net.minecraft.nbt.CompoundTag tag) {
         super.readAdditionalSaveData(tag);
         airLossTimerArmed = tag.getBoolean("rvp_air_loss_timer_armed");
+        opticalTrack.load(tag);
         hitlTargetObb = null; hitlObbTargetUuid = null;
         if (tag.hasUUID("rvp_hitl_target_uuid")) {
             String bone = tag.getString("rvp_hitl_target_bone");
@@ -1150,8 +1165,49 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         }
     }
 
+    private final org.ywzj.rvp.guidance.RVP_OpticalTrack opticalTrack = new org.ywzj.rvp.guidance.RVP_OpticalTrack();
+    private boolean opticalViewer;
+
+    public org.ywzj.rvp.guidance.RVP_OpticalTrack opticalTrack() {
+        return opticalTrack;
+    }
+
+    public boolean isOpticalMissile() {
+        RVP_WeaponData data = getResolvedWeaponConfig();
+        return data != null && org.ywzj.rvp.guidance.RVP_OpticalTargeting.isOptical(
+                data.getGuidanceData().getGuidanceType());
+    }
+
+    public void beginOpticalView(net.minecraft.server.level.ServerPlayer player) {
+        if (!isOpticalMissile() || !rvpData.getGuidanceData().allowsMissileView() || !isAlive()
+                || getOwner() != player || shooterVehicle == null || player.getVehicle() != shooterVehicle) return;
+        opticalViewer = true;
+        RVP_Network.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player),
+                org.ywzj.rvp.network.S2CEnterHitlView.of(getId(), RVP_EnumHitlControlMode.VIEW));
+        updateOpticalVideoPath(player.serverLevel());
+        rvp$syncHitlState();
+    }
+
+    private void tickOpticalVideo() {
+        if (!(level() instanceof net.minecraft.server.level.ServerLevel server)
+                || !(getOwner() instanceof net.minecraft.server.level.ServerPlayer player)
+                || shooterVehicle == null || player.getVehicle() != shooterVehicle) {
+            opticalViewer = false;
+            return;
+        }
+        if (tickCount % 4 == 0) updateOpticalVideoPath(server);
+        syncHitlState(false);
+    }
+
+    private void updateOpticalVideoPath(net.minecraft.server.level.ServerLevel level) {
+        hitlLinkBlocked = org.ywzj.rvp.server.hitl.RVP_HitlRadioPath.check(level, this,
+                shooterVehicle.getBoundingBox().getCenter(), position())
+                != org.ywzj.rvp.server.hitl.RVP_HitlRadioPath.Result.CLEAR;
+    }
+
     public void rvp$exitHitl() {
         this.hitlEnabled = false;
+        this.opticalViewer = false;
     }
 
     /** 该导弹配置为"右键提前引爆"模式且 HITL 制导仍激活（客户端据此决定右键动作）。 */
@@ -1163,7 +1219,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     @Override
     protected void triggerExplosion(Vec3 pos, FuseDetonation kind, @Nullable Entity excludeEntity,
                                     @Nullable Entity impactTarget, @Nullable Vec3 impactVelocity) {
-        if (rvp$isHitlActive() && explosion != null && explosion.explode && getOwner() instanceof ServerPlayer player
+        if ((rvp$isHitlActive() || opticalViewer) && explosion != null && explosion.explode && getOwner() instanceof ServerPlayer player
                 && getShooterVehicle() != null && player.getVehicle() == getShooterVehicle()) {
             player.connection.send(new ClientboundEntityEventPacket(this, HITL_DETONATION_EVENT));
         }
