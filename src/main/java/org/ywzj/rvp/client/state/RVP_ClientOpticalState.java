@@ -134,7 +134,7 @@ public final class RVP_ClientOpticalState {
                 } else {
                     observerId = context;
                     RVP_Network.CHANNEL.sendToServer(new C2SOpticalRequest(lastLaunch.vehicleId(), lastLaunch.weapon(),
-                            observerId, 0, -1, null));
+                            observerId, 0, -1, null, false));
                 }
             }
             if (consumed) return true;
@@ -163,9 +163,7 @@ public final class RVP_ClientOpticalState {
                 requestLock(-1, LocalVehiclePlayer.instance.scopeAimPos());
             } else {
                 var contact = aimed.contact();
-                int target = contact.entity().isAlive()
-                        && contact.confidence() >= tvWeapon.getGuidanceData().getRecognitionLockThreshold()
-                        ? contact.entity().getId() : -1;
+                int target = contact.entity().isAlive() ? contact.entity().getId() : -1;
                 requestLock(target, null);
             }
             return true;
@@ -178,7 +176,12 @@ public final class RVP_ClientOpticalState {
         clearSnapshot();
         // 服务端返回确认结果后才绘制方框和截图。
         RVP_Network.CHANNEL.sendToServer(new C2SOpticalRequest(tvUnit.getVehicle().getId(), tvWeapon.getWeaponId(),
-                -1, ++lockSequence, target, ground));
+                -1, ++lockSequence, target, ground, scopeZoomed()));
+    }
+
+    /** 查询本体武器站当前选择的倍率档。 */
+    private static boolean scopeZoomed() {
+        return tvUnit.getZoom() > tvUnit.getData().getZoomMin() + 0.01f;
     }
 
     public static void receive(S2COpticalFeedback msg) {
@@ -240,7 +243,8 @@ public final class RVP_ClientOpticalState {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null || mc.options.hideGui || mc.screen != null
                 || !mc.options.getCameraType().isFirstPerson() || RVP_ClientHitlState.isHitlLinkBlocked()
-                || RVP_ClientHitlState.isNoImage(mc.level) || RVP_ClientHitlState.getSnowOpacity(mc.level) > 0) {
+                || RVP_ClientHitlState.isNoImage(mc.level) || RVP_ClientHitlState.getSnowOpacity(mc.level) > 0
+                || RVP_ClientHitlState.isDircmJammed()) {
             aimedDetection = null;
             return;
         }
@@ -295,12 +299,17 @@ public final class RVP_ClientOpticalState {
             mc.getTextureManager().register(SNAPSHOT, new DynamicTexture(captureScope(frame.area(), width, height)));
             snapshotFrame = frame;
         }
+        boolean zoomed = observing ? RVP_ClientHitlState.getHitlZoom() > 1.01f : scopeZoomed();
+        float scopeMagnification = observing ? 1f : RVP_OpticalTargeting.scopeMagnification(tvUnit, zoomed);
         for (var detection : boxes) {
-            drawBox(graphics, mc, detection, detection.contact().entity().getId() == tracked);
+            var contact = detection.contact();
+            var box = detection.box();
+            // TV 发射前的 HUD 与服务端锁定使用相同的参考视场；弹头观察跟随实际投影。
+            float confidence = observing ? displayedConfidence(contact.confidence(),
+                    box.right() - box.left(), box.bottom() - box.top(), Math.min(width, height))
+                    : RVP_OpticalTargeting.scopeConfidence(contact, view, scopeMagnification);
+            drawBox(graphics, mc, detection, confidence, contact.entity().getId() == tracked);
         }
-
-        boolean zoomed = observing ? RVP_ClientHitlState.getHitlZoom() > 1.01f
-                : tvUnit.getZoom() > tvUnit.getData().getZoomMin() + 0.01f;
         // 锁定时给小十字留出空间，避免被屏幕中央的大十字吞没。
         drawReticle(graphics, width, height, zoomed || frame != null);
         if (frame != null) {
@@ -407,14 +416,12 @@ public final class RVP_ClientOpticalState {
         return right - left >= 2 && bottom - top >= 2 ? new ScreenBox(left, top, right, bottom) : null;
     }
 
-    private static void drawBox(GuiGraphics graphics, Minecraft mc, Detection detection, boolean locked) {
+    private static void drawBox(GuiGraphics graphics, Minecraft mc, Detection detection, float score, boolean locked) {
         var b = detection.box();
         var contact = detection.contact();
         var label = classify(contact.entity());
         int boxWidth = b.right() - b.left();
         int boxHeight = b.bottom() - b.top();
-        float score = displayedConfidence(contact.confidence(), boxWidth, boxHeight,
-                Math.min(graphics.guiWidth(), graphics.guiHeight()));
         int rgb = label.color() & 0x00ffffff;
         int outline = Math.round(Mth.lerp(score, 72f, 255f)) << 24 | rgb;
         int caption = Math.round(Mth.lerp(score, 124f, 255f)) << 24 | rgb;
@@ -442,9 +449,7 @@ public final class RVP_ClientOpticalState {
     /** 距离和光学倍率共同反映在投影尺寸中；按识别框短边占屏幕短边的比例计算 HUD 清晰度。 */
     static float displayedConfidence(float visibility, int boxWidth, int boxHeight, int screenShortSide) {
         float apparentSize = (float) Math.min(boxWidth, boxHeight) / screenShortSide;
-        // 屏幕占比达到 7.5% 时保留完整可见度分，远距离小目标最多下调 20%。
-        float detail = Mth.clamp(apparentSize / 0.075f, 0f, 1f);
-        return visibility * Mth.lerp(detail, 0.8f, 1f);
+        return RVP_OpticalTargeting.sizeWeightedConfidence(visibility, apparentSize);
     }
 
     private record Label(String key, int color) {}

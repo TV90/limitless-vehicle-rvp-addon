@@ -12,6 +12,7 @@ import org.ywzj.rvp.countermeasure.RVP_JammingRuntime;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.guidance.RVP_GuidanceRuntimeGeometry;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
+import org.ywzj.rvp.guidance.RVP_OpticalTargeting;
 import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.network.S2CDircmHudSync;
 import org.ywzj.rvp.vehicle.BoneDircmConfig;
@@ -40,10 +41,10 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>状态级设备（骨架模块 {@code BoneModuleType.DIRCM}）：每个<b>照射骨骼</b>（{@code bone_modules}
  * 的 {@code dircm} 条目）拥有一个火力通道——同时只能照射一个目标；载具可配多个骨骼获得多通道
  * （如左右各一）。检测扇区内所有 RVP 导弹/火箭/炸弹（{@code RVP_BaseBullet}），光束建立瞬间即完成
- * 干扰判定；IR/AIR/ARH/HITL 族弹体被干扰（丢制导 + 强制偏转），其余弹体仅占通道不干扰。</p>
+ * 干扰判定；红外和电视图像类弹体丢制导并偏转，其余弹体仅占通道。</p>
  *
- * <p>「干扰」语义：普通 IR/ARH 弹为弹体级<b>永久</b>干扰；人在回路（HITL）弹为<b>临时</b>干扰
- * （{@code dircmJamRemainTick} 递减，3 秒恢复制导）。被干扰弹体复用现有 {@code jamming*} 字段族
+ * <p>红外弹永久失去制导，电视类弹体使用 {@code dircmJamRemainTick} 计时，倒计时结束后恢复制导能力。
+ * 被干扰弹体复用现有 {@code jamming*} 字段族
  * + {@link RVP_JamDeflectionHelper} 强制偏转。</p>
  *
  * <p>驱动方式与 APS 一致：纯 Forge 事件（{@code RVP_DircmEventHandler}），不新增公共 mixin；
@@ -51,7 +52,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class RVP_DircmRuntimeManager {
 
-    /** 人在回路电视（HITL_TV）干扰恢复时长（tick，硬编码 3 秒）。 */
+    /** 普通人在回路电视和 TV/ATV 图像制导共用的白闪与干扰时长（60 tick，3 秒）。 */
     public static final int HITL_JAM_TICK = 60;
 
     /** 指令线人在回路（HITL_CLOS_TV）干扰恢复时长（tick，硬编码 6 秒，指令线链路更易受 DIRCM 压制）。 */
@@ -680,17 +681,16 @@ public final class RVP_DircmRuntimeManager {
         }
         target.dircmJammed = true;
         target.dircmSourceVehicleId = vehicle.getId();
-        // 区分两类人在回路：指令线（CLOS_TV）干扰/致盲时长更长，电视（TV）保持 3 秒
+        // 图像制导复用电视白闪时钟；指令线人在回路仍使用较长的干扰时间。
+        boolean optical = RVP_OpticalTargeting.isOptical(guidanceType);
         boolean hitlClos = guidanceType == RVP_EnumGuidanceType.HITL_CLOS_TV;
-        boolean hitl = hitlClos || guidanceType == RVP_EnumGuidanceType.HITL_TV;
-        target.dircmHitlTemporary = hitl;
-        target.dircmJamRemainTick = hitlClos ? HITL_CLOS_JAM_TICK
-                : hitl ? HITL_JAM_TICK : 0;
-        // 干扰后 6 秒内禁止重新指定目标（强制对地面直飞，无法重新截获）
-        target.dircmNoRedesignateTick = NO_REDESIGNATE_TICK;
-        // 永久干扰弹体（非 HITL）10 秒后伴随爆炸自毁，避免无制导弹体长期占用实体资源；
-        // HITL 弹恢复制导后正常飞行（命中/撞地/寿命自然结算），不设自毁。
-        target.dircmSelfDestructTick = hitl ? 0 : SELF_DESTRUCT_TICK;
+        boolean temporary = optical || hitlClos || guidanceType == RVP_EnumGuidanceType.HITL_TV;
+        target.dircmHitlTemporary = temporary;
+        target.dircmJamRemainTick = hitlClos ? HITL_CLOS_JAM_TICK : temporary ? HITL_JAM_TICK : 0;
+        // 在途图像制导只有观察权限。原有人在回路弹保留六秒禁锁规则。
+        target.dircmNoRedesignateTick = optical ? 0 : NO_REDESIGNATE_TICK;
+        // 永久干扰的红外弹保留自毁倒计时，电视类弹按原引信和寿命结算。
+        target.dircmSelfDestructTick = temporary ? 0 : SELF_DESTRUCT_TICK;
         target.dircmDeflectStrength = 1.0;
 
         // 复用 jamming* 字段族驱动强制偏转（复用光电干扰机参数体系）。
@@ -710,9 +710,15 @@ public final class RVP_DircmRuntimeManager {
         // 否则人在回路电视弹截获目标后仍保持锁定
         if (target instanceof org.ywzj.rvp.entity.projectile.RVP_MissileEntity missile) {
             missile.rvp$setActiveSeekerDesignatedTarget(null);
+            if (optical) {
+                // 清掉图像跟踪器保存的预瞄目标和最后可见点，ATV 恢复后重新搜索。
+                missile.opticalTrack().clear();
+            }
         }
-        // 强制把截获目标设为弹体正下方的地面点：HITL 弹改向地面飞去，无法命中目标
-        forceGroundTarget(target);
+        if (!optical) {
+            // 保留现有红外和人在回路弹的对地偏转目标。
+            forceGroundTarget(target);
+        }
         notifyJamAndVictim(vehicle, target);
     }
 

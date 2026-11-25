@@ -11,6 +11,7 @@ import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.ywzj.rvp.all.RVP_Entities;
+import org.ywzj.rvp.dircm.RVP_DircmRuntimeManager;
 import org.ywzj.rvp.ecm.RVP_EcmIff;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
 import org.ywzj.rvp.entity.gunner.ai.profile.RVP_EnumGunnerFaction;
@@ -20,6 +21,8 @@ import org.ywzj.rvp.server.hitl.RVP_HitlRadioPath;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.api.entity.SightObstruction;
+import org.ywzj.vehicle.entity.misc.VehiclePart;
+import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.entity.vehicle.WheeledVehicle;
 import org.ywzj.vehicle.custom.serialize.GsonUtil;
 
@@ -96,6 +99,85 @@ class RVP_OpticalGameplayTest {
     }
 
     @Test
+    void dircmClearsTvEntityAndGroundLocksWithoutAffectingTheOtherShot() throws ReflectiveOperationException {
+        var level = RVP_ProjectileSimulationLevel.create(0, null);
+        var target = vehicle(level, 0, 40, false);
+        var entityShot = new Missile(level, "TV");
+        var groundShot = new Missile(level, "TV");
+        var point = new Vec3(8, 9, 45);
+        entityShot.opticalTrack().designate(target, target.position());
+        groundShot.opticalTrack().designate(null, point);
+        entityShot.guide(5);
+        groundShot.guide(5);
+        assertSame(target, entityShot.getTargetEntity());
+        assertEquals(point, groundShot.getTargetPos());
+
+        // 调用通道命中后的真实干扰入口，验证每发弹的目标记忆互不影响。
+        applyDircm(target, entityShot);
+        assertEquals(point, groundShot.getTargetPos());
+        applyDircm(target, groundShot);
+        for (var missile : List.of(entityShot, groundShot)) {
+            assertOpticalJam(missile);
+            for (int tick = 6; tick < 65; tick++) {
+                RVP_DircmRuntimeManager.tickJammedProjectile(missile);
+                missile.guide(tick);
+            }
+            assertTrue(missile.dircmJammed);
+            assertEquals(1, missile.dircmJamRemainTick);
+            RVP_DircmRuntimeManager.tickJammedProjectile(missile);
+            missile.guide(65);
+            assertFalse(missile.dircmJammed);
+            assertEquals(RVP_HitlLockSnapshot.EMPTY, missile.rvp$getHitlLockSnapshot());
+            assertNull(missile.getTargetEntity());
+            assertNull(missile.getTargetPos());
+        }
+    }
+
+    @Test
+    void atvSearchesAgainAfterTheDircmWhiteout() throws ReflectiveOperationException {
+        var level = RVP_ProjectileSimulationLevel.create(0, null);
+        var original = vehicle(level, 0, 26, false);
+        var replacement = vehicle(level, 6, 35, false);
+        var missile = new Missile(level, "ATV");
+        missile.guide(5);
+        assertSame(original, missile.getTargetEntity());
+        applyDircm(original, missile);
+        assertOpticalJam(missile);
+
+        // 原目标退出观察范围后，恢复的 ATV 应能锁定当前可见的空车。
+        place(original, 60, 0);
+        for (int tick = 6; tick < 65; tick++) {
+            RVP_DircmRuntimeManager.tickJammedProjectile(missile);
+            missile.guide(tick);
+        }
+        assertTrue(missile.dircmJammed);
+        assertNull(missile.getTargetEntity());
+        RVP_DircmRuntimeManager.tickJammedProjectile(missile);
+        missile.setDeltaMovement(0, 0, 1);
+        missile.guide(65);
+        assertSame(replacement, missile.getTargetEntity());
+        assertEquals(replacement.getId(), missile.rvp$getHitlLockSnapshot().entityId());
+    }
+
+    private static void applyDircm(AbstractVehicle source, Missile missile) throws ReflectiveOperationException {
+        var method = RVP_DircmRuntimeManager.class.getDeclaredMethod("applyJam", AbstractVehicle.class, RVP_BaseBullet.class);
+        method.setAccessible(true);
+        method.invoke(null, source, missile);
+    }
+
+    private static void assertOpticalJam(Missile missile) {
+        assertTrue(missile.dircmJammed);
+        assertTrue(missile.dircmHitlTemporary);
+        assertEquals(60, missile.dircmJamRemainTick);
+        assertEquals(60, RVP_DircmRuntimeManager.resolveHitlJamTotal(missile));
+        assertEquals(0, missile.dircmSelfDestructTick);
+        assertEquals(RVP_HitlLockSnapshot.Status.DIRCM, missile.rvp$getHitlLockSnapshot().status());
+        assertEquals(-1, missile.rvp$getHitlLockSnapshot().entityId());
+        assertNull(missile.getTargetEntity());
+        assertNull(missile.getTargetPos());
+    }
+
+    @Test
     void atvAcquiresAnUnoccupiedVehicleWithoutAPrelaunchLock() {
         var level = RVP_ProjectileSimulationLevel.create(0, null);
         var missile = new Missile(level, "ATV");
@@ -138,6 +220,42 @@ class RVP_OpticalGameplayTest {
         assertSame(visible, missile.getTargetEntity());
         assertNotSame(unseen, missile.getTargetEntity());
         assertNotSame(friendly, missile.getTargetEntity());
+    }
+
+    @Test
+    void recognitionOmitsDetachedPartsAndMountedCrewButShowsDismountedCrew() {
+        var level = RVP_ProjectileSimulationLevel.create(0, null);
+        var observer = new Missile(level, "ATV");
+        var vehicle = vehicle(level, 0, 40, false);
+        var crew = driver(RVP_EnumGunnerFaction.ENEMY);
+        RVP_ProjectileSimulationBootstrap.write(Entity.class, crew, "level", level);
+        RVP_ProjectileSimulationBootstrap.write(Entity.class, crew, "vehicle", vehicle);
+        crew.setUUID(UUID.randomUUID());
+        RVP_ProjectileSimulationBootstrap.write(Entity.class, crew, "position", new Vec3(0, 8, 40));
+        crew.setId(1_100_002);
+        crew.setBoundingBox(new AABB(-0.4, 8, 39.7, 0.4, 9.8, 40.3));
+        level.addObserver(crew);
+        var fragment = RVP_ProjectileSimulationBootstrap.environment(TestFragment.class);
+        RVP_ProjectileSimulationBootstrap.write(Entity.class, fragment, "level", level);
+        fragment.setUUID(UUID.randomUUID());
+        RVP_ProjectileSimulationBootstrap.write(Entity.class, fragment, "position", new Vec3(5, 8, 19));
+        fragment.setId(1_100_003);
+        fragment.setBoundingBox(new AABB(4, 8, 18, 6, 10, 20));
+        level.addObserver(fragment);
+
+        var view = new RVP_OpticalTargeting.View(observer.position(), new Vec3(0, 0, 1));
+        var range = observer.getRvpData().getGuidanceData().getGuidanceTargetDistanceRange();
+        var contacts = RVP_OpticalTargeting.scanDisplayed(observer, null, view, range, 30, entity -> 0);
+        assertEquals(List.of(vehicle), contacts.stream().map(RVP_OpticalTargeting.Contact::entity).toList());
+        assertFalse(RVP_OpticalTargeting.isCandidate(observer, null, fragment, true));
+        observer.guide(5);
+        assertSame(vehicle, observer.getTargetEntity());
+
+        // 下车并走出车体遮挡后，人员应重新进入识别候选。
+        RVP_ProjectileSimulationBootstrap.write(Entity.class, crew, "vehicle", null);
+        crew.setBoundingBox(new AABB(5.6, 8, 31.7, 6.4, 9.8, 32.3));
+        contacts = RVP_OpticalTargeting.scanDisplayed(observer, null, view, range, 30, entity -> 0);
+        assertTrue(contacts.stream().anyMatch(contact -> contact.entity() == crew));
     }
 
     @Test
@@ -195,6 +313,15 @@ class RVP_OpticalGameplayTest {
         private RVP_EnumGunnerFaction faction;
         private TestGunner() { super(null, null); }
         @Override public RVP_EnumGunnerFaction getProfileFaction() { return faction; }
+        @Override public boolean isAlive() { return true; }
+        @Override public boolean isPickable() { return true; }
+    }
+
+    private static final class TestFragment extends VehiclePart {
+        private TestFragment() { super(null, null); }
+        @Override public boolean isAlive() { return true; }
+        @Override public boolean isPickable() { return true; }
+        @Override public List<org.ywzj.vehicle.vehicle.structure.VehicleCubeOBB> getVehicleCubeOBBs() { return List.of(); }
     }
 
     private static final class Smoke extends Marker implements SightObstruction {

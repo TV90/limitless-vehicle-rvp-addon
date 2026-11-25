@@ -14,7 +14,8 @@ import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
 import java.util.function.Supplier;
 
-public record C2SOpticalRequest(int vehicleId, ResourceLocation weapon, int missileId, int sequence, int targetId, Vec3 groundHint) {
+public record C2SOpticalRequest(int vehicleId, ResourceLocation weapon, int missileId, int sequence, int targetId, Vec3 groundHint,
+                                /** 发起锁定时武器站是否处于高倍率档。 */ boolean zoomed) {
     public static void encode(C2SOpticalRequest msg, FriendlyByteBuf buf) {
         buf.writeVarInt(msg.vehicleId);
         buf.writeResourceLocation(msg.weapon);
@@ -22,11 +23,12 @@ public record C2SOpticalRequest(int vehicleId, ResourceLocation weapon, int miss
         buf.writeVarInt(msg.sequence);
         buf.writeVarInt(msg.targetId);
         buf.writeNullable(msg.groundHint, (b, v) -> b.writeDouble(v.x).writeDouble(v.y).writeDouble(v.z));
+        buf.writeBoolean(msg.zoomed);
     }
 
     public static C2SOpticalRequest decode(FriendlyByteBuf buf) {
         return new C2SOpticalRequest(buf.readVarInt(), buf.readResourceLocation(), buf.readVarInt(), buf.readVarInt(), buf.readVarInt(),
-                buf.readNullable(b -> new Vec3(b.readDouble(), b.readDouble(), b.readDouble())));
+                buf.readNullable(b -> new Vec3(b.readDouble(), b.readDouble(), b.readDouble())), buf.readBoolean());
     }
 
     public static void handle(C2SOpticalRequest msg, Supplier<NetworkEvent.Context> supplier) {
@@ -48,6 +50,6 @@ public record C2SOpticalRequest(int vehicleId, ResourceLocation weapon, int miss
         S2COpticalFeedback.locked(player, vehicle.getId(), msg.weapon, msg.sequence,
                 RVP_OpticalLock.designate(player, unit, weapon.getData(),
                         msg.targetId >= 0 ? player.serverLevel().getEntity(msg.targetId) : null,
-                        msg.targetId < 0 ? msg.groundHint : null));
+                        msg.targetId < 0 ? msg.groundHint : null, msg.zoomed));
     }
 }

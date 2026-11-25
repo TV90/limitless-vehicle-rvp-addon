@@ -10,6 +10,8 @@ import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
  * <ul>
  *   <li>{@link RVP_EnumGuidanceType#IR} 红外被动</li>
  *   <li>{@link RVP_EnumGuidanceType#AIR} 红外空对空</li>
+ *   <li>{@link RVP_EnumGuidanceType#TV} 电视图像制导</li>
+ *   <li>{@link RVP_EnumGuidanceType#ATV} 主动图像制导</li>
  *   <li>{@link RVP_EnumGuidanceType#HITL_TV} 人在回路（电视指令）</li>
  *   <li>{@link RVP_EnumGuidanceType#HITL_CLOS_TV} 人在回路（瞄准线电视）</li>
  * </ul>
@@ -30,6 +32,8 @@ public final class RVP_DircmGuidanceSupport {
         }
         return guidanceType == RVP_EnumGuidanceType.IR
                 || guidanceType == RVP_EnumGuidanceType.AIR
+                || guidanceType == RVP_EnumGuidanceType.TV
+                || guidanceType == RVP_EnumGuidanceType.ATV
                 || guidanceType == RVP_EnumGuidanceType.HITL_TV
                 || guidanceType == RVP_EnumGuidanceType.HITL_CLOS_TV;
     }

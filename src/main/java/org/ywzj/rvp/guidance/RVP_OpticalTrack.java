@@ -23,6 +23,16 @@ public final class RVP_OpticalTrack {
         ground = entity == null ? point : null;
     }
 
+    /** DIRCM 清除发射前定点、正在跟踪的目标和遮挡记忆。 */
+    public void clear() {
+        target = null;
+        ground = null;
+        lastSeen = null;
+        lastSeenTick = 0;
+        nextScan = 0;
+        snapshot = RVP_HitlLockSnapshot.EMPTY;
+    }
+
     public RVP_GuidanceIntent evaluate(RVP_MissileEntity missile, RVP_GuidanceRuntimeContext context) {
         var type = context.active().guidanceType();
         if (!(missile.level() instanceof ServerLevel level)) return RVP_GuidanceIntent.failed(type);

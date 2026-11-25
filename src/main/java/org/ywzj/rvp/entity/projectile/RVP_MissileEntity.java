@@ -964,7 +964,9 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     /** 双端安全的只读快照；禁锁期间不泄露后台残留目标坐标。 */
     public org.ywzj.rvp.hitl.RVP_HitlLockSnapshot rvp$getHitlLockSnapshot() {
         if (isOpticalMissile()) {
-            return hitlLinkBlocked ? org.ywzj.rvp.hitl.RVP_HitlLockSnapshot.EMPTY : opticalTrack.snapshot();
+            if (hitlLinkBlocked) return org.ywzj.rvp.hitl.RVP_HitlLockSnapshot.EMPTY;
+            // 光学视角复用电视白闪状态，并在干扰期间清空客户端锁框。
+            if (!dircmJammed) return opticalTrack.snapshot();
         }
         var status = org.ywzj.rvp.hitl.RVP_HitlLockSnapshot.Status.NONE;
         if (dircmJammed || dircmNoRedesignateTick > 0) {

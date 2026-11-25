@@ -1,6 +1,7 @@
 package org.ywzj.rvp.guidance;
 
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.level.ClipContext;
@@ -15,6 +16,7 @@ import org.ywzj.rvp.server.hitl.RVP_HitlRadioPath;
 import org.ywzj.rvp.weapon.data.RVP_GuidanceData;
 import org.ywzj.rvp.weapon.data.RVP_Range;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
+import org.ywzj.vehicle.entity.misc.VehiclePart;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
@@ -50,9 +52,13 @@ public final class RVP_OpticalTargeting {
 
     public static boolean isCandidate(Entity seeker, @Nullable AbstractVehicle carrier, Entity target, boolean automatic) {
         if (target == seeker || !target.isAlive() || target.isSpectator() || !target.isPickable()
-                || target.getRootVehicle() == seeker.getRootVehicle()
-                || carrier != null && target.getRootVehicle() == carrier.getRootVehicle()
+                || target instanceof VehiclePart
                 || !(target instanceof LivingEntity || target instanceof AbstractVehicle)) return false;
+        Entity root = target.getRootVehicle();
+        if (root == seeker.getRootVehicle() || carrier != null && root == carrier.getRootVehicle()) return false;
+        // 驾驶员和乘员随载具整体识别，下车后才生成独立人员框。
+        if (target instanceof LivingEntity && (target.getVehicle() instanceof AbstractVehicle
+                || root instanceof AbstractVehicle)) return false;
         if (!automatic) return true;
         // ATV 可识别中立和空载车辆，阵营排除只使用本模式的友方判定。
         return target instanceof AbstractVehicle other && !RVP_EcmIff.isFriendlyOpticalTarget(carrier, other);
@@ -79,7 +85,9 @@ public final class RVP_OpticalTargeting {
         AABB region = new AABB(view.origin(), end).inflate(Math.max(1.0, width));
         List<AbstractVehicle> foreground = checkVehicleOcclusion
                 ? seeker.level().getEntities(seeker, region, entity -> entity instanceof AbstractVehicle
-                        && isCandidate(seeker, carrier, entity, false)).stream().map(AbstractVehicle.class::cast).toList()
+                        && (isCandidate(seeker, carrier, entity, false)
+                        || entity instanceof VehiclePart && entity.isAlive() && entity.isPickable()))
+                        .stream().map(AbstractVehicle.class::cast).toList()
                 : List.of();
         // 先按视场收窄并排序，仅给最靠近准星的有限候选计算可见度。
         return seeker.level().getEntities(seeker, region, target -> isCandidate(seeker, carrier, target, automatic))
@@ -131,6 +139,27 @@ public final class RVP_OpticalTargeting {
             }
         }
         return false;
+    }
+
+    /** 相同的尺寸曲线用于观察画面和 TV 锁定。短边占画面 7.5% 时无扣分。 */
+    public static float sizeWeightedConfidence(float visible, double apparentSize) {
+        float detail = (float) Mth.clamp(apparentSize / 0.075, 0.0, 1.0);
+        return visible * Mth.lerp(detail, 0.6f, 1f);
+    }
+
+    /** 原生武器站只有低/高两档，倍率使用站位数据，客户端只选择档位。 */
+    public static float scopeMagnification(WeaponUnit station, boolean zoomed) {
+        return Math.max(1f, zoomed ? station.getData().getZoomMax() : station.getData().getZoomMin());
+    }
+
+    /** TV 锁定使用同一参考视场估算目标短边占比，服务端无需依赖屏幕分辨率和用户 FOV。 */
+    public static float scopeConfidence(Contact contact, View view, float magnification) {
+        AABB box = contact.entity().getBoundingBox();
+        double shortSide = Math.min(box.getYsize(), Math.min(box.getXsize(), box.getZsize()));
+        // 70° 参考视场的画面短边在目标平面的长度为 2 × tan(35°) × 距离。
+        double viewSpan = 2.0 * Math.tan(Math.toRadians(35.0))
+                * Math.max(0.001, view.origin().distanceTo(box.getCenter()));
+        return sizeWeightedConfidence(contact.confidence(), shortSide * magnification / viewSpan);
     }
 
     public static boolean clear(Entity seeker, Vec3 start, Vec3 end) {
