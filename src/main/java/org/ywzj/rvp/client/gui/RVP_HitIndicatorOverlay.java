@@ -16,7 +16,6 @@ import com.mojang.logging.LogUtils;
 import com.mojang.math.Axis;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.language.I18n;
-import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -76,8 +75,6 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
     private static final double PANEL_H_FRAC = 0.306;
     /** 展板距屏幕右/上边缘的像素边距 */
     private static final int MARGIN_PX = 12;
-    /** 文字物理字号（像素高度） */
-    private static final int TEXT_HEIGHT_PX = 36;
     /**
      * 固定展示俯仰角（度）：模型总是以该俯仰展示（旋转角 = DISPLAY_PITCH + 180）。
      * 取轻微俯视：不随命中点高度变化，任何受击部位都是同一正常姿态（接近平视、略看到车顶）。
@@ -193,6 +190,7 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
      */
     public static void renderGui(GuiGraphics guiGraphics, float partialTick) {
         if (!RVP_ClientHitIndicatorState.isActive()) {
+            RVP_HitPanelGlass.release();
             return;
         }
         // RVP 命中提示活动期间持续压制本体命中提示（兜底）：
@@ -216,7 +214,7 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
         // 按 RenderType 分桶、文字缓冲排在填充缓冲之后，而画在展板底色之上。
         guiGraphics.flush();
         renderPanel(guiGraphics, mc, partialTick);
-        // [RVP] 部件战果通知（2026-09-27）：展板正下方渲染"摧毁XX/重创发动机"（每条 60 tick）
+        // 部件战果保持原生命周期，显示在玻璃面板底部，避开三维回放。
         drawModuleNotifications(guiGraphics, mc);
     }
 
@@ -232,39 +230,44 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
         return new int[]{x0, margin, x0 + panelW, margin + panelH};
     }
 
-    /**
-     * [RVP] 部件战果通知渲染（2026-09-28 用户定版改版）：首行紧贴展板"命中XX"标题<b>下一行</b>
-     * 居中，多条战果<b>向下延伸</b>（最新在上、旧的依次下移）；每条 60 tick，摧毁红/受损橙
-     * 沿用展板伤害配色。仅在展板活动期间显示（通知由命中触发，生命周期与展板一致）。
-     */
+    /** 受损通知横向排列，空间不足时换行；模型区按同一行数预留底部空间。 */
     private static void drawModuleNotifications(GuiGraphics gg, Minecraft mc) {
-        long now = System.currentTimeMillis();
-        List<RVP_ClientHitNotifyState.Notify> active = RVP_ClientHitNotifyState.active(now);
-        if (active.isEmpty()) {
-            return;
-        }
-        var window = mc.getWindow();
-        double guiScale = window.getGuiScale();
         int[] rect = panelRect(mc);
-        int centerX = (rect[0] + rect[2]) / 2;
-        float textScale = (float) (TEXT_HEIGHT_PX / 9.0 / guiScale);
-        int lineH = (int) Math.ceil(9 * textScale);
-        int lineGap = (int) (2 / guiScale);
-        // 首行起点 = 展板顶 + 标题行高 + 2px 间距（即"命中XX -x%"的下一行）；向下延伸
-        int top = rect[1] + (int) (3 / guiScale) + lineH + lineGap;
-        for (RVP_ClientHitNotifyState.Notify n : active) {
-            if (top + lineH > rect[3]) {
-                break; // 超出展板底：更早的不再画
+        double unit = (rect[3] - rect[1]) / 330.0;
+        var rows = notificationRows(rect[2] - rect[0], unit);
+        double y = rect[3] - 16 * unit - rows.size() * 24 * unit;
+        gg.enableScissor(rect[0], rect[1], rect[2], rect[3]);
+        try {
+            for (var row : rows) {
+                double x = rect[0] + 20 * unit;
+                for (var n : row) {
+                    var text = RVP_HitPanelGlass.text(n.text(), 18 * unit, n.color(), false);
+                    double width = RVP_HitPanelGlass.width(text), available = rect[2] - rect[0] - 40 * unit;
+                    if (width > available) text.fontSize *= available / width;
+                    RVP_HitPanelGlass.label(gg, text, x, y);
+                    x += RVP_HitPanelGlass.width(text) + 24 * unit;
+                }
+                y += 24 * unit;
             }
-            float lineScale = Math.min(textScale,
-                    (float) (rect[2] - rect[0] - 4) / Math.max(1, mc.font.width(n.text())));
-            gg.pose().pushPose();
-            gg.pose().translate(centerX, top, 0);
-            gg.pose().scale(lineScale, lineScale, 1.0F);
-            gg.drawCenteredString(mc.font, Component.literal(n.text()), 0, 0, n.color());
-            gg.pose().popPose();
-            top += lineH + lineGap;
+        } finally {
+            gg.disableScissor();
         }
+    }
+
+    /** 共用真实字体宽度计算通知换行；最多四条沿用原通知管理器的上限。 */
+    private static List<List<RVP_ClientHitNotifyState.Notify>> notificationRows(int width, double unit) {
+        List<List<RVP_ClientHitNotifyState.Notify>> rows = new ArrayList<>();
+        List<RVP_ClientHitNotifyState.Notify> row = new ArrayList<>();
+        double used = 0, available = width - 40 * unit;
+        for (var n : RVP_ClientHitNotifyState.active(System.currentTimeMillis())) {
+            double w = RVP_HitPanelGlass.width(RVP_HitPanelGlass.text(n.text(), 18 * unit, n.color(), false));
+            if (!row.isEmpty() && used + w > available) {
+                rows.add(row); row = new ArrayList<>(); used = 0;
+            }
+            row.add(n); used += w + 24 * unit;
+        }
+        if (!row.isEmpty()) rows.add(row);
+        return rows;
     }
 
     private static void renderPanel(GuiGraphics gg, Minecraft mc, float partialTick) {
@@ -313,15 +316,11 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
         // GuiGraphics.enableScissor 会把 GUI 坐标换算成物理像素，3D 模型缓冲提交时同样生效。
         gg.enableScissor(x0, y0, x1, y1);
         try {
-        // 展板：灰色不透明底 + 黑边框（GL_ALWAYS 填充，盖住先前绘制的 HUD 文字）
-        drawPanelFrame(gg, x0, y0, x1, y1, guiScale);
-        // 展板底先单独落帧缓冲：GL_ALWAYS 底色盖住先前已绘制的 HUD 文字（雷达/RWR 的 XX°、XX m 等）。
-        // 不能等帧末统一 flush —— MultiBufferSource 各 RenderType 分桶刷新顺序不保证，
-        // 底色/文字/模型若同一批刷新，模型可能先于底色落帧而被 GL_ALWAYS 底色盖住（模型消失）。
+        // 只替换命中提示的底板；炮兵小地图仍沿用 drawPanelFrame，互不影响。
+        RVP_HitPanelGlass.draw(gg, x0, y0, x1, y1);
         gg.flush();
 
         // 文字区（展板顶部）：按固定像素字号绘制，物理大小不受界面尺寸影响
-        Font font = mc.font;
         // 最大生命：载具用 ContainerCraft 自带的 getMaxHealth（非 LivingEntity），生物用 LivingEntity 的
         float maxHealth = entity instanceof AbstractVehicle vehicle ? vehicle.getMaxHealth()
                 : entity instanceof LivingEntity living ? living.getMaxHealth() : 0f;
@@ -358,30 +357,28 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
                         : bone;
             }
         }
-        // 文案：直击占比 ≥ 爆炸占比且有直击事件 → “命中XX骨骼 -x%”（未配倍率骨骼时为载具名）；
-        // 其余（纯爆炸波及/近炸、或爆炸伤害占比更大）→ “爆炸 -x%”；数值均为总伤累计
+        // 原伤害累计和标题仲裁不变，只将部位与百分比分别锚定到左右两端。
         String title = showHit
-                ? I18n.get("gui.ywzj_rvp.hit_panel.title_hit", boneText, String.format("%.1f", damagePercent))
-                : I18n.get("gui.ywzj_rvp.hit_panel.title_explode", String.format("%.1f", damagePercent));
-        float textScale = (float) (TEXT_HEIGHT_PX / 9.0 / guiScale);
-        // 骨名/载具名的英文长名可能超出展板宽度：仅在超宽时等比缩小，避免被裁剪框切掉。
-        float titleScale = Math.min(textScale, (float) (panelW - 4) / Math.max(1, font.width(title)));
-        gg.pose().pushPose();
-        // 文案：展板顶部水平居中（参考本体：文案在模型上方居中）
-        gg.pose().translate(x0 + (float) panelW / 2, y0 + (int) (3 / guiScale), 0);
-        gg.pose().scale(titleScale, titleScale, 1.0F);
-        int lineY = 0;
-        gg.drawCenteredString(font, Component.literal(title), 0, lineY, damageColor);
-        gg.pose().popPose();
-        // 标题文字单独落帧缓冲：盖在展板底色之上（层级：雷达文字 < 展板底 < 标题文字 < 模型）
+                ? I18n.get("gui.ywzj_rvp.hit_panel.part_hit", boneText)
+                : I18n.get("gui.ywzj_rvp.hit_panel.part_explode");
+        double unit = panelH / 330.0;
+        var percent = RVP_HitPanelGlass.text(String.format(java.util.Locale.ROOT, "−%.1f%%", damagePercent),
+                30 * unit, damageColor, true);
+        double percentWidth = RVP_HitPanelGlass.width(percent);
+        var heading = RVP_HitPanelGlass.text(title, 23 * unit, 0xFFF2F5F6, true);
+        double titleWidth = RVP_HitPanelGlass.width(heading);
+        double titleAvailable = Math.max(1, panelW - percentWidth - 64 * unit);
+        if (titleWidth > titleAvailable) heading.fontSize *= titleAvailable / titleWidth;
+        RVP_HitPanelGlass.label(gg, heading, x0 + 20 * unit, y0 + 19 * unit);
+        RVP_HitPanelGlass.label(gg, percent, x1 - 20 * unit - percentWidth, y0 + 15 * unit);
         gg.flush();
-        int textBlockGui = (int) Math.ceil((lineY + 9) * textScale);
 
-        // 模型区：文字区下方，锚点居中
-        int modelTop = y0 + (int) (3 / guiScale) + textBlockGui + (int) (4 / guiScale);
-        int modelAreaW = Math.max(8, panelW - (int) (8 / guiScale) * 2);
-        int modelAreaH = Math.max(8, y1 - modelTop - (int) (4 / guiScale));
-        double modelX = x0 + (int) (8 / guiScale) + (double) modelAreaW / 2;
+        // 标题、模型、通知分别占独立区域；通知变多时缩小模型区，避免叠字。
+        int modelTop = y0 + (int) Math.ceil(58 * unit);
+        int modelAreaW = Math.max(8, panelW - (int) Math.ceil(40 * unit));
+        int footer = Math.max(1, notificationRows(panelW, unit).size());
+        int modelAreaH = Math.max(8, y1 - modelTop - (int) Math.ceil((24 * footer + 22) * unit));
+        double modelX = x0 + panelW / 2.0;
         double modelY = modelTop + (double) modelAreaH / 2;
 
         // 观察角锁定在首个命中时刻，回放平移不会拖动展板相机绕目标乱转。
