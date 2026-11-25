@@ -1,7 +1,6 @@
 package org.ywzj.rvp.client.gui;
 
 import com.mojang.blaze3d.pipeline.RenderTarget;
-import com.mojang.blaze3d.pipeline.TextureTarget;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.*;
 import com.sighs.apricityui.layout.Position;
@@ -16,18 +15,19 @@ import org.lwjgl.opengl.GL30;
 
 /** 命中回放专用玻璃底板：只采样面板范围，不降低文字和三维回放的分辨率。 */
 final class RVP_HitPanelGlass {
-    /** 连续缩小六次足以覆盖高分辨率；面板不活动时释放，缩放窗口时按需重建。 */
-    private static final RenderTarget[] LEVELS = new RenderTarget[6];
+    /** 复用当前窗口尺寸的缓冲，避免每轮命中结束后销毁、下轮命中时再次分配。 */
+    private static final RVP_GuiBlurBuffers buffers = new RVP_GuiBlurBuffers();
     /** 与改装界面相同的窄体英文和中文字体回退，不修改用户已有字体资源。 */
     private static final String FONTS = "\"Purista SemiBold\", Purista, \"Microsoft YaHei\", \"Segoe UI\", sans-serif";
 
     private RVP_HitPanelGlass() {}
 
     static void release() {
-        for (int i = 0; i < LEVELS.length; i++) {
-            if (LEVELS[i] != null) LEVELS[i].destroyBuffers();
-            LEVELS[i] = null;
-        }
+        buffers.release();
+    }
+
+    static boolean prepareOne(int width, int height) {
+        return buffers.prepareOne(width, height, Math.max(1, width / 16));
     }
 
     /** 逐级线性低通采样，再用透明边缘网格混回主画面；不经过 CPU 截图或贴图上传。 */
@@ -49,14 +49,9 @@ final class RVP_HitPanelGlass {
         // 帧缓冲缩小使用自身坐标，临时关闭主画面的裁剪，避免高 GUI 缩放下采样为空。
         RenderSystem.disableScissor();
         try {
-            for (int i = 0; i < LEVELS.length && width > targetWidth; i++) {
+            for (int i = 0; i < RVP_GuiBlurBuffers.COUNT && width > targetWidth; i++) {
                 int w = Math.max(1, (width + 1) / 2), h = Math.max(1, (height + 1) / 2);
-                RenderTarget dest = LEVELS[i];
-                if (dest == null || dest.width != w || dest.height != h) {
-                    if (dest != null) dest.destroyBuffers();
-                    LEVELS[i] = dest = new TextureTarget(w, h, false, Minecraft.ON_OSX);
-                    dest.setFilterMode(GL11.GL_LINEAR);
-                }
+                RenderTarget dest = buffers.level(i, w, h);
                 GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, source.frameBufferId);
                 GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, dest.frameBufferId);
                 GL30.glBlitFramebuffer(x0, y0, x1, y1, 0, 0, w, h,

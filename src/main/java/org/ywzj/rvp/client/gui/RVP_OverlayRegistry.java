@@ -33,8 +33,6 @@ public class RVP_OverlayRegistry {
         if (RVP_DebugFlags.HUD.isEnabled()) {
             LOGGER.info("[RVP-Hud] onRegisterHud fired");
         }
-        // 全屏失图属于视频背景，先于载具信息 HUD 绘制；本体光学镜头层可位于更低层。
-        event.registerBelowAll("rvp_hitl_video_background", new RVP_HitlVideoBackgroundOverlay());
         event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_vehicle_actions", new RVP_VehicleActionHudOverlay());
         event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_radar", new RVP_RadarOverlay());
         event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_scope", new RVP_ScopeOverlay());
@@ -51,15 +49,12 @@ public class RVP_OverlayRegistry {
         // 主动ECM 伪造锁定 blip：注册在 CHAT_PANEL 之下、与其他 RVP overlay 同层。
         // Forge 禁止对其他 mod 的 overlay 排序，这里靠注册顺序（RVP 在本体之后注册）
         // 让本覆盖层在本体 vehicle_radar 之后绘制，落在 RWR 表盘之上。
-        // 必须排在命中展板(rvp_hit_indicator)之前：展板最后注册=最上层，blip 不能盖住命中提示栏。
+        // 放在命中展板之前，避免 blip 盖住命中提示栏。
         event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_ecm_fake_rwr", new RVP_EcmFakeRwrOverlay());
-        // 轻量化炮兵地图：注册在命中展板之前（展板仍为该层最上层），选中炮兵武器时左上角显示。
+        // 轻量化炮兵地图：选中炮兵武器时在左上角显示。
         event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_mini_artillery_map", new RVP_MiniArtilleryMapOverlay());
-        // 命中展板注册在最后：同锚点下按注册顺序绘制，展板最后绘制即为该层最上层。
-        // 展板内显式分步 flush 固定层级：雷达/RWR 文字 < 展板底 < 标题文字 < 模型。
-        event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_hit_indicator", new RVP_HitIndicatorOverlay());
         event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_lock_warning", new RVP_LockWarningOverlay());
-        // 生物头顶伤害飘字：注册在最后（该层最上层），避免被命中展板/雷达面板压住。
+        // 生物头顶伤害飘字放在雷达层之后。
         event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_damage_number", new RVP_DamageNumberOverlay());
         // 以下原为 RenderGuiOverlayEvent.Post(CHAT_PANEL) 绘制：统一迁到本体 HUD 同款
         // 「CHAT_PANEL 之下」图层，半透明聊天框叠上时和本体字体一起透出并被正常压暗。
@@ -121,6 +116,10 @@ public class RVP_OverlayRegistry {
                 RVP_SaclosOverlay.render(graphics);
             }
         });
+        // 失图必须晚于载具瞄具黑色遮罩绘制，否则状态已触发但实际画面仍被盖成黑屏。
+        event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_hitl_video_background", new RVP_HitlVideoBackgroundOverlay());
+        // 命中展板和 TV 状态文字位于雪花之上，仍由聊天层覆盖。
+        event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_hit_indicator", new RVP_HitIndicatorOverlay());
         // 人在回路电视 HUD：走本体同款 CHAT_PANEL 之下图层；注册在最后保持 HITL 画面在最上层。
         event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_tv_missile", new RVP_TVMissileOverlay());
     }

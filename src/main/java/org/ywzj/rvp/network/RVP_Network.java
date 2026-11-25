@@ -49,7 +49,8 @@ public class RVP_Network {
     /** 协议 49：新增 S2CRotaryFlightModeSync（直升机三态同步，动作条状态图标）；双端须一同更新。 */
     /** 协议 50：新增 RVP 弹药实体克隆快照，脱离本体 ServerBroadcastEntities；双端须一同更新。 */
     /** 协议 52：合并维修顺序请求与残件挂架快照；客户端和专用服务端同时更新。 */
-    private static final String PROTOCOL = "52";
+    /** 协议 53：追加当前 TV 操作者的高精度镜头姿态，客户端和专用服务端同时更新。 */
+    private static final String PROTOCOL = "53";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "main"))
@@ -542,5 +543,10 @@ public class RVP_Network {
                 .encoder(org.ywzj.rvp.maintenance.network.S2CRepairOrder::encode)
                 .decoder(org.ywzj.rvp.maintenance.network.S2CRepairOrder::decode)
                 .consumerMainThread(org.ywzj.rvp.maintenance.network.S2CRepairOrder::handle).add();
+        // 追加 TV 镜头高精度姿态，保留全部既有消息编号。
+        CHANNEL.messageBuilder(S2CHitlCameraRotation.class, id++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(S2CHitlCameraRotation::encode)
+                .decoder(S2CHitlCameraRotation::decode)
+                .consumerMainThread(S2CHitlCameraRotation::handle).add();
     }
 }

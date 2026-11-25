@@ -2,6 +2,7 @@ package org.ywzj.rvp.entity.projectile;
 
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ClientboundEntityEventPacket;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -19,6 +20,7 @@ import net.minecraftforge.network.PacketDistributor;
 import net.minecraftforge.network.PlayMessages;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.all.RVP_Entities;
+import org.ywzj.rvp.client.bridge.RVP_ClientActionsAccess;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_EnumHitlControlMode;
 import org.ywzj.rvp.guidance.RVP_GuidanceActiveConfig;
@@ -58,6 +60,9 @@ import java.util.function.Function;
  * 舵量目标 = 弹体当前朝向 + 偏移——偏移保持则持续转向（摇杆拉住），偏移回中则直飞。</p>
  */
 public class RVP_MissileEntity extends RVP_BaseBullet {
+
+    /** 仅供本实体的客户端事件，复用原版实体事件通道。 */
+    private static final byte HITL_DETONATION_EVENT = 101;
 
     public static final int HITL_MODE_COLOR = RVP_TvVideoModeMask.COLOR;
     public static final int HITL_MODE_BW = RVP_TvVideoModeMask.BW;
@@ -245,6 +250,19 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
                             targetEntity == null ? "null" : targetEntity.getClass().getSimpleName(),
                             targetPos == null ? "null" : String.format("%.1f,%.1f,%.1f",
                                     targetPos.x, targetPos.y, targetPos.z));
+        }
+    }
+
+    /** 完成本刻飞行后只向仍在母车上的操作者发送镜头姿态，不扩大其他玩家的同步范围。 */
+    @Override
+    public void tick() {
+        // 调用既有飞行、碰撞和制导结算；镜头消息不能反过来改变弹体运动。
+        super.tick();
+        if (!level().isClientSide() && isAlive() && rvp$isHitlActive()
+                && getOwner() instanceof ServerPlayer player && getShooterVehicle() != null
+                && player.getVehicle() == getShooterVehicle()) {
+            RVP_Network.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player),
+                    new org.ywzj.rvp.network.S2CHitlCameraRotation(getId(), level().getGameTime(), getYRot(), getXRot()));
         }
     }
 
@@ -1139,6 +1157,29 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     /** 该导弹配置为"右键提前引爆"模式且 HITL 制导仍激活（客户端据此决定右键动作）。 */
     public boolean rvp$isHitlRightClickDetonate() {
         return hitlEnabled && hitlRightClickDetonate;
+    }
+
+    /** 在原版移除弹体之前，通知仍在观看本弹的操作者发生了爆炸。 */
+    @Override
+    protected void triggerExplosion(Vec3 pos, FuseDetonation kind, @Nullable Entity excludeEntity,
+                                    @Nullable Entity impactTarget, @Nullable Vec3 impactVelocity) {
+        if (rvp$isHitlActive() && explosion != null && explosion.explode && getOwner() instanceof ServerPlayer player
+                && getShooterVehicle() != null && player.getVehicle() == getShooterVehicle()) {
+            player.connection.send(new ClientboundEntityEventPacket(this, HITL_DETONATION_EVENT));
+        }
+        // 调用原爆炸结算；电视显示事件只给操作者，不参与伤害或引信判断。
+        super.triggerExplosion(pos, kind, excludeEntity, impactTarget, impactVelocity);
+    }
+
+    @Override
+    public void handleEntityEvent(byte event) {
+        if (event == HITL_DETONATION_EVENT) {
+            // 调用分端安全桥，客户端按当前导弹 ID 接纳爆炸通知。
+            RVP_ClientActionsAccess.onHitlDetonation(getId());
+        } else {
+            // 其余实体事件沿用继承链。
+            super.handleEntityEvent(event);
+        }
     }
 
     /** 人在回路模式下玩家右键提前引爆（仅服务端）：在导弹当前位置走正常爆炸链。 */

@@ -32,8 +32,6 @@ public class RVP_ClientHitlState {
     private static final int ENTITY_WAIT_TICKS = 80;
     private static final int VEHICLE_WAIT_TICKS = 8;
     private static final int EXIT_CLICK_GUARD_TICKS = 4;
-    /** 虚拟摇杆偏移的每 tick 衰减系数：0.6 ≈ 半衰期 2.6 tick（约 0.13 秒），停手约 0.3 秒回直飞。 */
-    private static final float STEER_OFFSET_DECAY = 0.6f;
     /** 右键被 RVP 消费（空爆引爆/退出视角）后的抑制窗口 tick，期间拦截本体右键放大。 */
     private static int rightClickGuardUntilTick = Integer.MIN_VALUE;
     /** Shared range for HUD crosshair, designation, and virtual sky aim points. */
@@ -56,8 +54,8 @@ public class RVP_ClientHitlState {
     private static LocalVehiclePlayer.ViewType prevViewType;
     private static RVP_EnumVideoMode videoMode = RVP_EnumVideoMode.COLOR;
     private static boolean videoModeUserSelected;
-    private static float hitlYaw;
-    private static float hitlPitch;
+    /** 独立摇杆输入；回中使用单调时间，网络仍每个逻辑刻发送一次。 */
+    private static final RVP_HitlSteeringInput steering = new RVP_HitlSteeringInput();
     private static float lookOffsetYaw;
     private static float lookOffsetPitch;
     private static float displayLookOffsetYaw;
@@ -78,7 +76,6 @@ public class RVP_ClientHitlState {
     /** DIRCM 白闪结束后的剩余禁锁期，随服务端快照更新。 */
     private static int noRedesignateTicks;
     private static boolean hitlLinkBlocked;
-    private static boolean hitlLinkSevered;
     /** DIRCM 对 HITL 弹的临时干扰状态（服务端 S2CHitlLinkState 同步，驱动白闪滤镜）。 */
     private static boolean dircmJam;
     private static int dircmJamRemainTick;
@@ -116,6 +113,11 @@ public class RVP_ClientHitlState {
 
     public static boolean isDesignateMode() {
         return isActive() && controlMode == RVP_EnumHitlControlMode.DESIGNATE;
+    }
+
+    /** 动作条与输入入口共享禁锁条件，干扰期仍展示按键但按禁用状态绘制。 */
+    public static boolean canRedesignate() {
+        return isDesignateMode() && !hitlLinkBlocked && !dircmJam && noRedesignateTicks <= 0;
     }
 
     /**
@@ -187,10 +189,12 @@ public class RVP_ClientHitlState {
             return;
         }
         hitlLinkBlocked = blocked;
-        hitlLinkSevered = severed;
-        if (hitlLinkSevered) {
-            // 调用视频终结入口，永久断联与命中销毁共用短暂失图画面。
+        if (severed) {
+            // 调用既有视频结束流程；彻底断链时接续临时阻断的雪花。
             endFeed(missileEntityId);
+        } else {
+            // 调用显示时钟更新瞬时阻断；同一阻断的重复快照不重新渐入。
+            signalLoss.setBlocked(Minecraft.getInstance().level, blocked, System.nanoTime());
         }
     }
 
@@ -270,11 +274,13 @@ public class RVP_ClientHitlState {
     }
 
     public static float getHitlYaw() {
-        return hitlYaw;
+        steering.advance(System.nanoTime());
+        return steering.yaw();
     }
 
     public static float getHitlPitch() {
-        return hitlPitch;
+        steering.advance(System.nanoTime());
+        return steering.pitch();
     }
 
     public static void enter(int missileEntityId, RVP_EnumHitlControlMode mode) {
@@ -297,8 +303,7 @@ public class RVP_ClientHitlState {
         exitClickGuardTicks = EXIT_CLICK_GUARD_TICKS;
         missileEntitySeen = false;
         controlSeq = 0;
-        hitlYaw = 0f;
-        hitlPitch = 0f;
+        steering.reset();
         lookOffsetYaw = 0f;
         lookOffsetPitch = 0f;
         displayLookOffsetYaw = 0f;
@@ -312,7 +317,6 @@ public class RVP_ClientHitlState {
         lockStatus = org.ywzj.rvp.hitl.RVP_HitlLockSnapshot.Status.NONE;
         noRedesignateTicks = 0;
         hitlLinkBlocked = false;
-        hitlLinkSevered = false;
         dircmJam = false;
         dircmJamRemainTick = 0;
         dircmJamTotalTick = 0;
@@ -335,11 +339,29 @@ public class RVP_ClientHitlState {
 
     /** 视频结束先完全释放远程会话，再显示独立 NO IMAGE；过期旧弹消息不能影响新弹。 */
     public static void endFeed(int missileEntityId) {
+        endFeed(missileEntityId, false);
+    }
+
+    /** 收到本弹实际爆炸或按下引爆键时，立即显示全不透明雪花。 */
+    public static void onDetonation(int missileEntityId) {
+        endFeed(missileEntityId, true);
+    }
+
+    private static void endFeed(int missileEntityId, boolean detonated) {
         if (missileEntityId < 0 || missileEntityId != activeMissileId) return;
         Minecraft mc = Minecraft.getInstance();
+        // 下车后到达的结束包不能把正常视角重新盖成雪花。
+        boolean showEnd = RVP_HitlSignalLossPresentation.shouldBegin(activeMissileId, missileEntityId,
+                isMouseSteering() || isDesignateMode(), mc.player != null && mc.player.getVehicle() instanceof AbstractVehicle);
         // 调用原有退出流程，立即归还相机/热成像/区块，提示不保留导弹实体。
-        clear();
-        if (mc.level != null && mc.player != null) signalLoss.begin(mc.level, System.nanoTime());
+        if (showEnd) {
+            clearSession();
+            long now = System.nanoTime();
+            if (detonated) signalLoss.detonate(mc.level, now);
+            else signalLoss.endLink(mc.level, now);
+        } else {
+            clear();
+        }
     }
 
     /** GUI 查询独立失图状态；世界改变或一秒到期自动失效。 */
@@ -347,8 +369,18 @@ public class RVP_ClientHitlState {
         return signalLoss.isVisible(currentWorld, System.nanoTime());
     }
 
+    /** GUI 读取链路阻断与结束共用的透明度。 */
+    public static float getSnowOpacity(Object currentWorld) {
+        return signalLoss.opacity(currentWorld, System.nanoTime());
+    }
+
     public static void clear() {
         signalLoss.clear();
+        clearSession();
+    }
+
+    /** 释放操控与镜头；终结提示可以在释放后接着播放。 */
+    private static void clearSession() {
         // 退出镜头时回收额外缓存并发送当前会话的退出心跳，未启用时为空操作。
         org.ywzj.rvp.client.hitl.RVP_ClientHitlRemoteView.clear(true);
         RVP_ClientHitlCamera.reset();
@@ -364,8 +396,7 @@ public class RVP_ClientHitlState {
         hitlZoom = HITL_ZOOM_MIN;
         TVMissileVideoPostHandler.setActive(false);
         LocalVehiclePlayer.instance.thermalImaging = false;
-        hitlYaw = 0f;
-        hitlPitch = 0f;
+        steering.reset();
         lookOffsetYaw = 0f;
         lookOffsetPitch = 0f;
         displayLookOffsetYaw = 0f;
@@ -379,7 +410,6 @@ public class RVP_ClientHitlState {
         lockStatus = org.ywzj.rvp.hitl.RVP_HitlLockSnapshot.Status.NONE;
         noRedesignateTicks = 0;
         hitlLinkBlocked = false;
-        hitlLinkSevered = false;
         dircmJam = false;
         dircmJamRemainTick = 0;
         dircmJamTotalTick = 0;
@@ -396,6 +426,7 @@ public class RVP_ClientHitlState {
 
     public static void tick(Minecraft mc, LocalPlayer player) {
         if (activeMissileId < 0) {
+            if (player == null || !(player.getVehicle() instanceof AbstractVehicle)) signalLoss.clear();
             clearParticleSuppressCache();
             return;
         }
@@ -423,8 +454,7 @@ public class RVP_ClientHitlState {
             if (!missileEntitySeen) {
                 // 虚拟摇杆：偏移量以 0 为基准（直飞），不继承弹体朝向——
                 // 导弹出膛后保持沿出膛方向直飞，直到玩家施加转向偏移
-                hitlYaw = 0f;
-                hitlPitch = 0f;
+                steering.reset();
                 RVP_ClientHitlCamera.onMissileAcquired(missile);
                 missileEntitySeen = true;
                 if (launchTick < 0L && mc.level != null) {
@@ -474,7 +504,7 @@ public class RVP_ClientHitlState {
                     && rvpMissile.rvp$isHitlRightClickDetonate()) {
                 RVP_Network.CHANNEL.sendToServer(C2SHitlDetonate.of(activeMissileId));
                 // 主动引爆也会失去视频；普通退出仍然立即返回且不显示失图。
-                endFeed(activeMissileId);
+                onDetonation(activeMissileId);
             } else {
                 RVP_Network.CHANNEL.sendToServer(C2SExitHitlView.of(activeMissileId));
                 clear();
@@ -488,25 +518,22 @@ public class RVP_ClientHitlState {
             tickModeSwitch(mc);
         }
         if (controlMode == RVP_EnumHitlControlMode.MOUSE) {
-            // 虚拟摇杆自动回中：偏移每 tick 指数衰减回直飞（半衰期约 0.4 秒）。
-            // 持续甩鼠标 = 持续压着偏移转圈；停手 = 导弹自动缓缓回直飞，
-            // 无需精确反向甩鼠标回中（修复"一转弯就直不回来"的手感问题）。
-            hitlYaw = Mth.wrapDegrees(hitlYaw * STEER_OFFSET_DECAY);
-            hitlPitch *= STEER_OFFSET_DECAY;
+            // 按真实时间回中，不在发送前统一削减本刻的新输入。
+            steering.advance(System.nanoTime());
             if (hitlLinkBlocked) {
                 // HITL 转向链诊断：链路阻断时转向输入被丢弃（不发 C2S），日志留痕供对照
                 if (RVP_DebugFlags.HITL.isEnabled()) {
                     LOGGER.info("[RVP-HITL][C] 链路阻断，未发送 yaw={} pitch={}",
-                            Mth.wrapDegrees(hitlYaw), hitlPitch);
+                            steering.yaw(), steering.pitch());
                 }
                 return;
             }
             controlSeq++;
             RVP_Network.CHANNEL.sendToServer(C2SHitlSteeringInput.of(
-                    activeMissileId, hitlYaw, hitlPitch, controlSeq));
+                    activeMissileId, steering.yaw(), steering.pitch(), controlSeq));
             if (RVP_DebugFlags.HITL.isEnabled()) {
                 LOGGER.info("[RVP-HITL][C] 发送 seq={} yaw={} pitch={}",
-                        controlSeq, Mth.wrapDegrees(hitlYaw), hitlPitch);
+                        controlSeq, steering.yaw(), steering.pitch());
             }
         }
     }
@@ -515,11 +542,8 @@ public class RVP_ClientHitlState {
         if (hitlLinkBlocked) {
             return;
         }
-        float yawStep = Mth.clamp((float) (pYRot * 0.15f), -4.0f, 4.0f);
-        float pitchStep = Mth.clamp((float) (pXRot * 0.15f), -4.0f, 4.0f);
-        // 虚拟摇杆：偏移量钳制 ±45°（与 max_guidance_angle 对齐，保证指令方向不超锥角、无死区）
-        hitlYaw = Mth.clamp(Mth.wrapDegrees(hitlYaw + yawStep), -45.0f, 45.0f);
-        hitlPitch = Mth.clamp(hitlPitch + pitchStep, -45.0f, 45.0f);
+        // 保留鼠标实际位移与总舵量限制，消除依赖帧数的单帧裁切。
+        steering.add(pYRot, pXRot, System.nanoTime());
     }
 
     /** BF2-style TV: offset crosshair within seeker FOV relative to missile body. */

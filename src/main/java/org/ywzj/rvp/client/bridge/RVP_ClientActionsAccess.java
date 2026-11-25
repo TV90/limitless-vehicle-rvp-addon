@@ -235,8 +235,16 @@ public final class RVP_ClientActionsAccess {
         return INSTANCE.isLocalOperatorInScopeView();
     }
 
+    /** 调用客户端 TV 引爆显示，专服无需加载界面。 */
+    public static void onHitlDetonation(int missileId) {
+        INSTANCE.onHitlDetonation(missileId);
+    }
+
     /** 专用服务端空实现。 */
     private static final class NoopClientActions implements RVP_IClientActions {
+        @Override
+        public void onHitlDetonation(int missileId) { }
+
         @Override
         public net.minecraft.world.entity.Entity findInfraredTarget(
                 org.ywzj.vehicle.vehicle.part.WeaponUnit station, float halfAngle) { return null; }

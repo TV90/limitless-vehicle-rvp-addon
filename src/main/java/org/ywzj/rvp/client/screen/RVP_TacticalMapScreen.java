@@ -1160,8 +1160,9 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
 
     @Override
     public void removed() {
-        // 窗口关闭或进入另一页面时归还地图专用的帧缓冲。
-        RVP_MapFrost.release();
+        // 关闭时丢弃采样内容并保留显存分配，下一次打开仍采样当前帧。
+        RVP_MapFrost.suspend();
+        // 调用炮兵火控取消尚未提交的发射请求。
         if (isArtilleryMode()) RVP_ArtilleryFireControlState.cancelPendingFire();
         super.removed();
     }

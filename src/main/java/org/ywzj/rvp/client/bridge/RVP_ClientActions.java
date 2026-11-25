@@ -336,6 +336,12 @@ public final class RVP_ClientActions implements RVP_IClientActions {
         return org.ywzj.rvp.client.state.RVP_ClientHitlState.shouldSuppressParticleNearActiveMissile(x, y, z);
     }
 
+    @Override
+    public void onHitlDetonation(int missileId) {
+        // 调用 TV 会话的引爆入口；其它弹体或已退出的视角不会盖上雪花。
+        org.ywzj.rvp.client.state.RVP_ClientHitlState.onDetonation(missileId);
+    }
+
     /** 本地操作者是否处于 SCOPE（开镜）视角：读取本体本地玩家状态并比对视角类型。 */
     @Override
     public boolean isLocalOperatorInScopeView() {

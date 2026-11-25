@@ -58,7 +58,7 @@ public final class RVP_AirburstInput {
             return false;
         }
 
-        // 调用客户端测距器；仅配置该弹种的新开关时，准星上的实体才可作为测距目标。
+        // 调用客户端测距器；弹种可显式关闭实体测距。
         int dist = RVP_AirburstMeasureUtil.measureDistanceMeters(weaponUnit, fuse.isAirburstMeasureEntities());
         int min = fuse.getAirburstMeasureMin();
         int max = fuse.getAirburstMeasureMax();

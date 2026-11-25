@@ -175,4 +175,7 @@ public interface RVP_IClientActions {
      * @return 本地玩家正在操作载具且视角为 SCOPE 时 true
      */
     boolean isLocalOperatorInScopeView();
+
+    /** 客户端接收当前 TV 弹的爆炸通知。 */
+    void onHitlDetonation(int missileId);
 }

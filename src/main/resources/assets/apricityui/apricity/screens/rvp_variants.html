@@ -62,8 +62,10 @@
         .plaque .art-mark, .detail-art .art-mark { width: 116px; height: 62px; }
         .plaque .mark-back, .plaque .mark-front, .detail-art .mark-back, .detail-art .mark-front { border-width: 3px; border-radius: 4px; }
         .slot.active .mark-back, .slot.active .mark-front, .option.active .mark-back, .option.active .mark-front { border-color: #323437; }
-        .art-image { display: block; width: 82%; height: 84%; object-fit: contain; }
-        .plaque .art-image, .detail-art .art-image { width: 70%; height: 82%; }
+        .art-image { display: block; width: 92%; height: 94%; object-fit: contain; transform: scale(1.2); }
+        .plaque .art-image, .detail-art .art-image { width: 88%; height: 94%; }
+        /* 浅底活动项按透明度轮廓绘成黑色，深底与右侧详情保留素材原色。 */
+        .slot.active .art-image, .option.active .art-image { filter: brightness(0); }
         .art-chip { width: 68%; height: 52%; border: 1px solid rgba(214,214,209,0.48); }
         .plaque .art-chip { width: 35%; height: 37%; }
         .detail { position: absolute; right: 1.8%; top: 12.4%; width: 23.9%; height: 80.7%; overflow-y: auto; padding: 13px 17px;

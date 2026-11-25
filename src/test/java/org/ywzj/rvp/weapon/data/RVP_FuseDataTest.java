@@ -12,6 +12,17 @@ class RVP_FuseDataTest {
     private final Gson gson = new Gson();
 
     @Test
+    void programmableAirburstDefaultsToEntityRangingAndCanOptOut() {
+        RVP_FuseData defaults = gson.fromJson("{}", RVP_FuseData.class);
+        RVP_FuseData blockOnly = gson.fromJson("""
+                {"airburst_measure_entities": false}
+                """, RVP_FuseData.class);
+
+        assertTrue(defaults.isAirburstMeasureEntities());
+        assertFalse(blockOnly.isAirburstMeasureEntities());
+    }
+
+    @Test
     void aheadDataLivesAlongsideButDoesNotEnableManualAirburst() {
         RVP_FuseData fuse = gson.fromJson("""
                 {

@@ -48,9 +48,15 @@ public final class RVP_VehicleActionHudModel {
         /** 炮兵地图（复用战术地图键）。 */
         ARTILLERY_MAP,
         /** 焦点锁定（R 键，需观瞄站带焦点锁定器且处于观瞄视角）。 */
-        FOCUS_LOCK
+        FOCUS_LOCK,
+        /** 人在回路电视弹重新指定目标。 */
+        HITL_REDESIGNATE,
+        /** 人在回路镜头退出。 */
+        HITL_EXIT,
+        /** 配置允许的提前引爆并退出。 */
+        HITL_DETONATE
     }
-    public enum Phase { READY, DISABLED, COOLING, DEPLOYED, ACTIVE, DAMAGED }
+    public enum Phase { READY, DISABLED, COOLING, DEPLOYED, ACTIVE, DAMAGED, ALERT }
     public record Card(Action action, Phase phase, boolean enabled, int cooldownSeconds) {}
 
     /**
@@ -158,6 +164,8 @@ public final class RVP_VehicleActionHudModel {
 
     private static int displayPriority(Action action) {
         return switch (action) {
+            case HITL_REDESIGNATE -> 10;
+            case HITL_EXIT, HITL_DETONATE -> 20;
             case SEEKER -> 10;
             case QUICK_LOCK -> 20;
             case FOCUS_LOCK -> 30;
@@ -171,6 +179,15 @@ public final class RVP_VehicleActionHudModel {
             case MAP, FIRE_SUPPORT_BIND, ARTILLERY_MAP -> 110;
             case STATUS -> 120;
         };
+    }
+
+    /** 电视弹仅显示当前真实可用操作，不混入母车卡片；右键引爆替代退出，避免同键重复提示。 */
+    public static List<Card> hitlCards(boolean designate, boolean canDesignate, boolean airburst, boolean nearby) {
+        List<Card> result = new ArrayList<>();
+        if (designate) result.add(available(Action.HITL_REDESIGNATE, canDesignate));
+        result.add(airburst ? new Card(Action.HITL_DETONATE, nearby ? Phase.ALERT : Phase.READY, true, 0)
+                : ready(Action.HITL_EXIT));
+        return result;
     }
 
     public static List<Card> cards(RVP_AuxiliaryHudSnapshot state) {

@@ -11,6 +11,15 @@ import static org.ywzj.rvp.uav.RVP_AuxiliaryHudSnapshot.Role.*;
 
 /** 覆盖配置缺失的部署子机、普通车、母车与不同 GUI scale 下真实像素大小/居中不变量。 */
 class RVP_VehicleActionHudModelTest {
+    @Test void hitlCardsMatchActualControlsWithoutMotherVehicleActions() {
+        assertEquals(List.of(Action.HITL_EXIT), hitlCards(false, false, false, false).stream().map(Card::action).toList());
+        var tv = hitlCards(true, false, false, false);
+        assertEquals(List.of(Action.HITL_REDESIGNATE, Action.HITL_EXIT), tv.stream().map(Card::action).toList());
+        assertFalse(tv.get(0).enabled()); assertTrue(tv.get(1).enabled());
+        var ucav = hitlCards(false, false, true, true);
+        assertEquals(1, ucav.size()); assertEquals(Action.HITL_DETONATE, ucav.get(0).action());
+        assertEquals(Phase.ALERT, ucav.get(0).phase()); assertTrue(ucav.get(0).enabled());
+    }
     private RVP_AuxiliaryHudSnapshot state(RVP_AuxiliaryHudSnapshot.Role role, int cooldown, boolean deployed) {
         return new RVP_AuxiliaryHudSnapshot(UUID.randomUUID(), role, cooldown, deployed, !deployed, deployed);
     }

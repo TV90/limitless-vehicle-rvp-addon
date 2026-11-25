@@ -7,6 +7,7 @@ import com.mojang.math.Axis;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.renderer.LightTexture;
+import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.client.renderer.texture.SimpleTexture;
 import net.minecraft.client.resources.metadata.texture.TextureMetadataSection;
 import net.minecraft.resources.ResourceLocation;
@@ -18,6 +19,7 @@ import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL12;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.vehicle.client.render.entity.vehicle.VehicleRender;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -58,29 +60,36 @@ final class RVP_WorkshopPreview {
         reset();
         frame = auxiliary && vehicle != null ? measureFrame(vehicle, yaw, pitch) : null;
         var textures = Minecraft.getInstance().getTextureManager();
-        if (!(textures.getTexture(RAIN, null) instanceof RainBackdrop)) textures.register(RAIN, new RainBackdrop());
+        if (textures.getTexture(RAIN, null) == null) textures.register(RAIN, new SimpleTexture(RAIN));
         if (!(textures.getTexture(ATMOSPHERE, null) instanceof Atmosphere)) textures.register(ATMOSPHERE, new Atmosphere());
     }
 
-    /** 保留用户原图，加载时缩滤、显示时线性采样。只有静态远景失焦，模型和文字仍按原分辨率绘制。 */
-    private static final class RainBackdrop extends SimpleTexture {
-        private RainBackdrop() { super(RAIN); }
-
-        @Override
-        protected TextureImage getTextureImage(ResourceManager resources) {
-            try (var input = resources.open(RAIN); NativeImage image = NativeImage.read(input)) {
-                int width = image.getWidth(), height = image.getHeight();
-                try (var reduced = new NativeImage(image.format(), Math.max(1, width / 11), Math.max(1, height / 11), false)) {
-                    image.resizeSubRectTo(0, 0, width, height, reduced);
-                    gradeBackdrop(reduced);
-                    var soft = new NativeImage(image.format(), width, height, false);
-                    reduced.resizeSubRectTo(0, 0, reduced.getWidth(), reduced.getHeight(), soft);
-                    return new TextureImage(new TextureMetadataSection(true, true), soft);
-                }
-            } catch (IOException error) {
-                return new TextureImage(error);
+    /** 原图的解码、缩滤和调色交给资源重载的工作线程，不占用第一次打开界面的主线程。 */
+    static NativeImage prepareBackdrop(ResourceManager resources) throws IOException {
+        try (var input = resources.open(RAIN); NativeImage image = NativeImage.read(input)) {
+            int width = image.getWidth(), height = image.getHeight();
+            try (var reduced = new NativeImage(image.format(), Math.max(1, width / 11), Math.max(1, height / 11), false)) {
+                image.resizeSubRectTo(0, 0, width, height, reduced);
+                gradeBackdrop(reduced);
+                var soft = new NativeImage(image.format(), width, height, false);
+                reduced.resizeSubRectTo(0, 0, reduced.getWidth(), reduced.getHeight(), soft);
+                return soft;
             }
         }
+    }
+
+    /** 资源重载的 apply 阶段在渲染线程上传；像素处理和采样方式沿用原效果。 */
+    static void installBackdrop(NativeImage image) {
+        var textures = Minecraft.getInstance().getTextureManager();
+        if (image != null) {
+            var texture = new DynamicTexture(image);
+            texture.setFilter(true, false);
+            texture.bind();
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
+            textures.register(RAIN, texture);
+        }
+        textures.register(ATMOSPHERE, new Atmosphere());
     }
 
     /** 在缩小的远景上做一次调色，中央偏冷亮，边角和底部保留雨夜的暗紫色。 */

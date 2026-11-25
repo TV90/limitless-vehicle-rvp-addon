@@ -48,13 +48,16 @@ public final class RVP_VehicleActionHudOverlay implements IGuiOverlay {
             texture("gps_mark"), texture("gps_single"), texture("gps_multi"), texture("gps_fast"), texture("gps_radar"),
             texture("airburst"),
             texture("vision_white"), texture("vision_night"), texture("vision_thermal"),
-            texture("fire_support_bind"), texture("artillery_map"), texture("focus_lock")};
+            texture("fire_support_bind"), texture("artillery_map"), texture("focus_lock"),
+            // HITL 复用已有锁点、切换和空爆图标，不覆盖美术资源。
+            texture("focus_lock"), texture("switch_auxiliary"), texture("airburst")};
     private static final ResourceLocation DEPLOYED_TEXTURE = texture("deployed_auxiliary");
     private static final String[] LABELS = {"deploy_auxiliary", "switch_auxiliary", "tactical_map", "vehicle_status",
             "seeker", "fire_control_stable", "fire_control_semi_auto", "fire_control_off", "quick_lock",
             "loiter", "rotary_normal", "rotary_auto_collective", "rotary_hover",
             "gps_mark", "gps_single", "gps_multi", "gps_fast", "gps_radar", "airburst",
-            "vision_white", "vision_night", "vision_thermal", "fire_support_bind", "artillery_map", "focus_lock"};
+            "vision_white", "vision_night", "vision_thermal", "fire_support_bind", "artillery_map", "focus_lock",
+            "hitl_redesignate", "hitl_exit", "hitl_detonate"};
     private static final KeyMapping[] BINDINGS = {RVP_Keys.DEPLOY_DEPLOYABLE_UAV, RVP_Keys.SWITCH_DEPLOYABLE_UAV,
             RVP_Keys.OPEN_GPS_PANEL, RVP_Keys.OPEN_EQUIP_PANEL, AllKeys.TOGGLE_SEEKER,
             RVP_Keys.FIRE_CONTROL_STABILIZER, RVP_Keys.FIRE_CONTROL_STABILIZER, RVP_Keys.FIRE_CONTROL_STABILIZER,
@@ -68,7 +71,8 @@ public final class RVP_VehicleActionHudOverlay implements IGuiOverlay {
             // 火力装订/炮兵地图与战术地图共用 K 键
             RVP_Keys.OPEN_GPS_PANEL, RVP_Keys.OPEN_GPS_PANEL,
             // 焦点锁定沿用本体锁定键（R）
-            AllKeys.FIRE_CONTROL_LOCK};
+            AllKeys.FIRE_CONTROL_LOCK,
+            RVP_Keys.HITL_REDESIGNATE, RVP_Keys.HITL_EXIT, RVP_Keys.HITL_EXIT};
     private static ResourceLocation texture(String name) {
         return new ResourceLocation("ywzj_rvp", "textures/gui/actions/" + name + ".png");
     }
@@ -242,11 +246,28 @@ public final class RVP_VehicleActionHudOverlay implements IGuiOverlay {
         pose.popPose();
     }
 
+    /** 人在回路与普通武器使用同一动作条、实际键位和分辨率换算。 */
+    public static void drawHitlRow(GuiGraphics graphics, boolean designate, boolean airburst,
+                                   boolean urgentDesignate, boolean nearby) {
+        List<Card> cards = hitlCards(designate, RVP_ClientHitlState.canRedesignate(), airburst, nearby);
+        String[] keys = new String[BINDINGS.length];
+        boolean[] pressed = new boolean[BINDINGS.length];
+        for (Card card : cards) {
+            int i = card.action().ordinal();
+            keys[i] = keyHint(BINDINGS[i]);
+            pressed[i] = BINDINGS[i].isDown() || card.action() == Action.HITL_REDESIGNATE
+                    && urgentDesignate && Minecraft.getInstance().level != null
+                    && Minecraft.getInstance().level.getGameTime() / 5L % 2L == 0;
+        }
+        // 复用同一绘制入口，保证下沿、字号、按键区和图标尺寸完全一致。
+        drawRow(graphics, cards, keys, pressed);
+    }
+
     /** 参考画布上的单卡：部署完成换成无箭头/确认勾图标，冷却时压暗并显示红色秒数。 */
     private static void drawCard(GuiGraphics graphics, Card card, String key, boolean pressed) {
         boolean deployed = card.phase() == Phase.DEPLOYED;
         boolean active = card.phase() == Phase.ACTIVE;
-        boolean damaged = card.phase() == Phase.DAMAGED;
+        boolean damaged = card.phase() == Phase.DAMAGED || card.phase() == Phase.ALERT;
         boolean bright = card.enabled() || deployed || active;
         int border = damaged ? 0xC4FF4040
                 : pressed && card.enabled() ? 0xFFE2C774

@@ -44,6 +44,8 @@ public class RVP_TVMissileOverlay implements IGuiOverlay {
             reset();
             return;
         }
+        // 短暂阻断期间弹体也可能尚未同步，失图提示不依赖弹体存在。
+        if (RVP_ClientHitlState.isHitlLinkBlocked()) RVP_HitlVideoLossRenderer.drawCaption(gg, mc.font);
         // 调用既有会话的统一显示入口，导弹虚拟化期间保留镜头/操控显示，不新增目标权限。
         Entity e = RVP_ClientHitlState.resolveActiveMissile(mc);
         if (!(e instanceof RVP_MissileEntity missile) || e.isRemoved()) {
@@ -55,7 +57,7 @@ public class RVP_TVMissileOverlay implements IGuiOverlay {
         updateRate(missile);
 
         Font font = mc.font;
-        // 雪花背景已由最底层独立 overlay 绘制，此处只绘制相机仪表与失图文字。
+        // 雪花由紧邻本层之前的独立 overlay 绘制，此处只绘制相机仪表与失图文字。
         // 调用固定居中的装饰层；与可动准星、已有制导和离轴角限制相互独立。
         if (!RVP_ClientHitlState.isHitlLinkBlocked()) {
             if (RVP_ClientHitlState.isDesignateMode()) RVP_HitlReticleRenderer.drawTvReference(gg);
@@ -81,10 +83,9 @@ public class RVP_TVMissileOverlay implements IGuiOverlay {
                 missile.getDisplayFlightTickCount() / 20.0, lastRateDegPerSec, video, control, track,
                 airburst, RVP_ClientHitlState.getHitlZoom());
         boolean airburstNearby = airburst && hasNonSelfEntityWithin(mc, missile, 10.0D);
-        RVP_HitlInstrumentRenderer.drawActionHints(gg, font,
+        RVP_HitlInstrumentRenderer.drawActionHints(gg,
                 RVP_ClientHitlState.isDesignateMode(), airburst,
                 RVP_ClientHitlState.shouldPromptDesignateKey(), airburstNearby);
-        if (RVP_ClientHitlState.isHitlLinkBlocked()) RVP_HitlVideoLossRenderer.drawCaption(gg, font);
         if (RVP_ClientHitlState.isMouseSteering() && !RVP_ClientHitlState.isHitlLinkBlocked()) drawSteeringCursor(gg);
         else { cursor.reset(); lastFrameNanos = 0; }
         // 指令制导的动态瞄准/目标斜十字并回同一 HUD 层，和仪表一起走 CHAT_PANEL 之下的绘制顺序。

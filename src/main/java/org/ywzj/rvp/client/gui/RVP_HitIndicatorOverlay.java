@@ -190,7 +190,6 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
      */
     public static void renderGui(GuiGraphics guiGraphics, float partialTick) {
         if (!RVP_ClientHitIndicatorState.isActive()) {
-            RVP_HitPanelGlass.release();
             return;
         }
         // RVP 命中提示活动期间持续压制本体命中提示（兜底）：
@@ -229,6 +228,19 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
         int x0 = guiW - margin - panelW;
         return new int[]{x0, margin, x0 + panelW, margin + panelH};
     }
+
+    /** 空闲帧只分配一层玻璃缓冲，不产生命中事件或绘制内容。 */
+    public static boolean prepareGlassBuffers() {
+        Minecraft mc = Minecraft.getInstance();
+        int[] rect = panelRect(mc);
+        double scale = mc.getWindow().getGuiScale();
+        int width = (int) Math.ceil(rect[2] * scale) - (int) Math.floor(rect[0] * scale);
+        int height = (int) Math.ceil(rect[3] * scale) - (int) Math.floor(rect[1] * scale);
+        return RVP_HitPanelGlass.prepareOne(width, height);
+    }
+
+    /** 资源重载与退出世界时归还命中面板显存。 */
+    public static void releaseGlassBuffers() { RVP_HitPanelGlass.release(); }
 
     /** 受损通知横向排列，空间不足时换行；模型区按同一行数预留底部空间。 */
     private static void drawModuleNotifications(GuiGraphics gg, Minecraft mc) {

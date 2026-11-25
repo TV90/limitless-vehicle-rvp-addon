@@ -34,10 +34,13 @@ public final class RVP_ClientHitlCamera {
     private static double smoothY;
     private static double smoothZ;
     private static long lastFrameNanos;
+    /** 当前视频的浮点权威姿态；退出时随镜头清理。 */
+    private static final RVP_HitlCameraRotation preciseRotation = new RVP_HitlCameraRotation();
 
     private RVP_ClientHitlCamera() {}
 
     public static void reset() {
+        preciseRotation.clear();
         lastMissileId = -1;
         poseValid = false;
         lastFrameNanos = 0L;
@@ -57,6 +60,13 @@ public final class RVP_ClientHitlCamera {
 
     public static boolean hasPose() {
         return poseValid;
+    }
+
+    /** 只有当前正在观看的弹体可更新镜头，不修改原版实体或制导方向。 */
+    public static void acceptRotation(int missileId, long tick, float yaw, float pitch) {
+        if (RVP_ClientHitlState.getActiveMissileId() == missileId) {
+            preciseRotation.accept(tick, yaw, pitch, System.nanoTime());
+        }
     }
 
     /** Body axis yaw (camera / seeker boresight). */
@@ -115,8 +125,13 @@ public final class RVP_ClientHitlCamera {
         lastFrameNanos = now;
         RVP_ClientHitlState.tickDesignateLookOffset(dtSeconds);
 
-        float bodyYaw = Mth.lerp(partialTick, missile.yRotO, missile.getYRot());
+        float bodyYaw = Mth.rotLerp(partialTick, missile.yRotO, missile.getYRot());
         float bodyPitch = Mth.lerp(partialTick, missile.xRotO, missile.getXRot());
+        // 调用独立插值器消除慢速拖拽的量化停顿；无新快照时保留既有实体回退。
+        if (preciseRotation.fresh(now)) {
+            bodyYaw = preciseRotation.yaw(now);
+            bodyPitch = preciseRotation.pitch(now);
+        }
 
         float orientYaw;
         float orientPitch;
