@@ -13,6 +13,10 @@ import org.ywzj.rvp.vehicle.BoneEcmActiveConfig;
 import org.ywzj.rvp.vehicle.BoneEngineConfig;
 import org.ywzj.rvp.vehicle.BoneJammerConfig;
 import org.ywzj.rvp.vehicle.BoneModuleType;
+import org.ywzj.rvp.vehicle.BoneMaintenanceConfig;
+import org.ywzj.rvp.maintenance.RVP_RepairPlanner;
+import org.ywzj.rvp.client.state.RVP_ClientRepairOrderState;
+import org.ywzj.rvp.client.util.RVP_DamagedPartWireframeHelper;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
@@ -26,13 +30,13 @@ import java.util.Set;
 /**
  * 辅助设备面板数据聚合（纯客户端，无状态）：把载具的骨模块配置（服务端随
  * {@code S2CVehicleRvpConfig} 下发的全量 JSON，客户端已缓存）与各运行时 HUD 快照
- * 组装成面板栏目模型。零新增网络包——全部读现有客户端可见数据。
+ * 组装成面板栏目模型；维修顺序另由服务端同步。
  *
  * <p>栏目按"无设备不画"门控：载具没配置的设备类型不生成栏目。行序号 = 该部件在
  * 载具数据中的出现顺序（以 {@code vehicle.getPartUnits()} 为准——它严格等于载具 JSON
  * {@code parts[]} 数组顺序；骨模块配置底层为 HashMap 不保序，故以部件顺序为锚）。
- * 队列路由：ERA 失效行入"爆反维修顺序"，其余骨模块设备失效行入"辅助设备维修顺序"；
- * 干扰物与部件血量行不可入队（前者无骨模块语义，后者由快修回血覆盖）。</p>
+ * 队列路由：ERA 行入"爆反维修顺序"，其余骨模块设备行入"辅助设备维修顺序"；
+ * 绑定骨的干扰物逐骨入队；纯部件血量由快修回血覆盖，不单独入队。</p>
  */
 public final class RVP_EquipPanelData {
 
@@ -274,78 +278,47 @@ public final class RVP_EquipPanelData {
         return RVP_VehicleHitboxFactorManager.INSTANCE.resolveMaintenanceModule(vehicle) != null;
     }
 
-    /**
-     * 预计维修量（辅助设备面板提示行）：ERA 为确定配额（与服务端 {@code recoverModules} 同公式）；
-     * 辅助设备为概率制（每台每次快修 device_recover_chance 独立掷骰），
-     * 预计修复数 = 失效可修数 × 单台概率（期望值，由调用方格式化小数）。
-     */
-    public record Forecast(int eraQuota, double deviceExpected, int deviceDestroyed, int deviceChancePercent) {
+    /** 调用当前载具配置，省略模块细则时使用统一默认值。 */
+    public static BoneMaintenanceConfig.ModuleRepair repairConfig(AbstractVehicle vehicle) {
+        var binding = RVP_VehicleHitboxFactorManager.INSTANCE.resolveMaintenanceModule(vehicle);
+        return binding == null || binding.config().moduleRepair() == null
+                ? BoneMaintenanceConfig.ModuleRepair.defaults() : binding.config().moduleRepair();
     }
+
+    /** 调用公共排序器补齐正常部件，维修后仍保留用户指定顺序。 */
+    public static RVP_ClientRepairOrderState.Order repairOrder(AbstractVehicle vehicle) {
+        var saved = RVP_ClientRepairOrderState.get(vehicle.getId());
+        var full = RVP_RepairPlanner.complete(
+                new RVP_RepairPlanner.Order(saved.eraBones(), saved.deviceBones()),
+                RVP_RepairPlanner.defaults(vehicle, repairConfig(vehicle)));
+        return new RVP_ClientRepairOrderState.Order(full.eraBones(), full.deviceBones());
+    }
+
+    /** 预计修复的准确数量和骨集合，供面板提示与绿色预览共用。 */
+    public record Forecast(int eraQuota, int deviceQuota, Set<String> bones) { }
 
     public static Forecast repairForecast(AbstractVehicle vehicle) {
-        var binding = RVP_VehicleHitboxFactorManager.INSTANCE.resolveMaintenanceModule(vehicle);
-        if (binding == null) {
-            return new Forecast(0, 0, 0, 0);
-        }
-        org.ywzj.rvp.vehicle.BoneMaintenanceConfig config = binding.config();
-        org.ywzj.rvp.vehicle.BoneMaintenanceConfig.ModuleRepair moduleRepair =
-                config.moduleRepair() != null ? config.moduleRepair()
-                        : org.ywzj.rvp.vehicle.BoneMaintenanceConfig.ModuleRepair.defaults();
-        int entityId = vehicle.getId();
-        Map<String, Set<BoneModuleType>> modules =
-                RVP_VehicleHitboxFactorManager.INSTANCE.resolveBoneModules(vehicle);
-        int eraDestroyed = 0;
-        Set<String> destroyedDeviceBones = new java.util.HashSet<>();
-        for (Map.Entry<String, Set<BoneModuleType>> entry : modules.entrySet()) {
-            String bone = entry.getKey();
-            if ("__vehicle__".equals(bone)) {
-                continue; // 虚拟骨（默认快修承载骨）永不禁用，不计入
+        Map<String, Set<BoneModuleType>> inactive = new java.util.HashMap<>();
+        for (String bone : boneModules(vehicle).keySet()) {
+            Set<BoneModuleType> types = java.util.EnumSet.noneOf(BoneModuleType.class);
+            // 同步表含运行时受损标记，不能只遍历配置中的基础类型。
+            for (BoneModuleType type : BoneModuleType.values()) {
+                if (!RVP_ClientBoneModuleState.isModuleActive(vehicle.getId(), bone, type)) types.add(type);
             }
-            Set<BoneModuleType> types = entry.getValue();
-            // 捆绑口径（用户 2026-09-26 定版）：含 ERA 的双角色骨整体计入爆反维修数（随 ERA 一起修），
-            // 不算辅助设备数；纯设备骨才计入辅助设备数
-            if (types.contains(BoneModuleType.ERA) && moduleRepair.isRepairable(BoneModuleType.ERA)) {
-                if (boneFailed(entityId, bone, types, moduleRepair)) {
-                    eraDestroyed++;
-                }
-            } else if (boneFailed(entityId, bone, types, moduleRepair)) {
-                destroyedDeviceBones.add(bone);
-            }
+            if (!types.isEmpty()) inactive.put(bone, types);
         }
-        int eraQuota = eraDestroyed == 0 ? 0
-                : Math.min(Math.max(
-                        (int) Math.ceil(eraDestroyed * moduleRepair.eraRecoverFraction),
-                        moduleRepair.eraRecoverMin),
-                eraDestroyed);
-        int chancePercent = Math.round(moduleRepair.deviceRecoverChance * 100f);
-        double deviceExpected = destroyedDeviceBones.size() * moduleRepair.deviceRecoverChance;
-        return new Forecast(eraQuota, deviceExpected, destroyedDeviceBones.size(), chancePercent);
+        var order = repairOrder(vehicle);
+        var targets = RVP_RepairPlanner.select(new RVP_RepairPlanner.Order(order.eraBones(), order.deviceBones()),
+                inactive, repairConfig(vehicle));
+        Set<String> bones = new java.util.HashSet<>(targets.eraBones());
+        bones.addAll(targets.deviceBones());
+        return new Forecast(targets.eraBones().size(), targets.deviceBones().size(), Set.copyOf(bones));
     }
 
-    /** 骨上是否有任一可修模块处于失效（捆绑口径下按骨级判定）。 */
-    private static boolean boneFailed(int entityId, String bone, Set<BoneModuleType> types,
-                                      org.ywzj.rvp.vehicle.BoneMaintenanceConfig.ModuleRepair moduleRepair) {
-        for (BoneModuleType type : types) {
-            if (type == BoneModuleType.MAINTENANCE) {
-                continue;
-            }
-            if (!moduleRepair.isRepairable(type)) {
-                continue;
-            }
-            if (!RVP_ClientBoneModuleState.isModuleActive(entityId, bone, type)) {
-                return true;
-            }
-        }
-        // [RVP] 引擎重创档（ENGINE_DAMAGED）是运行时写入失效表的标记，不在 bone_modules
-        // 配置类型集合里——按配置类型遍历会漏掉重创的引擎（2026-09-28 用户实机：损坏
-        // 5 个部件只算 4 个）。配置含 ENGINE 的骨额外查重创标记失效状态。
-        if (types.contains(BoneModuleType.ENGINE)
-                && !RVP_ClientBoneModuleState.isModuleActive(entityId, bone, BoneModuleType.ENGINE_DAMAGED)) {
-            return true;
-        }
-        return types.contains(BoneModuleType.TURRET_TRAVERSE)
-                && moduleRepair.isRepairable(BoneModuleType.TURRET_TRAVERSE_DAMAGED)
-                && !RVP_ClientBoneModuleState.isModuleActive(entityId, bone, BoneModuleType.TURRET_TRAVERSE_DAMAGED);
+    /** 复用俯视图的正常、受损、失效三档规则，确保清单与列表颜色一致。 */
+    public static int boneStage(AbstractVehicle vehicle, String bone) {
+        return RVP_DamagedPartWireframeHelper.stageFor(boneModules(vehicle).getOrDefault(bone, Set.of()),
+                type -> RVP_ClientBoneModuleState.isModuleActive(vehicle.getId(), bone, type));
     }
 
     /**
@@ -442,13 +415,7 @@ public final class RVP_EquipPanelData {
         return rows;
     }
 
-    /** 干扰物行：仅生成已配置且启用的系统；余弹缺快照时按满弹显示。
-     *  2026-09-29 补虚拟血量（用户实机反馈"烟雾弹行没有血条"）：系统绑定的发射器骨
-     *  逐根追加"现存/阈值"（与其它模块行同源 {@link #virtualHpText}，数据链
-     *  S2CBoneDamageProgress 已含 COUNTERMEASURE 骨），多骨以 " · " 连接、无阈值骨跳过。
-     *  2026-09-29 行状态三态（用户反馈"坏一边也显示生效"）：按绑定骨的 COUNTERMEASURE
-     *  模块活性（RVP_ClientBoneModuleState，与俯视图红框同源）——全部存活=生效（绿）、
-     *  全部失效=失效（红）、部分失效=受损（黄，用户定版）。 */
+    /** 干扰物按绑定发射器骨逐项显示，正常或失效骨均可设置优先级；无绑定骨时仅显示余弹。 */
     private static int addCountermeasureRow(List<Row> rows, int index, String alias,
                                             AbstractVehicle vehicle, int entityId,
                                             RVP_CountermeasureSystemData system, int remain, int total) {
@@ -458,21 +425,18 @@ public final class RVP_EquipPanelData {
         int shownTotal = total >= 0 ? total : system.getTotal();
         int shownRemain = remain >= 0 ? remain : shownTotal;
         String extra = I18n.get("gui.ywzj_rvp.equipment.ammo", shownRemain, shownTotal);
-        boolean anyAlive = false;
-        boolean anyDead = false;
-        for (String bone : system.getBoneModules()) {
-            boolean alive = RVP_ClientBoneModuleState.isModuleActive(entityId, bone, BoneModuleType.COUNTERMEASURE);
-            anyAlive |= alive;
-            anyDead |= !alive;
-            String hp = virtualHpText(vehicle, entityId, bone);
-            if (hp != null) {
-                extra += " · " + hp;
-            }
+        List<String> bones = new ArrayList<>(system.getBoneModules());
+        if (bones.isEmpty()) {
+            rows.add(new Row(index++, alias, true, false, null, null, extra));
         }
-        // 三态：部分失效=受损（active=true + damaged=true 黄标）；全失效=失效（红）；全存活=生效
-        boolean active = !anyDead || anyAlive;
-        boolean damaged = anyDead && anyAlive;
-        rows.add(new Row(index++, alias, active, damaged, null, null, extra));
+        for (String bone : bones) {
+            boolean active = RVP_ClientBoneModuleState.isModuleActive(entityId, bone, BoneModuleType.COUNTERMEASURE);
+            String hp = virtualHpText(vehicle, entityId, bone);
+            String route = boneModules(vehicle).getOrDefault(bone, Set.of()).contains(BoneModuleType.ERA)
+                    ? QUEUE_ERA : QUEUE_DEV;
+            rows.add(new Row(index++, alias(vehicle, bone), active, false, bone, route,
+                    alias + " " + extra + (hp == null ? "" : " " + hp)));
+        }
         return index;
     }
 

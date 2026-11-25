@@ -7,6 +7,7 @@ import org.ywzj.vehicle.client.gui.VehicleStatusOverlay;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import java.lang.reflect.Method;
 import java.lang.reflect.InvocationTargetException;
+import java.util.Set;
 
 /** 状态 AUI 复用本体当前俯视图，几何、炮塔朝向、缩放和模块配色与左下角 HUD 完全同源。 */
 public final class RVP_EquipSkeletonRenderer {
@@ -32,8 +33,14 @@ public final class RVP_EquipSkeletonRenderer {
     /** 调用方保留现有 scissor、AUI 坐标换算与 z=400，入口内使用同一套本体线框绘制。 */
     public static void render(GuiGraphics graphics, AbstractVehicle vehicle,
                               int x0, int y0, int x1, int y1, float partialTick) {
+        render(graphics, vehicle, x0, y0, x1, y1, partialTick, Set.of());
+    }
+
+    /** 绿色预计维修仅作用于本次状态面板绘制，离开作用域后恢复 HUD 正常配色。 */
+    public static void render(GuiGraphics graphics, AbstractVehicle vehicle,
+                              int x0, int y0, int x1, int y1, float partialTick, Set<String> previewBones) {
         if (HEADING == null || x1 - x0 <= 12 || y1 - y0 <= 12) return;
-        try (var scope = RVP_DamagedPartWireframeHelper.displaying(vehicle)) {
+        try (var scope = RVP_DamagedPartWireframeHelper.displaying(vehicle, previewBones)) {
             // 复用本体原绘制与既有 RVP 配色转发；不复制旧几何算法或创建另一份描边规则。
             HEADING.invoke(null, graphics, partialTick, vehicle, x0 + 6f, y0 + 6f,
                     x1 - x0 - 12f, y1 - y0 - 12f, 1f);

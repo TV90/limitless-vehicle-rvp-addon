@@ -545,9 +545,9 @@
   "gui.ywzj_rvp.equipment.queue": "Queue",
   "gui.ywzj_rvp.equipment.queue_era": "ERA repair order",
   "gui.ywzj_rvp.equipment.queue_dev": "Device repair order",
-  "gui.ywzj_rvp.equipment.queue_empty": "Queue empty",
-  "gui.ywzj_rvp.equipment.queue_hint": "Select a damaged part on the left to queue it. The repair tool follows this order.",
-  "gui.ywzj_rvp.equipment.forecast": "Expected: %s armor, %s equipment (%s disabled, %s%% per repair).",
+  "gui.ywzj_rvp.equipment.queue_empty": "No repairable parts",
+  "gui.ywzj_rvp.equipment.queue_hint": "Click a part to prioritize; drag to reorder",
+  "gui.ywzj_rvp.equipment.forecast": "Next repair: %s ERA blocks, %s devices",
   "gui.ywzj_rvp.equipment.note_dual": "+device role",
   "gui.ywzj_rvp.equipment.note_with_era": "repairs with ERA",
   "gui.ywzj_rvp.equipment.state_ok": "Active",
@@ -769,5 +769,6 @@
   "hud.ywzj_rvp.action.vision_night": "NV",
   "hud.ywzj_rvp.action.vision_thermal": "TI",
   "hud.ywzj_rvp.action.fire_support_bind": "FIRE BIND",
-  "hud.ywzj_rvp.action.artillery_map": "ARTY MAP"
+  "hud.ywzj_rvp.action.artillery_map": "ARTY MAP",
+  "gui.ywzj_rvp.equipment.repair_preview": "Repair preview"
 }

@@ -48,7 +48,8 @@ public class RVP_Network {
     /** 协议 48：新版吊舱绝对请求、实际轨迹与预测确认；双端须一同更新。 */
     /** 协议 49：新增 S2CRotaryFlightModeSync（直升机三态同步，动作条状态图标）；双端须一同更新。 */
     /** 协议 50：新增 RVP 弹药实体克隆快照，脱离本体 ServerBroadcastEntities；双端须一同更新。 */
-    private static final String PROTOCOL = "50";
+    /** 协议 51：维修顺序请求与权威回传，支持完整预设队列。 */
+    private static final String PROTOCOL = "51";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "main"))
@@ -529,5 +530,11 @@ public class RVP_Network {
                 .decoder(S2CRemoteAmmoEntitySnapshot::decode)
                 .consumerMainThread(S2CRemoteAmmoEntitySnapshot::handle)
                 .add();
+        // 回传乘员共享的维修优先顺序；追加编号，保留已有消息顺序。
+        CHANNEL.messageBuilder(org.ywzj.rvp.maintenance.network.S2CRepairOrder.class,
+                        id++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(org.ywzj.rvp.maintenance.network.S2CRepairOrder::encode)
+                .decoder(org.ywzj.rvp.maintenance.network.S2CRepairOrder::decode)
+                .consumerMainThread(org.ywzj.rvp.maintenance.network.S2CRepairOrder::handle).add();
     }
 }
