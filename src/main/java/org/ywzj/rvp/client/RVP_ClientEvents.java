@@ -57,6 +57,7 @@ import org.ywzj.rvp.client.state.RVP_ClientHitlState;
 import org.ywzj.rvp.client.state.RVP_ClientSaclosState;
 import org.ywzj.rvp.client.state.RVP_ClientTacticalRevealState;
 import org.ywzj.rvp.client.state.RVP_NvgState;
+import org.ywzj.rvp.client.state.RVP_ThermalImagerSelection;
 import org.ywzj.rvp.client.firesupport.RVP_ClientFireSupportState;
 import org.ywzj.rvp.client.gunner.RVP_ClientGunnerProfileState;
 import org.ywzj.rvp.client.state.RVP_ClientGunnerVehicleState;
@@ -1005,12 +1006,14 @@ public class RVP_ClientEvents {
     private static void ywzj_rvp$applyNvgState() {
         LocalVehiclePlayer lvp = LocalVehiclePlayer.instance;
         if (lvp == null || lvp.vehicle == null || !lvp.onVehicle()) {
+            RVP_ThermalImagerSelection.bind(null);
             RVP_NvgState.reset();
             RVP_NvgHandler.setActive(false);
             return;
         }
         RVP_NvgState.bindVehicle(lvp.vehicle.getId());
         WeaponUnit weaponUnit = lvp.getWeaponUnit();
+        RVP_ThermalImagerSelection.bind(weaponUnit);
         if (weaponUnit == null) {
             RVP_NvgHandler.setActive(false);
             return;

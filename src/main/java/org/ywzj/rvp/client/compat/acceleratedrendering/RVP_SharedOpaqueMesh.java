@@ -1,6 +1,10 @@
 package org.ywzj.rvp.client.compat.acceleratedrendering;
 
+import com.github.mcmodderanchor.simplebedrockmodel.v2.client.mesh.MeshDrawResult;
+import com.github.mcmodderanchor.simplebedrockmodel.v2.client.mesh.StaticMeshBufferSource;
 import com.github.mcmodderanchor.simplebedrockmodel.v2.client.mesh.StaticMeshRenderer;
+import com.github.mcmodderanchor.simplebedrockmodel.v2.client.mesh.capture.MeshGeometryProvider;
+import com.github.mcmodderanchor.simplebedrockmodel.v2.client.mesh.debug.MeshRenderDebug;
 import com.github.mcmodderanchor.simplebedrockmodel.v2.common.model.baked.BakedGeometryChunk;
 import com.github.mcmodderanchor.simplebedrockmodel.v2.common.model.baked.BakedVertexData;
 import com.mojang.blaze3d.systems.RenderSystem;
@@ -41,16 +45,11 @@ public final class RVP_SharedOpaqueMesh {
         PoseStack pose = new PoseStack();
         pose.last().pose().set(transform);
         pose.last().normal().set(normal);
-        // 调用 SBM 的公开缓存入口；不创建平行 GPU 池、不改 AR 或 SBM 内部资源寿命。
-        // 相同 chunk 的所有车共享局部顶点，车辆运动时仅改变本次提交的矩阵。
-        return StaticMeshRenderer.tryDraw(OWNER, new GeometryKey(chunk, material), collector -> {
-            VertexConsumer consumer = collector.buffer(material, VertexFormat.Mode.TRIANGLES);
-            writeGeometry(chunk.vertices(), consumer);
-            return true;
-        }, pose, light, overlay).owned();
+        // 调用共用缓存，维持世界与展板对待上传几何的现有处理。
+        return drawCached(chunk, material, pose, light, overlay).owned();
     }
 
-    /** 世界与展板共用开关；光影和热成像仍沿用原渲染路径。 */
+    /** 世界与展板沿用原共享开关；热缓冲有独立的绘制入口。 */
     public static boolean isEnabled() {
         return RVP_ClientConfig.isSharedOpaqueMeshEnabled()
                 && !RVP_LightingCompatibility.shadersActive() && !ThermalHandler.isActive();
@@ -75,6 +74,62 @@ public final class RVP_SharedOpaqueMesh {
             view.popPose();
             RenderSystem.applyModelViewMatrix();
         }
+    }
+
+    /** 白热材质沿用现有共享缓存，启用外部光影时维持本体的原绘制。 */
+    public static boolean canDrawThermal() {
+        return RVP_ClientConfig.isSharedOpaqueMeshEnabled()
+                && !RVP_LightingCompatibility.shadersActive() && StaticMeshRenderer.isOwnerEnabled(OWNER);
+    }
+
+    /** 在单次车体绘制中复用材质状态；SBM 调试绘制仍使用支持其属性的即时接口。 */
+    public static StaticMeshBufferSource openThermalBatch() {
+        return MeshRenderDebug.attributes == null
+                ? StaticMeshRenderer.openBatch(OWNER, StaticMeshRenderer.BatchOrder.MATERIAL)
+                : null;
+    }
+
+    /** 只提交完整三角网格；调用方已用本体材质绘制同骨上的方块。 */
+    public static boolean submitThermal(StaticMeshBufferSource batch, BakedGeometryChunk chunk, RenderType material,
+                                        PoseStack pose, int light) {
+        if (!chunk.hasVertices()) return false;
+        // 调用共用矩阵拆分，保留原始顶点变换与法线，热缓冲继续使用正在绑定的深度。
+        PanelTransform split = panelTransform(pose.last().pose(), pose.last().normal());
+        if (split == null) return false;
+        PoseStack local = new PoseStack();
+        local.last().pose().set(split.meshPose());
+        PoseStack view = RenderSystem.getModelViewStack();
+        view.pushPose();
+        try {
+            view.last().pose().mul(split.viewSuffix());
+            RenderSystem.applyModelViewMatrix();
+            if (batch != null) {
+                // SBM 在提交时存下矩阵，绘制时按材质重用绑定；待上传仍走原顶点流。
+                return batch.submit(new GeometryKey(chunk, material), geometry(chunk, material),
+                        local, light, OverlayTexture.NO_OVERLAY).hasMesh();
+            }
+            // SBM 调试模式下维持即时绘制，同样保留尚未上传几何的原始轮廓。
+            return drawCached(chunk, material, local, light, OverlayTexture.NO_OVERLAY) == MeshDrawResult.DRAWN;
+        } finally {
+            view.popPose();
+            RenderSystem.applyModelViewMatrix();
+        }
+    }
+
+    private static MeshDrawResult drawCached(BakedGeometryChunk chunk, RenderType material, PoseStack pose,
+                                             int light, int overlay) {
+        // 调用 SBM 原缓存，世界、展板与热成像共用同一份局部顶点及生命周期。
+        return StaticMeshRenderer.tryDraw(OWNER, new GeometryKey(chunk, material),
+                geometry(chunk, material), pose, light, overlay);
+    }
+
+    private static MeshGeometryProvider geometry(BakedGeometryChunk chunk, RenderType material) {
+        return collector -> {
+            VertexConsumer consumer = collector.buffer(material, VertexFormat.Mode.TRIANGLES);
+            // 调用同一局部几何导出，立即绘制和批次使用同一个缓存键及顶点布局。
+            writeGeometry(chunk.vertices(), consumer);
+            return true;
+        };
     }
 
     /** 两矩阵的乘积仍为原顶点变换；SBM 的逆线性光照变换等于原法线矩阵的转置。 */

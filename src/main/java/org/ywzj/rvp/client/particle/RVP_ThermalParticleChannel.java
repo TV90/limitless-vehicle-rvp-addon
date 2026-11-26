@@ -3,6 +3,7 @@ package org.ywzj.rvp.client.particle;
 import org.ywzj.rvp.client.performance.RVP_RenderMetric;
 import org.ywzj.rvp.client.performance.RVP_RenderStage;
 import org.ywzj.rvp.client.performance.RVP_RenderPerformance;
+import org.ywzj.rvp.client.shader.RVP_ThermalImagerPass;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.platform.GlStateManager;
 import com.mojang.blaze3d.systems.RenderSystem;
@@ -28,10 +29,12 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.util.ObfuscationReflectionHelper;
 import org.slf4j.Logger;
+import org.lwjgl.opengl.GL30;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.vehicle.client.particle.SmokeCloudParticle;
 import org.ywzj.vehicle.client.shader.ThermalHandler;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -85,6 +88,8 @@ public final class RVP_ThermalParticleChannel {
 
     /** 反射取本体 thermalChain 的失败标记：只告警一次，之后本通道静默停用（本体热成像不受影响）。 */
     private static boolean reflectionBroken = false;
+    /** 缓存字段句柄；缓冲仍跟随本体每次创建或缩放后的当前实例。 */
+    private static Field thermalChainField;
 
     private RVP_ThermalParticleChannel() {
     }
@@ -118,14 +123,14 @@ public final class RVP_ThermalParticleChannel {
         if (mc.level == null || mc.player == null || reflectionBroken) {
             return;
         }
+        // 查询当前热缓冲，与载具热网格使用相同的本体目标。
         PostChain chain = resolveThermalChain();
-        if (chain == null) {
-            return;
-        }
-        RenderTarget thermalBuffer = chain.getTempTarget("thermal_buffer");
+        RenderTarget thermalBuffer = chain == null ? null : chain.getTempTarget("thermal_buffer");
         if (thermalBuffer == null) {
             return;
         }
+        // 在最终合成前为当前武器站选择热像输出；所有类型共用本帧已经绘制的热缓冲。
+        RVP_ThermalImagerPass.configure(chain, thermalBuffer, event);
         // 调用通用性能范围，默认关闭时不申请显卡查询；所有提前返回和异常均自动封口。
         try (var performance = RVP_RenderPerformance.scope(RVP_RenderStage.THERMAL_PARTICLES)) {
             List<Particle> visible = collectVisibleParticles(event);
@@ -136,13 +141,29 @@ public final class RVP_ThermalParticleChannel {
         }
     }
 
+    /** 只在本体实际绑定热缓冲时允许载具走即时网格绘制。 */
+    public static boolean isWritingThermalBuffer() {
+        RenderTarget target = thermalBuffer();
+        return target != null && target.frameBufferId == GlStateManager._getInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
+    }
+
+    private static RenderTarget thermalBuffer() {
+        if (!ThermalHandler.isActive() || reflectionBroken) return null;
+        // 读取本体当前实例，热成像开关和窗口缩放后无需缓存失效通知。
+        PostChain chain = resolveThermalChain();
+        return chain == null ? null : chain.getTempTarget("thermal_buffer");
+    }
+
     /**
      * 反射读取本体 {@code ThermalHandler.thermalChain} 私有静态字段（每帧读取，自动跟随
      * 本体重建/resize 换新实例；mod 类字段不混淆，名字稳定）。失败只告警一次并停用本通道。
      */
     private static PostChain resolveThermalChain() {
         try {
-            return ObfuscationReflectionHelper.getPrivateValue(ThermalHandler.class, null, "thermalChain");
+            if (thermalChainField == null) {
+                thermalChainField = ObfuscationReflectionHelper.findField(ThermalHandler.class, "thermalChain");
+            }
+            return (PostChain) thermalChainField.get(null);
         } catch (Throwable t) {
             reflectionBroken = true;
             LOGGER.warn("[RVP][ThermalParticle] 无法反射本体 ThermalHandler.thermalChain，"

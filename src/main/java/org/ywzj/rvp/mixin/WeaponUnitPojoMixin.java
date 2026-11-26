@@ -1,11 +1,13 @@
 package org.ywzj.rvp.mixin;
 
+import com.google.gson.annotations.JsonAdapter;
 import com.google.gson.annotations.SerializedName;
 import net.minecraft.world.phys.Vec3;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.ywzj.rvp.config.RVP_RearDepressionBlockConfig;
 import org.ywzj.rvp.config.RVP_SightFireDisguiseConfig;
+import org.ywzj.rvp.config.RVP_ThermalImagerType;
 import org.ywzj.rvp.ext.WeaponUnitPojoExt;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitPojo;
 
@@ -81,6 +83,12 @@ public class WeaponUnitPojoMixin implements WeaponUnitPojoExt {
     @Unique
     private boolean ywzj_rvp$withNightVision;
 
+    /** 观瞄热像类型（无单位），可填字符串或按切换顺序排列的数组；启用热像时生效，默认 white_hot。 */
+    @SerializedName("thermal_imager_type")
+    @JsonAdapter(RVP_ThermalImagerType.ListAdapter.class)
+    @Unique
+    private List<RVP_ThermalImagerType> ywzj_rvp$thermalImagerTypes;
+
     /** 焦点锁定吸附载具半径，单位为格；0/未配置=关闭。
      *  <p>用 Float 而非 float：Unsafe 分配下未配置落 null，由 getter 兜底 0（关闭）。 */
     @SerializedName("rvp_focus_lock_snap_radius")
@@ -147,6 +155,11 @@ public class WeaponUnitPojoMixin implements WeaponUnitPojoExt {
     @Override
     public boolean ywzj_rvp$withNightVision() {
         return ywzj_rvp$withNightVision;
+    }
+
+    @Override
+    public List<RVP_ThermalImagerType> ywzj_rvp$getThermalImagerTypes() {
+        return ywzj_rvp$thermalImagerTypes == null ? RVP_ThermalImagerType.DEFAULT_TYPES : ywzj_rvp$thermalImagerTypes;
     }
 
     @Override

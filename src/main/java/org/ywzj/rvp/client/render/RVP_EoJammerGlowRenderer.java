@@ -30,6 +30,7 @@ import org.ywzj.vehicle.client.render.entity.vehicle.VehicleRender;
 import org.ywzj.vehicle.client.resource.ClientAssetsManager;
 import org.ywzj.vehicle.client.resource.vehicle.VehicleBedrockModel;
 import org.ywzj.vehicle.client.resource.vehicle.VehicleDisplay;
+import org.ywzj.vehicle.client.shader.ThermalHandler;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 
@@ -161,11 +162,9 @@ public final class RVP_EoJammerGlowRenderer {
         if (glowPlates.isEmpty()) {
             return;
         }
-        // 白天只是人眼看不出这盏灯：窗帘干扰灯的能量在红外波段，像增强管会把它整片转成可见光。
-        // 所以开着夜视时不看天光，玻片发红、光晕、周围照亮全都照常出；夜视开关是本机视角的判据
-        // （isActive 只跟随本机夜视状态，与环境亮度无关），没戴夜视的观察者仍按下面的夜间条件走。
-        boolean nightVision = RVP_NvgHandler.isActive();
-        if (!nightVision && !isNight(vehicle.level())) {
+        // 夜视和热像都需要实际发光的玻片，供各自的眩光提取读取。
+        boolean sensorView = RVP_NvgHandler.isActive() || ThermalHandler.isActive();
+        if (!sensorView && !isNight(vehicle.level())) {
             RVP_ScreenLightManager.INSTANCE.removePersistent(vehicleKey, RVP_LightSourceType.EO_JAMMER);
             return;
         }
@@ -262,7 +261,7 @@ public final class RVP_EoJammerGlowRenderer {
         // Shader 内按水平 140° × 竖直 180° 裁切，不会像半球那样往玻片两侧洒光。
         // 夜视仪下换用更大更亮的一档：干扰灯的能量主要在红外波段，肉眼只见微弱红晕，
         // 像增强管会把它整片放大，所以同一盏灯在滤镜里半径和亮度都要抬一档。
-        RVP_LightParameters parameters = RVP_NvgHandler.isActive()
+        RVP_LightParameters parameters = (RVP_NvgHandler.isActive() || ThermalHandler.isActive())
                 ? RVP_LightParameters.eoJammerNightVision()
                 : RVP_LightParameters.eoJammer();
         // 本车摘掉光晕、保留照亮：bloom 只门控光晕那一路，intensity 与 surfaceWeight 不受影响。

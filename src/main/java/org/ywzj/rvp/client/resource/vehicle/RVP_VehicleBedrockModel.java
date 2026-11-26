@@ -1,6 +1,7 @@
 package org.ywzj.rvp.client.resource.vehicle;
 
 import com.github.mcmodderanchor.simplebedrockmodel.v1.common.resource.pojo.BedrockModelPOJO;
+import com.github.mcmodderanchor.simplebedrockmodel.v2.common.model.baked.BakedGeometryChunk;
 import com.github.mcmodderanchor.simplebedrockmodel.v2.common.model.baked.BakerOptions;
 import com.github.mcmodderanchor.simplebedrockmodel.v2.common.model.baked.BakedBedrockModel;
 import com.github.mcmodderanchor.simplebedrockmodel.v2.common.model.baked.BakedGeometryChunkRenderer;
@@ -8,12 +9,15 @@ import com.github.mcmodderanchor.simplebedrockmodel.v2.common.model.runtime.Bake
 import com.github.mcmodderanchor.simplebedrockmodel.v2.common.model.runtime.BoneState;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import org.ywzj.rvp.client.compat.acceleratedrendering.RVP_AcceleratedMeshCompat;
 import org.ywzj.rvp.client.light.RVP_SmokeLightPass;
+import org.ywzj.rvp.client.particle.RVP_ThermalParticleChannel;
 import org.ywzj.rvp.client.compat.acceleratedrendering.RVP_SharedOpaqueMesh;
 import org.ywzj.rvp.client.render.RVP_HitPanelMesh;
 import org.ywzj.rvp.client.render.RVP_RenderTypes;
@@ -77,12 +81,23 @@ public class RVP_VehicleBedrockModel extends VehicleBedrockModel {
     @Override
     public void renderToBuffer(BakedModelInstance instance, PoseStack poseStack,
                                MultiBufferSource source, ResourceLocation texture, int packedLight) {
+        // 热成像经实体分发器绘制，AR 可能在本体热缓冲的顶点源外加一层透明代理。
+        if (panelMeshPass != null && texture != null && largestMeshVertexCount > 0
+                && packedLight == LightTexture.FULL_BRIGHT
+                && RVP_SharedOpaqueMesh.canDrawThermal()) {
+            MultiBufferSource.BufferSource buffers = Minecraft.getInstance().renderBuffers().bufferSource();
+            if ((source == buffers || RVP_AcceleratedMeshCompat.isPanelSource(source, buffers))
+                    && RVP_ThermalParticleChannel.isWritingThermalBuffer()) {
+                renderSharedBody(instance, poseStack, buffers, texture, packedLight, true);
+                return;
+            }
+        }
         // 调用显式展板窗口；不改 AR 阶段标记，非标准缓冲与其它界面保持原提交语义。
         if (panelMeshPass != null && texture != null && RVP_HitPanelMesh.accepts(source)
                 && RVP_SharedOpaqueMesh.isEnabled()
                 && (unconditionalSharedMesh
                 || largestMeshVertexCount >= RVP_ClientConfig.getAcceleratedDenseMinVertices())) {
-            renderPanelBody(instance, poseStack, source, texture, packedLight);
+            renderSharedBody(instance, poseStack, source, texture, packedLight, false);
             return;
         }
         // 调用可选 AR 桥，仅包装主体的不透明三角形提交；骨骼遍历和动画继续由本体/SBM 执行。
@@ -91,8 +106,8 @@ public class RVP_VehicleBedrockModel extends VehicleBedrockModel {
         super.renderToBuffer(instance, poseStack, meshSource, texture, packedLight);
     }
 
-    private void renderPanelBody(BakedModelInstance instance, PoseStack pose, MultiBufferSource source,
-                                 ResourceLocation texture, int light) {
+    private void renderSharedBody(BakedModelInstance instance, PoseStack pose, MultiBufferSource source,
+                                  ResourceLocation texture, int light, boolean thermal) {
         // 调用实例自己的定义，与 SBM instance.renderToBuffer 一致；重载不能串用新/旧骨树。
         BakedBedrockModel baked = instance.baseModel();
         if (panelMeshModel != baked) {
@@ -106,20 +121,34 @@ public class RVP_VehicleBedrockModel extends VehicleBedrockModel {
             if (bone != null) bone.visible = false;
         }
         // 调用 SBM 原 cube 通道，保持隐藏骨、自发光与面剔除；在即时 mesh 前先提交其深度。
-        baked.renderBoneTree(instance, pose, source.getBuffer(RenderType.entityCutout(texture)),
+        RenderType cubeMaterial = RenderType.entityCutout(texture);
+        baked.renderBoneTree(instance, pose, source.getBuffer(cubeMaterial),
                 light, OverlayTexture.NO_OVERLAY, 1, 1, 1, 1, true);
-        RVP_HitPanelMesh.flush();
+        if (thermal) {
+            // 只冲刷热缓冲内的本材质，保留本体最后统一提交的透明与特殊骨。
+            ((MultiBufferSource.BufferSource) source).endBatch(cubeMaterial);
+        } else {
+            RVP_HitPanelMesh.flush();
+        }
         RenderType material = RVP_RenderTypes.polyMeshCutout(texture);
         int threshold = unconditionalSharedMesh ? 0 : RVP_ClientConfig.getAcceleratedDenseMinVertices();
-        // 调用独立骨树遍历；共享只读局部几何，每台车/回放代理仍用自己的骨骼矩阵与可见性。
-        panelMeshPass.render(instance, pose, light, (chunk, stack, boneLight) -> {
-            if (!RVP_SharedOpaqueMesh.tryDrawPanel(chunk, material, stack, boneLight,
-                    OverlayTexture.NO_OVERLAY, threshold)) {
-                // 小块、非均匀缩放或不支持材质继续调用 SBM；不强行解包 AR 消费者。
-                BakedGeometryChunkRenderer.INSTANCE.renderVertexChunk(chunk, stack, source.getBuffer(material),
-                        boneLight, OverlayTexture.NO_OVERLAY, 1, 1, 1, 1);
+        // 在本车绘制结束前冲刷热网格，特殊骨与透明件继续使用本体的绘制时序。
+        try (var batch = thermal ? RVP_SharedOpaqueMesh.openThermalBatch() : null) {
+            // 调用独立骨树遍历；每台车仍使用自己的骨骼矩阵与可见性。
+            panelMeshPass.render(instance, pose, light, (chunk, stack, boneLight) -> {
+                if (!chunk.hasVertices()) return;
+                // 调用当前窗口的静态网格入口；缓存待上传或不支持的骨骼继续走原顶点流。
+                boolean drawn = thermal ? RVP_SharedOpaqueMesh.submitThermal(batch, chunk, material, stack, boneLight)
+                        : RVP_SharedOpaqueMesh.tryDrawPanel(chunk, material, stack, boneLight,
+                        OverlayTexture.NO_OVERLAY, threshold);
+                if (!drawn) renderUncachedMesh(chunk, stack, source, material, boneLight);
+            });
+            if (batch != null && batch.endBatch().discardedItems() != 0) {
+                // 调用原三角网格绘制补回被驱动或缓存丢弃的车身，避免出现热成像缺面。
+                panelMeshPass.render(instance, pose, light,
+                        (chunk, stack, boneLight) -> renderUncachedMesh(chunk, stack, source, material, boneLight));
             }
-        });
+        }
         // 调用既有 display no_cull_bones 白名单，严格保留指定薄片补画，其余主体仍单面剔除。
         for (String name : RVP_DisplayBackendUtil.getNoCullBones(this)) {
             int index = baked.getIndex(name);
@@ -127,6 +156,14 @@ public class RVP_VehicleBedrockModel extends VehicleBedrockModel {
                     RVP_RenderTypes.polyMeshCutoutNoCull(texture), light, OverlayTexture.NO_OVERLAY,
                     1, 1, 1, 1, false);
         }
+    }
+
+    private static void renderUncachedMesh(BakedGeometryChunk chunk, PoseStack pose, MultiBufferSource source,
+                                           RenderType material, int light) {
+        if (!chunk.hasVertices()) return;
+        // 沿用 SBM 原顶点布局、深度测试和光照，不拆开 AR 消费者。
+        BakedGeometryChunkRenderer.INSTANCE.renderVertexChunk(chunk, pose, source.getBuffer(material),
+                light, OverlayTexture.NO_OVERLAY, 1, 1, 1, 1);
     }
 
     @Override

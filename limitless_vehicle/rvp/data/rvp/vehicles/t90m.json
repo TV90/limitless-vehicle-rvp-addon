@@ -389,6 +389,16 @@
       "optical_sight_type": "crt_ui",
       "with_stabilizer": true,
       "with_thermal_imager": true,
+      "thermal_imager_type": [
+        "white_hot",
+        "low_res_red_hot",
+        "yellow_purple",
+        "low_res_white_hot",
+        "very_low_res_white_hot",
+        "black_hot",
+        "green_low_light",
+        "blue_low_light"
+      ],
       "zoom_max": 8,
       "rvp_sight_fire_disguise": {
         "disguise_ticks": 1,
@@ -515,6 +525,16 @@
       ],
       "optical_sight_type": "crt_ui",
       "with_thermal_imager": true,
+      "thermal_imager_type": [
+        "white_hot",
+        "low_res_red_hot",
+        "yellow_purple",
+        "low_res_white_hot",
+        "very_low_res_white_hot",
+        "black_hot",
+        "green_low_light",
+        "blue_low_light"
+      ],
       "zoom_max": 4,
       "rvp_sight_fire_disguise": {
         "disguise_ticks": 1,

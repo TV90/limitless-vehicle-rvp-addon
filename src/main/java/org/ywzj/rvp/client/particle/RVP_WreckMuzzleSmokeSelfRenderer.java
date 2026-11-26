@@ -227,15 +227,15 @@ public final class RVP_WreckMuzzleSmokeSelfRenderer {
      * 热成像重画入口（2026-10-08）：由 {@link RVP_ThermalParticleChannel} 在 thermal_buffer
      * 绑定状态下调用（与温压/HBM 自绘几何 renderThermal 同模式——自绘烟脱离了 ParticleEngine，
      * 热通道的引擎批次捞取与登记表两条路径都覆盖不到，此前热成像视角下炮口烟不进热缓冲、
-     * 被实体热源"覆盖"）。完全自包含：自行补视图（pushPose+eventPose，identity 起点单次变换）、
-     * 自设状态（粒子 shader + 热成像白热混合 + 深度只测不写 + 光照层）、按与主画面相同的
+     * 被实体热源"覆盖"）。复用热粒子通道已设置的相机矩阵，避免再次旋转相机相对顶点。
+     * 使用粒子 shader、白热混合、深度测试和光照层，按与主画面相同的
      * 距离降序排序后按贴图分组重画；RenderTarget 的还原由通道 finally 兜底，本方法不碰。
      * 白烟 RGB 亮色经白热混合（RGB 亮度叠加、alpha over 累积）写入热缓冲——烟越浓越热，
      * 热成像下正确遮挡后方实体热源。
      *
      * @param event 关卡渲染阶段事件（AFTER_PARTICLES，热缓冲已绑定）
      */
-    public static void renderThermal(net.minecraftforge.client.event.RenderLevelStageEvent event) {
+    static void renderThermal(RenderLevelStageEvent event) {
         if (ACTIVE.isEmpty()) {
             return;
         }
@@ -245,11 +245,7 @@ public final class RVP_WreckMuzzleSmokeSelfRenderer {
         sorted.sort(Comparator.comparingDouble((RVP_WreckMuzzleSmokeParticle particle) ->
                 particle.distanceSqrTo(camera)).reversed());
 
-        PoseStack modelViewStack = RenderSystem.getModelViewStack();
-        modelViewStack.pushPose();
         try {
-            modelViewStack.mulPoseMatrix(event.getPoseStack().last().pose());
-            RenderSystem.applyModelViewMatrix();
             RenderSystem.setShader(GameRenderer::getParticleShader);
             RenderSystem.enableDepthTest();
             RenderSystem.enableBlend();
@@ -284,8 +280,6 @@ public final class RVP_WreckMuzzleSmokeSelfRenderer {
                 }
             }
         } finally {
-            modelViewStack.popPose();
-            RenderSystem.applyModelViewMatrix();
             RenderSystem.depthMask(true);
             RenderSystem.disableBlend();
             RenderSystem.defaultBlendFunc();

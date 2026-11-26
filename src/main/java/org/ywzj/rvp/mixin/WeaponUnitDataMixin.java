@@ -14,6 +14,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.ywzj.rvp.debug.RVP_HitboxDebug;
 import org.ywzj.rvp.config.RVP_RearDepressionBlockConfig;
 import org.ywzj.rvp.config.RVP_SightFireDisguiseConfig;
+import org.ywzj.rvp.config.RVP_ThermalImagerType;
 import org.ywzj.rvp.ext.WeaponUnitDataExt;
 import org.ywzj.rvp.ext.WeaponUnitPojoExt;
 import org.ywzj.rvp.mixin.accessor.PartUnitDataAccessor;
@@ -84,6 +85,10 @@ public class WeaponUnitDataMixin implements WeaponUnitDataExt {
     @Unique
     private boolean ywzj_rvp$withNightVision;
 
+    /** 本站启用的观瞄热像，按载具配置顺序排列，默认仅白热。 */
+    @Unique
+    private List<RVP_ThermalImagerType> ywzj_rvp$thermalImagerTypes = RVP_ThermalImagerType.DEFAULT_TYPES;
+
     /** 焦点锁定吸附载具半径，单位为格；0=关闭。 */
     @Unique
     private float ywzj_rvp$focusLockSnapRadius;
@@ -103,6 +108,8 @@ public class WeaponUnitDataMixin implements WeaponUnitDataExt {
             this.ywzj_rvp$sightFireDisguise = ext.ywzj_rvp$getSightFireDisguise();
             this.ywzj_rvp$rearDepressionBlock = ext.ywzj_rvp$getRearDepressionBlock();
             this.ywzj_rvp$withNightVision = ext.ywzj_rvp$withNightVision();
+            // 从同一武器站的配置读取热像类型，换座时随当前武器站切换。
+            this.ywzj_rvp$thermalImagerTypes = ext.ywzj_rvp$getThermalImagerTypes();
             this.ywzj_rvp$focusLockSnapRadius = ext.ywzj_rvp$getFocusLockSnapRadius();
             RVP_HitboxDebug.noteConfigLoaded(this.ywzj_rvp$followParentOnlyPartUnitIds);
         }
@@ -243,6 +250,11 @@ public class WeaponUnitDataMixin implements WeaponUnitDataExt {
     @Override
     public boolean ywzj_rvp$withNightVision() {
         return ywzj_rvp$withNightVision;
+    }
+
+    @Override
+    public List<RVP_ThermalImagerType> ywzj_rvp$getThermalImagerTypes() {
+        return ywzj_rvp$thermalImagerTypes;
     }
 
     @Override

@@ -3,6 +3,7 @@ package org.ywzj.rvp.ext;
 import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.config.RVP_RearDepressionBlockConfig;
 import org.ywzj.rvp.config.RVP_SightFireDisguiseConfig;
+import org.ywzj.rvp.config.RVP_ThermalImagerType;
 
 import java.util.List;
 
@@ -40,6 +41,14 @@ public interface WeaponUnitPojoExt {
 
     /** 夜视仪选配（weapon unit 级，与本体 with_thermal_imager 同级）；默认 false。 */
     boolean ywzj_rvp$withNightVision();
+
+    /** 按配置顺序取得该站启用的热像，至少包含一种。 */
+    List<RVP_ThermalImagerType> ywzj_rvp$getThermalImagerTypes();
+
+    /** 单类型接口返回本站的首选热像。 */
+    default RVP_ThermalImagerType ywzj_rvp$getThermalImagerType() {
+        return ywzj_rvp$getThermalImagerTypes().get(0);
+    }
 
     /** 焦点锁定吸附载具半径，单位为格；0/未配置=关闭。 */
     float ywzj_rvp$getFocusLockSnapRadius();
