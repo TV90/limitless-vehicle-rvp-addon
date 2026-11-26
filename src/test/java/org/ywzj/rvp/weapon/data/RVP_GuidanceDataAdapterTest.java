@@ -5,7 +5,11 @@ import com.google.gson.JsonParseException;
 import com.google.gson.annotations.JsonAdapter;
 import com.google.gson.annotations.SerializedName;
 import org.junit.jupiter.api.Test;
+import org.ywzj.rvp.config.RVP_ThermalImagerType;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
+import org.ywzj.rvp.guidance.RVP_TvVideoModeMask;
+
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -17,6 +21,43 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class RVP_GuidanceDataAdapterTest {
 
     private final Gson gson = new Gson();
+
+    @Test
+    void loadsViewDataWithoutChangingOpticalGuidanceType() {
+        for (RVP_EnumGuidanceType type : List.of(RVP_EnumGuidanceType.TV, RVP_EnumGuidanceType.ATV)) {
+            RVP_GuidanceData guidance = parseGuidance("""
+                    {
+                      "guidance_type": "%s",
+                      "allow_missile_view": true,
+                      "missile_view_video_modes": ["very_low_res_white_hot", "black_hot", "VERY_LOW_RES_WHITE_HOT"],
+                      "missile_view_fixed_zoom": 4
+                    }
+                    """.formatted(type));
+
+            assertEquals(RVP_GuidanceData.class, guidance.getClass());
+            assertEquals(type, guidance.getGuidanceType());
+            assertTrue(guidance.allowsMissileView());
+            assertEquals(4f, guidance.getMissileViewFixedZoom());
+            assertEquals(RVP_TvVideoModeMask.THERMAL, RVP_TvVideoModeMask.parse(guidance.getMissileViewVideoModes().get(0)));
+            assertEquals(List.of(RVP_ThermalImagerType.VERY_LOW_RES_WHITE_HOT, RVP_ThermalImagerType.BLACK_HOT),
+                    RVP_TvVideoModeMask.thermalTypes(guidance.getMissileViewVideoModes()));
+        }
+    }
+
+    @Test
+    void allowsEveryThermalPaletteInGenericMissileThermalMode() {
+        List<RVP_ThermalImagerType> types = RVP_TvVideoModeMask.thermalTypes(List.of("THERMAL"));
+        assertEquals(List.of(RVP_ThermalImagerType.values()), types);
+        for (RVP_ThermalImagerType type : types) {
+            assertEquals(RVP_TvVideoModeMask.THERMAL, RVP_TvVideoModeMask.parse(type.name()));
+        }
+
+        RVP_GuidanceData legacy = parseGuidance("""
+                {"guidance_type": "TV"}
+                """);
+        assertTrue(legacy.getMissileViewVideoModes().isEmpty());
+        assertEquals(0f, legacy.getMissileViewFixedZoom());
+    }
 
     @Test
     void loadsBaseGuidanceAndPreservesAngleSemantics() {

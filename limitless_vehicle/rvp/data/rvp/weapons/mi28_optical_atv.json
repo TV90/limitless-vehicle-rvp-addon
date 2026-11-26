@@ -50,6 +50,8 @@
     "max_guidance_angle": 120,
     "max_lock_angle": 120,
     "allow_missile_view": true,
+    "missile_view_video_modes": ["very_low_res_white_hot"],
+    "missile_view_fixed_zoom": 4,
     "recognition_lock_threshold": 0.65,
     "recognition_hold_ticks": 12,
     "scan_interval_tick": 4,

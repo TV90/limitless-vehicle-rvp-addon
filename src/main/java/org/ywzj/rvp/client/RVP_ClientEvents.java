@@ -297,7 +297,7 @@ public class RVP_ClientEvents {
     }
 
     /**
-     * HITL 画面按独立倍率输出：每次入镜固定 1×，不继承发射前观瞄/第三人称放大；
+     * HITL 画面按独立倍率输出：优先使用弹药配置的固定倍率，可调倍率从 1× 开始；
      * 退出后本体仍按武器站原 zoom 计算，不继承 HITL 中滚轮调出的倍率。
      * 在本体的 NORMAL 监听后重置武器站倍率，让 Zume 等 LOWEST 监听能继续缩放画面。
      */
@@ -1004,6 +1004,10 @@ public class RVP_ClientEvents {
      * </ul>
      */
     private static void ywzj_rvp$applyNvgState() {
+        if (RVP_ClientHitlState.isActive()) {
+            RVP_NvgHandler.setActive(false);
+            return;
+        }
         LocalVehiclePlayer lvp = LocalVehiclePlayer.instance;
         if (lvp == null || lvp.vehicle == null || !lvp.onVehicle()) {
             RVP_ThermalImagerSelection.bind(null);

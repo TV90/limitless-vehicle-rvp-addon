@@ -49,6 +49,7 @@ import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.pojo.WarnType;
+import java.util.List;
 import java.util.function.Function;
 
 /**
@@ -150,7 +151,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         super.initFromWeapon(data, kind, vehicle, shooter, spawnPos, aim, initialMotion);
         if (data != null && org.ywzj.rvp.guidance.RVP_OpticalTargeting.isOptical(
                 data.getGuidanceData().getGuidanceType())) {
-            hitlVideoModeMask = HITL_MODE_COLOR | HITL_MODE_BW;
+            configureVideoModes(data.getGuidanceData().getMissileViewVideoModes(), HITL_MODE_COLOR | HITL_MODE_BW);
         }
         if (data == null
                 || !(data.getGuidanceData() instanceof RVP_GuidanceDataHITL hitl)) {
@@ -163,8 +164,8 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         this.hitlControlRange = Math.max(hitl.getHitlMaxControlDist(), 1);
         this.hitlTimeoutTick = Math.max(hitl.getHitlMaxControlTick(), 1);
         this.hitlLife = this.hitlTimeoutTick;
-        this.hitlVideoModeMask = resolveVideoModeMask(hitl);
-        this.hitlDefaultVideoMode = resolveDefaultVideoMode(hitl);
+        List<String> videoModes = hitl.getMissileViewVideoModes();
+        configureVideoModes(videoModes.isEmpty() ? hitl.getHitlVideoModes() : videoModes, HITL_MODE_ALL);
         this.hitlControlMode = switch (data.getGuidanceData().getGuidanceType()) {
             case HITL_TV -> RVP_EnumHitlControlMode.DESIGNATE;
             case HITL_CLOS_TV -> RVP_EnumHitlControlMode.MOUSE;
@@ -186,22 +187,17 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         this.hitlSteeringPitch = aim.xRot();
     }
 
-    private static int resolveVideoModeMask(RVP_GuidanceDataHITL hitl) {
+    /** 使用生成包原有画面位掩码，色表细项与倍率由同步后的武器配置读取。 */
+    private void configureVideoModes(List<String> modes, int defaultMask) {
         int mask = 0;
-        for (String mode : hitl.getHitlVideoModes()) {
-            mask |= RVP_TvVideoModeMask.parse(mode);
-        }
-        return mask != 0 ? mask : HITL_MODE_ALL;
-    }
-
-    private static int resolveDefaultVideoMode(RVP_GuidanceDataHITL hitl) {
-        for (String mode : hitl.getHitlVideoModes()) {
+        int first = 0;
+        for (String mode : modes) {
             int parsed = RVP_TvVideoModeMask.parse(mode);
-            if (parsed != 0) {
-                return parsed;
-            }
+            mask |= parsed;
+            if (first == 0) first = parsed;
         }
-        return HITL_MODE_COLOR;
+        hitlVideoModeMask = mask == 0 ? defaultMask : mask;
+        hitlDefaultVideoMode = first == 0 ? HITL_MODE_COLOR : first;
     }
 
     @Override

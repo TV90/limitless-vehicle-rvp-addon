@@ -21,7 +21,7 @@ import java.io.IOException;
 import java.lang.ref.WeakReference;
 import java.util.List;
 
-/** 复用本体热成像的两个处理阶段。先合成灰阶、场景亮度与光源掩码，再按武器站类型输出。 */
+/** 复用本体热成像的两个处理阶段。先合成灰阶、场景亮度与光源掩码，再按当前视角的热像类型输出。 */
 public final class RVP_ThermalImagerPass extends PostPass {
     /** 同一条资源链加载失败只报告一次，重载后允许重试。 */
     private static WeakReference<PostChain> failedChain = new WeakReference<>(null);
@@ -105,10 +105,10 @@ public final class RVP_ThermalImagerPass extends PostPass {
     }
 
     private static RVP_ThermalImagerType stationType() {
+        if (RVP_ClientHitlState.isActive()) return RVP_ClientHitlState.getVideoThermalType();
         LocalVehiclePlayer player = LocalVehiclePlayer.instance;
-        // 弹头画面有自己的视频模式；只在载具观瞄镜中读取当前武器站。
         if (player == null || player.viewType != LocalVehiclePlayer.ViewType.SCOPE
-                || !player.onVehicle() || RVP_ClientHitlState.isActive()) return RVP_ThermalImagerType.WHITE_HOT;
+                || !player.onVehicle()) return RVP_ThermalImagerType.WHITE_HOT;
         WeaponUnit station = player.getWeaponUnit();
         return station != null && station.withThermalImager()
                 ? RVP_ThermalImagerSelection.selected(station) : RVP_ThermalImagerType.WHITE_HOT;

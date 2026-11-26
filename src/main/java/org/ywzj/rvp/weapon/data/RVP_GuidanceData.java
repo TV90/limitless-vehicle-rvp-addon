@@ -5,6 +5,8 @@ import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 
 import org.jetbrains.annotations.Nullable;
 
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -20,6 +22,14 @@ public class RVP_GuidanceData {
     /** TV/ATV 允许操作手查看弹载画面；默认关闭，观察不授予操控权。 */
     @SerializedName("allow_missile_view")
     private boolean allowMissileView;
+
+    /** 弹头观察可选画面，首项为默认。支持 COLOR、BW、THERMAL 或具体热像类型。省略时沿用原画面配置。 */
+    @SerializedName("missile_view_video_modes")
+    private List<String> missileViewVideoModes;
+
+    /** 弹头观察固定倍率，单位为倍。0 或省略时允许在原有范围内用滚轮调倍率。 */
+    @SerializedName("missile_view_fixed_zoom")
+    private float missileViewFixedZoom;
 
     /** 游戏内图像锁定最低置信度，0～1，默认 0.65。 */
     @SerializedName("recognition_lock_threshold")
@@ -47,6 +57,14 @@ public class RVP_GuidanceData {
     }
 
     public boolean allowsMissileView() { return allowMissileView; }
+
+    public List<String> getMissileViewVideoModes() {
+        return missileViewVideoModes == null ? List.of() : Collections.unmodifiableList(missileViewVideoModes);
+    }
+
+    public float getMissileViewFixedZoom() {
+        return Float.isFinite(missileViewFixedZoom) ? Math.max(0f, missileViewFixedZoom) : 0f;
+    }
 
     public float getRecognitionLockThreshold() {
         return Float.isFinite(recognitionLockThreshold) ? Math.max(0.05f, Math.min(1f, recognitionLockThreshold)) : 0.65f;

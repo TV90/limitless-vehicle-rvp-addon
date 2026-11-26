@@ -12,18 +12,25 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraft.util.Mth;
 import org.ywzj.rvp.client.RVP_Keys;
 import org.ywzj.rvp.client.shader.TVMissileVideoPostHandler;
+import org.ywzj.rvp.config.RVP_ThermalImagerType;
 import org.ywzj.rvp.debug.RVP_DebugFlags;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.rvp.guidance.RVP_EnumHitlControlMode;
+import org.ywzj.rvp.guidance.RVP_TvVideoModeMask;
 import org.ywzj.rvp.network.C2SExitHitlView;
 import org.ywzj.rvp.network.C2SHitlDesignate;
 import org.ywzj.rvp.network.C2SHitlDetonate;
 import org.ywzj.rvp.network.C2SHitlSteeringInput;
 import org.ywzj.rvp.network.RVP_Network;
+import org.ywzj.rvp.weapon.data.RVP_GuidanceDataHITL;
+import org.ywzj.rvp.weapon.data.RVP_WeaponData;
+import org.ywzj.vehicle.client.shader.ThermalHandler;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
+
+import java.util.List;
 
 public class RVP_ClientHitlState {
 
@@ -54,6 +61,13 @@ public class RVP_ClientHitlState {
     private static LocalVehiclePlayer.ViewType prevViewType;
     private static RVP_EnumVideoMode videoMode = RVP_EnumVideoMode.COLOR;
     private static boolean videoModeUserSelected;
+    /** 当前弹头画面的独立热像选择。0 为数据列表中的首档。 */
+    private static List<RVP_ThermalImagerType> videoThermalTypes = RVP_TvVideoModeMask.THERMAL_TYPES;
+    private static int videoThermalIndex;
+    /** 当前弹头画面的固定倍率，0 表示使用滚轮倍率。 */
+    private static float fixedVideoZoom;
+    /** 缓存数据对象，切换或热重载时重新选择画面选项。 */
+    private static RVP_WeaponData videoWeapon;
     /** 独立摇杆输入；回中使用单调时间，网络仍每个逻辑刻发送一次。 */
     private static final RVP_HitlSteeringInput steering = new RVP_HitlSteeringInput();
     private static float lookOffsetYaw;
@@ -62,7 +76,7 @@ public class RVP_ClientHitlState {
     private static float displayLookOffsetPitch;
     private static final float LOOK_OFFSET_TAU = 0.055f;
     private static boolean initialDesignateSent;
-    /** 当前 HITL 画面倍率；每次入镜固定从 1 开始（发射前放大状态不继承）。 */
+    /** 可变倍率的弹头画面每次入镜从 1 倍开始。 */
     private static float hitlZoom = HITL_ZOOM_MIN;
     /** 本次入镜的起始 gameTime，用于“发射 2 秒内未按 R 标记”提示。 */
     private static long launchTick = -1L;
@@ -164,12 +178,12 @@ public class RVP_ClientHitlState {
 
     /** 当前人在回路画面倍率（1 = 不放大）。 */
     public static float getHitlZoom() {
-        return hitlZoom;
+        return fixedVideoZoom > 0f ? fixedVideoZoom : hitlZoom;
     }
 
     /** 滚轮调整画面倍率：向上（正增量）放大、向下缩小；只改 HITL 状态，不触及武器站 zoom。 */
     public static void adjustHitlZoom(double scrollDelta) {
-        if (scrollDelta == 0.0) {
+        if (scrollDelta == 0.0 || fixedVideoZoom > 0f) {
             return;
         }
         hitlZoom = Mth.clamp(hitlZoom * (float) Math.pow(HITL_ZOOM_STEP, scrollDelta),
@@ -279,6 +293,33 @@ public class RVP_ClientHitlState {
         return videoMode;
     }
 
+    public static RVP_ThermalImagerType getVideoThermalType() {
+        return videoThermalTypes.get(videoThermalIndex);
+    }
+
+    private static void resetVideoOptics() {
+        videoWeapon = null;
+        videoThermalTypes = RVP_TvVideoModeMask.THERMAL_TYPES;
+        videoThermalIndex = 0;
+        fixedVideoZoom = 0f;
+        hitlZoom = HITL_ZOOM_MIN;
+    }
+
+    private static void updateVideoOptics(RVP_MissileEntity missile) {
+        var weapon = missile.getResolvedWeaponConfig();
+        if (weapon == null || videoWeapon == weapon) return;
+        videoWeapon = weapon;
+        var videoGuidance = weapon.getGuidanceData();
+        List<String> modes = videoGuidance.getMissileViewVideoModes();
+        if (modes.isEmpty() && videoGuidance instanceof RVP_GuidanceDataHITL hitl) {
+            modes = hitl.getHitlVideoModes();
+        }
+        videoThermalTypes = RVP_TvVideoModeMask.thermalTypes(modes);
+        videoThermalIndex = 0;
+        float requested = videoGuidance.getMissileViewFixedZoom();
+        fixedVideoZoom = requested > 0f ? Mth.clamp(requested, HITL_ZOOM_MIN, HITL_ZOOM_MAX) : 0f;
+    }
+
     public static float getHitlYaw() {
         steering.advance(System.nanoTime());
         return steering.yaw();
@@ -333,7 +374,7 @@ public class RVP_ClientHitlState {
         if (missileChanged) {
             videoMode = RVP_EnumVideoMode.COLOR;
             videoModeUserSelected = false;
-            hitlZoom = HITL_ZOOM_MIN;
+            resetVideoOptics();
             launchTick = Minecraft.getInstance().level != null
                     ? Minecraft.getInstance().level.getGameTime() : -1L;
             redesignatePressedSinceLaunch = false;
@@ -388,6 +429,7 @@ public class RVP_ClientHitlState {
 
     /** 释放操控与镜头；终结提示可以在释放后接着播放。 */
     private static void clearSession() {
+        boolean thermalView = isActive() && videoMode == RVP_EnumVideoMode.THERMAL;
         // 退出镜头时回收额外缓存并发送当前会话的退出心跳，未启用时为空操作。
         org.ywzj.rvp.client.hitl.RVP_ClientHitlRemoteView.clear(true);
         RVP_ClientHitlCamera.reset();
@@ -400,8 +442,9 @@ public class RVP_ClientHitlState {
         controlSeq = 0;
         videoMode = RVP_EnumVideoMode.COLOR;
         videoModeUserSelected = false;
-        hitlZoom = HITL_ZOOM_MIN;
+        resetVideoOptics();
         TVMissileVideoPostHandler.setActive(false);
+        if (thermalView) ThermalHandler.setActive(false);
         LocalVehiclePlayer.instance.thermalImaging = false;
         steering.reset();
         lookOffsetYaw = 0f;
@@ -458,6 +501,7 @@ public class RVP_ClientHitlState {
                 endFeed(activeMissileId);
                 return;
             }
+            updateVideoOptics(missile);
             if (!missileEntitySeen) {
                 // 虚拟摇杆：偏移量以 0 为基准（直飞），不继承弹体朝向——
                 // 导弹出膛后保持沿出膛方向直飞，直到玩家施加转向偏移
@@ -497,9 +541,13 @@ public class RVP_ClientHitlState {
             }
         }
 
+        if (missile != null) tickModeSwitch(missile);
         TVMissileVideoPostHandler.setActive(videoMode == RVP_EnumVideoMode.BW);
         LocalVehiclePlayer.instance.viewType = LocalVehiclePlayer.ViewType.SCOPE;
-        LocalVehiclePlayer.instance.thermalImaging = (videoMode == RVP_EnumVideoMode.THERMAL);
+        boolean thermal = videoMode == RVP_EnumVideoMode.THERMAL;
+        LocalVehiclePlayer.instance.thermalImaging = thermal;
+        // 弹头画面独立使用热像后处理，宿主武器站可以没有热像仪。
+        if (ThermalHandler.isActive() != thermal) ThermalHandler.setActive(thermal);
 
         if (tickExitClick(mc) && missile != null && missile.rvp$isHitlRightClickDetonate()) {
             markRightClickConsumed(mc.level.getGameTime());
@@ -511,7 +559,6 @@ public class RVP_ClientHitlState {
             RVP_ClientHitlCamera.tickSeekerBody(missile);
             tickScopeAim(mc, missile);
             tickDesignateKey(mc, missile);
-            tickModeSwitch(mc);
         }
         if (controlMode == RVP_EnumHitlControlMode.MOUSE) {
             // 按真实时间回中，不在发送前统一削减本刻的新输入。
@@ -713,15 +760,16 @@ public class RVP_ClientHitlState {
         return RVP_Keys.HITL_EXIT.consumeClick();
     }
 
-    private static void tickModeSwitch(Minecraft mc) {
+    private static void tickModeSwitch(RVP_MissileEntity missile) {
         if (!RVP_Keys.HITL_SWITCH_VIDEO_MODE.consumeClick()) {
             return;
         }
-        Entity entity = resolveActiveMissile(mc);
-        if (!(entity instanceof RVP_MissileEntity missile)) {
-            return;
+        if (videoMode == RVP_EnumVideoMode.THERMAL && videoThermalIndex + 1 < videoThermalTypes.size()) {
+            videoThermalIndex++;
+        } else {
+            videoThermalIndex = 0;
+            videoMode = nextVideoMode(missile, videoMode);
         }
-        videoMode = nextVideoMode(missile, videoMode);
         videoModeUserSelected = true;
     }
 

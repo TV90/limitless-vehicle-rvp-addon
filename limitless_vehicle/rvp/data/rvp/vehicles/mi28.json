@@ -335,6 +335,8 @@
       "with_focus_locker": true,
       "with_stabilizer": true,
       "with_thermal_imager": true,
+      "rvp_disable_crt_effect": true,
+      "thermal_imager_type": "white_hot",
       "zoom_max": 12,
       "weapons": [
         {

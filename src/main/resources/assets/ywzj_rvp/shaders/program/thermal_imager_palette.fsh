@@ -193,7 +193,10 @@ void main() {
             haloTint = vec3(1.0, 0.51, 0.48);
         }
     } else if (Palette == 4) {
-        color = vec3(1.0 - sensor.r);
+        // 适度增强冷背景中的地形层次，热源沿用原黑热灰阶。
+        float coldScene = 0.96 - 0.38 * sensor.g;
+        float hotCoverage = max(sensor.a, smoothstep(0.30, 0.48, sensor.r));
+        color = vec3(mix(1.0 - sensor.r, coldScene, 0.44 * (1.0 - hotCoverage)));
     } else if (Palette == 5) {
         color = ironbow(ironGray(sensor.r));
         haloTint = vec3(1.0, 0.70, 0.15);
