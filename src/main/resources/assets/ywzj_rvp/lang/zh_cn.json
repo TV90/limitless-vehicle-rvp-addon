@@ -782,6 +782,8 @@
   "hud.ywzj_rvp.action.optical_lock": "锁定目标",
   "hud.ywzj_rvp.action.optical_exit": "退出视角",
   "ui.rvp.optical.snapshot_target": "目标",
+  "ui.rvp.optical.lock_failed": "未识别到目标或目标置信度过低，无法锁定",
+  "ui.rvp.optical.ground_too_dark": "未能分辨环境特征，无法锁定",
   "ui.rvp.optical.need_lock": "按 [%s] 键锁定可见目标",
   "ui.rvp.optical.class.person": "人员",
   "ui.rvp.optical.class.living": "生物",

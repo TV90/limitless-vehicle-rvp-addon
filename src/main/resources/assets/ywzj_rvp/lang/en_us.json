@@ -783,6 +783,8 @@
   "hud.ywzj_rvp.action.optical_lock": "Lock target",
   "hud.ywzj_rvp.action.optical_exit": "Exit view",
   "ui.rvp.optical.snapshot_target": "Target",
+  "ui.rvp.optical.lock_failed": "No target detected or confidence too low to lock",
+  "ui.rvp.optical.ground_too_dark": "Unable to distinguish terrain features. Lock failed",
   "ui.rvp.optical.need_lock": "Press [%s] to lock a visible target",
   "ui.rvp.optical.class.person": "Person",
   "ui.rvp.optical.class.living": "Mob",

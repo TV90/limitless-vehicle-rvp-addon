@@ -109,6 +109,11 @@ public final class RVP_ClientActionsAccess {
         INSTANCE.acceptVehicleSound(message);
     }
 
+    /** 转交已确认的客户端装填完成事件，避免双端武器直接载入音频类。 */
+    public static void playVehicleReloadSound(org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon<?> weapon) {
+        INSTANCE.playVehicleReloadSound(weapon);
+    }
+
     /** 经双端安全桥转交小口径弹体声音消息，不让公共网络类加载客户端声音类型。 */
     public static void acceptSmallCaliberSound(org.ywzj.rvp.network.S2CSmallCaliberSound message) {
         // 调用按物理端选择的实现；服务端为空操作。
@@ -290,6 +295,11 @@ public final class RVP_ClientActionsAccess {
         @Override
         public void acceptVehicleSound(org.ywzj.rvp.network.S2CVehicleSound message) {
             // 专用服务端不播放客户端声音。
+        }
+
+        @Override
+        public void playVehicleReloadSound(org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon<?> weapon) {
+            // 专用服务端只管理装填状态。
         }
 
         /** 专用服务端不保存客户端体积烟。 */

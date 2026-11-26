@@ -31,6 +31,7 @@ import org.ywzj.rvp.client.render.RVP_StateBoneHider;
 import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteVehicleBillboardManager.BillboardPlan;
 import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteVehicleProjection.FarPlaneDemand;
 import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteVehicleProjection.ProjectionPlan;
+import org.ywzj.rvp.client.state.RVP_ClientOpticalState;
 import org.ywzj.rvp.client.state.RVP_ClientZoomState;
 import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteVehicleVisualState;
 import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteViewDistance;
@@ -383,9 +384,10 @@ public final class RVP_RemoteVehicleVisualRenderer {
         try {
             for (RVP_RemoteVehicleRenderBudget.Candidate candidate : selected) {
                 CandidateContext context = contexts.get(candidate.entityId());
-                if (context != null) {
-                    renderVehicle(level, context, cameraPosition, cameraOrientation,
-                            poseStack, REMOTE_BUFFERS);
+                if (context != null && renderVehicle(level, context, cameraPosition, cameraOrientation,
+                        poseStack, REMOTE_BUFFERS)) {
+                    // 本帧确实绘制时，允许 HUD 识别对应的已加载真实载具。
+                    RVP_ClientOpticalState.recordRenderedEntity(loadedHandoverEntities.get(candidate.entityId()));
                 }
             }
         } finally {

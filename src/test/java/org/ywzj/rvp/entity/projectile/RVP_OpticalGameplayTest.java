@@ -82,7 +82,18 @@ class RVP_OpticalGameplayTest {
         var range = a.getRvpData().getGuidanceData().getGuidanceTargetDistanceRange();
         var view = new RVP_OpticalTargeting.View(a.position(), new Vec3(0, 0, 1));
         float partial = RVP_OpticalTargeting.sample(a, view, target, range, 30).confidence();
-        assertTrue(partial > 0f && partial < 1f);
+        assertEquals(0.8f, partial);
+
+        // 上下各挡住两个角时，中心独占 60%。
+        var lowerSmoke = new Smoke(level);
+        lowerSmoke.setBoundingBox(new AABB(-1.5, 7, 19, 1.5, 8.95, 21));
+        level.addObserver(lowerSmoke);
+        assertEquals(0.6f, RVP_OpticalTargeting.sample(a, view, target, range, 30).confidence());
+
+        // 窄遮挡只覆盖中心，剩下的四个角共占 40%。
+        lowerSmoke.setBoundingBox(new AABB(-1.5, 7, -21, 1.5, 8.95, -19));
+        smoke.setBoundingBox(new AABB(-0.1, 8.95, 19, 0.1, 9.05, 21));
+        assertEquals(0.4f, RVP_OpticalTargeting.sample(a, view, target, range, 30).confidence());
 
         smoke.setBoundingBox(new AABB(-1.5, 7, 19, 1.5, 12, 21));
         assertEquals(0f, RVP_OpticalTargeting.sample(a, view, target, range, 30).confidence());
@@ -180,14 +191,24 @@ class RVP_OpticalGameplayTest {
     @Test
     void darkUnlitTargetsVanishInWhiteLightAndThermalStillRespectsSmoke() {
         var level = RVP_ProjectileSimulationLevel.create(0, null);
-        level.setOpticalTestLight(0.5f, 0);
+        level.setOpticalTestLight(0.5f, 0, 0);
         var target = vehicle(level, 0, 36, false);
         var atv = new Missile(level, "ATV");
         var tv = new Missile(level, "TV");
         var view = new RVP_OpticalTargeting.View(tv.position(), new Vec3(0, 0, 1));
         var range = tv.getRvpData().getGuidanceData().getGuidanceTargetDistanceRange();
 
-        assertTrue(RVP_OpticalTargeting.scanDisplayed(tv, null, view, range, 30, false, entity -> 0).isEmpty());
+        assertEquals(0.1f, RVP_OpticalTargeting.lightFactor(level, target.position(), false));
+        var dark = RVP_OpticalTargeting.scanDisplayed(tv, null, view, range, 30, false, entity -> 0);
+        assertEquals(0.1f, dark.get(0).lighting());
+        assertFalse(RVP_OpticalTargeting.canDisplay(
+                RVP_OpticalTargeting.scopeConfidence(dark.get(0), view, 1f, false)));
+        level.setOpticalTestLight(0.5f, 15, 2);
+        assertEquals(0.46f, RVP_OpticalTargeting.lightFactor(level, target.position(), false), 0.0001f);
+        assertSame(target, RVP_OpticalTargeting.scanDisplayed(tv, null, view, range, 30, false, entity -> 0).get(0).entity());
+        level.setOpticalTestLight(0.5f, 0, 2);
+        assertEquals(0.28f, RVP_OpticalTargeting.lightFactor(level, target.position(), false), 0.0001f);
+        assertEquals(1f, RVP_OpticalTargeting.lightFactor(level, target.position(), true));
         var warm = RVP_OpticalTargeting.scanDisplayed(tv, null, view, range, 30, true, entity -> 0);
         assertSame(target, warm.get(0).entity());
         tv.opticalTrack().designate(target, target.position(), true);
@@ -196,7 +217,10 @@ class RVP_OpticalGameplayTest {
         atv.guide(5);
         assertNull(atv.getTargetEntity());
 
-        level.setOpticalTestLight(0.5f, 14);
+        level.setOpticalTestLight(0.5f, 0, 5);
+        assertEquals(0.55f, RVP_OpticalTargeting.lightFactor(level, target.position(), false), 0.0001f);
+        level.setOpticalTestLight(0.5f, 0, 10);
+        assertEquals(1f, RVP_OpticalTargeting.lightFactor(level, target.position(), false));
         atv.guide(10);
         assertSame(target, atv.getTargetEntity());
 
@@ -214,7 +238,8 @@ class RVP_OpticalGameplayTest {
         var missile = new Missile(level, "ATV");
         var neutral = vehicle(level, 1, 26, false);
         var tiny = vehicle(level, 0, 24, false);
-        tiny.setBoundingBox(new AABB(-0.1, 8.9, 23.9, 0.1, 9.1, 24.1));
+        // 刚超过 0.2% 的目标可参与评分，但即便无遮挡且明亮也达不到 0.65。
+        tiny.setBoundingBox(new AABB(-0.04, 8.96, 23.96, 0.04, 9.04, 24.04));
         assertNull(missile.getTargetEntity());
         missile.guide(5);
         assertSame(neutral, missile.getTargetEntity());
@@ -297,7 +322,7 @@ class RVP_OpticalGameplayTest {
         var observer = new Missile(level, "TV");
         var view = new RVP_OpticalTargeting.View(observer.position(), new Vec3(0, 0, 1));
         var vehicles = java.util.stream.IntStream.rangeClosed(0, 20)
-                .mapToObj(i -> vehicle(level, (i - 10) * 4, 80 + i, false)).toList();
+                .mapToObj(i -> vehicle(level, (i - 10) * 6, 80 + i, false)).toList();
         var contacts = RVP_OpticalTargeting.scanDisplayed(observer, null, view,
                 observer.getRvpData().getGuidanceData().getGuidanceTargetDistanceRange(), 50, false,
                 entity -> entity == vehicles.get(20) ? Double.POSITIVE_INFINITY : 100 - entity.position().z);
@@ -327,7 +352,7 @@ class RVP_OpticalGameplayTest {
 
     private static void place(Vehicle target, double x, double z) {
         RVP_ProjectileSimulationBootstrap.write(Entity.class, target, "position", new Vec3(x, 8, z));
-        target.setBoundingBox(new AABB(x - 1, 8, z - 2, x + 1, 10, z + 2));
+        target.setBoundingBox(new AABB(x - 2, 8, z - 2, x + 2, 10, z + 2));
     }
 
     private static final class Vehicle extends WheeledVehicle {

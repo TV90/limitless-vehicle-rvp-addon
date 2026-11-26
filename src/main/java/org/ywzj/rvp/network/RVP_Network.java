@@ -50,7 +50,8 @@ public class RVP_Network {
     /** 协议 50：新增 RVP 弹药实体克隆快照，脱离本体 ServerBroadcastEntities；双端须一同更新。 */
     /** 协议 52：合并维修顺序请求与残件挂架快照；客户端和专用服务端同时更新。 */
     /** 协议 53：追加当前 TV 操作者的高精度镜头姿态，客户端和专用服务端同时更新。 */
-    private static final String PROTOCOL = "57";
+    /** 协议 58：同步运行期图像识别公式，保证实际锁定和 HUD 采用同一个表达式。 */
+    private static final String PROTOCOL = "58";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "main"))
@@ -554,5 +555,8 @@ public class RVP_Network {
         CHANNEL.messageBuilder(S2COpticalFeedback.class, id++, NetworkDirection.PLAY_TO_CLIENT)
                 .encoder(S2COpticalFeedback::encode).decoder(S2COpticalFeedback::decode)
                 .consumerMainThread(S2COpticalFeedback::handle).add();
+        CHANNEL.messageBuilder(S2COpticalConfidenceFormula.class, id++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(S2COpticalConfidenceFormula::encode).decoder(S2COpticalConfidenceFormula::decode)
+                .consumerMainThread(S2COpticalConfidenceFormula::handle).add();
     }
 }

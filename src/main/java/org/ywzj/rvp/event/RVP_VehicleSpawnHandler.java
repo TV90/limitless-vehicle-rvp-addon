@@ -40,7 +40,8 @@ public class RVP_VehicleSpawnHandler {
 
     @SubscribeEvent
     public static void onEntityJoinLevel(EntityJoinLevelEvent event) {
-        if (event.getLevel().isClientSide()) {
+        // 读档和重新载入区块要保留存档弹量，只有新生成的载具执行初始化补弹。
+        if (event.getLevel().isClientSide() || event.loadedFromDisk()) {
             return;
         }
         if (!(event.getEntity() instanceof AbstractVehicle vehicle)) {

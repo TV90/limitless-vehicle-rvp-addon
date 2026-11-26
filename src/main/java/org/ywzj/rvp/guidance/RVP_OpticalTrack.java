@@ -53,10 +53,9 @@ public final class RVP_OpticalTrack {
         }
         Entity entity = target == null ? null : level.getEntity(target);
         if (entity != null && RVP_OpticalTargeting.isCandidate(missile, missile.getShooterVehicle(), entity, automatic)) {
-            var visible = RVP_OpticalTargeting.applyLight(
-                    RVP_OpticalTargeting.sample(missile, view, entity, distance, angle), thermal);
-            if (visible.confidence() >= data.getRecognitionLockThreshold()
-                    && (!automatic || RVP_OpticalTargeting.scopeConfidence(visible, view, 1f) > 0f)) {
+            // 导引头按自身视点和 1 倍参考视场重算实体跟踪分。
+            var visible = RVP_OpticalTargeting.sample(missile, view, entity, distance, angle);
+            if (RVP_OpticalTargeting.scopeConfidence(visible, view, 1f, thermal) >= data.getRecognitionLockThreshold()) {
                 contact = visible;
             }
         }

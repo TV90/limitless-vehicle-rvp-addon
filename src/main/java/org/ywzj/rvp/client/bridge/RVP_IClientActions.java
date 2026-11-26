@@ -55,6 +55,9 @@ public interface RVP_IClientActions {
     /** 接收未追踪载具的导弹发射声兜底消息；专用服务端实现为空操作。 */
     void acceptVehicleSound(org.ywzj.rvp.network.S2CVehicleSound message);
 
+    /** 播放客户端确认的武器装填完成音。 */
+    void playVehicleReloadSound(org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon<?> weapon);
+
     /** 接收服务端小口径划空或方块命中声；专用服务端实现为空操作。 */
     void acceptSmallCaliberSound(org.ywzj.rvp.network.S2CSmallCaliberSound message);
 

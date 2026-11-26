@@ -1,6 +1,7 @@
 package org.ywzj.rvp.client;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.resources.sounds.AbstractTickableSoundInstance;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.client.resources.sounds.SoundInstance;
 import net.minecraft.sounds.SoundEvent;
@@ -16,6 +17,7 @@ import org.ywzj.rvp.client.resource.vehicle.RVP_BaseDisplay;
 import org.ywzj.vehicle.api.event.VehicleFireEvent;
 import org.ywzj.vehicle.audio.VehicleSound;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
+import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 
 /** 现有相机相对开火声入口与远距通知共用的 display 播放辅助类；音频和变体由声音资源系统解析，Java 不再列举采样路径或类型音效组。 */
 public final class RVP_ClientVehicleSound {
@@ -29,6 +31,46 @@ public final class RVP_ClientVehicleSound {
         var config = resolveDisplay(message.weaponId());
         if (config != null) play(config, message.position(), vehicle);
     }
+    /** 复用本体 display 的换弹音，创建时就设置世界坐标，原版声音引擎按实际距离衰减。 */
+    public static void playReload(AbstractVehicleWeapon<?> weapon) {
+        var mc = Minecraft.getInstance();
+        if (mc.level == null || weapon.getVehicle().level() != mc.level || weapon.getVehicle().isRemoved()) return;
+        // 查询该武器配置的换弹音，缺少绑定时保持静默。
+        SoundEvent event = weapon.getReloadSound();
+        if (event != null) mc.getSoundManager().play(new ReloadSound(event, weapon));
+    }
+
+    /** 一次性装填音随武器站移动，音量与坐标不依赖相机位置。 */
+    private static final class ReloadSound extends AbstractTickableSoundInstance {
+        /** 播放完成前用于取得当前武器站坐标。 */
+        private final AbstractVehicleWeapon<?> weapon;
+
+        private ReloadSound(SoundEvent event, AbstractVehicleWeapon<?> weapon) {
+            super(event, SoundSource.PLAYERS, SoundInstance.createUnseededRandom());
+            this.weapon = weapon;
+            this.attenuation = SoundInstance.Attenuation.LINEAR;
+            updatePosition();
+        }
+
+        @Override
+        public void tick() {
+            var vehicle = weapon.getVehicle();
+            if (vehicle.isRemoved() || vehicle.level() != Minecraft.getInstance().level) {
+                stop();
+                return;
+            }
+            updatePosition();
+        }
+
+        private void updatePosition() {
+            // 查询本体武器站当前枢轴的世界坐标。
+            Vec3 position = weapon.getWeaponUnit().worldPivotPosition();
+            x = position.x;
+            y = position.y;
+            z = position.z;
+        }
+    }
+
     static boolean playLocalLaunch(VehicleFireEvent.Post event) {
         var config = config(event);
         if (config == null) return false;

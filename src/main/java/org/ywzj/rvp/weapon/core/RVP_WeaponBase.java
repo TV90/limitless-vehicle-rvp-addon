@@ -13,6 +13,7 @@ import org.ywzj.rvp.config.LauncherDeployRuntimeManager;
 import org.ywzj.rvp.config.RVP_LauncherDeployConfig;
 import org.ywzj.rvp.config.RVP_LauncherDeployConfigCache;
 import org.ywzj.rvp.debug.RVP_WeaponOriginDebug;
+import org.ywzj.rvp.client.bridge.RVP_ClientActionsAccess;
 import org.ywzj.rvp.client.state.RVP_ClientHmdState;
 import org.ywzj.rvp.client.state.RVP_ClientGPSUtil;
 import org.ywzj.rvp.guidance.RVP_IrLockHelper;
@@ -76,7 +77,18 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
      * 供载具生成时“瞬间补满弹药”使用：直接清零 reloadTime，避免残留装填状态。
      */
     public void ywzj_rvp$clearReloadState() {
-        setReloadTime(0);
+        reloadTime = 0;
+    }
+
+    /** 同步倒计时，只有客户端已看到一次装填后收到完成状态才播放。 */
+    @Override
+    protected void setReloadTime(int ticks) {
+        boolean completed = reloadTime > 0 && ticks == 0;
+        reloadTime = ticks;
+        if (completed && vehicle.level().isClientSide()) {
+            // 经双端桥播放真实武器站位置的声音，初始化和服务端状态更新保持静默。
+            RVP_ClientActionsAccess.playVehicleReloadSound(this);
+        }
     }
 
     /**

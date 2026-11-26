@@ -1,6 +1,7 @@
 package org.ywzj.rvp.network;
 
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.phys.Vec3;
@@ -49,9 +50,15 @@ public record C2SOpticalRequest(int vehicleId, ResourceLocation weapon, int miss
         var weapon = RVP_WeaponResolveHelper.currentPrimaryRvp(unit);
         if (weapon == null || !msg.weapon.equals(weapon.getData().getWeaponId())
                 || weapon.getData().getGuidanceData().getGuidanceType() != RVP_EnumGuidanceType.TV) return;
-        S2COpticalFeedback.locked(player, vehicle.getId(), msg.weapon, msg.sequence,
-                RVP_OpticalLock.designate(player, unit, weapon.getData(),
-                        msg.targetId >= 0 ? player.serverLevel().getEntity(msg.targetId) : null,
-                        msg.targetId < 0 ? msg.groundHint : null, msg.zoomed, msg.thermal));
+        // 先由服务器复核实体或地形，再照常同步锁定结果。
+        var result = RVP_OpticalLock.tryDesignate(player, unit, weapon.getData(),
+                msg.targetId >= 0 ? player.serverLevel().getEntity(msg.targetId) : null,
+                msg.targetId < 0 ? msg.groundHint : null, msg.zoomed, msg.thermal);
+        S2COpticalFeedback.locked(player, vehicle.getId(), msg.weapon, msg.sequence, result.lock());
+        // 两个目标字段都为空时仅清除锁定状态，选中弹种不弹出失败提示。
+        if (result.lock() == null && (msg.targetId >= 0 || msg.groundHint != null)) {
+            player.displayClientMessage(Component.translatable(result.groundTooDark()
+                    ? "ui.rvp.optical.ground_too_dark" : "ui.rvp.optical.lock_failed"), true);
+        }
     }
 }

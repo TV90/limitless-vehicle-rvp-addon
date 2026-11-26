@@ -298,8 +298,9 @@ public class RVP_ClientEvents {
     /**
      * HITL 画面按独立倍率输出：每次入镜固定 1×，不继承发射前观瞄/第三人称放大；
      * 退出后本体仍按武器站原 zoom 计算，不继承 HITL 中滚轮调出的倍率。
+     * 在本体的 NORMAL 监听后重置武器站倍率，让 Zume 等 LOWEST 监听能继续缩放画面。
      */
-    @SubscribeEvent(priority = EventPriority.LOWEST)
+    @SubscribeEvent(priority = EventPriority.LOW)
     public static void applyHitlFov(ViewportEvent.ComputeFov event) {
         if (!RVP_ClientHitlState.isActive() || !event.usedConfiguredFov()
                 || event.getCamera().getEntity() != Minecraft.getInstance().player) {

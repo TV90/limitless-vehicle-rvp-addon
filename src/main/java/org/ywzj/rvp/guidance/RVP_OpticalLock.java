@@ -20,12 +20,21 @@ public final class RVP_OpticalLock {
     private record Designation(UUID owner, ResourceLocation weapon, UUID entity, Vec3 ground,
                                float magnification, boolean thermal) {}
     public record Result(@Nullable Entity entity, Vec3 point, float confidence) {}
+    /** 发射前的服务器判定；只有实际方块因光照不足失败时才标记过暗。 */
+    public record Attempt(@Nullable Result lock, boolean groundTooDark) {}
     private static final Map<WeaponUnit, Designation> LOCKS = new WeakHashMap<>();
 
     private RVP_OpticalLock() {}
 
     public static Result designate(LivingEntity gunner, WeaponUnit station, RVP_WeaponData data,
                                     @Nullable Entity target, @Nullable Vec3 groundHint, boolean zoomed, boolean thermalRequested) {
+        return tryDesignate(gunner, station, data, target, groundHint, zoomed, thermalRequested).lock();
+    }
+
+    /** 保留失败原因供手动锁定的底部提示使用。 */
+    public static Attempt tryDesignate(LivingEntity gunner, WeaponUnit station, RVP_WeaponData data,
+                                       @Nullable Entity target, @Nullable Vec3 groundHint,
+                                       boolean zoomed, boolean thermalRequested) {
         WeaponUnit root = station.getRootParentWeaponUnit();
         LOCKS.remove(root);
         var guidance = data.getGuidanceData();
@@ -39,19 +48,23 @@ public final class RVP_OpticalLock {
             var lock = validateEntity(gunner, root.getVehicle(), view, data, target, angle, magnification, thermal);
             if (lock != null) LOCKS.put(root,
                     new Designation(gunner.getUUID(), data.getWeaponId(), target.getUUID(), null, magnification, thermal));
-            return lock;
+            return new Attempt(lock, false);
         }
+        // 调用距离和遮挡检查，只有真实可见的方块才能报告光照不足。
         if (groundHint == null || !RVP_OpticalTargeting.inView(view, groundHint, range, angle)
-                || !RVP_OpticalTargeting.groundVisible(gunner, view.origin(), groundHint)
-                || RVP_OpticalTargeting.groundLightFactor(gunner.level(), view.origin(), groundHint, thermal)
-                        < guidance.getRecognitionLockThreshold()) return null;
+                || !RVP_OpticalTargeting.groundVisible(gunner, view.origin(), groundHint)) {
+            return new Attempt(null, false);
+        }
         // The client provides a hint; require a real block face at that position in the loaded world.
         Vec3 direction = groundHint.subtract(view.origin()).normalize();
         var hit = gunner.level().clip(new ClipContext(groundHint.subtract(direction.scale(0.12)),
                 groundHint.add(direction.scale(0.12)), ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, gunner));
-        if (hit.getType() != HitResult.Type.BLOCK) return null;
+        if (hit.getType() != HitResult.Type.BLOCK) return new Attempt(null, false);
+        // 用已校验的武器站观瞄模式在方块边缘采光。
+        if (RVP_OpticalTargeting.groundLightFactor(gunner.level(), view.origin(), groundHint, thermal)
+                < guidance.getRecognitionLockThreshold()) return new Attempt(null, true);
         LOCKS.put(root, new Designation(gunner.getUUID(), data.getWeaponId(), null, hit.getLocation(), magnification, thermal));
-        return new Result(null, hit.getLocation(), 1f);
+        return new Attempt(new Result(null, hit.getLocation(), 1f), false);
     }
 
     public static Result resolve(LivingEntity gunner, WeaponUnit root, RVP_WeaponData data) {
@@ -80,8 +93,8 @@ public final class RVP_OpticalLock {
         if (target == null || !RVP_OpticalTargeting.isCandidate(gunner, carrier, target, false)) return null;
         var guidance = data.getGuidanceData();
         var contact = RVP_OpticalTargeting.sample(gunner, view, target, RVP_OpticalTargeting.lockRange(guidance), angle);
-        float confidence = RVP_OpticalTargeting.scopeConfidence(
-                RVP_OpticalTargeting.applyLight(contact, thermal), view, magnification);
+        // 由服务端结合采样可见度、瞄具估算尺寸与照明计算实体锁定分。
+        float confidence = RVP_OpticalTargeting.scopeConfidence(contact, view, magnification, thermal);
         return confidence >= guidance.getRecognitionLockThreshold()
                 ? new Result(target, contact.point(), confidence) : null;
     }

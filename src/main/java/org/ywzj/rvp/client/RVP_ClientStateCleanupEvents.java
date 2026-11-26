@@ -9,6 +9,8 @@ import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.client.render.RVP_CustomMountRenderLogic;
 import org.ywzj.rvp.client.visual.vehicle.RVP_MuzzleSmokeEmitter;
 import org.ywzj.rvp.event.RVP_StateCleanupEvents;
+import org.ywzj.rvp.guidance.RVP_OpticalConfidenceFormula;
+import org.ywzj.rvp.guidance.RVP_OpticalConfidenceRuntime;
 
 /**
  * [RVP] 客户端运行期缓存清理入口。
@@ -34,6 +36,8 @@ public final class RVP_ClientStateCleanupEvents {
 
     @SubscribeEvent
     public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
+        // 退出连接后恢复默认公式，维度切换时继续使用当前服务端下发的设置。
+        RVP_OpticalConfidenceRuntime.setClient(RVP_OpticalConfidenceFormula.DEFAULT);
         clearClientLevelCaches();
         // 断线/退出世界：单人模式与集成服务端同 JVM，一并清掉共享运行期侧表。
         RVP_StateCleanupEvents.clearAll();

@@ -150,6 +150,12 @@ public final class RVP_ClientActions implements RVP_IClientActions {
     }
 
     @Override
+    public void playVehicleReloadSound(org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon<?> weapon) {
+        // 调用定位播放入口，以武器站为换弹声源。
+        org.ywzj.rvp.client.RVP_ClientVehicleSound.playReload(weapon);
+    }
+
+    @Override
     public void acceptSmallCaliberSound(org.ywzj.rvp.network.S2CSmallCaliberSound message) {
         // 调用本项目客户端播放器，播放服务端确认的小口径声音。
         org.ywzj.rvp.client.RVP_ClientSmallCaliberSound.accept(message);

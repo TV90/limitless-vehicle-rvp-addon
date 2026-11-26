@@ -5,6 +5,7 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.culling.Frustum;
 import net.minecraft.client.renderer.entity.EntityRendererProvider;
 import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteVehicleVisualRenderer;
+import org.ywzj.rvp.client.state.RVP_ClientOpticalState;
 import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteViewDistance;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.client.render.entity.vehicle.VehicleRender;
@@ -27,6 +28,8 @@ public class RVP_VehicleRender<T extends AbstractVehicle> extends VehicleRender<
             return;
         }
         super.render(vehicle, entityYaw, partialTick, poseStack, bufferSource, packedLight);
+        // 把提交了原生模型的实体交给本帧图像 HUD。
+        RVP_ClientOpticalState.recordNativeVehicle(vehicle);
         // 调用光电干扰机玻片夜间红光：姿势栈已回到实体原点，复用本帧已写入的动画姿态。
         RVP_EoJammerGlowRenderer.render(vehicle, partialTick, poseStack, bufferSource, packedLight);
     }

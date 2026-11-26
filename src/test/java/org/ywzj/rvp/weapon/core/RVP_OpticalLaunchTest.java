@@ -71,7 +71,7 @@ class RVP_OpticalLaunchTest {
         assertNull(weapon.prepareShot(List.of(new AimContext()), gunner));
 
         // 距离和可见度相同，只提高瞄具倍率即可通过服务端实体锁定门槛。
-        var distant = vehicle(world, 0, 260, 1005);
+        var distant = vehicle(world, 0, 300, 1005);
         assertNull(RVP_OpticalLock.designate(gunner, unit, data, distant, null, false, false));
         var zoomedLock = RVP_OpticalLock.designate(gunner, unit, data, distant, null, true, false);
         assertNotNull(zoomedLock);
@@ -80,7 +80,7 @@ class RVP_OpticalLaunchTest {
         assertSame(distant, weapon.prepareShot(List.of(new AimContext()), gunner).target());
 
         // 白光和无热成像设备的请求都不能在漆黑场景锁定目标。
-        world.setOpticalTestLight(0.5f, 0);
+        world.setOpticalTestLight(0.5f, 0, 0);
         assertNull(RVP_OpticalLock.designate(gunner, unit, data, nearest, null, false, false));
         assertNull(RVP_OpticalLock.designate(gunner, unit, data, nearest, null, true, true));
         unit.thermalImaging = true;
@@ -90,9 +90,49 @@ class RVP_OpticalLaunchTest {
 
         // 有热成像也不能把像素不足的固定设备识别成已锁定目标。
         var small = vehicle(world, 0, 85, 1006);
-        small.setBoundingBox(new AABB(-0.4, 8.6, 84.6, 0.4, 9.4, 85.4));
+        small.setBoundingBox(new AABB(-0.28, 8.72, 84.72, 0.28, 9.28, 85.28));
         assertNull(RVP_OpticalLock.designate(gunner, unit, data, small, null, false, true));
         assertSame(small, RVP_OpticalLock.designate(gunner, unit, data, small, null, true, true).entity());
+
+        // 机体很薄，翼展在视野中仍足以通过低倍率锁定。
+        world.setOpticalTestLight(0f, 15, 0);
+        var aircraft = vehicle(world, 0, 130, 1007);
+        aircraft.setBoundingBox(new AABB(-4, 8.9, 129, 4, 9.1, 131));
+        assertSame(aircraft, RVP_OpticalLock.designate(gunner, unit, data, aircraft, null, false, false).entity());
+
+        // 只有射线命中真实方块且光照不足才判为地形无法辨认。
+        var ground = new Vec3(0.5, 0, 30.5);
+        world.setOpticalTestLight(0.5f, 0, 0);
+        var darkGround = RVP_OpticalLock.tryDesignate(gunner, unit, data, null, ground, false, false);
+        assertNull(darkGround.lock());
+        assertTrue(darkGround.groundTooDark());
+        var emptySky = RVP_OpticalLock.tryDesignate(gunner, unit, data, null, ground.add(0, 20, 0), false, false);
+        assertNull(emptySky.lock());
+        assertFalse(emptySky.groundTooDark());
+        var darkEntity = RVP_OpticalLock.tryDesignate(gunner, unit, data, nearest, null, false, false);
+        assertNull(darkEntity.lock());
+        assertFalse(darkEntity.groundTooDark());
+        assertNotNull(RVP_OpticalLock.tryDesignate(gunner, unit, data, null, ground, false, true).lock());
+    }
+
+    @Test void serverReloadUpdatesAndSpawnRefillClearTheTimer() throws Exception {
+        var world = RVP_ProjectileSimulationLevel.create(0, null);
+        var vehicle = vehicle(world, 0, 0, 1008);
+        var data = RVP_ProjectileSimulationWeapon.read(Path.of("limitless_vehicle/rvp/data/rvp/weapons"),
+                "rvp:mi28_optical_tv").data();
+        var weapon = new RVP_ProjectileWeapon(vehicle, null, 0, data, "reload_probe", null) {
+            @Override public net.minecraft.sounds.SoundEvent getReloadSound() {
+                throw new AssertionError("服务端不应解析换弹音效");
+            }
+        };
+
+        weapon.ywzj_rvp$setReloadTime(20);
+        assertEquals(20, weapon.getReloadTime());
+        weapon.ywzj_rvp$clearReloadState();
+        assertEquals(0, weapon.getReloadTime());
+        weapon.ywzj_rvp$setReloadTime(1);
+        weapon.ywzj_rvp$setReloadTime(0);
+        assertEquals(0, weapon.getReloadTime());
     }
 
     private static Vehicle vehicle(RVP_ProjectileSimulationLevel level, int x, int z, int id) {
