@@ -203,11 +203,11 @@ class RVP_OpticalGameplayTest {
         assertEquals(0.1f, dark.get(0).lighting());
         assertFalse(RVP_OpticalTargeting.canDisplay(
                 RVP_OpticalTargeting.scopeConfidence(dark.get(0), view, 1f, false)));
-        level.setOpticalTestLight(0.5f, 15, 2);
-        assertEquals(0.46f, RVP_OpticalTargeting.lightFactor(level, target.position(), false), 0.0001f);
+        level.setOpticalTestLight(0.5f, 15, 0);
+        assertEquals(0.22f, RVP_OpticalTargeting.lightFactor(level, target.position(), false), 0.0001f);
         assertSame(target, RVP_OpticalTargeting.scanDisplayed(tv, null, view, range, 30, false, entity -> 0).get(0).entity());
         level.setOpticalTestLight(0.5f, 0, 2);
-        assertEquals(0.28f, RVP_OpticalTargeting.lightFactor(level, target.position(), false), 0.0001f);
+        assertEquals(0.22f, RVP_OpticalTargeting.lightFactor(level, target.position(), false), 0.0001f);
         assertEquals(1f, RVP_OpticalTargeting.lightFactor(level, target.position(), true));
         var warm = RVP_OpticalTargeting.scanDisplayed(tv, null, view, range, 30, true, entity -> 0);
         assertSame(target, warm.get(0).entity());
@@ -218,8 +218,8 @@ class RVP_OpticalGameplayTest {
         assertNull(atv.getTargetEntity());
 
         level.setOpticalTestLight(0.5f, 0, 5);
-        assertEquals(0.55f, RVP_OpticalTargeting.lightFactor(level, target.position(), false), 0.0001f);
-        level.setOpticalTestLight(0.5f, 0, 10);
+        assertEquals(0.40f, RVP_OpticalTargeting.lightFactor(level, target.position(), false), 0.0001f);
+        level.setOpticalTestLight(0.5f, 0, 15);
         assertEquals(1f, RVP_OpticalTargeting.lightFactor(level, target.position(), false));
         atv.guide(10);
         assertSame(target, atv.getTargetEntity());

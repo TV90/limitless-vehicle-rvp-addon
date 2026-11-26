@@ -36,8 +36,8 @@ public final class RVP_OpticalTargeting {
     private static final int MAX_DISPLAY_CANDIDATES = 15;
     /** 接受的最小投影最长边比例；HUD 同时用该比例的平方过滤极细的投影。 */
     public static final double MIN_APPARENT_SIZE = 0.002;
-    /** 目标投影最长边达到画幅短边的 12% 时不再因尺寸减分。 */
-    private static final double FULL_APPARENT_SIZE = 0.12;
+    /** 目标投影最长边达到画幅短边的 7% 时不再因尺寸减分。 */
+    private static final double FULL_APPARENT_SIZE = 0.07;
     /** 与发射前和自动制导的锁定门槛分开，只判断是否显示识别框。 */
     private static final float DISPLAY_CONFIDENCE_THRESHOLD = 0.4f;
 
@@ -172,7 +172,7 @@ public final class RVP_OpticalTargeting {
         return false;
     }
 
-    /** 白光有效亮度从 0 到 10 时，光照系数从 0.1 线性增加到 1。 */
+    /** 白光有效亮度从 0 到 15 时，光照系数从 0.1 线性增加到 1。 */
     public static float lightFactor(Level level, Vec3 point, boolean thermal) {
         if (thermal) return 1f;
         BlockPos pos = BlockPos.containing(point);
@@ -183,8 +183,9 @@ public final class RVP_OpticalTargeting {
         float daylight = Mth.clamp(Mth.cos(level.getTimeOfDay(1f) * Mth.TWO_PI) * 2f + 0.5f, 0f, 1f);
         daylight *= 1f - level.getRainLevel(1f) * 0.3125f;
         daylight *= 1f - level.getThunderLevel(1f) * 0.3125f;
-        int light = Math.max(blockLight, skyLight - Math.round(11f * (1f - daylight)));
-        return Mth.lerp(Mth.clamp(light / 10f, 0f, 1f), 0.1f, 1f);
+        // 深夜将无遮挡的天空光从 15 降到 2，方块光仍可独立照亮目标。
+        int light = Math.max(blockLight, skyLight - Math.round(13f * (1f - daylight)));
+        return Mth.lerp(Mth.clamp(light / 15f, 0f, 1f), 0.1f, 1f);
     }
 
     /** 在刚好位于方块可见面外的位置采光，避免采到不可见的方块内部。 */
@@ -192,7 +193,7 @@ public final class RVP_OpticalTargeting {
         return lightFactor(level, ground.add(origin.subtract(ground).normalize().scale(0.05)), thermal);
     }
 
-    /** 目标投影最长边从画幅短边的 0.2% 到 12% 时，尺寸系数从 0.1 线性增加到 1。 */
+    /** 目标投影最长边从画幅短边的 0.2% 到 7% 时，尺寸系数从 0.1 线性增加到 1。 */
     public static float sizeFactor(double apparentSize) {
         if (apparentSize < MIN_APPARENT_SIZE) return 0f;
         float detail = (float) Mth.clamp((apparentSize - MIN_APPARENT_SIZE)

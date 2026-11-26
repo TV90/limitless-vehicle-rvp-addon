@@ -35,26 +35,26 @@ class RVP_OpticalHudConfidenceTest {
     void distanceZoomVisibilityAndLightUseTheSynchronizedFormula() {
         float distant = displayedConfidence(1f, 1f, 20, 6, 1000);
         float nearer = displayedConfidence(1f, 1f, 30, 4, 1000);
-        float zoomed = displayedConfidence(1f, 1f, 120, 5, 1000);
+        float zoomed = displayedConfidence(1f, 1f, 70, 5, 1000);
         assertTrue(distant < nearer);
         assertTrue(nearer < zoomed);
         assertEquals(1f, zoomed, 0.0001f);
         assertEquals(0f, displayedConfidence(1f, 1f, 1.99, 1.99, 1000));
         assertEquals(0f, displayedConfidence(1f, 1f, 21, 0.025, 1000));
         assertEquals(0.19f, displayedConfidence(1f, 1f, 2, 2, 1000), 0.0001f);
-        assertEquals(0.5287992f, nearer, 0.0001f);
-        assertEquals(0.7975f, displayedConfidence(1f, 1f, 61, 5, 1000), 0.0001f);
+        assertEquals(0.7197232f, nearer, 0.0001f);
+        assertEquals(0.7975f, displayedConfidence(1f, 1f, 36, 5, 1000), 0.0001f);
         assertEquals(nearer, displayedConfidence(1f, 1f, 4, 30, 1000));
         assertEquals(nearer, displayedConfidence(1f, 1f, 60, 8, 2000));
         assertFalse(canDisplay(displayedConfidence(0.1f, 0.4f, 5, 5, 1000)));
         assertFalse(canDisplay(displayedConfidence(1f, 0.4f, 5, 5, 1000)));
         assertTrue(canDisplay(displayedConfidence(1f, 0.4f, 60, 5, 1000)));
 
-        assertEquals(0.7696f, displayedConfidence(1f, 0.52f, 120, 5, 1000), 0.0001f);
-        assertEquals(0.706f, displayedConfidence(0.5f, 0.52f, 120, 5, 1000), 0.0001f);
-        assertEquals(0.36f, displayedConfidence(1f, 0.20f, 120, 5, 1000), 0.0001f);
-        assertFalse(canDisplay(displayedConfidence(1f, 0.20f, 120, 5, 1000)));
-        assertEquals(0f, displayedConfidence(0f, 1f, 120, 5, 1000));
+        assertEquals(0.7696f, displayedConfidence(1f, 0.52f, 70, 5, 1000), 0.0001f);
+        assertEquals(0.706f, displayedConfidence(0.5f, 0.52f, 70, 5, 1000), 0.0001f);
+        assertEquals(0.36f, displayedConfidence(1f, 0.20f, 70, 5, 1000), 0.0001f);
+        assertFalse(canDisplay(displayedConfidence(1f, 0.20f, 70, 5, 1000)));
+        assertEquals(0f, displayedConfidence(0f, 1f, 70, 5, 1000));
     }
 
     @Test
