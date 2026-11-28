@@ -261,7 +261,7 @@ public final class RVP_RuntimeSaclosGuidanceSource implements RVP_RuntimeGuidanc
                     RVP_AeroSteeringLimits limits = projectile.getRvpData().getProjectileData()
                             .resolveAeroSteeringLimits(
                                     projectile.getRvpData().getProjectileVelocity(),
-                                    projectile.getY(), turningFactor);
+                                    projectile.getY(), turningFactor, projectile.getFlightTickCount());
                     if (limits.enabled() && !(projectile.isMissile() && limits.attackAngleEnabled())) {
                         // 调用本项目气动求解器只测算本次强制旋转对应的 λ；实际干扰转角不受裁决。
                         RVP_AeroSteeringSolution loadSolution =

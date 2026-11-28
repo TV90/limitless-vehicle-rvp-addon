@@ -3,6 +3,7 @@ package org.ywzj.rvp.event;
 import com.mojang.logging.LogUtils;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.util.GsonHelper;
 import net.minecraftforge.common.capabilities.ForgeCapabilities;
 import net.minecraftforge.event.entity.EntityJoinLevelEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -10,6 +11,7 @@ import net.minecraftforge.fml.common.Mod;
 import org.slf4j.Logger;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.config.RVP_CommonConfig;
+import org.ywzj.rvp.config.RVP_VehicleExtendedConfigManager;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.rvp.debug.RVP_DebugFlags;
 import org.ywzj.vehicle.all.AllItems;
@@ -40,11 +42,11 @@ public class RVP_VehicleSpawnHandler {
 
     @SubscribeEvent
     public static void onEntityJoinLevel(EntityJoinLevelEvent event) {
-        // 读档和重新载入区块要保留存档弹量，只有新生成的载具执行初始化补弹。
-        if (event.getLevel().isClientSide() || event.loadedFromDisk()) {
+        if (event.getLevel().isClientSide() || !(event.getEntity() instanceof AbstractVehicle vehicle)) {
             return;
         }
-        if (!(event.getEntity() instanceof AbstractVehicle vehicle)) {
+        if (event.loadedFromDisk()) {
+            rescaleSavedHealth(vehicle);
             return;
         }
         // 上车补弹日志（开关：/rvpdebug flags spawn）
@@ -82,6 +84,25 @@ public class RVP_VehicleSpawnHandler {
                     refillAllWeapons(vehicle);
                 }
             });
+        }
+    }
+
+    /** 只为明确请求迁移的配置更新存档耐久，维持原有剩余耐久比例。 */
+    private static void rescaleSavedHealth(AbstractVehicle vehicle) {
+        var definition = RVP_VehicleExtendedConfigManager.INSTANCE.getRawVehicleJson().get(vehicle.getVehicleId());
+        if (definition == null || !definition.isJsonObject()) {
+            return;
+        }
+        var config = definition.getAsJsonObject();
+        if (!GsonHelper.getAsBoolean(config, "rvp_rescale_saved_health", false)) {
+            return;
+        }
+        float previousMax = vehicle.getMaxHealth();
+        float max = GsonHelper.getAsFloat(config, "max_health", previousMax);
+        if (Float.isFinite(max) && max > 0f && previousMax > 0f && previousMax != max) {
+            float health = vehicle.getHealth() * (max / previousMax);
+            vehicle.setMaxHealth(max);
+            vehicle.setHealth(health);
         }
     }
 

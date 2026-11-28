@@ -169,6 +169,10 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     @SerializedName("parent_weapon_unit_aim_override")
     private Boolean parentWeaponUnitAimOverride;
 
+    /** LBR 的光束和 LH/SALH 的照射线从炮手观瞄镜发出。 */
+    @SerializedName("laser_from_optical_sight")
+    private boolean laserFromOpticalSight;
+
     /**
      * 弹药侧冷发射豁免：true=即使所属武器站配置了 {@code cold_launch_time_tick/velocity}
      * 也不进入冷发射阶段；false=强制沿用武器站配置。null（未配置）=按弹种默认：
@@ -793,6 +797,10 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
         return type == RVP_EnumGuidanceType.LBR
                 || type == RVP_EnumGuidanceType.LH
                 || type == RVP_EnumGuidanceType.SALH;
+    }
+
+    public boolean isLaserFromOpticalSight() {
+        return laserFromOpticalSight;
     }
 
     /**

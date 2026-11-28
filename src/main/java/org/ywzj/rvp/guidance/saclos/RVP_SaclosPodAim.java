@@ -3,6 +3,8 @@ package org.ywzj.rvp.guidance.saclos;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
+import org.ywzj.rvp.guidance.RVP_CommandGuidanceAim;
+import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
 /**
@@ -19,6 +21,11 @@ public final class RVP_SaclosPodAim {
 
     @Nullable
     public static Vec3 resolvePodAimPoint(@Nullable WeaponUnit unit, boolean allowLockedEntity) {
+        return resolvePodAimPoint(unit, allowLockedEntity, false);
+    }
+
+    @Nullable
+    public static Vec3 resolvePodAimPoint(@Nullable WeaponUnit unit, boolean allowLockedEntity, boolean fromOpticalSight) {
         if (unit == null) {
             return null;
         }
@@ -33,6 +40,14 @@ public final class RVP_SaclosPodAim {
             if (locked != null && locked.isAlive()) {
                 // [RVP] §46：吊舱锁定点与制导瞄准点同源（最大 OBB 中心）
                 return org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(locked);
+            }
+        }
+        if (fromOpticalSight) {
+            Vec3 direction = RVP_CommandGuidanceAim.operatorAimDirection(unit);
+            if (direction != null) {
+                Vec3 origin = unit.worldOpticalSightPosition(1.0F);
+                // 与本体武器站射线使用同一命中规则和距离。
+                return VectorUtil.hitPosition(unit.getVehicle(), origin, origin.add(direction.scale(1024.0)));
             }
         }
         return unit.aimHitPosition();

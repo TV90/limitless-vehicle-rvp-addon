@@ -105,6 +105,7 @@ import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.lang.ref.WeakReference;
 import java.util.Map;
 
 @Mod.EventBusSubscriber(value = Dist.CLIENT, modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
@@ -355,7 +356,7 @@ public class RVP_ClientEvents {
      * <p>本体 {@code DisplayManager.apply(...)} 每次重载都 {@code build()} 出新的 ImmutableMap，
      * 所以"实例变了"= 发生了一次 display 重载。</p>
      */
-    private static Map<?, ?> rvp$lastSeenDisplays;
+    private static WeakReference<Map<?, ?>> rvp$lastSeenDisplays = new WeakReference<>(null);
 
     /**
      * [RVP] display 表变化 → 重载 UI 预设。
@@ -379,8 +380,8 @@ public class RVP_ClientEvents {
             return;
         }
         Map<?, ?> displays = org.ywzj.vehicle.client.resource.ClientAssetsManager.INSTANCE.getVehicleDisplays();
-        if (displays != rvp$lastSeenDisplays) {
-            rvp$lastSeenDisplays = displays;
+        if (displays != rvp$lastSeenDisplays.get()) {
+            rvp$lastSeenDisplays = new WeakReference<>(displays);
             org.ywzj.rvp.config.UIPresetManager.load(mc.getResourceManager());
             // 同一条信号顺带补 RVP 扩展字段缓存（原 VehicleDataManagerMixin 的职责，2026-10-30 迁移）：
             // /ywzj_vehicle reload 只重建 display、不触发数据重载事件，这里按 display 实例变化补扫一次。

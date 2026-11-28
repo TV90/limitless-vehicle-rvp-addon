@@ -14,12 +14,14 @@ import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.util.RVP_CcipUtil;
 import org.ywzj.rvp.util.RVP_WeaponResolveHelper;
 import org.ywzj.rvp.weapon.core.RVP_AimContexts;
+import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
+import org.ywzj.vehicle.vehicle.pojo.AimContext;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 
 import javax.annotation.Nullable;
@@ -116,21 +118,18 @@ public final class RVP_ScopeViewSyncClient {
         if (inScope && partUnitIndex >= 0
                 && player.getVehicle() instanceof AbstractVehicle v
                 && v.getId() == vehicleId
+                && partUnitIndex < v.getPartUnits().size()
                 && v.getPartUnits().get(partUnitIndex) instanceof WeaponUnit s) {
             station = s;
             vehicle = v;
         }
-        // FCS 失效：弹道计算机不可用，禁止准星弹道 march；交还本体直线落点（炮管指向）。
-        if (station != null && RVP_ClientFcsState.isDestroyed(station)) {
-            if (lastAdaptedKey != Long.MIN_VALUE) {
-                LAST_CROSSHAIR_HIT.remove(lastAdaptedKey);
-                lastAdaptedKey = Long.MIN_VALUE;
-            }
-            return;
-        }
-        org.ywzj.rvp.weapon.data.RVP_WeaponData weaponData = station == null
-                ? null : resolveStationWeaponData(station);
-        if (station == null || weaponData == null || !marchable(weaponData.getWeaponKind())) {
+        // 解开武器代理与弹种组，用实际炮管计算弹着点。操作席仍负责观瞄和准星插值。
+        AbstractVehicleWeapon<?> weapon = RVP_WeaponResolveHelper.currentPrimary(station);
+        RVP_WeaponData weaponData = weapon != null && weapon.getData() instanceof RVP_WeaponData data ? data : null;
+        WeaponUnit muzzleUnit = weapon == null ? null : weapon.getWeaponUnit();
+        if (station == null || RVP_ClientFcsState.isDestroyed(station)
+                || weaponData == null || !marchable(weaponData.getWeaponKind())
+                || muzzleUnit == null || muzzleUnit.getBolts().isEmpty()) {
             // 条件失效：清上一帧覆写表，本体原逻辑自然接管（准星与实际出弹点一致——无覆盖时同为炮口）
             if (lastAdaptedKey != Long.MIN_VALUE) {
                 LAST_CROSSHAIR_HIT.remove(lastAdaptedKey);
@@ -139,10 +138,10 @@ public final class RVP_ScopeViewSyncClient {
             return;
         }
         // 采样之前校正受损炮塔，避免依赖同优先级事件注册顺序而缓存稳定器补偿后的旧方向。
-        org.ywzj.rvp.event.RVP_TurretTraverseHandler.constrain(station);
-        var aim = station.aimContext();
+        org.ywzj.rvp.event.RVP_TurretTraverseHandler.constrain(muzzleUnit);
+        AimContext aim = muzzleUnit.aimContext();
         Vec3 dir = VectorUtil.rotToVec(aim.direction.x, aim.direction.y).normalize();
-        Vec3 origin = resolveDisguiseOrigin(station, vehicle);
+        Vec3 origin = resolveDisguiseOrigin(station, vehicle, aim);
         Vec3 hit = RVP_CcipUtil.computeBulletImpact(level, origin, dir, weaponData, vehicle);
         if (hit == null) {
             // 视距内无方块/实体命中（对天空等）：准星居中——沿瞄准方向的远点投影即屏幕中心，
@@ -181,7 +180,7 @@ public final class RVP_ScopeViewSyncClient {
      * 正确做法是反向适配：让<b>本体新增的瞄准圈</b>也改用相机指向（见
      * {@code VehicleAimAtOverlaySeekerColorMixin#rvp$disguiseAimPosition}），两边同源。</p>
      */
-    private static Vec3 resolveDisguiseOrigin(WeaponUnit station, AbstractVehicle vehicle) {
+    private static Vec3 resolveDisguiseOrigin(WeaponUnit station, AbstractVehicle vehicle, AimContext aim) {
         if (station.getData() instanceof org.ywzj.rvp.ext.WeaponUnitDataExt ext
                 && ext.ywzj_rvp$getSightFireDisguise() != null) {
             org.ywzj.rvp.config.RVP_SightFireDisguiseConfig config = ext.ywzj_rvp$getSightFireDisguise();
@@ -192,7 +191,8 @@ public final class RVP_ScopeViewSyncClient {
                 return sight;
             }
         }
-        return RVP_AimContexts.muzzle(station.aimContext());
+        // 未启用相机出弹时复用已选炮管的上下文。
+        return RVP_AimContexts.muzzle(aim);
     }
 
     /**
@@ -326,10 +326,11 @@ public final class RVP_ScopeViewSyncClient {
         return org.ywzj.vehicle.util.VectorUtil.hitPosition(player, origin, end);
     }
 
-    /** 解析武器站当前有效武器的 RVP 数据：改装弹种代理（Multi/Agent 包装）由 unwrap 循环解包（null 安全）。 */    @Nullable
-    private static org.ywzj.rvp.weapon.data.RVP_WeaponData resolveStationWeaponData(WeaponUnit station) {
-        AbstractVehicleWeapon<?> weapon = RVP_WeaponResolveHelper.unwrap(station.getCurrentWeapon().orElse(null));
-        return weapon != null && weapon.getData() instanceof org.ywzj.rvp.weapon.data.RVP_WeaponData data
+    /** 读取已选中的具体弹种，兼容武器代理与可循环弹种组。 */
+    @Nullable
+    private static RVP_WeaponData resolveStationWeaponData(WeaponUnit station) {
+        AbstractVehicleWeapon<?> weapon = RVP_WeaponResolveHelper.currentPrimary(station);
+        return weapon != null && weapon.getData() instanceof RVP_WeaponData data
                 ? data : null;
     }
 

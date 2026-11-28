@@ -1,13 +1,17 @@
 package org.ywzj.rvp.mixin;
 
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.Tag;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.ywzj.rvp.vehicle.RVP_GroupedWeaponSlotAssembler;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
+import org.ywzj.vehicle.vehicle.weapon.VehicleMultiWeapons;
 
 import java.util.Map;
 
@@ -43,5 +47,33 @@ public class WeaponUnitGroupedSlotMixin {
         }
         RVP_GroupedWeaponSlotAssembler.assemble(self, partUnitsView, vehicle);
         ci.cancel();
+    }
+
+    /** A slot that keeps its original weapon ID can read the former single weapon's saved ammo. */
+    @ModifyVariable(method = "deserializeNBT", at = @At("HEAD"), argsOnly = true, remap = false)
+    private CompoundTag ywzj_rvp$restoreAmmoFromSingleWeapon(CompoundTag tag) {
+        WeaponUnit unit = (WeaponUnit) (Object) this;
+        CompoundTag savedWeapons = tag.getCompound("WeaponTag");
+        for (var weapon : unit.weapons) {
+            if (!(weapon instanceof VehicleMultiWeapons multi) || multi.getSubWeapons().isEmpty()) {
+                continue;
+            }
+            var stock = multi.getSubWeapons().get(0);
+            String slot = multi.getSerializeId();
+            if (slot == null || stock.getData() == null || stock.getData().getWeaponId() == null
+                    || !slot.equals(stock.getData().getWeaponId().toString())) {
+                continue;
+            }
+            CompoundTag legacy = savedWeapons.getCompound(slot);
+            if (legacy.contains("RemainAmmo", Tag.TAG_ANY_NUMERIC) && !legacy.contains("SelectedIndex")) {
+                CompoundTag updated = tag.copy();
+                CompoundTag grouped = new CompoundTag();
+                grouped.putInt("SelectedIndex", 0);
+                grouped.put(stock.getSerializeId(), legacy.copy());
+                updated.getCompound("WeaponTag").put(slot, grouped);
+                tag = updated;
+            }
+        }
+        return tag;
     }
 }

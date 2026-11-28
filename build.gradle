@@ -242,19 +242,25 @@ tasks.matching { it.name == 'reobfJarJar' }.configureEach {
 // 默认 build 产物为轻量 jar（不含载具包，开发者日常用）；jarFull 额外把构建目录副本
 // build/rvp-pack 打进 jar 根 /rvp，玩家首次启动由 RVP_VehiclePackInstaller 自解压到
 // 游戏目录 limitless_vehicle/rvp（机制见 docs/plan/本体载具包自解压机制调研_20261012.md）。
-// 副本生成流程：复制 limitless_vehicle/rvp → build/rvp-pack，并按删除铁律把 *.bbmodel
-// 移入 _recycle_bin（bbmodel 为 Blockbench 源文件，不进玩家 jar）。
+// 可用 rvpPackDirectory 指向准备好的同格式发布目录，默认使用 build/rvp-pack。
+def rvpPackDirectory = providers.gradleProperty('rvpPackDirectory')
+        .map { file(it) }
+        .orElse(layout.buildDirectory.dir('rvp-pack').map { it.asFile })
 tasks.register('jarFull', Jar) {
     archiveClassifier = 'full'
-    // 副本存在性检查：gradle clean 会清掉 build/rvp-pack，缺失时明确报错提示重建。
     doFirst {
-        if (!file("$buildDir/rvp-pack/vehicle_pack.meta.json").exists()) {
-            throw new GradleException('build/rvp-pack 缺失：请先复制 limitless_vehicle/rvp 到该目录（并按删除铁律剔除 bbmodel）后再构建 jarFull')
+        if (!new File(rvpPackDirectory.get(), 'vehicle_pack.meta.json').isFile()) {
+            throw new GradleException("载具包目录缺失 vehicle_pack.meta.json：${rvpPackDirectory.get()}")
         }
     }
     from sourceSets.main.output
-    from("$buildDir/rvp-pack") {
+    from(rvpPackDirectory) {
         into 'rvp' // 与 RVP_VehiclePackInstaller 的 PACK_RESOURCE_ROOT("/rvp") 对齐
+        exclude '**/*.bbmodel'
+        filteringCharset = 'UTF-8'
+        filesMatching(['assets/*/models/bedrock/**/*.json', 'rvp/assets/*/models/bedrock/**/*.json']) {
+            filter(RvpModelJsonFilter)
+        }
     }
     manifest {
         attributes([
@@ -269,6 +275,56 @@ tasks.register('jarFull', Jar) {
         ])
     }
     finalizedBy 'reobfJarFull'
+}
+
+/** 发布阶段只剔除 JSON 字符串以外的格式空白，保留数字精度和字符串转义。 */
+@groovy.transform.CompileStatic
+class RvpModelJsonFilter extends FilterReader {
+    private boolean quoted
+    private boolean escaped
+
+    RvpModelJsonFilter(Reader source) {
+        super(new BufferedReader(source))
+    }
+
+    @Override
+    int read() throws IOException {
+        int value
+        while ((value = this.in.read()) != -1) {
+            if (quoted) {
+                if (escaped) {
+                    escaped = false
+                } else if (value == 92) {
+                    escaped = true
+                } else if (value == 34) {
+                    quoted = false
+                }
+                return value
+            }
+            if (value == 34) {
+                quoted = true
+            }
+            if (value != 32 && value != 9 && value != 10 && value != 13) {
+                return value
+            }
+        }
+        return -1
+    }
+
+    @Override
+    int read(char[] buffer, int offset, int length) throws IOException {
+        Objects.checkFromIndexSize(offset, length, buffer.length)
+        int count = 0
+        while (count < length) {
+            int value = read()
+            if (value == -1) {
+                return count == 0 ? -1 : count
+            }
+            buffer[offset + count] = (char) value
+            count++
+        }
+        return count
+    }
 }
 
 tasks.register('reobfJarFullNamed', Copy) {

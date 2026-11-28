@@ -3,6 +3,7 @@ package org.ywzj.rvp.client.render;
 import com.github.mcmodderanchor.simplebedrockmodel.v2.common.model.runtime.BakedModelInstance;
 import com.github.mcmodderanchor.simplebedrockmodel.v2.common.model.runtime.BoneState;
 import net.minecraft.client.Minecraft;
+import org.ywzj.rvp.client.resource.vehicle.RVP_DeferredDisplay;
 import org.ywzj.rvp.client.resource.vehicle.RVP_StateHiddenBone;
 import org.ywzj.rvp.debug.RVP_BoneHideDebug;
 import org.ywzj.vehicle.client.resource.ClientAssetsManager;
@@ -30,7 +31,7 @@ import java.util.WeakHashMap;
  * 状态退出时立即恢复渲染。
  * <p>
  * 渲染热路径（{@link #apply}）只做缓存读取与骨骼可见性设置，不触发遍历/反射；
- * 规则缓存由 {@link #rebindAll()} 在资源 reload 后一次性构建。
+ * 已加载的模型在资源重载时恢复规则，延迟模型在首次使用时绑定。
  */
 public final class RVP_StateBoneHider {
 
@@ -62,9 +63,15 @@ public final class RVP_StateBoneHider {
 
     private RVP_StateBoneHider() {}
 
-    public static void rebindAll() {
+    public static void clearCache() {
         MODEL_RULES.clear();
         VEHICLE_GEAR_STATES.clear();
+        boundVehicleDisplays = null;
+        bound = false;
+    }
+
+    public static void rebindAll() {
+        clearCache();
         Map<?, BaseDisplay> vehicleDisplays = ClientAssetsManager.INSTANCE.getVehicleDisplays();
         if (vehicleDisplays != null) {
             bindDisplays(vehicleDisplays.values());
@@ -93,16 +100,15 @@ public final class RVP_StateBoneHider {
             return;
         }
         for (BaseDisplay display : displays) {
-            if (display == null || display.getModel() == null) {
+            if (display == null) {
                 continue;
             }
-            List<RVP_StateHiddenBone> rules = resolveStateHiddenBones(display);
-            if (!rules.isEmpty()) {
-                if (RVP_BoneHideDebug.isEnabled()) {
-                    RVP_BoneHideDebug.log("绑定状态机规则：display=" + display.getDisplayId()
-                            + " model=" + display.getModel() + " rules=" + rules.size());
+            VehicleBedrockModel model = RVP_DeferredDisplay.loadedModel(display);
+            if (model != null) {
+                List<RVP_StateHiddenBone> rules = resolveStateHiddenBones(display);
+                if (!rules.isEmpty()) {
+                    MODEL_RULES.put(model, rules);
                 }
-                MODEL_RULES.put(display.getModel(), rules);
             }
         }
     }
@@ -142,14 +148,13 @@ public final class RVP_StateBoneHider {
     }
 
     private static List<RVP_StateHiddenBone> rulesFor(AbstractVehicle vehicle) {
-        VehicleBedrockModel model = ClientAssetsManager.INSTANCE
-                .getVehicleDisplay(vehicle.getDisplayId())
-                .map(BaseDisplay::getModel)
-                .orElse(null);
+        BaseDisplay display = ClientAssetsManager.INSTANCE.getVehicleDisplay(vehicle.getDisplayId()).orElse(null);
+        VehicleBedrockModel model = display == null ? null : RVP_DeferredDisplay.loadedModel(display);
         if (model == null) {
             return List.of();
         }
-        return MODEL_RULES.getOrDefault(model, List.of());
+        // 首次渲染刚完成烘焙的载具时，为该模型记录状态机规则。
+        return MODEL_RULES.computeIfAbsent(model, ignored -> resolveStateHiddenBones(display));
     }
 
     private static Set<String> evaluate(AbstractVehicle vehicle, List<RVP_StateHiddenBone> rules) {

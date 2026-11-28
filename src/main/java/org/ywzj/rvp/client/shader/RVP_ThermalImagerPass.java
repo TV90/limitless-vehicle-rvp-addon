@@ -10,6 +10,7 @@ import net.minecraft.util.Mth;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
+import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.client.state.RVP_ClientHitlState;
 import org.ywzj.rvp.client.state.RVP_ThermalImagerSelection;
 import org.ywzj.rvp.config.RVP_ThermalImagerType;
@@ -69,6 +70,12 @@ public final class RVP_ThermalImagerPass extends PostPass {
                 || !("blit".equals(output.getName()) || "minecraft:blit".equals(output.getName()))
                 || output.inTarget != swap || output.outTarget != main) return false;
 
+        // 观瞄可沿用本体热像，只有提供新调色描述时才换用 RVP 处理阶段。
+        var resources = Minecraft.getInstance().getResourceManager();
+        if (resources.getResource(RVP_MOD.modLocation("shaders/program/thermal_imager_palette.json")).isEmpty()) {
+            failedChain = new WeakReference<>(chain);
+            return false;
+        }
         RVP_ThermalImagerPass scene = null;
         RVP_ThermalImagerPass palette;
         try {

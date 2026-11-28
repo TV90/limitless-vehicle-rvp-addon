@@ -29,8 +29,7 @@ public final class RVP_DisplayBackendUtil {
     }
 
     /**
-     * 资源 reload 完成后重建全部 display 的 backend / no-cull 骨骼缓存，
-     * 使渲染热路径（getBackend / getNoCullBones）之后只做纯缓存读取。
+     * 资源重载后重新绑定已创建的模型。延迟模型在首次创建时补绑。
      */
     public static void rebindAll() {
         clearCache();
@@ -79,12 +78,19 @@ public final class RVP_DisplayBackendUtil {
             return;
         }
         for (BaseDisplay display : displays) {
-            if (display == null || display.getModel() == null) {
+            if (display == null) {
                 continue;
             }
-            MODEL_BACKENDS.putIfAbsent(display.getModel(), resolveBackend(display));
-            MODEL_NO_CULL_BONES.putIfAbsent(display.getModel(), resolveNoCullBones(display));
+            VehicleBedrockModel model = RVP_DeferredDisplay.loadedModel(display);
+            if (model != null) {
+                bindModel(display, model);
+            }
         }
+    }
+
+    static void bindModel(BaseDisplay display, VehicleBedrockModel model) {
+        MODEL_BACKENDS.putIfAbsent(model, resolveBackend(display));
+        MODEL_NO_CULL_BONES.putIfAbsent(model, resolveNoCullBones(display));
     }
 
     private static RVP_BedrockBackend resolveBackend(BaseDisplay display) {

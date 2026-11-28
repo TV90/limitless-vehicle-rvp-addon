@@ -114,6 +114,28 @@ public class RVP_ProjectileData {
     @SerializedName("rvp_turn_rate_limit")
     private float rvpTurnRateLimit = 0f;
 
+    /**
+     * 冷发射实体导弹在发动机点火前允许转向的时长，单位 Tick，默认 0。
+     * 仅武器站启用冷发射时生效，至少保留 1 Tick 沿弹射轴离筒。
+     */
+    @SerializedName("cold_launch_steering_lead_tick")
+    private int coldLaunchSteeringLeadTick;
+
+    /** 起飞机动加成持续时间，单位飞行 Tick，默认 0；仅实体气动转向且显式配置 {@code rvp_maxg} 时生效。 */
+    @SerializedName("rvp_launch_steering_ticks")
+    private int rvpLaunchSteeringTicks;
+
+    /**
+     * 起飞阶段的气动转向倍率，无量纲，默认 1。加成期间提高法向过载与每 Tick 转角上限，
+     * 并按反比降低动压参考速度。仅在 {@code rvp_launch_steering_ticks} 窗口内生效。
+     */
+    @SerializedName("rvp_launch_steering_multiplier")
+    private float rvpLaunchSteeringMultiplier = 1.0F;
+
+    /** 起飞加成窗口内的每 Tick 转角上限。缺省时沿用常规上限乘起飞倍率。 */
+    @SerializedName("rvp_launch_turn_rate_limit")
+    private Float rvpLaunchTurnRateLimit;
+
     /** 是否启用火箭发动机动力学，默认 false；启用后质量、推力和燃烧时间参与运动计算。 */
     @SerializedName("has_rocket_engine")
     private boolean hasRocketEngine = false;
@@ -508,6 +530,11 @@ public class RVP_ProjectileData {
         return Float.isFinite(rvpTurnRateLimit) ? Math.max(rvpTurnRateLimit, 0f) : 0f;
     }
 
+    /** @return 冷发射阶段提前解锁机动的 Tick 数；负数按 0 处理。 */
+    public int getColdLaunchSteeringLeadTick() {
+        return Math.max(0, coldLaunchSteeringLeadTick);
+    }
+
     /**
      * 解析气动转向限制，turningFactor 未显式传入时使用运行时默认值 0.5。
      *
@@ -531,6 +558,13 @@ public class RVP_ProjectileData {
     public RVP_AeroSteeringLimits resolveAeroSteeringLimits(double fallbackSpeed,
                                                              double altitude,
                                                              float resolvedTurningFactor) {
+        // 调用本项目快照解析入口；没有实体飞行时间的调用方使用常规机动参数。
+        return resolveAeroSteeringLimits(fallbackSpeed, altitude, resolvedTurningFactor, -1);
+    }
+
+    /** 按实体当前飞行 Tick 解析气动预算，起飞窗口结束后恢复常规预算。 */
+    public RVP_AeroSteeringLimits resolveAeroSteeringLimits(double fallbackSpeed, double altitude,
+                                                             float resolvedTurningFactor, int flightTick) {
         double referenceSpeed = resolveAeroReferenceSpeed(fallbackSpeed);
         double inducedDrag = resolveInducedDragCoefficient();
         // 调用本项目高度阻力解析器，复用同一倍率作为气动转向的空气密度因子。
@@ -538,9 +572,23 @@ public class RVP_ProjectileData {
         float turning = Float.isFinite(resolvedTurningFactor)
                 ? Math.max(0f, Math.min(1f, resolvedTurningFactor))
                 : 0.5F;
+        // 调用本项目过载字段解析器，只为已经使用显式过载预算的实体提高起飞机动性。
+        Double maxG = getRvpMaxG();
+        boolean launchSteering = rvpAeroSteering && maxG != null && flightTick >= 0
+                && flightTick < rvpLaunchSteeringTicks;
+        double multiplier = launchSteering && Float.isFinite(rvpLaunchSteeringMultiplier)
+                ? Math.max(1.0F, rvpLaunchSteeringMultiplier) : 1.0;
+        double turnRateLimit = getRvpTurnRateLimit() * multiplier;
+        if (launchSteering && rvpLaunchTurnRateLimit != null
+                && Float.isFinite(rvpLaunchTurnRateLimit) && rvpLaunchTurnRateLimit > 0f) {
+            turnRateLimit = rvpLaunchTurnRateLimit;
+        }
+        if (maxG != null && multiplier > 1.0) {
+            maxG *= multiplier;
+        }
         return new RVP_AeroSteeringLimits(
-                getRvpMaxG(), turning, referenceSpeed, densityFactor,
-                inducedDrag, getRvpTurnRateLimit(), rvpAeroSteering,
+                maxG, turning, referenceSpeed / multiplier, densityFactor,
+                inducedDrag, turnRateLimit, rvpAeroSteering,
                 // 调用本项目攻角解析器，将可选配置冻结到实体/虚拟共用的限制中。
                 getRvpAttackAngleLimitDeg());
     }

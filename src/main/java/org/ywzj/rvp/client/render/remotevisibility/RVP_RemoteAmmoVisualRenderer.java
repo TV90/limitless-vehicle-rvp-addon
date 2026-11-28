@@ -266,6 +266,9 @@ public final class RVP_RemoteAmmoVisualRenderer {
             spawnRemoteTrail(minecraft, entity, renderPos, cameraPos, currentDimension);
 
             Vec3 oldPos = entity.position();
+            double oldX = entity.xo;
+            double oldY = entity.yo;
+            double oldZ = entity.zo;
             float oldXRot = entity.getXRot();
             float oldYRot = entity.getYRot();
             float oldXRotO = entity.xRotO;
@@ -286,6 +289,10 @@ public final class RVP_RemoteAmmoVisualRenderer {
                         entity.getYRot(), event.getPartialTick(), poseStack, buffers, LightTexture.FULL_BRIGHT);
                 rendered = true;
             } finally {
+                // 还原插值的前一刻坐标，扩展远平面绘制不应改变下一帧或 HUD 读到的快照。
+                entity.xo = oldX;
+                entity.yo = oldY;
+                entity.zo = oldZ;
                 entity.setPos(oldPos);
                 entity.setXRot(oldXRot);
                 entity.setYRot(oldYRot);

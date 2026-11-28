@@ -50,14 +50,15 @@ public final class RVP_ProjectileMotion {
         // 调用本项目数据解析器，区间切换时按当前飞行 Tick 重新判断，不缓存武器 ID。
         Float factor = data.resolveTurningFactor(projectile.getFlightTickCount());
         return data.resolveAeroSteeringLimits(config.getProjectileVelocity(),
-                projectile.getY(), factor == null ? 0.5F : factor).attackAngleEnabled();
+                projectile.getY(), factor == null ? 0.5F : factor,
+                projectile.getFlightTickCount()).attackAngleEnabled();
     }
 
     /** 写回独立姿态和载荷；返回速度供原制导链在碰撞检测前使用。 */
     public static Vec3 applyAttackAngleSteering(RVP_BaseBullet projectile, Vec3 current,
                                                Vec3 desired, RVP_AeroSteeringLimits limits) {
         if (isPreIgnitionAttitudeLocked(projectile)) {
-            // 冷发射点火前只保持生成时姿态；目标和制导状态仍可刷新，但不能提前改写攻角轴。
+            // 冷发射锁定期间保持生成时姿态；目标和制导状态仍可刷新。
             return current;
         }
         // 调用双轴状态极点脱离修复：首次有效制导必须先确定目标水平转弯平面，避免任意 yaw=0 产生载具前向偏航。
@@ -72,7 +73,7 @@ public final class RVP_ProjectileMotion {
     /** 提交已求解的攻角结果；PIP 的无副作用试算不能调用此方法。 */
     public static Vec3 applyAttackAngleSolution(RVP_BaseBullet projectile, RVP_AttackAngleSolution solution) {
         if (isPreIgnitionAttitudeLocked(projectile)) {
-            // 点火前不提交 PIP/攻角结果，避免试算结果污染冷发射阶段的速度方向和姿态状态。
+            // 冷发射尚未解锁机动时不提交 PIP/攻角结果，维持弹射轴上的速度和姿态。
             return projectile.getDeltaMovement();
         }
         // 调用统一双轴状态写回，保留极点偏航及角速度，姿态仍走现有同步通道。
@@ -124,7 +125,7 @@ public final class RVP_ProjectileMotion {
     /** 丢锁、延迟制导或无目标时仍推进残留攻角，姿态逐步向当前速度回正。 */
     public static void finishAttackAngleGuidance(RVP_BaseBullet projectile) {
         if (isPreIgnitionAttitudeLocked(projectile)) {
-            // 冷发射阶段保持生成时攻角，点火 Tick 之后再由兜底求解器接管残余攻角。
+            // 冷发射尚未解锁机动时保持生成姿态，解锁后再结算残余攻角。
             return;
         }
         // 调用本项目门控和单步标记，确保每个真实飞行 Tick 最多求解一次。
@@ -137,7 +138,8 @@ public final class RVP_ProjectileMotion {
         var data = projectile.rvpData.getProjectileData();
         Float factor = data.resolveTurningFactor(projectile.getFlightTickCount());
         RVP_AeroSteeringLimits limits = data.resolveAeroSteeringLimits(
-                projectile.rvpData.getProjectileVelocity(), projectile.getY(), factor == null ? 0.5F : factor);
+                projectile.rvpData.getProjectileVelocity(), projectile.getY(),
+                factor == null ? 0.5F : factor, projectile.getFlightTickCount());
         Vec3 velocity = projectile.getDeltaMovement();
         // 调用本项目实体适配器，保留独立姿态并按残余攻角转向。
         projectile.setDeltaMovement(applyAttackAngleSteering(projectile, velocity, velocity, limits));
@@ -521,7 +523,7 @@ public final class RVP_ProjectileMotion {
         // 调用本项目攻角门控，防止普通制导出口覆盖刚写回的独立机体轴。
         if (entity instanceof RVP_BaseBullet projectile
                 && (usesAttackAngle(projectile) || isPreIgnitionAttitudeLocked(projectile))) {
-            // 冷发射点火前模型朝向必须保持为生成时朝向，制导只更新目标状态不更新姿态。
+            // 冷发射姿态锁定期间保持生成时朝向，制导只更新目标状态。
             return;
         }
         if (direction.lengthSqr() <= 1.0E-8) {
@@ -535,7 +537,7 @@ public final class RVP_ProjectileMotion {
     public static void applyRotationFromVelocity(RVP_BaseBullet projectile, Vec3 velocity) {
         // 调用本项目攻角门控；穿透减速等外力只改速度，姿态留待下次求解。
         if (usesAttackAngle(projectile) || isPreIgnitionAttitudeLocked(projectile)) {
-            // 冷发射点火前禁止风阻、穿透减速等运动出口按速度改写模型朝向。
+            // 冷发射姿态锁定期间禁止运动出口按速度改写模型朝向。
             return;
         }
         if (velocity.lengthSqr() <= 1.0E-6) {
@@ -627,16 +629,23 @@ public final class RVP_ProjectileMotion {
         return data != null && isPreIgnitionAttitudeLocked(
                 projectile.getFlightTickCount(),
                 projectile.getColdLaunchTimeTick(),
-                data.getResolvedIgnitionDelayTick());
+                data.getResolvedIgnitionDelayTick(), data.getProjectileData().getColdLaunchSteeringLeadTick());
     }
 
     /** 按纯时序判断锁定窗口，供单元测试覆盖冷发射与配置点火延迟的边界。 */
-    static boolean isPreIgnitionAttitudeLocked(int flightTick, int coldLaunchTick, int ignitionDelayTick) {
+    static boolean isPreIgnitionAttitudeLocked(int flightTick, int coldLaunchTick, int ignitionDelayTick,
+                                                int steeringLeadTick) {
         if (coldLaunchTick <= 0) {
             return false;
         }
         int ignitionTick = Math.max(Math.max(ignitionDelayTick, 0), coldLaunchTick);
-        return flightTick >= 0 && flightTick < ignitionTick;
+        // 调用本项目统一解锁边界，制导写入姿态时与运动保留速度时采用同一 Tick。
+        return flightTick >= 0 && flightTick < resolveColdLaunchSteeringStartTick(ignitionTick, steeringLeadTick);
+    }
+
+    /** 至少沿发射轴运行首个 Tick，随后在点火前按配置解锁姿态与速度。 */
+    private static int resolveColdLaunchSteeringStartTick(int ignitionTick, int steeringLeadTick) {
+        return Math.max(1, ignitionTick - Math.max(0, steeringLeadTick));
     }
 
     private static Vec3 applyPreIgnitionVelocity(RVP_BaseBullet projectile, Vec3 velocity, int ignition) {
@@ -645,6 +654,12 @@ public final class RVP_ProjectileMotion {
             return velocity;
         }
         int coldLaunchTick = projectile.getColdLaunchTimeTick();
+        // 调用同一个解锁边界，提前机动窗口内不再用原冷发射轴覆盖已更新的速度。
+        if (coldLaunchTick > 0 && projectile.isMissile()
+                && projectile.getFlightTickCount() >= resolveColdLaunchSteeringStartTick(ignition,
+                        projectile.rvpData.getProjectileData().getColdLaunchSteeringLeadTick())) {
+            return velocity;
+        }
         // 读取冷发射窗口内的 PRESET 接管标记，使单 Tick 的 GPS 源抖动不会把弹体掰回竖直。
         boolean presetGuidanceApplied = projectile.hasPresetGuidanceMotionAppliedDuringLaunch();
         if (shouldPreserveGuidanceDuringColdLaunch(

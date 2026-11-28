@@ -10,15 +10,17 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.ywzj.rvp.entity.projectile.RVP_ProjectileSimulationLevel;
 import org.ywzj.rvp.guidance.RVP_OpticalLock;
-import org.ywzj.rvp.projectile.simulation.RVP_ProjectileSimulationWeapon;
+import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
+import org.ywzj.rvp.weapon.data.RVP_WeaponData;
+import org.ywzj.vehicle.custom.serialize.GsonUtil;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.entity.vehicle.WheeledVehicle;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.pojo.AimContext;
 
-import java.nio.file.Path;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -44,9 +46,8 @@ class RVP_OpticalLaunchTest {
         write(WeaponUnitData.class, stationData, "zoomMax", 12f);
         write(PartUnit.class, unit, "data", stationData);
         unit.direction = new Vec3(0, 0, 1);
-        var pack = Path.of("limitless_vehicle/rvp/data/rvp/weapons");
-        var data = RVP_ProjectileSimulationWeapon.read(pack, "rvp:mi28_optical_tv").data();
-        var atv = RVP_ProjectileSimulationWeapon.read(pack, "rvp:mi28_optical_atv").data();
+        var data = opticalWeapon("TV");
+        var atv = opticalWeapon("ATV");
         assertEquals(60f, data.getGuidanceData().getMaxLockHalfAngle());
         assertEquals(60f, atv.getGuidanceData().getMaxLockHalfAngle());
         assertEquals(120, data.getGuidanceData().getMaxGuidanceAngle());
@@ -118,8 +119,7 @@ class RVP_OpticalLaunchTest {
     @Test void serverReloadUpdatesAndSpawnRefillClearTheTimer() throws Exception {
         var world = RVP_ProjectileSimulationLevel.create(0, null);
         var vehicle = vehicle(world, 0, 0, 1008);
-        var data = RVP_ProjectileSimulationWeapon.read(Path.of("limitless_vehicle/rvp/data/rvp/weapons"),
-                "rvp:mi28_optical_tv").data();
+        var data = opticalWeapon("TV");
         var weapon = new RVP_ProjectileWeapon(vehicle, null, 0, data, "reload_probe", null) {
             @Override public net.minecraft.sounds.SoundEvent getReloadSound() {
                 throw new AssertionError("服务端不应解析换弹音效");
@@ -133,6 +133,33 @@ class RVP_OpticalLaunchTest {
         weapon.ywzj_rvp$setReloadTime(1);
         weapon.ywzj_rvp$setReloadTime(0);
         assertEquals(0, weapon.getReloadTime());
+    }
+
+    /** 在内存中走生产数据解析，使发射测试独立于发布包是否配有实验弹。 */
+    private static RVP_WeaponData opticalWeapon(String guidance) {
+        RVP_WeaponData data = GsonUtil.GSON.fromJson("""
+                {
+                  "type": "rvp:missile",
+                  "life": 2400,
+                  "max_capacity": 2,
+                  "fire_data": {"require_lock": false, "fire_mode": "FULL_AUTO"},
+                  "projectile_data": {"velocity": 1.0},
+                  "guidance_data": {
+                    "guidance_type": "%s",
+                    "guidance_tick_range": "[[5,inf]]",
+                    "guidance_target_distance_range": "[[0,2048]]",
+                    "lock_target_distance_range": "[[0,2048]]",
+                    "max_guidance_angle": 120,
+                    "max_lock_angle": 120,
+                    "allow_missile_view": true,
+                    "recognition_lock_threshold": 0.65,
+                    "recognition_hold_ticks": 12
+                  }
+                }
+                """.formatted(guidance), RVP_WeaponData.class);
+        data.setWeaponKind(RVP_EnumWeaponKind.MISSILE);
+        data.setWeaponId(ResourceLocation.tryParse("rvp:optical_test_" + guidance.toLowerCase(Locale.ROOT)));
+        return data;
     }
 
     private static Vehicle vehicle(RVP_ProjectileSimulationLevel level, int x, int z, int id) {

@@ -3,6 +3,7 @@ package org.ywzj.rvp.client.render;
 import com.github.mcmodderanchor.simplebedrockmodel.v2.common.model.runtime.BakedModelInstance;
 import com.github.mcmodderanchor.simplebedrockmodel.v2.common.model.runtime.BoneState;
 import net.minecraft.client.Minecraft;
+import org.ywzj.rvp.client.resource.vehicle.RVP_DeferredDisplay;
 import org.ywzj.rvp.client.resource.vehicle.RVP_DistanceHiddenBone;
 import org.ywzj.rvp.client.state.RVP_ClientZoomState;
 import org.ywzj.rvp.debug.RVP_BoneHideDebug;
@@ -62,9 +63,15 @@ public final class RVP_DistanceBoneHider {
 
     private RVP_DistanceBoneHider() {}
 
-    public static void rebindAll() {
+    public static void clearCache() {
         MODEL_RULES.clear();
         HIDDEN_BONE_INDEXES.clear();
+        boundVehicleDisplays = null;
+        bound = false;
+    }
+
+    public static void rebindAll() {
+        clearCache();
         Map<?, BaseDisplay> vehicleDisplays = ClientAssetsManager.INSTANCE.getVehicleDisplays();
         if (vehicleDisplays != null) {
             bindDisplays(vehicleDisplays.values());
@@ -93,16 +100,15 @@ public final class RVP_DistanceBoneHider {
             return;
         }
         for (BaseDisplay display : displays) {
-            if (display == null || display.getModel() == null) {
+            if (display == null) {
                 continue;
             }
-            List<RVP_DistanceHiddenBone> rules = resolveDistanceHiddenBones(display);
-            if (!rules.isEmpty()) {
-                if (RVP_BoneHideDebug.isEnabled()) {
-                    RVP_BoneHideDebug.log("绑定距离规则：display=" + display.getDisplayId()
-                            + " model=" + display.getModel() + " rules=" + rules.size());
+            VehicleBedrockModel model = RVP_DeferredDisplay.loadedModel(display);
+            if (model != null) {
+                List<RVP_DistanceHiddenBone> rules = resolveDistanceHiddenBones(display);
+                if (!rules.isEmpty()) {
+                    MODEL_RULES.put(model, rules);
                 }
-                MODEL_RULES.put(display.getModel(), rules);
             }
         }
     }
@@ -182,14 +188,13 @@ public final class RVP_DistanceBoneHider {
     }
 
     private static List<RVP_DistanceHiddenBone> rulesFor(AbstractVehicle vehicle) {
-        VehicleBedrockModel model = ClientAssetsManager.INSTANCE
-                .getVehicleDisplay(vehicle.getDisplayId())
-                .map(BaseDisplay::getModel)
-                .orElse(null);
+        BaseDisplay display = ClientAssetsManager.INSTANCE.getVehicleDisplay(vehicle.getDisplayId()).orElse(null);
+        VehicleBedrockModel model = display == null ? null : RVP_DeferredDisplay.loadedModel(display);
         if (model == null) {
             return List.of();
         }
-        return MODEL_RULES.getOrDefault(model, List.of());
+        // 首次渲染刚完成烘焙的载具时，为该模型记录距离规则。
+        return MODEL_RULES.computeIfAbsent(model, ignored -> resolveDistanceHiddenBones(display));
     }
 
     private static double distanceToPlayer(AbstractVehicle vehicle) {

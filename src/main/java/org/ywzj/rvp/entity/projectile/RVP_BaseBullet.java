@@ -221,6 +221,11 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     protected RVP_WeaponData rvpData;
     /** 发射点快照，仅供服务器阶段 A 虚拟中段准入判断。 */
     private Vec3 virtualMidcourseLaunchPosition = Vec3.ZERO;
+    private OverheadLoftStage overheadLoftStage = OverheadLoftStage.UNDECIDED;
+
+    public enum OverheadLoftStage {
+        UNDECIDED, DIRECT, APPROACH, DIVE
+    }
     /** 专用转换移除标志，使 remove/debug/HITL 清理可区分普通 discard。 */
     private boolean virtualizingMidcourse;
     /** 世界交互恢复后的短暂冷却，单位飞行刻，防止同一位置连续真实/虚拟切换。 */
@@ -2113,6 +2118,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         // 调用本项目向量存档工具：保存冷发射期间仍需使用的发射瞬间载机速度快照。
         writeRemoteVec3(tag, "rvpLaunchVehicleVelocity", launchVehicleVelocity);
         writeRemoteVec3(tag, "rvpSubmunitionGpsTarget", submunitionGpsTarget);
+        if (overheadLoftStage != OverheadLoftStage.UNDECIDED) {
+            tag.putString("rvpOverheadLoftStage", overheadLoftStage.name());
+        }
+        if (rvpData != null && rvpData.getGuidanceData().getLoftOverheadMinLaunchDistance() > 0f) {
+            writeRemoteVec3(tag, "rvpOverheadLoftLaunch", virtualMidcourseLaunchPosition);
+        }
     }
 
     /** 缺少运行态字段时 NBT 自动读零；这不是武器 JSON schema 迁移。 */
@@ -2127,6 +2138,16 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         // 调用本项目向量读取工具：兼容没有该运行态字段的旧存档，缺失时回退为零速度。
         captureLaunchVehicleVelocity(readRemoteVec3(tag, "rvpLaunchVehicleVelocity"));
         submunitionGpsTarget = readRemoteVec3(tag, "rvpSubmunitionGpsTarget");
+        overheadLoftStage = switch (tag.getString("rvpOverheadLoftStage")) {
+            case "DIRECT" -> OverheadLoftStage.DIRECT;
+            case "APPROACH" -> OverheadLoftStage.APPROACH;
+            case "DIVE" -> OverheadLoftStage.DIVE;
+            default -> OverheadLoftStage.UNDECIDED;
+        };
+        Vec3 overheadLaunch = readRemoteVec3(tag, "rvpOverheadLoftLaunch");
+        if (overheadLaunch != null) {
+            virtualMidcourseLaunchPosition = overheadLaunch;
+        }
     }
 
     /** 恢复时只校验角速度，不环绕已有旋转角，避免影响非攻角弹及其旧帧插值。 */
@@ -2393,6 +2414,14 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     /** @return 准入距离检查和完整状态持久化使用的发射点快照。 */
     public final Vec3 getVirtualMidcourseLaunchPosition() {
         return virtualMidcourseLaunchPosition;
+    }
+
+    public OverheadLoftStage getOverheadLoftStage() {
+        return overheadLoftStage;
+    }
+
+    public void setOverheadLoftStage(OverheadLoftStage stage) {
+        overheadLoftStage = stage;
     }
 
     /**

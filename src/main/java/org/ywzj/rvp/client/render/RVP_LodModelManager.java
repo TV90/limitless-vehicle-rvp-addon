@@ -88,12 +88,19 @@ public final class RVP_LodModelManager {
         }
     }
 
-    /** 资源 reload 完成后重建全部规则、烘焙 LOD 模型并注册 LOD 贴图。 */
-    public static void rebindAll() {
+    /** 清掉对上一批 display 与 LOD 模型的引用，首次渲染时再绑定新资源。 */
+    public static void clearCache() {
         DISPLAY_RULES.clear();
         MODEL_CACHE.clear();
         VEHICLE_STATES.clear();
         LAST_EVALUATION_TICKS.clear();
+        boundVehicleDisplays = null;
+        bound = false;
+    }
+
+    /** 资源重载后，在首次使用 LOD 时构建规则和模型。 */
+    public static void rebindAll() {
+        clearCache();
         Map<?, BaseDisplay> vehicleDisplays = ClientAssetsManager.INSTANCE.getVehicleDisplays();
         if (vehicleDisplays != null) {
             bindDisplays(vehicleDisplays.values());
@@ -132,7 +139,8 @@ public final class RVP_LodModelManager {
             return;
         }
         for (BaseDisplay display : displays) {
-            if (display == null || display.getModel() == null) {
+            // 注册 LOD 配置仅依赖 display 字段，无需触发主体模型加载。
+            if (display == null) {
                 continue;
             }
             List<RVP_LodModel> rules = resolveLodModels(display);

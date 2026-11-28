@@ -87,6 +87,48 @@ class RVP_ProjectileDataAeroSteeringTest {
         assertEquals(1.75, limits.densityFactor());
     }
 
+    /** 起飞加成必须覆盖低动态压的加速阶段，并按端点 Tick 恢复常规预算。 */
+    @Test
+    void launchSteeringBoostExpiresAtConfiguredTick() {
+        RVP_ProjectileData data = gson.fromJson("""
+                {
+                  "rvp_aero_steering": true,
+                  "rvp_maxg": 32,
+                  "rvp_turn_rate_limit": 2,
+                  "max_speed": 5.5,
+                  "rvp_launch_steering_ticks": 40,
+                  "rvp_launch_steering_multiplier": 4
+                }
+                """, RVP_ProjectileData.class);
+
+        RVP_AeroSteeringLimits limits = data.resolveAeroSteeringLimits(0.5, 64.0, 0.1F, 39);
+        assertEquals(128.0, limits.rvpMaxGs().doubleValue());
+        assertEquals(8.0, limits.turnRateLimitDegPerTick());
+        assertEquals(1.375, limits.referenceSpeed());
+        assertEquals(data.resolveAeroSteeringLimits(0.5, 64.0, 0.1F),
+                data.resolveAeroSteeringLimits(0.5, 64.0, 0.1F, 40));
+    }
+
+    @Test
+    void launchTurnRateOverrideKeepsTheOtherBoostedLimits() {
+        var data = gson.fromJson("""
+                {
+                  "rvp_aero_steering": true,
+                  "rvp_maxg": 32,
+                  "rvp_turn_rate_limit": 4,
+                  "max_speed": 5.5,
+                  "rvp_launch_steering_ticks": 40,
+                  "rvp_launch_steering_multiplier": 4,
+                  "rvp_launch_turn_rate_limit": 4
+                }
+                """, RVP_ProjectileData.class);
+        var launch = data.resolveAeroSteeringLimits(0.5, 64.0, 0.1F, 6);
+        assertEquals(128.0, launch.rvpMaxGs().doubleValue());
+        assertEquals(1.375, launch.referenceSpeed());
+        assertEquals(4.0, launch.turnRateLimitDegPerTick());
+        assertEquals(4.0, data.resolveAeroSteeringLimits(0.5, 64.0, 0.1F, 40).turnRateLimitDegPerTick());
+    }
+
     /** 缺少显式参考速度与最高速率时，应先采用武器初速，最终才回退到 3 格/Tick。 */
     @Test
     void referenceSpeedFallsBackToWeaponSpeedThenConstant() {

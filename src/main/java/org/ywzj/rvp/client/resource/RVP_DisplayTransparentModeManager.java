@@ -12,6 +12,7 @@ import net.minecraft.util.profiling.ProfilerFiller;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 import org.jetbrains.annotations.NotNull;
+import org.ywzj.rvp.client.resource.vehicle.RVP_DeferredDisplay;
 import org.ywzj.vehicle.client.resource.ClientAssetsManager;
 import org.ywzj.vehicle.client.resource.vehicle.BaseDisplay;
 import org.ywzj.vehicle.client.resource.vehicle.VehicleBedrockModel;
@@ -114,7 +115,8 @@ public final class RVP_DisplayTransparentModeManager extends SimplePreparableRel
             if (bones == null || bones.isEmpty()) {
                 continue;
             }
-            VehicleBedrockModel model = entry.getValue().getModel();
+            // 规则索引只记录当前已创建的模型，避免为其他座舱预先加载网格。
+            VehicleBedrockModel model = RVP_DeferredDisplay.loadedModel(entry.getValue());
             if (model != null) {
                 cockpitDepthFixBonesByModel.put(model, bones);
             }

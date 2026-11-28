@@ -11,6 +11,7 @@ import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
+import org.joml.Quaternionf;
 import org.ywzj.rvp.entity.projectile.RVP_BulletEntity;
 import org.ywzj.rvp.entity.projectile.RVP_RocketEntity;
 import org.ywzj.rvp.weapon.data.RVP_EffectsData;
@@ -20,6 +21,7 @@ import org.ywzj.vehicle.client.resource.vehicle.BaseDisplay;
 import org.ywzj.vehicle.client.resource.vehicle.VehicleBedrockModel;
 import org.ywzj.vehicle.entity.weapon.AmmoEntity;
 import org.ywzj.vehicle.resource.BedrockModelLoader;
+import org.ywzj.vehicle.util.VectorUtil;
 
 import java.util.Map;
 import java.util.Optional;
@@ -42,7 +44,7 @@ final class VehicleProjectileRenderLogic {
                              MultiBufferSource bufferSource, int packedLight) {
         // 调用共用曳光绘制，机炮弹沿用既有口径和颜色。
         double flown = bullet.getPosition(partialTicks).distanceTo(bullet.getStartPos());
-        drawTracer(bullet, partialTicks, poseStack, bufferSource, packedLight, flown,
+        drawTracer(bullet.getDeltaMovement(), poseStack, bufferSource, packedLight, flown,
                 bullet.getTracerCaliber(), bullet.getTracerLengthScale(),
                 bullet.getTracerR(), bullet.getTracerG(), bullet.getTracerB());
         // 原机枪型弹体只绘制曳光；固定火炮显式提供 display 时还需绘制模型。
@@ -55,30 +57,40 @@ final class VehicleProjectileRenderLogic {
         }
     }
 
-    private static void drawTracer(AmmoEntity bullet, float partialTicks, PoseStack poseStack,
+    private static void drawTracer(Vec3 velocity, PoseStack poseStack,
                                    MultiBufferSource bufferSource, int packedLight, double flown,
                                    float caliber, float lengthScale, float red, float green, float blue) {
-        if (lengthScale <= 0f) {
+        if (lengthScale <= 0f || !(flown > 1.0)) {
             return;
         }
-        BedrockModel model = BedrockModelLoader.getModel(InternalAssets.BASIC_BULLET_MODEL);
-        poseStack.pushPose();
+        double speed = velocity.length();
+        if (!Double.isFinite(speed) || speed <= 1.0E-6) {
+            return;
+        }
         // 调用本项目弹体视觉口径入口：曳光宽度使用 tracer_caliber，不混用炮口烟/物理口径 caliber。
         float width = Math.min(0.04f * caliber / 7.62f, 0.2f);
         // 曳光长度 = 0.3 × 当前速度 × effects_data.tracer_length_scale，上限 = 已飞距离 × 0.8
-        double trailLength = RVP_EffectsData.resolveTracerLength(bullet.getDeltaMovement().length(), flown,
-                lengthScale);
-        poseStack.mulPose(Axis.YP.rotationDegrees(Mth.lerp(partialTicks, bullet.yRotO, bullet.getYRot()) - 180.0F));
-        poseStack.mulPose(Axis.XP.rotationDegrees(Mth.lerp(partialTicks, bullet.xRotO, bullet.getXRot())));
-        poseStack.translate(0, 0, trailLength / 2.0);
-        poseStack.scale(width, width, (float) trailLength);
-        if (flown > 1.0) {
+        double trailLength = RVP_EffectsData.resolveTracerLength(speed, flown, lengthScale);
+        BedrockModel model = BedrockModelLoader.getModel(InternalAssets.BASIC_BULLET_MODEL);
+        poseStack.pushPose();
+        try {
+            // 模型局部 +Z 延伸到弹后方。近距实体和远距克隆统一用这一帧的飞行速度对齐。
+            poseStack.mulPose(tracerRotation(velocity, speed));
+            poseStack.translate(0, 0, trailLength / 2.0);
+            poseStack.scale(width, width, (float) trailLength);
             RenderType type = RenderType.energySwirl(InternalAssets.BASIC_BULLET_TEXTURE, 15, 15);
             VertexConsumer builder = bufferSource.getBuffer(type);
             model.renderToBuffer(poseStack, builder, packedLight, OverlayTexture.NO_OVERLAY,
                     red, green, blue, 1f);
+        } finally {
+            poseStack.popPose();
         }
-        poseStack.popPose();
+    }
+
+    /** 从已验证的非零弹速计算尾迹旋转，让局部 +Z 指向速度反方向。 */
+    static Quaternionf tracerRotation(Vec3 velocity, double speed) {
+        return new Quaternionf().rotationTo(0, 0, 1,
+                (float) (-velocity.x / speed), (float) (-velocity.y / speed), (float) (-velocity.z / speed));
     }
 
     static void renderBedrockProjectile(AmmoEntity ammo, float entityYaw, float partialTick, PoseStack poseStack,
@@ -92,7 +104,7 @@ final class VehicleProjectileRenderLogic {
                 if (effects.hasTracerCaliberOverride() && effects.hasTracerLengthScaleOverride()) {
                     // 曲射弹不保存机枪弹的出生点。以起飞帧速度估算初始曳光长度上限。
                     double flown = rocket.getDeltaMovement().length() * (rocket.tickCount + partialTick);
-                    drawTracer(rocket, partialTick, poseStack, bufferSource, packedLight, flown,
+                    drawTracer(rocket.getDeltaMovement(), poseStack, bufferSource, packedLight, flown,
                             effects.getTracerCaliber(), effects.getTracerLengthScale(),
                             effects.getTracerR(), effects.getTracerG(), effects.getTracerB());
                 }
@@ -102,8 +114,7 @@ final class VehicleProjectileRenderLogic {
         Vec3 root = Vec3.ZERO;
         // 调用专用显示归属门，虚拟显示已经统一插值，模型不能再比喷口/HUD 多平滑一次。
         boolean virtualVisual = org.ywzj.rvp.client.state.remotevisibility.RVP_ClientVirtualMissileVisualState.owned(ammo) != null;
-        RotationSample sample = virtualVisual ? new RotationSample(ammo.getYRot(), ammo.getXRot())
-                : sampleSmoothedRotation(ammo, entityYaw, partialTick);
+        RotationSample sample = sampleProjectileRotation(ammo, entityYaw, partialTick, virtualVisual);
         poseStack.rotateAround(Axis.YP.rotationDegrees(-sample.yaw()),
                 (float) root.x, (float) root.y, (float) root.z);
         poseStack.rotateAround(Axis.XP.rotationDegrees(sample.pitch()),
@@ -175,6 +186,18 @@ final class VehicleProjectileRenderLogic {
             model.applyPose(model.getBindPose());
         }
         poseStack.popPose();
+    }
+
+    private static RotationSample sampleProjectileRotation(AmmoEntity ammo, float entityYaw, float partialTick,
+                                                            boolean virtualVisual) {
+        Vec3 velocity = ammo.getDeltaMovement();
+        if (ammo instanceof RVP_BulletEntity && velocity.lengthSqr() > 1.0E-12) {
+            // 调用本体速度换角工具，让显式配置的子弹模型和曳光沿同一条轨迹。
+            var flightRotation = VectorUtil.vecToRot(velocity);
+            return new RotationSample(flightRotation.y, flightRotation.x);
+        }
+        return virtualVisual ? new RotationSample(ammo.getYRot(), ammo.getXRot())
+                : sampleSmoothedRotation(ammo, entityYaw, partialTick);
     }
 
     private static RotationSample sampleSmoothedRotation(AmmoEntity ammo, float entityYaw, float partialTick) {

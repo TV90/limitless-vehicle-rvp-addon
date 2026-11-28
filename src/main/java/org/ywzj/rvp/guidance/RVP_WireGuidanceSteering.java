@@ -84,7 +84,7 @@ public final class RVP_WireGuidanceSteering {
             // 调用本项目弹体数据解析器，为 HITL/线导冻结与自动制导相同的气动限制。
             aeroLimits = projectile.getRvpData().getProjectileData().resolveAeroSteeringLimits(
                     projectile.getRvpData().getProjectileVelocity(), projectile.getY(),
-                    (float) turningFactor);
+                    (float) turningFactor, projectile.getFlightTickCount());
         }
         if (projectile.isMissile() && aeroLimits != null && aeroLimits.attackAngleEnabled()) {
             // 调用本项目攻角适配器；提前返回，避免下方直控代码再次用速度覆盖独立姿态。

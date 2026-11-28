@@ -1,24 +1,27 @@
 package org.ywzj.rvp.client.resource.vehicle;
 
 import com.github.mcmodderanchor.simplebedrockmodel.v1.common.animation.BedrockAnimation;
+import com.github.mcmodderanchor.simplebedrockmodel.v1.common.resource.pojo.BedrockModelPOJO;
+import org.ywzj.vehicle.api.scripts.ScriptContextFactory;
+import org.ywzj.vehicle.client.resource.ScriptManager;
 import org.ywzj.rvp.client.render.animation.runner.RVP_SwitchableRunnerFactory;
 import org.ywzj.rvp.util.RadarUnitSwitchableAdapter;
 import org.ywzj.vehicle.client.render.animation.VehicleAnimationInstance;
 import org.ywzj.vehicle.client.render.animation.context.WheeledVehicleContext;
 import org.ywzj.vehicle.client.render.animation.controller.AnimationController;
-import org.ywzj.vehicle.client.resource.ClientAssetsManager;
-import org.ywzj.vehicle.client.resource.vehicle.BaseDisplayPojo;
 import org.ywzj.vehicle.client.resource.vehicle.WheeledVehicleDisplay;
+import org.ywzj.vehicle.client.resource.vehicle.VehicleBedrockModel;
 import org.ywzj.vehicle.entity.vehicle.WheeledVehicle;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-public class RVP_WheeledVehicleDisplay extends WheeledVehicleDisplay {
+public class RVP_WheeledVehicleDisplay extends WheeledVehicleDisplay implements RVP_DeferredDisplay {
 
     protected final RVP_BedrockBackend bedrockBackend;
+    /** 主体模型和动画控制器的按需加载入口。 */
+    private final RVP_DeferredVehicleModel deferredModel;
 
     protected final List<String> noCullBones;
 
@@ -29,7 +32,7 @@ public class RVP_WheeledVehicleDisplay extends WheeledVehicleDisplay {
     protected final List<RVP_LodModel> lodModels;
 
     public RVP_WheeledVehicleDisplay(RVP_BaseDisplayPojo pojo) {
-        super(pojo);
+        super(RVP_DeferredVehicleModel.base(pojo, RVP_BedrockBackend.fromString(pojo.bedrockBackend)));
         this.bedrockBackend = RVP_BedrockBackend.fromString(pojo.bedrockBackend);
         this.noCullBones = pojo.noCullBones == null ? List.of() : List.copyOf(pojo.noCullBones);
         this.stateHiddenBones = pojo.stateHiddenBones == null ? List.of()
@@ -44,48 +47,52 @@ public class RVP_WheeledVehicleDisplay extends WheeledVehicleDisplay {
                         .map(RVP_DistanceHiddenBone.Pojo::toRule)
                         .toList();
         this.lodModels = RVP_LodModel.parse(pojo.lodModels);
-        if (bedrockBackend == RVP_BedrockBackend.RVP) {
-            rebuildDisplayBackend(pojo);
-        }
-    }
-
-    protected void rebuildDisplayBackend(BaseDisplayPojo pojo) {
-        var modelPojo = ClientAssetsManager.INSTANCE.getModel(pojo.model);
-        this.modelPath = pojo.model;
-
-        if (pojo.specialBoneEffects != null && !pojo.specialBoneEffects.isEmpty()) {
-            this.specialBoneEffects = pojo.specialBoneEffects;
-            modelPojo.ifPresent(bedrockModelPOJO ->
-                    this.model = RVP_VehicleModelFactory.createVehicleModel(
-                            bedrockModelPOJO,
-                            pojo.specialBoneEffects,
-                            bedrockBackend
-                    ));
-        } else {
-            modelPojo.ifPresent(bedrockModelPOJO ->
-                    this.model = RVP_VehicleModelFactory.createEffectlessModel(bedrockModelPOJO, bedrockBackend));
-        }
-
-        if (pojo.animations != null) {
-            var animationPojo = ClientAssetsManager.INSTANCE.getAnimation(pojo.animations);
-            var animationIndexProvider = getAnimationIndexProvider();
-            var loadedAnimations = animationPojo
-                    .map(animationPOJO -> animationIndexProvider == null
-                            ? List.<BedrockAnimation>of()
-                            : BedrockAnimation.createAnimation(animationPOJO, animationIndexProvider))
-                    .orElse(List.of());
-            var map = new HashMap<String, BedrockAnimation>();
-            for (var anim : loadedAnimations) {
-                map.put(anim.getName(), anim);
-            }
-            this.animations = map;
-        } else {
-            this.animations = Map.of();
+        this.deferredModel = bedrockBackend == RVP_BedrockBackend.RVP
+                ? new RVP_DeferredVehicleModel(this, pojo, this::installModel) : null;
+        if (deferredModel != null) {
+            this.modelPath = pojo.model;
         }
     }
 
     @Override
+    public VehicleBedrockModel getModel() {
+        return deferredModel == null ? super.getModel() : deferredModel.get();
+    }
+
+    @Override
+    public VehicleBedrockModel getLoadedModel() {
+        return super.getModel();
+    }
+
+    @Override
+    public BedrockModelPOJO getModelPojo() {
+        return deferredModel == null ? super.getModelPojo() : deferredModel.getModelPojo();
+    }
+
+    @Override
+    public Map<String, BedrockAnimation> getAnimations() {
+        getModel();
+        return super.getAnimations();
+    }
+
+    @Override
+    public void initializeAnimationController(ScriptManager scripts, ScriptContextFactory factory) {
+        if (deferredModel == null) {
+            super.initializeAnimationController(scripts, factory);
+        } else {
+            deferredModel.initializeController(() -> super.initializeAnimationController(scripts, factory));
+        }
+    }
+
+    private void installModel(VehicleBedrockModel loadedModel, Map<String, BedrockAnimation> loadedAnimations) {
+        this.model = loadedModel;
+        this.animations = loadedAnimations;
+    }
+
+    @Override
     public VehicleAnimationInstance<WheeledVehicleContext> createAnimationInstance(WheeledVehicle entity) {
+        // 本体创建动画实例前先就绪该车的模型和控制器。
+        getModel();
         VehicleAnimationInstance<WheeledVehicleContext> result = super.createAnimationInstance(entity);
         if (result == null) {
             return null;

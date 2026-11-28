@@ -101,21 +101,34 @@ class RVP_ProjectileMotionTest {
     /** 冷发射弹在点火前锁定姿态，点火边界 Tick 必须立即解除锁定。 */
     @Test
     void preIgnitionAttitudeLockUsesColdLaunchAndIgnitionBoundary() {
-        assertTrue(RVP_ProjectileMotion.isPreIgnitionAttitudeLocked(0, 10, 5));
-        assertTrue(RVP_ProjectileMotion.isPreIgnitionAttitudeLocked(9, 10, 5));
-        assertFalse(RVP_ProjectileMotion.isPreIgnitionAttitudeLocked(10, 10, 5));
+        assertTrue(RVP_ProjectileMotion.isPreIgnitionAttitudeLocked(0, 10, 5, 0));
+        assertTrue(RVP_ProjectileMotion.isPreIgnitionAttitudeLocked(9, 10, 5, 0));
+        assertFalse(RVP_ProjectileMotion.isPreIgnitionAttitudeLocked(10, 10, 5, 0));
     }
 
     /** 配置点火延迟长于冷发射时，姿态锁定应覆盖到实际点火 Tick。 */
     @Test
     void preIgnitionAttitudeLockUsesLaterIgnitionBoundary() {
-        assertTrue(RVP_ProjectileMotion.isPreIgnitionAttitudeLocked(19, 10, 20));
-        assertFalse(RVP_ProjectileMotion.isPreIgnitionAttitudeLocked(20, 10, 20));
+        assertTrue(RVP_ProjectileMotion.isPreIgnitionAttitudeLocked(19, 10, 20, 0));
+        assertFalse(RVP_ProjectileMotion.isPreIgnitionAttitudeLocked(20, 10, 20, 0));
     }
 
     /** 没有冷发射窗口的普通延迟点火弹不应被新增的姿态锁定逻辑影响。 */
     @Test
     void delayedIgnitionWithoutColdLaunchDoesNotLockAttitude() {
-        assertFalse(RVP_ProjectileMotion.isPreIgnitionAttitudeLocked(0, 0, 20));
+        assertFalse(RVP_ProjectileMotion.isPreIgnitionAttitudeLocked(0, 0, 20, 4));
+    }
+
+    /** 先弹射，再按实际点火时刻提前解锁；异常长的提前量仍保留首 Tick。 */
+    @Test
+    void coldLaunchCanReleaseSteeringBeforeMotorIgnition() {
+        assertTrue(RVP_ProjectileMotion.isPreIgnitionAttitudeLocked(3, 8, 8, 4));
+        assertFalse(RVP_ProjectileMotion.isPreIgnitionAttitudeLocked(4, 8, 8, 4));
+        assertFalse(RVP_ProjectileMotion.isPreIgnitionAttitudeLocked(7, 8, 8, 4));
+        assertTrue(RVP_ProjectileMotion.isPreIgnitionAttitudeLocked(7, 8, 12, 4));
+        assertFalse(RVP_ProjectileMotion.isPreIgnitionAttitudeLocked(8, 8, 12, 4));
+        assertTrue(RVP_ProjectileMotion.isPreIgnitionAttitudeLocked(0, 8, 8, 100));
+        assertTrue(RVP_ProjectileMotion.isPreIgnitionAttitudeLocked(5, 8, 8, 2));
+        assertFalse(RVP_ProjectileMotion.isPreIgnitionAttitudeLocked(6, 8, 8, 2));
     }
 }

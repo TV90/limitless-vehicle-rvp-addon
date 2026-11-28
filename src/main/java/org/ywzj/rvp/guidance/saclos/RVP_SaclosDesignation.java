@@ -85,7 +85,9 @@ public final class RVP_SaclosDesignation {
         WeaponUnit aimUnit = resolveOperatorAimUnit(projectile);
         boolean allowLockedEntity = projectile.getRvpData() != null
                 && projectile.getRvpData().isSaclosTvGuided();
-        Vec3 podAim = RVP_SaclosPodAim.resolvePodAimPoint(aimUnit, allowLockedEntity);
+        boolean fromOpticalSight = projectile.getRvpData() != null
+                && projectile.getRvpData().isLaserFromOpticalSight();
+        Vec3 podAim = RVP_SaclosPodAim.resolvePodAimPoint(aimUnit, allowLockedEntity, fromOpticalSight);
         if (podAim != null) {
             return podAim;
         }

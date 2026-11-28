@@ -24,6 +24,7 @@ import org.ywzj.rvp.client.state.RVP_NvgState;
 import org.ywzj.rvp.config.RVP_VehicleExtendedConfigManager;
 import org.ywzj.rvp.event.RVP_RotaryFlightMode;
 import org.ywzj.rvp.ext.WeaponUnitDataExt;
+import org.ywzj.rvp.client.util.RVP_LangHelper;
 import org.ywzj.rvp.util.RVP_WeaponResolveHelper;
 import org.ywzj.rvp.weapon.core.RVP_FocusLockSnapState;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
@@ -315,13 +316,28 @@ public final class RVP_VehicleActionHudOverlay implements IGuiOverlay {
         pose.popPose(); graphics.setColor(1F, 1F, 1F, 1F);
         if (card.phase() == Phase.COOLING)
             text(graphics, card.cooldownSeconds() + "s", CARD_WIDTH / 2F, 49, 2F, 0xFFFF6060, CARD_WIDTH - 6);
-        String label = Component.translatable("hud.ywzj_rvp.action." +
-                (deployed ? "deployed_auxiliary"
-                        : active && card.action() == Action.LOITER ? "loiter_active"
-                        : LABELS[card.action().ordinal()])).getString();
+        String label = actionLabel(deployed ? "deployed_auxiliary"
+                : active && card.action() == Action.LOITER ? "loiter_active"
+                : LABELS[card.action().ordinal()]);
         text(graphics, label, CARD_WIDTH / 2F, 84F, 2.1F,
                 damaged ? 0xFFFF5050 : deployed ? 0xFFA2D5AF : active ? 0xFF7FF2FF
                         : bright ? 0xFFE4E8E8 : 0xFF7A8080, CARD_WIDTH - 4);
+    }
+
+    /** 语言包仍可提供译文，只有缺少本次新增动作键的译文时才显示内置短标签。 */
+    private static String actionLabel(String id) {
+        String key = "hud.ywzj_rvp.action." + id;
+        boolean chinese = RVP_LangHelper.isChineseUi();
+        String fallback = switch (id) {
+            case "hitl_redesignate" -> chinese ? "重新锁定" : "Redesignate";
+            case "hitl_exit" -> chinese ? "退出" : "Exit";
+            case "hitl_detonate" -> chinese ? "空爆" : "Airburst";
+            case "hitl_view" -> chinese ? "弹头视角" : "Missile view";
+            case "optical_exit" -> chinese ? "退出视角" : "Exit view";
+            case "optical_lock" -> chinese ? "锁定目标" : "Lock target";
+            default -> null;
+        };
+        return Component.translatableWithFallback(key, fallback).getString();
     }
 
     /** 长按键名和标签在卡内缩放，保留完整文字。 */

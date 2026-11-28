@@ -838,7 +838,7 @@ public final class RVP_ProjectileLifecycleDebug {
         Float turningFactor = projectileData.resolveTurningFactor(projectile.getFlightTickCount());
         RVP_AeroSteeringLimits limits = projectileData.resolveAeroSteeringLimits(
                 config.getProjectileVelocity(), projectile.getY(),
-                turningFactor == null ? 0.5F : turningFactor);
+                turningFactor == null ? 0.5F : turningFactor, projectile.getFlightTickCount());
         // 调用本项目攻角门控，准确记录本 Tick 是否真的进入导弹攻角分支。
         boolean attackAngleActive = RVP_ProjectileMotion.usesAttackAngle(projectile);
         double speed = projectile.getDeltaMovement().length();

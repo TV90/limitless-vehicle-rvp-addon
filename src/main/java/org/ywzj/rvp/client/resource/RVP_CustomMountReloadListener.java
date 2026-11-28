@@ -5,6 +5,9 @@ import net.minecraft.server.packs.resources.SimplePreparableReloadListener;
 import net.minecraft.util.profiling.ProfilerFiller;
 import org.jetbrains.annotations.NotNull;
 import org.ywzj.rvp.client.render.RVP_CustomMountRenderLogic;
+import org.ywzj.rvp.client.render.RVP_DistanceBoneHider;
+import org.ywzj.rvp.client.render.RVP_LodModelManager;
+import org.ywzj.rvp.client.render.RVP_StateBoneHider;
 import org.ywzj.rvp.client.resource.vehicle.RVP_DisplayBackendUtil;
 import org.ywzj.rvp.config.UIPresetManager;
 
@@ -40,6 +43,10 @@ public final class RVP_CustomMountReloadListener extends SimplePreparableReloadL
         // backend / no-cull 骨骼缓存是 WeakHashMap<VehicleBedrockModel, …>：旧模型实例会随 GC 消失，
         // 这里主动清一遍让重载后首个访问直接落到最新 display 上（未命中时 getBackend 自会 bindKnownDisplays）。
         RVP_DisplayBackendUtil.clearCache();
+        // 清掉旧 display 与模型的引用，规则在新的资源实际使用时恢复。
+        RVP_StateBoneHider.clearCache();
+        RVP_DistanceBoneHider.clearCache();
+        RVP_LodModelManager.clearCache();
         // UI 预设：数据包同名优先、config 兜底，只依赖 resourceManager，可在此立即重读。
         UIPresetManager.load(resourceManager);
         // 载具 JSON 的 RVP 扩展字段（ui_preset / 隐藏骨 / 挂架 / 过热 / RCS …）：

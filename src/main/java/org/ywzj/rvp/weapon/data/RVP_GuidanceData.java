@@ -230,6 +230,14 @@ public class RVP_GuidanceData {
     @SerializedName("loft_blend_distance")
     private float loftBlendDistance = 0f;
 
+    /** 发射时达到此水平距离的 IR 导弹才飞到目标上方，再进入末段。正值启用此航迹。 */
+    @SerializedName("loft_overhead_min_launch_distance")
+    private float loftOverheadMinLaunchDistance;
+
+    /** 远距高抛的俯冲段转向强度。缺省时由弹体原有 turning_factor 决定。 */
+    @SerializedName("loft_dive_turning_factor")
+    private float loftDiveTurningFactor;
+
     /**
      * 反舰导引头（2026-10-05 用户需求）：{@code true} 时该弹（ARH/AIR/SARH 等主段型）
      * 只能攻击 RCS 综合值 ≥ {@code RVP_RadarScanHelper.SCAN_SEA_RCS_THRESHOLD}（500）的
@@ -424,6 +432,14 @@ public class RVP_GuidanceData {
     /** @return loft 退坡区间长度（格），负值钳 0。 */
     public float getLoftBlendDistance() {
         return Math.max(loftBlendDistance, 0f);
+    }
+
+    public float getLoftOverheadMinLaunchDistance() {
+        return Float.isFinite(loftOverheadMinLaunchDistance) ? Math.max(loftOverheadMinLaunchDistance, 0f) : 0f;
+    }
+
+    public float getLoftDiveTurningFactor() {
+        return Float.isFinite(loftDiveTurningFactor) ? Math.max(0f, Math.min(loftDiveTurningFactor, 1f)) : 0f;
     }
 
     /** @return 反舰导引头开关：只攻击 RCS 综合值 ≥500 的大型目标。 */

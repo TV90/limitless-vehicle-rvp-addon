@@ -83,6 +83,23 @@ public final class RVP_GuidanceRuntimeMath {
         projectile.rememberGuidancePos(target);
         projectile.setGuidanceTargetPos(target);
         float factor = resolveTurningFactor(context);
+        float loftHeight = context.active().loftHeightAboveTarget();
+        float overheadMinDistance = context.data().getGuidanceData().getLoftOverheadMinLaunchDistance();
+        boolean overheadLoft = loftHeight > 0f && overheadMinDistance > 0f
+                && context.active().guidanceType() == RVP_EnumGuidanceType.IR
+                && !projectile.hasAutonomousSeekerCatch();
+        if (overheadLoft) {
+            var stage = projectile.getOverheadLoftStage();
+            if (stage == RVP_BaseBullet.OverheadLoftStage.UNDECIDED) {
+                stage = target.subtract(projectile.getVirtualMidcourseLaunchPosition()).horizontalDistance()
+                        >= overheadMinDistance
+                        ? RVP_BaseBullet.OverheadLoftStage.APPROACH : RVP_BaseBullet.OverheadLoftStage.DIRECT;
+                projectile.setOverheadLoftStage(stage);
+            }
+            if (stage != RVP_BaseBullet.OverheadLoftStage.DIRECT) {
+                return applyOverheadLoft(context, targetMotion, factor, stage);
+            }
+        }
         // 攻顶瞄准点：目标上空 min(|H|, 水平距离) 处，每 tick 重算（恢复 8c30656 无状态算法）
         Vec3 steeringTarget = resolveTopAttackAimPoint(
                 projectile.position(), target, context.active().topAttackHeight());
@@ -96,8 +113,7 @@ public final class RVP_GuidanceRuntimeMath {
         // 不受干扰）；与 top_attack_height 互斥建议同时只配一个，同配时 loft 优先。
         Vec3 loftedTarget = null;
         double loftWeight = 0.0;
-        float loftHeight = context.active().loftHeightAboveTarget();
-        if (loftHeight > 0f && !projectile.hasAutonomousSeekerCatch()) {
+        if (loftHeight > 0f && !overheadLoft && !projectile.hasAutonomousSeekerCatch()) {
             float loftEnd = context.active().loftEndDistance();
             float loftBlend = context.active().loftBlendDistance();
             double dxLoft = target.x - projectile.position().x;
@@ -187,7 +203,7 @@ public final class RVP_GuidanceRuntimeMath {
             next = ppn.requestedVelocity();
             boolean attackAngle = RVP_ProjectileMotion.usesAttackAngle(projectile);
             RVP_AeroSteeringLimits limits = context.data().getProjectileData().resolveAeroSteeringLimits(
-                    context.data().getProjectileVelocity(), projectile.getY(), factor);
+                    context.data().getProjectileVelocity(), projectile.getY(), factor, projectile.getFlightTickCount());
             if (!limits.enabled() && rvpMaxGs == null) {
                 // 旧式执行器的 factor 只作用于 PPN 请求一次；PIP 路线已自行应用，不能混合后再乘一次。
                 next = blendDirection(current, next, current.length(), factor);
@@ -259,7 +275,7 @@ public final class RVP_GuidanceRuntimeMath {
                 && targetMotion.effectiveAcceleration().lengthSqr() <= 1.0E-8) {
             // 调用固定点控制器；静止实体与相同坐标共享收敛规则，不再取决于是否存在 Entity。
             RVP_AeroSteeringLimits limits = context.data().getProjectileData().resolveAeroSteeringLimits(
-                    context.data().getProjectileVelocity(), projectile.getY(), factor);
+                    context.data().getProjectileVelocity(), projectile.getY(), factor, projectile.getFlightTickCount());
             var solution = RVP_PointGuidanceController.solve(projectile.position(), current, steeringTarget,
                     projectile.getAttackAngleState(), limits, RVP_ProjectileMotion.resolvePIPMotorState(projectile),
                     RVP_ProjectileMotion.resolveAttackAngleMass(projectile));
@@ -283,7 +299,7 @@ public final class RVP_GuidanceRuntimeMath {
             } else if (RVP_ProjectileMotion.usesAttackAngle(projectile)) {
                 // 调用本项目配置与动力快照，冻结试算预算；不提前点火或写运动速度。
                 RVP_AeroSteeringLimits limits = context.data().getProjectileData().resolveAeroSteeringLimits(
-                        context.data().getProjectileVelocity(), projectile.getY(), factor);
+                        context.data().getProjectileVelocity(), projectile.getY(), factor, projectile.getFlightTickCount());
                 // 调用原 PIP 单步反解，其他制导路径保持原响应补偿和参数语义。
                 var pip = solvePIPControl(context, current, next, pipMotion, intercept, limits);
                 intercept = pip.intercept();
@@ -317,6 +333,57 @@ public final class RVP_GuidanceRuntimeMath {
         noteGuidanceDecision(context, branch, isTopAttack ? "TOP_ATTACK"
                         : entity == null ? "NO_ENTITY_TARGET" : predictiveInterceptBlockReason(context),
                 steeringTarget, intercept, pipControl, ppn, loftWeight, leadWeight);
+        return true;
+    }
+
+    /** 朝目标上空爬升，接近后用现有点制导控制器衔接俯冲。 */
+    private static boolean applyOverheadLoft(RVP_GuidanceRuntimeContext context, RVP_TargetMotionState motion,
+                                             float factor, RVP_BaseBullet.OverheadLoftStage stage) {
+        var projectile = context.projectile();
+        Vec3 position = projectile.position();
+        Vec3 current = projectile.getDeltaMovement();
+        double speed = current.length();
+        if (speed <= 1.0E-6 || RVP_ProjectileMotion.isPreIgnitionAttitudeLocked(projectile)) {
+            return false;
+        }
+        Vec3 target = motion.position();
+        double horizontal = target.subtract(position).horizontalDistance();
+        float loftHeight = context.active().loftHeightAboveTarget();
+        boolean diving = stage == RVP_BaseBullet.OverheadLoftStage.DIVE
+                || horizontal <= Math.max(context.active().loftEndDistance(), speed);
+        Vec3 aim;
+        if (diving) {
+            projectile.setOverheadLoftStage(RVP_BaseBullet.OverheadLoftStage.DIVE);
+            float diveFactor = context.data().getGuidanceData().getLoftDiveTurningFactor();
+            if (diveFactor > 0f) {
+                factor = diveFactor;
+            }
+            double leadTicks = Mth.clamp(position.distanceTo(target) / speed, 0.0, 24.0);
+            aim = motion.predictPosition(leadTicks);
+        } else {
+            Vec3 overhead = resolvePresetMovingTarget(position, target, motion, speed);
+            Vec3 offset = overhead.subtract(position).multiply(1.0, 0.0, 1.0);
+            double lookAhead = Math.min(offset.horizontalDistance(), loftHeight * 0.65);
+            aim = position.add(offset.normalize().scale(lookAhead));
+            aim = new Vec3(aim.x, overhead.y + loftHeight, aim.z);
+        }
+
+        var limits = context.data().getProjectileData().resolveAeroSteeringLimits(
+                context.data().getProjectileVelocity(), projectile.getY(), factor, projectile.getFlightTickCount());
+        Vec3 next;
+        if (RVP_ProjectileMotion.usesAttackAngle(projectile)) {
+            var solution = RVP_PointGuidanceController.solve(position, current, aim, projectile.getAttackAngleState(),
+                    limits, RVP_ProjectileMotion.resolvePIPMotorState(projectile),
+                    RVP_ProjectileMotion.resolveAttackAngleMass(projectile));
+            next = RVP_ProjectileMotion.applyAttackAngleSolution(projectile, solution);
+        } else {
+            Vec3 desired = RVP_PointGuidanceController.requestVelocity(position, current, aim);
+            next = applyResolvedAeroSteering(projectile, context.data(), current, desired, factor,
+                    context.data().getProjectileData().getRvpMaxG());
+        }
+        projectile.setDeltaMovement(next);
+        RVP_ProjectileMotion.applyGuidanceFacing(projectile, next);
+        noteGuidanceDecision(context, diving ? "OVERHEAD_DIVE" : "OVERHEAD_APPROACH", null, aim, null, null);
         return true;
     }
 
@@ -481,7 +548,7 @@ public final class RVP_GuidanceRuntimeMath {
         // 调用本项目弹体数据解析器，使实体 PRESET 俯冲判据使用与最终转向相同的气动预算。
         RVP_AeroSteeringLimits presetLimits = context.data().getProjectileData()
                 .resolveAeroSteeringLimits(
-                        context.data().getProjectileVelocity(), projectile.getY(), factor);
+                        context.data().getProjectileVelocity(), projectile.getY(), factor, projectile.getFlightTickCount());
         boolean diving = shouldBeginPresetDive(
                 projectile.position(), movingTarget, launchPos, current, preset, presetLimits);
         Vec3 next;
@@ -757,7 +824,7 @@ public final class RVP_GuidanceRuntimeMath {
     ) {
         // 调用本项目弹体数据解析器，冻结参考速度、密度、诱导阻力和转角上限。
         RVP_AeroSteeringLimits limits = data.getProjectileData().resolveAeroSteeringLimits(
-                data.getProjectileVelocity(), projectile.getY(), turningFactor);
+                data.getProjectileVelocity(), projectile.getY(), turningFactor, projectile.getFlightTickCount());
         if (projectile.isMissile() && limits.attackAngleEnabled()) {
             // 调用本项目实体攻角适配器，写回弹轴与载荷而不再强制弹轴贴合速度。
             return RVP_ProjectileMotion.applyAttackAngleSteering(projectile, current, desired, limits);
